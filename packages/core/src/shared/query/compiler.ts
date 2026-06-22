@@ -173,8 +173,8 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 	);
 	const relationTableKey =
 		context.relational.tableNamesMap[
-			`${relation.referencedTable._.schema ?? 'public'}.${relation.referencedTable._.name}`
-		] ?? relation.referencedTable._.name;
+			`public.${relation.referencedTableName}`
+		] ?? relation.referencedTableName;
 	const relationRuntime = getTableRuntime(context, relationTableKey);
 	const joinCondition = makeJoinCondition(
 		normalized.fields,

@@ -9,5 +9,9 @@
 		"strict": true,
 		"skipLibCheck": true
 	},
-	"include": ["commitlint.config.ts", "packages/*/src/**/*.ts"]
+	"include": [
+		"benchmark/**/*.ts",
+		"commitlint.config.ts",
+		"packages/*/src/**/*.ts"
+	]
 }

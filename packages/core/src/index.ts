@@ -67,10 +67,13 @@ export const better = <Schema extends AnySchema, Meta = BetterMeta>(
 			context,
 			tableName as BetterTableKey<Schema>,
 		);
+		const dbName =
+			context.relational.tables[tableName as BetterTableKey<Schema>]
+				?.dbName ?? tableName;
 
 		client[tableName] = delegate;
 		context.repositories[tableName] = delegate;
-		context.repositories[table._.name] = delegate;
+		context.repositories[dbName] = delegate;
 	}
 
 	client.repository = (name: string) => {

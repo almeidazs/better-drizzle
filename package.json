@@ -6,11 +6,17 @@
 		"packages/*",
 		"apps/*"
 	],
+	"scripts": {
+		"bench": "bun run benchmark/time.ts",
+		"bench:all": "bun run benchmark/time.ts && bun run benchmark/memory.ts",
+		"bench:memory": "bun run benchmark/memory.ts"
+	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.5.0",
 		"@commitlint/config-conventional": "^21.0.2",
 		"@types/bun": "latest",
-		"commitlint": "^21.0.2"
+		"commitlint": "^21.0.2",
+		"mitata": "^1.0.34"
 	},
 	"peerDependencies": {
 		"drizzle-kit": "^0.31.10",
