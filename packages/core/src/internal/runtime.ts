@@ -1733,6 +1733,17 @@ const makeModelDelegate = <Schema extends AnySchema, Meta>(
 	};
 };
 
+/**
+ * Internal factory that builds a {@link BetterDrizzleClient} from a raw
+ * Drizzle database instance and a configuration object. This is the runtime
+ * implementation behind the public {@link better} helper.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ * @param drizzleDb - The raw Drizzle database instance.
+ * @param options - Client configuration (schema, plugins, hooks).
+ * @returns A fully typed client with delegates for every table.
+ */
 export const createBetterClient = <Schema extends AnySchema, Meta = BetterMeta>(
 	drizzleDb: unknown,
 	options: BetterClientOptions<Schema, Meta>,
