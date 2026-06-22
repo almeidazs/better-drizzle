@@ -1,0 +1,16 @@
+{
+	"name": "better-drizzle",
+	"module": "src/index.ts",
+	"type": "module",
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.0",
+		"@commitlint/config-conventional": "^21.0.2",
+		"@types/bun": "latest",
+		"commitlint": "^21.0.2"
+	},
+	"peerDependencies": {
+		"drizzle-kit": "^0.31.10",
+		"drizzle-orm": "^0.45.2",
+		"typescript": "^5"
+	}
+}

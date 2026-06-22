@@ -1,0 +1,22 @@
+pre-commit:
+    parallel: false
+    commands:
+        biome:
+            run: |
+                FILES=$(git diff --name-only --cached --diff-filter=ACMR)
+
+                if [ -z "$FILES" ]; then
+                  exit 0
+                fi
+
+                FORMATTABLE_FILES=$(echo "$FILES" | grep -E '\.(ts|tsx|js|jsx|json|css)$' || true)
+
+                if [ -n "$FORMATTABLE_FILES" ]; then
+                  echo "$FORMATTABLE_FILES" | xargs bun exec biome check --write
+                fi
+
+                git add $FILES
+        test:
+            run: bun test
+        types:
+            run: bun typecheck
