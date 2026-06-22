@@ -1,14 +1,12 @@
 <p align="center">
-  <img src="./assets/logo.png" alt="better-drizzle" width="720" />
+  <img src="./assets/logo.png" alt="better-drizzle" width="520" />
 </p>
 
 <br/>
 
-<h3 align="center">Drizzle, but better 🚀</h3>
+<h3 align="center">Drizzle ORM, but better 🚀</h3>
 
 <div align="center">
-
-# Better Drizzle
 
 Minimal, type-safe repository helpers for [Drizzle ORM](https://orm.drizzle.team).
 
@@ -86,7 +84,9 @@ const posts = await client.posts.findMany({
 ```
 
 <div align="center">
-**Check whether a user exists or not and count after it**
+
+**Check whether a user exists or not and count after it.**
+
 </div>
 
 ```ts
@@ -102,7 +102,9 @@ const count = await client.users.count({
 ```
 
 <div align="center">
-**Create and update the user**
+
+**Create and update the user.**
+
 </div>
 
 ```ts
@@ -123,7 +125,7 @@ const user = await client.users.update({
 
 <div align="center">
 
-**You can also resolve repositories dynamically**
+**You can also resolve repositories dynamically.**
 
 </div>
 
@@ -140,6 +142,23 @@ The repository name can be the TypeScript schema key or the database table name.
 The client accepts optional hooks through `better(db, options)`. This is useful for auditing, tracing, metrics, authorization, and other cross-cutting concerns that you do not want duplicated in every repository call.
 
 The hook layer is optional. If you do not need it, do not pass it.
+
+</div>
+
+**Always assign a random UUID in the user before creating it.**
+
+```ts
+const client = better(drizzle, {
+	schema,
+	hooks: {
+		beforeCreate({ data: user }) {
+			user.organizationId = randomUUID();
+		},
+	},
+});
+```
+
+<div align="center">
 
 ## Performance
 
