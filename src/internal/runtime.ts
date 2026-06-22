@@ -32,19 +32,23 @@ import {
 } from 'drizzle-orm/relations';
 import type {
 	AnySchema,
+	BatchResult,
 	BetterClientHooks,
 	BetterClientOptions,
 	BetterDrizzleClient,
 	BetterRelationalConfig,
 	BetterTableKey,
+	CreateManyArgs,
 	CursorInput,
 	DeleteArgs,
+	DeleteManyArgs,
 	OrderByInput,
 	PaginationArgs,
 	QueryArgs,
 	ThrowFactory,
 	ThrowingResult,
 	UpdateArgs,
+	UpdateManyArgs,
 	UpsertArgs,
 	WhereArg,
 } from '../types/client';
@@ -730,6 +734,21 @@ const reloadByRecord = async <Schema extends AnySchema>(
 	return (rows[0] ?? null) as Record<string, unknown> | null;
 };
 
+const reloadByRecords = async <Schema extends AnySchema>(
+	context: RuntimeContext<Schema>,
+	tableName: BetterTableKey<Schema>,
+	records: Record<string, unknown>[],
+	args?: QueryArgs<Schema, BetterTableKey<Schema>>,
+) => {
+	const rows = await Promise.all(
+		records.map((record) =>
+			reloadByRecord(context, tableName, record, args),
+		),
+	);
+
+	return rows.filter((row): row is Record<string, unknown> => row !== null);
+};
+
 const findFirstInternal = async <Schema extends AnySchema>(
 	context: RuntimeContext<Schema>,
 	tableName: BetterTableKey<Schema>,
@@ -770,6 +789,31 @@ const createInternal = async <Schema extends AnySchema>(
 	return created
 		? reloadByRecord(context, tableName, created, args)
 		: reloadByRecord(context, tableName, args.data, args);
+};
+
+const createManyInternal = async <Schema extends AnySchema>(
+	context: RuntimeContext<Schema>,
+	tableName: BetterTableKey<Schema>,
+	args: CreateManyArgs<Schema, BetterTableKey<Schema>>,
+): Promise<BatchResult<Record<string, unknown>>> => {
+	await applyCreateHooks(context.options.hooks);
+	const runtime = getTableRuntime(context, tableName as string);
+	const builder = context.db.insert(runtime.table).values(args.data);
+	let data: Record<string, unknown>[] | undefined;
+
+	if (typeof builder.returning === 'function') {
+		const rows = await builder.returning();
+		data = await reloadByRecords(context, tableName, rows, args);
+	} else {
+		await builder;
+	}
+
+	await applyAfterCreateHooks(context.options.hooks);
+
+	return {
+		count: args.data.length,
+		data: data && data.length > 0 ? data : undefined,
+	};
 };
 
 const updateInternal = async <Schema extends AnySchema>(
@@ -821,6 +865,56 @@ const deleteInternal = async <Schema extends AnySchema>(
 
 	await context.db.delete(runtime.table).where(predicate);
 	return existing;
+};
+
+const updateManyInternal = async <Schema extends AnySchema>(
+	context: RuntimeContext<Schema>,
+	tableName: BetterTableKey<Schema>,
+	args: UpdateManyArgs<Schema, BetterTableKey<Schema>>,
+): Promise<BatchResult<never>> => {
+	const runtime = getTableRuntime(context, tableName as string);
+	const whereContext: WhereCompilerContext<Schema> = {
+		...context,
+		tableName: tableName as string,
+		table: runtime.table,
+		tableConfig: runtime.tableConfig,
+	};
+	const predicate = compileWhereInput(
+		whereContext,
+		args.where as CompilableWhere | undefined,
+	);
+	const affectedCount = await countInternal(context, tableName, args.where);
+
+	if (affectedCount > 0) {
+		await context.db.update(runtime.table).set(args.data).where(predicate);
+	}
+
+	return { count: affectedCount };
+};
+
+const deleteManyInternal = async <Schema extends AnySchema>(
+	context: RuntimeContext<Schema>,
+	tableName: BetterTableKey<Schema>,
+	args?: DeleteManyArgs<Schema, BetterTableKey<Schema>>,
+): Promise<BatchResult<never>> => {
+	const runtime = getTableRuntime(context, tableName as string);
+	const whereContext: WhereCompilerContext<Schema> = {
+		...context,
+		tableName: tableName as string,
+		table: runtime.table,
+		tableConfig: runtime.tableConfig,
+	};
+	const predicate = compileWhereInput(
+		whereContext,
+		args?.where as CompilableWhere | undefined,
+	);
+	const affectedCount = await countInternal(context, tableName, args?.where);
+
+	if (affectedCount > 0) {
+		await context.db.delete(runtime.table).where(predicate);
+	}
+
+	return { count: affectedCount };
 };
 
 const countInternal = async <Schema extends AnySchema>(
@@ -925,6 +1019,8 @@ const makeModelDelegate = <Schema extends AnySchema>(
 			const total = await countInternal(context, tableName, args?.where);
 			return total > 0;
 		},
+		createMany: (args: CreateManyArgs<Schema, BetterTableKey<Schema>>) =>
+			createManyInternal(context, tableName, args),
 		findMany: (args?: QueryArgs<Schema, BetterTableKey<Schema>>) =>
 			context.db.query[tableName].findMany(
 				buildQueryConfig(context, tableName, args),
@@ -955,12 +1051,16 @@ const makeModelDelegate = <Schema extends AnySchema>(
 				'update',
 				String(tableName),
 			),
+		updateMany: (args: UpdateManyArgs<Schema, BetterTableKey<Schema>>) =>
+			updateManyInternal(context, tableName, args),
 		delete: (args: DeleteArgs<Schema, BetterTableKey<Schema>>) =>
 			attachThrow(
 				deleteInternal(context, tableName, args),
 				'delete',
 				String(tableName),
 			),
+		deleteMany: (args?: DeleteManyArgs<Schema, BetterTableKey<Schema>>) =>
+			deleteManyInternal(context, tableName, args),
 		upsert: async (args: UpsertArgs<Schema, BetterTableKey<Schema>>) => {
 			const existing = await findFirstInternal(context, tableName, {
 				where: args.where,

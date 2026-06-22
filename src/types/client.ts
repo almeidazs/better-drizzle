@@ -269,6 +269,11 @@ export type ThrowingResult<T> = Promise<T | null> & {
 	throw(factory: ThrowFactory): Promise<NonNullish<T>>;
 };
 
+export interface BatchResult<T> {
+	count: number;
+	data?: T[];
+}
+
 export type PaginationArgs<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
@@ -291,6 +296,30 @@ export interface UpdateArgs<
 	data: Partial<InsertModelFor<Schema, Name>>;
 	select?: SelectInput<Schema, Name>;
 	include?: IncludeInput<Schema, Name>;
+}
+
+export interface CreateManyArgs<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> {
+	data: InsertModelFor<Schema, Name>[];
+	select?: SelectInput<Schema, Name>;
+	include?: IncludeInput<Schema, Name>;
+}
+
+export interface UpdateManyArgs<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> {
+	where?: WhereArg<Schema, Name>;
+	data: Partial<InsertModelFor<Schema, Name>>;
+}
+
+export interface DeleteManyArgs<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> {
+	where?: WhereArg<Schema, Name>;
 }
 
 export interface DeleteArgs<
@@ -434,6 +463,9 @@ export interface BetterDrizzleModelDelegate<
 	create<Args extends CreateArgs<Schema, Name>>(
 		args: Args,
 	): Promise<PayloadForArgs<Schema, Name, Args>>;
+	createMany<Args extends CreateManyArgs<Schema, Name>>(
+		args: Args,
+	): Promise<BatchResult<PayloadForArgs<Schema, Name, Args>>>;
 	upsert<Args extends UpsertArgs<Schema, Name>>(
 		args: Args,
 	): Promise<PayloadForArgs<Schema, Name, Args>>;
@@ -443,6 +475,7 @@ export interface BetterDrizzleModelDelegate<
 	update<Args extends UpdateArgs<Schema, Name>>(
 		args: Args,
 	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	updateMany(args: UpdateManyArgs<Schema, Name>): Promise<BatchResult<never>>;
 	findOne<Args extends QueryArgs<Schema, Name>>(
 		args?: Args,
 	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
@@ -458,6 +491,7 @@ export interface BetterDrizzleModelDelegate<
 	delete<Args extends DeleteArgs<Schema, Name>>(
 		args: Args,
 	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	deleteMany(args: DeleteManyArgs<Schema, Name>): Promise<BatchResult<never>>;
 }
 
 export type BetterTableConfig<
