@@ -28,13 +28,23 @@ type Singularize<Key extends string> = Key extends `${infer Stem}ies`
 type AliasKey<Schema extends AnySchema> = Singularize<
 	Extract<TableKey<Schema>, string>
 >;
-type SourceKeyFromAlias<
+
+type DbNameKey<Schema extends AnySchema> = Extract<
+	{
+		[K in TableKey<Schema>]: TableConfigFor<Schema, K>['dbName'];
+	}[TableKey<Schema>],
+	string
+>;
+type SourceKeyFromDbName<
 	Schema extends AnySchema,
-	Alias extends string,
+	DbName extends string,
 > = Extract<
 	TableKey<Schema>,
 	{
-		[K in TableKey<Schema>]: Singularize<Extract<K, string>> extends Alias
+		[K in TableKey<Schema>]: TableConfigFor<
+			Schema,
+			K
+		>['dbName'] extends DbName
 			? K
 			: never;
 	}[TableKey<Schema>]
@@ -379,15 +389,27 @@ type BetterDrizzleClientByTable<Schema extends AnySchema> = {
 	[K in TableKey<Schema>]: BetterDrizzleModelDelegate<Schema, K>;
 };
 
-type BetterDrizzleClientByAlias<Schema extends AnySchema> = {
-	[K in AliasKey<Schema>]: BetterDrizzleModelDelegate<
-		Schema,
-		SourceKeyFromAlias<Schema, K>
-	>;
-};
+type RepositoryKey<Schema extends AnySchema> =
+	| TableKey<Schema>
+	| DbNameKey<Schema>;
+
+type RepositorySourceKey<
+	Schema extends AnySchema,
+	Name extends RepositoryKey<Schema>,
+> =
+	Name extends TableKey<Schema>
+		? Name
+		: SourceKeyFromDbName<Schema, Extract<Name, string>>;
 
 export type BetterDrizzleClient<Schema extends AnySchema> =
-	BetterDrizzleClientByTable<Schema> & BetterDrizzleClientByAlias<Schema>;
+	BetterDrizzleClientByTable<Schema> & {
+		repository<Name extends RepositoryKey<Schema>>(
+			name: Name,
+		): BetterDrizzleModelDelegate<
+			Schema,
+			RepositorySourceKey<Schema, Name>
+		>;
+	};
 
 export interface BetterDrizzleModelDelegate<
 	Schema extends AnySchema,
@@ -431,6 +453,8 @@ export type BetterTableConfig<
 
 export type BetterTableKey<Schema extends AnySchema> = TableKey<Schema>;
 export type BetterAliasKey<Schema extends AnySchema> = AliasKey<Schema>;
+export type BetterRepositoryKey<Schema extends AnySchema> =
+	RepositoryKey<Schema>;
 
 export type BetterTableRelations<
 	Schema extends AnySchema,

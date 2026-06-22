@@ -31,7 +31,6 @@ import {
 } from 'drizzle-orm/relations';
 import type {
 	AnySchema,
-	BetterAliasKey,
 	BetterClientHooks,
 	BetterClientOptions,
 	BetterDrizzleClient,
@@ -105,18 +104,6 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> => {
 		!Array.isArray(value) &&
 		!(value instanceof Date)
 	);
-};
-
-const singularize = (value: string) => {
-	if (value.endsWith('ies') && value.length > 3) {
-		return `${value.slice(0, -3)}y`;
-	}
-
-	if (value.endsWith('s') && value.length > 1) {
-		return value.slice(0, -1);
-	}
-
-	return value;
 };
 
 const isScalarOperatorObject = (value: unknown) => {
@@ -969,6 +956,7 @@ export const createBetterClient = <Schema extends AnySchema>(
 	};
 
 	const client = {} as Record<string, unknown>;
+	const repositories = {} as Record<string, unknown>;
 
 	for (const [tableName, table] of Object.entries(options.schema)) {
 		if (!isTable(table)) {
@@ -980,12 +968,17 @@ export const createBetterClient = <Schema extends AnySchema>(
 			tableName as BetterTableKey<Schema>,
 		);
 		client[tableName] = delegate;
-
-		const alias = singularize(tableName) as BetterAliasKey<Schema>;
-		if (!(alias in client)) {
-			client[alias] = delegate;
-		}
+		repositories[tableName] = delegate;
+		repositories[table._.name] = delegate;
 	}
+
+	client.repository = (name: string) => {
+		const repository = repositories[name];
+
+		if (!repository) throw new Error(`Repository "${name}" not found.`);
+
+		return repository;
+	};
 
 	return client as BetterDrizzleClient<Schema>;
 };

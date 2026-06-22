@@ -11,3 +11,5 @@ export const better = <Schema extends AnySchema>(
 ) => {
 	return createBetterClient(drizzle, options) as BetterDrizzleClient<Schema>;
 };
+
+export * from './types';
