@@ -1,4 +1,7 @@
 import { createBetterClient } from './internal/runtime';
+
+export * from './shared/errors';
+
 import type {
 	AnySchema,
 	BetterClientOptions,
