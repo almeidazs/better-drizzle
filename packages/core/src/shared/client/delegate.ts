@@ -22,480 +22,408 @@ import type {
 	UpdateManyArgs,
 	UpsertArgs,
 } from '../../types';
-import { buildQueryConfig, countRows } from '../query';
+import { countRows } from '../query';
+import { getTableRuntime } from './context';
 import { attachThrow, buildHookContext, executeOperation } from './hooks';
 import {
 	createManyRecords,
 	createRecord,
 	deleteManyRecords,
 	deleteRecord,
+	existsRecord,
 	findFirstRecord,
+	findManyRecords,
 	paginateRecords,
 	updateManyRecords,
 	updateRecord,
+	upsertRecord,
 } from './operations';
 
 export const createModelDelegate = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
-) => ({
-	count: (args?: CountArgs<Schema, BetterTableKey<Schema>, Meta>) => {
-		const operationArgs =
-			args ?? ({} as CountArgs<Schema, BetterTableKey<Schema>, Meta>);
+) => {
+	const name = tableName as string;
+	const runtime = getTableRuntime(context, name);
+	const hookContext = (action: string, args: unknown) =>
+		buildHookContext(context, runtime, name, action, args);
 
-		return executeOperation({
-			action: 'count',
-			args: operationArgs,
-			afterHookName: 'afterQuery',
-			afterPayload: (result) =>
-				({
-					...buildHookContext(
-						context,
-						tableName,
+	return {
+		count: (args?: CountArgs<Schema, BetterTableKey<Schema>, Meta>) => {
+			const operationArgs =
+				args ?? ({} as CountArgs<Schema, BetterTableKey<Schema>, Meta>);
+
+			return executeOperation({
+				action: 'count',
+				args: operationArgs,
+				afterHookName: 'afterQuery',
+				afterPayload: (result) =>
+					({
+						...hookContext('count', operationArgs),
+						result,
+					}) as AfterQueryHookContext<Schema, Meta>,
+				beforeHookName: 'beforeQuery',
+				beforePayload: () =>
+					hookContext(
 						'count',
 						operationArgs,
-					),
-					result,
-				}) as AfterQueryHookContext<Schema, Meta>,
-			beforeHookName: 'beforeQuery',
-			beforePayload: buildHookContext(
+					) as BeforeQueryHookContext<Schema, Meta>,
 				context,
-				tableName,
-				'count',
-				operationArgs,
-			) as BeforeQueryHookContext<Schema, Meta>,
-			context,
-			operation: () => countRows(context, tableName, operationArgs.where),
-			tableName,
-		});
-	},
-	exists: (args?: ExistsArgs<Schema, BetterTableKey<Schema>, Meta>) => {
-		const operationArgs =
-			args ?? ({} as ExistsArgs<Schema, BetterTableKey<Schema>, Meta>);
+				operation: () =>
+					countRows(context, tableName, operationArgs.where),
+				runtime,
+				tableName: name,
+			});
+		},
+		exists: (args?: ExistsArgs<Schema, BetterTableKey<Schema>, Meta>) => {
+			const operationArgs =
+				args ??
+				({} as ExistsArgs<Schema, BetterTableKey<Schema>, Meta>);
 
-		return executeOperation({
-			action: 'exists',
-			args: operationArgs,
-			afterHookName: 'afterQuery',
-			afterPayload: (result) =>
-				({
-					...buildHookContext(
-						context,
-						tableName,
+			return executeOperation({
+				action: 'exists',
+				args: operationArgs,
+				afterHookName: 'afterQuery',
+				afterPayload: (result) =>
+					({
+						...hookContext('exists', operationArgs),
+						result,
+					}) as AfterQueryHookContext<Schema, Meta>,
+				beforeHookName: 'beforeQuery',
+				beforePayload: () =>
+					hookContext(
 						'exists',
 						operationArgs,
-					),
-					result,
-				}) as AfterQueryHookContext<Schema, Meta>,
-			beforeHookName: 'beforeQuery',
-			beforePayload: buildHookContext(
+					) as BeforeQueryHookContext<Schema, Meta>,
 				context,
-				tableName,
-				'exists',
-				operationArgs,
-			) as BeforeQueryHookContext<Schema, Meta>,
-			context,
-			operation: async () =>
-				(await countRows(context, tableName, operationArgs.where)) > 0,
-			tableName,
-		});
-	},
-	createMany: (args: CreateManyArgs<Schema, BetterTableKey<Schema>, Meta>) =>
-		executeOperation({
-			action: 'createMany',
-			args,
-			afterHookName: 'afterCreate',
-			afterPayload: (result) =>
-				({
-					...buildHookContext(context, tableName, 'createMany', args),
-					result,
-				}) as AfterCreateHookContext<Schema, Meta>,
-			beforeHookName: 'beforeCreate',
-			beforePayload: buildHookContext(
-				context,
-				tableName,
-				'createMany',
+				operation: () =>
+					existsRecord(context, tableName, operationArgs),
+				runtime,
+				tableName: name,
+			});
+		},
+		createMany: (
+			args: CreateManyArgs<Schema, BetterTableKey<Schema>, Meta>,
+		) =>
+			executeOperation({
+				action: 'createMany',
 				args,
-			) as BeforeCreateHookContext<Schema, Meta>,
-			context,
-			operation: () => createManyRecords(context, tableName, args),
-			tableName,
-		}),
-	findMany: (args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>) => {
-		const operationArgs =
-			args ?? ({} as QueryArgs<Schema, BetterTableKey<Schema>, Meta>);
+				afterHookName: 'afterCreate',
+				afterPayload: (result) =>
+					({
+						...hookContext('createMany', args),
+						result,
+					}) as AfterCreateHookContext<Schema, Meta>,
+				beforeHookName: 'beforeCreate',
+				beforePayload: () =>
+					hookContext('createMany', args) as BeforeCreateHookContext<
+						Schema,
+						Meta
+					>,
+				context,
+				operation: () => createManyRecords(context, tableName, args),
+				runtime,
+				tableName: name,
+			}),
+		findMany: (args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>) => {
+			const operationArgs =
+				args ?? ({} as QueryArgs<Schema, BetterTableKey<Schema>, Meta>);
 
-		return executeOperation({
-			action: 'findMany',
-			args: operationArgs,
-			afterHookName: 'afterQuery',
-			afterPayload: (result) =>
-				({
-					...buildHookContext(
-						context,
-						tableName,
+			return executeOperation({
+				action: 'findMany',
+				args: operationArgs,
+				afterHookName: 'afterQuery',
+				afterPayload: (result) =>
+					({
+						...hookContext('findMany', operationArgs),
+						result,
+						rows: result,
+					}) as AfterQueryHookContext<Schema, Meta>,
+				beforeHookName: 'beforeQuery',
+				beforePayload: () =>
+					hookContext(
 						'findMany',
 						operationArgs,
-					),
-					result,
-					rows: result,
-				}) as AfterQueryHookContext<Schema, Meta>,
-			beforeHookName: 'beforeQuery',
-			beforePayload: buildHookContext(
+					) as BeforeQueryHookContext<Schema, Meta>,
 				context,
-				tableName,
-				'findMany',
-				operationArgs,
-			) as BeforeQueryHookContext<Schema, Meta>,
-			context,
-			operation: () =>
-				context.db.query[tableName].findMany(
-					buildQueryConfig(context, tableName, operationArgs),
-				),
-			tableName,
-		});
-	},
-	findFirst: (args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>) => {
-		const operationArgs =
-			args ?? ({} as QueryArgs<Schema, BetterTableKey<Schema>, Meta>);
+				operation: () =>
+					findManyRecords(context, tableName, operationArgs),
+				runtime,
+				tableName: name,
+			});
+		},
+		findFirst: (args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>) => {
+			const operationArgs =
+				args ?? ({} as QueryArgs<Schema, BetterTableKey<Schema>, Meta>);
 
-		return attachThrow(
-			executeOperation({
-				action: 'findFirst',
-				args: operationArgs,
-				afterHookName: 'afterQuery',
-				afterPayload: (result) =>
-					({
-						...buildHookContext(
-							context,
-							tableName,
+			return attachThrow(
+				executeOperation({
+					action: 'findFirst',
+					args: operationArgs,
+					afterHookName: 'afterQuery',
+					afterPayload: (result) =>
+						({
+							...hookContext('findFirst', operationArgs),
+							result,
+							row: result,
+						}) as AfterQueryHookContext<Schema, Meta>,
+					beforeHookName: 'beforeQuery',
+					beforePayload: () =>
+						hookContext(
 							'findFirst',
 							operationArgs,
-						),
-						result,
-						row: result,
-					}) as AfterQueryHookContext<Schema, Meta>,
-				beforeHookName: 'beforeQuery',
-				beforePayload: buildHookContext(
+						) as BeforeQueryHookContext<Schema, Meta>,
 					context,
-					tableName,
-					'findFirst',
-					operationArgs,
-				) as BeforeQueryHookContext<Schema, Meta>,
+					operation: () =>
+						findFirstRecord(context, tableName, operationArgs),
+					runtime,
+					tableName: name,
+				}),
 				context,
-				operation: () =>
-					findFirstRecord(context, tableName, operationArgs),
-				tableName,
-			}),
-			context,
-			'findFirst',
-			operationArgs,
-			'findFirst',
-			tableName,
-		);
-	},
-	findOne: (args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>) => {
-		const operationArgs =
-			args ?? ({} as QueryArgs<Schema, BetterTableKey<Schema>, Meta>);
+				runtime,
+				'findFirst',
+				operationArgs,
+				'findFirst',
+				name,
+			);
+		},
+		findOne: (args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>) => {
+			const operationArgs =
+				args ?? ({} as QueryArgs<Schema, BetterTableKey<Schema>, Meta>);
 
-		return attachThrow(
-			executeOperation({
-				action: 'findOne',
-				args: operationArgs,
-				afterHookName: 'afterQuery',
-				afterPayload: (result) =>
-					({
-						...buildHookContext(
-							context,
-							tableName,
+			return attachThrow(
+				executeOperation({
+					action: 'findOne',
+					args: operationArgs,
+					afterHookName: 'afterQuery',
+					afterPayload: (result) =>
+						({
+							...hookContext('findOne', operationArgs),
+							result,
+							row: result,
+						}) as AfterQueryHookContext<Schema, Meta>,
+					beforeHookName: 'beforeQuery',
+					beforePayload: () =>
+						hookContext(
 							'findOne',
 							operationArgs,
-						),
-						result,
-						row: result,
-					}) as AfterQueryHookContext<Schema, Meta>,
-				beforeHookName: 'beforeQuery',
-				beforePayload: buildHookContext(
+						) as BeforeQueryHookContext<Schema, Meta>,
 					context,
-					tableName,
-					'findOne',
-					operationArgs,
-				) as BeforeQueryHookContext<Schema, Meta>,
+					operation: () =>
+						findFirstRecord(context, tableName, operationArgs),
+					runtime,
+					tableName: name,
+				}),
 				context,
-				operation: () =>
-					findFirstRecord(context, tableName, operationArgs),
-				tableName,
-			}),
-			context,
-			'findOne',
-			operationArgs,
-			'findOne',
-			tableName,
-		);
-	},
-	findUnique: (args: QueryArgs<Schema, BetterTableKey<Schema>, Meta>) =>
-		attachThrow(
-			executeOperation({
-				action: 'findUnique',
-				args,
-				afterHookName: 'afterQuery',
-				afterPayload: (result) =>
-					({
-						...buildHookContext(
-							context,
-							tableName,
+				runtime,
+				'findOne',
+				operationArgs,
+				'findOne',
+				name,
+			);
+		},
+		findUnique: (args: QueryArgs<Schema, BetterTableKey<Schema>, Meta>) =>
+			attachThrow(
+				executeOperation({
+					action: 'findUnique',
+					args,
+					afterHookName: 'afterQuery',
+					afterPayload: (result) =>
+						({
+							...hookContext('findUnique', args),
+							result,
+							row: result,
+						}) as AfterQueryHookContext<Schema, Meta>,
+					beforeHookName: 'beforeQuery',
+					beforePayload: () =>
+						hookContext(
 							'findUnique',
 							args,
-						),
+						) as BeforeQueryHookContext<Schema, Meta>,
+					context,
+					operation: () => findFirstRecord(context, tableName, args),
+					runtime,
+					tableName: name,
+				}),
+				context,
+				runtime,
+				'findUnique',
+				args,
+				'findUnique',
+				name,
+			),
+		create: (args: CreateArgs<Schema, BetterTableKey<Schema>, Meta>) =>
+			executeOperation({
+				action: 'create',
+				args,
+				afterHookName: 'afterCreate',
+				afterPayload: (result) =>
+					({
+						...hookContext('create', args),
 						result,
 						row: result,
-					}) as AfterQueryHookContext<Schema, Meta>,
-				beforeHookName: 'beforeQuery',
-				beforePayload: buildHookContext(
-					context,
-					tableName,
-					'findUnique',
-					args,
-				) as BeforeQueryHookContext<Schema, Meta>,
+					}) as AfterCreateHookContext<Schema, Meta>,
+				beforeHookName: 'beforeCreate',
+				beforePayload: () =>
+					hookContext('create', args) as BeforeCreateHookContext<
+						Schema,
+						Meta
+					>,
 				context,
-				operation: () => findFirstRecord(context, tableName, args),
-				tableName,
+				operation: () => createRecord(context, tableName, args),
+				runtime,
+				tableName: name,
 			}),
-			context,
-			'findUnique',
-			args,
-			'findUnique',
-			tableName,
-		),
-	create: (args: CreateArgs<Schema, BetterTableKey<Schema>, Meta>) =>
-		executeOperation({
-			action: 'create',
-			args,
-			afterHookName: 'afterCreate',
-			afterPayload: (result) =>
-				({
-					...buildHookContext(context, tableName, 'create', args),
-					result,
-					row: result,
-				}) as AfterCreateHookContext<Schema, Meta>,
-			beforeHookName: 'beforeCreate',
-			beforePayload: buildHookContext(
-				context,
-				tableName,
-				'create',
-				args,
-			) as BeforeCreateHookContext<Schema, Meta>,
-			context,
-			operation: () =>
-				createRecord(context, tableName, {
-					...args,
-					data: args.data as Record<string, unknown>,
+		update: (args: UpdateArgs<Schema, BetterTableKey<Schema>, Meta>) =>
+			attachThrow(
+				executeOperation({
+					action: 'update',
+					args,
+					afterHookName: 'afterUpdate',
+					afterPayload: (result) =>
+						({
+							...hookContext('update', args),
+							result,
+							row: result,
+						}) as AfterUpdateHookContext<Schema, Meta>,
+					beforeHookName: 'beforeUpdate',
+					beforePayload: () =>
+						hookContext('update', args) as BeforeUpdateHookContext<
+							Schema,
+							Meta
+						>,
+					context,
+					operation: () => updateRecord(context, tableName, args),
+					runtime,
+					tableName: name,
 				}),
-			tableName,
-		}),
-	update: (args: UpdateArgs<Schema, BetterTableKey<Schema>, Meta>) =>
-		attachThrow(
+				context,
+				runtime,
+				'update',
+				args,
+				'update',
+				name,
+			),
+		updateMany: (
+			args: UpdateManyArgs<Schema, BetterTableKey<Schema>, Meta>,
+		) =>
 			executeOperation({
-				action: 'update',
+				action: 'updateMany',
 				args,
 				afterHookName: 'afterUpdate',
 				afterPayload: (result) =>
 					({
-						...buildHookContext(context, tableName, 'update', args),
+						...hookContext('updateMany', args),
 						result,
-						row: result,
 					}) as AfterUpdateHookContext<Schema, Meta>,
 				beforeHookName: 'beforeUpdate',
-				beforePayload: buildHookContext(
-					context,
-					tableName,
-					'update',
-					args,
-				) as BeforeUpdateHookContext<Schema, Meta>,
+				beforePayload: () =>
+					hookContext('updateMany', args) as BeforeUpdateHookContext<
+						Schema,
+						Meta
+					>,
 				context,
-				operation: () => updateRecord(context, tableName, args),
-				tableName,
+				operation: () => updateManyRecords(context, tableName, args),
+				runtime,
+				tableName: name,
 			}),
-			context,
-			'update',
-			args,
-			'update',
-			tableName,
-		),
-	updateMany: (args: UpdateManyArgs<Schema, BetterTableKey<Schema>, Meta>) =>
-		executeOperation({
-			action: 'updateMany',
-			args,
-			afterHookName: 'afterUpdate',
-			afterPayload: (result) =>
-				({
-					...buildHookContext(context, tableName, 'updateMany', args),
-					result,
-				}) as AfterUpdateHookContext<Schema, Meta>,
-			beforeHookName: 'beforeUpdate',
-			beforePayload: buildHookContext(
+		delete: (args: DeleteArgs<Schema, BetterTableKey<Schema>, Meta>) =>
+			attachThrow(
+				executeOperation({
+					action: 'delete',
+					args,
+					afterHookName: 'afterDelete',
+					afterPayload: (result) =>
+						({
+							...hookContext('delete', args),
+							result,
+							row: result,
+						}) as AfterDeleteHookContext<Schema, Meta>,
+					beforeHookName: 'beforeDelete',
+					beforePayload: () =>
+						hookContext('delete', args) as BeforeDeleteHookContext<
+							Schema,
+							Meta
+						>,
+					context,
+					operation: () => deleteRecord(context, tableName, args),
+					runtime,
+					tableName: name,
+				}),
 				context,
-				tableName,
-				'updateMany',
+				runtime,
+				'delete',
 				args,
-			) as BeforeUpdateHookContext<Schema, Meta>,
-			context,
-			operation: () => updateManyRecords(context, tableName, args),
-			tableName,
-		}),
-	delete: (args: DeleteArgs<Schema, BetterTableKey<Schema>, Meta>) =>
-		attachThrow(
+				'delete',
+				name,
+			),
+		deleteMany: (
+			args: DeleteManyArgs<Schema, BetterTableKey<Schema>, Meta>,
+		) =>
 			executeOperation({
-				action: 'delete',
+				action: 'deleteMany',
 				args,
 				afterHookName: 'afterDelete',
 				afterPayload: (result) =>
 					({
-						...buildHookContext(context, tableName, 'delete', args),
+						...hookContext('deleteMany', args),
 						result,
-						row: result,
 					}) as AfterDeleteHookContext<Schema, Meta>,
 				beforeHookName: 'beforeDelete',
-				beforePayload: buildHookContext(
-					context,
-					tableName,
-					'delete',
-					args,
-				) as BeforeDeleteHookContext<Schema, Meta>,
+				beforePayload: () =>
+					hookContext('deleteMany', args) as BeforeDeleteHookContext<
+						Schema,
+						Meta
+					>,
 				context,
-				operation: () => deleteRecord(context, tableName, args),
-				tableName,
+				operation: () => deleteManyRecords(context, tableName, args),
+				runtime,
+				tableName: name,
 			}),
-			context,
-			'delete',
-			args,
-			'delete',
-			tableName,
-		),
-	deleteMany: (args: DeleteManyArgs<Schema, BetterTableKey<Schema>, Meta>) =>
-		executeOperation({
-			action: 'deleteMany',
-			args,
-			afterHookName: 'afterDelete',
-			afterPayload: (result) =>
-				({
-					...buildHookContext(context, tableName, 'deleteMany', args),
-					result,
-				}) as AfterDeleteHookContext<Schema, Meta>,
-			beforeHookName: 'beforeDelete',
-			beforePayload: buildHookContext(
-				context,
-				tableName,
-				'deleteMany',
-				args,
-			) as BeforeDeleteHookContext<Schema, Meta>,
-			context,
-			operation: () => deleteManyRecords(context, tableName, args),
-			tableName,
-		}),
-	upsert: async (args: UpsertArgs<Schema, BetterTableKey<Schema>, Meta>) => {
-		const existing = await findFirstRecord(context, tableName, {
-			where: args.where,
-		});
-
-		if (existing) {
-			const updateArgs: UpdateArgs<
-				Schema,
-				BetterTableKey<Schema>,
-				Meta
-			> = {
-				where: args.where,
-				data: args.update,
-				select: args.select,
-				include: args.include,
-				meta: args.meta,
-			};
-
-			return executeOperation({
+		upsert: (args: UpsertArgs<Schema, BetterTableKey<Schema>, Meta>) =>
+			executeOperation({
 				action: 'upsert',
-				args: updateArgs,
-				afterHookName: 'afterUpdate',
+				args,
+				afterHookName: 'afterCreate',
 				afterPayload: (result) =>
 					({
-						...buildHookContext(
-							context,
-							tableName,
-							'upsert',
-							updateArgs,
-						),
+						...hookContext('upsert', args),
 						result,
 						row: result,
-					}) as AfterUpdateHookContext<Schema, Meta>,
-				beforeHookName: 'beforeUpdate',
-				beforePayload: buildHookContext(
-					context,
-					tableName,
-					'upsert',
-					updateArgs,
-				) as BeforeUpdateHookContext<Schema, Meta>,
+					}) as AfterCreateHookContext<Schema, Meta>,
+				beforeHookName: 'beforeCreate',
+				beforePayload: () =>
+					hookContext('upsert', args) as BeforeCreateHookContext<
+						Schema,
+						Meta
+					>,
 				context,
-				operation: () => updateRecord(context, tableName, updateArgs),
-				tableName,
-			});
-		}
-
-		const createArgs: CreateArgs<Schema, BetterTableKey<Schema>, Meta> = {
-			data: args.create,
-			select: args.select,
-			include: args.include,
-			meta: args.meta,
-		};
-
-		return executeOperation({
-			action: 'upsert',
-			args: createArgs,
-			afterHookName: 'afterCreate',
-			afterPayload: (result) =>
-				({
-					...buildHookContext(
-						context,
-						tableName,
-						'upsert',
-						createArgs,
-					),
-					result,
-					row: result,
-				}) as AfterCreateHookContext<Schema, Meta>,
-			beforeHookName: 'beforeCreate',
-			beforePayload: buildHookContext(
-				context,
-				tableName,
-				'upsert',
-				createArgs,
-			) as BeforeCreateHookContext<Schema, Meta>,
-			context,
-			operation: () =>
-				createRecord(context, tableName, {
-					...createArgs,
-					data: createArgs.data as Record<string, unknown>,
-				}),
-			tableName,
-		});
-	},
-	paginate: (args: PaginationArgs<Schema, BetterTableKey<Schema>, Meta>) =>
-		executeOperation({
-			action: 'paginate',
-			args,
-			afterHookName: 'afterQuery',
-			afterPayload: (result) =>
-				({
-					...buildHookContext(context, tableName, 'paginate', args),
-					result,
-				}) as AfterQueryHookContext<Schema, Meta>,
-			beforeHookName: 'beforeQuery',
-			beforePayload: buildHookContext(
-				context,
-				tableName,
-				'paginate',
+				operation: () => upsertRecord(context, tableName, args),
+				runtime,
+				tableName: name,
+			}),
+		paginate: (
+			args: PaginationArgs<Schema, BetterTableKey<Schema>, Meta>,
+		) =>
+			executeOperation({
+				action: 'paginate',
 				args,
-			) as BeforeQueryHookContext<Schema, Meta>,
-			context,
-			operation: () => paginateRecords(context, tableName, args),
-			tableName,
-		}),
-});
+				afterHookName: 'afterQuery',
+				afterPayload: (result) =>
+					({
+						...hookContext('paginate', args),
+						result,
+					}) as AfterQueryHookContext<Schema, Meta>,
+				beforeHookName: 'beforeQuery',
+				beforePayload: () =>
+					hookContext('paginate', args) as BeforeQueryHookContext<
+						Schema,
+						Meta
+					>,
+				context,
+				operation: () => paginateRecords(context, tableName, args),
+				runtime,
+				tableName: name,
+			}),
+	};
+};

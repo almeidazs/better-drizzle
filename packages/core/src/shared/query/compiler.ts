@@ -22,7 +22,7 @@ import {
 	or,
 	sql,
 } from 'drizzle-orm';
-import { Many, normalizeRelation, One } from 'drizzle-orm/relations';
+import { Many, One } from 'drizzle-orm/relations';
 import type {
 	AnySchema,
 	BetterTableKey,
@@ -34,6 +34,7 @@ import type {
 	PaginationType,
 	QueryArgs,
 	RuntimeContext,
+	TableRuntime,
 	WhereArg,
 	WhereCompilerContext,
 } from '../../types';
@@ -63,6 +64,25 @@ const isScalarFilter = (value: unknown): value is Record<string, unknown> => {
 		'mode' in value ||
 		'not' in value
 	);
+};
+
+const compileSimpleWhere = (
+	runtime: TableRuntime,
+	where: Record<string, unknown>,
+): SQL | undefined => {
+	const conditions: SQL[] = [];
+
+	for (const key in where) {
+		const value = where[key];
+		if (value === undefined || runtime.relationNames.has(key)) return;
+
+		const column = runtime.columns[key];
+		if (!column || isScalarFilter(value) || isPlainObject(value)) return;
+
+		conditions.push(value === null ? isNull(column) : eq(column, value));
+	}
+
+	return conditions.length ? and(...conditions) : undefined;
 };
 
 const compilePattern = (
@@ -163,22 +183,13 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 ) => {
 	if (!isPlainObject(value)) return;
 
-	const relation = context.tableConfig.relations[relationName];
-	if (!relation) return;
+	const relationState = context.runtime.relations[relationName];
+	if (!relationState) return;
 
-	const normalized = normalizeRelation(
-		context.relational.tables,
-		context.relational.tableNamesMap,
-		relation,
-	);
-	const relationTableKey =
-		context.relational.tableNamesMap[
-			`public.${relation.referencedTableName}`
-		] ?? relation.referencedTableName;
-	const relationRuntime = getTableRuntime(context, relationTableKey);
+	const relationRuntime = getTableRuntime(context, relationState.tableName);
 	const joinCondition = makeJoinCondition(
-		normalized.fields,
-		normalized.references,
+		relationState.fields,
+		relationState.references,
 		relationRuntime.table,
 	);
 	const subquery = context.db
@@ -188,14 +199,39 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 		compileWhereInput(
 			{
 				...context,
-				tableName: relationTableKey,
-				table: relationRuntime.table,
-				tableConfig: relationRuntime.tableConfig,
+				runtime: relationRuntime,
+				tableName: relationState.tableName,
 			},
 			nestedWhere,
 		);
+	const canUseMembershipFilter =
+		relationState.fields.length === 1 &&
+		relationState.references.length === 1;
+	const sourceField = relationState.fields[0];
+	const referenceField = relationState.references[0];
+	const buildMembershipFilter = (
+		nestedWhere: Record<string, unknown>,
+		negated = false,
+	) => {
+		if (!canUseMembershipFilter || !sourceField || !referenceField) return;
 
-	if (relation instanceof Many) {
+		const predicate = buildNestedWhere(nestedWhere);
+		const subquery = context.db
+			.select({ value: referenceField })
+			.from(relationRuntime.table);
+
+		return negated
+			? notInArray(
+					sourceField,
+					predicate ? subquery.where(predicate) : subquery,
+				)
+			: inArray(
+					sourceField,
+					predicate ? subquery.where(predicate) : subquery,
+				);
+	};
+
+	if (relationState.relation instanceof Many) {
 		if ('some' in value)
 			return exists(
 				subquery.where(
@@ -233,10 +269,15 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 		return;
 	}
 
-	if (relation instanceof One) {
+	if (relationState.relation instanceof One) {
 		if ('is' in value) {
 			if (value.is === null)
 				return notExists(subquery.where(joinCondition));
+
+			const membership = buildMembershipFilter(
+				value.is as Record<string, unknown>,
+			);
+			if (membership) return membership;
 
 			return exists(
 				subquery.where(
@@ -251,6 +292,12 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 		if ('isNot' in value) {
 			if (value.isNot === null)
 				return exists(subquery.where(joinCondition));
+
+			const membership = buildMembershipFilter(
+				value.isNot as Record<string, unknown>,
+				true,
+			);
+			if (membership) return membership;
 
 			return notExists(
 				subquery.where(
@@ -272,34 +319,43 @@ export const compileWhereInput = <Schema extends AnySchema, Meta>(
 ): SQL | undefined => {
 	if (!where) return;
 	if (isSQLWrapper(where)) return where.getSQL();
+	if (!isPlainObject(where)) return;
+	if (!('AND' in where || 'OR' in where || 'NOT' in where)) {
+		const simple = compileSimpleWhere(context.runtime, where);
 
-	const tableColumns = getTableColumns(context.table);
+		if (simple) return simple;
+	}
+
 	const conditions: SQL[] = [];
 
-	for (const [key, value] of Object.entries(where)) {
+	for (const key in where) {
+		const value = where[key];
+
 		if (key === 'AND' && Array.isArray(value)) {
-			const nested = value
-				.map((entry) =>
-					compileWhereInput(
-						context,
-						entry as Record<string, unknown>,
-					),
-				)
-				.filter((entry): entry is SQL => Boolean(entry));
+			const nested: SQL[] = [];
+
+			for (const entry of value) {
+				const clause = compileWhereInput(
+					context,
+					entry as Record<string, unknown>,
+				);
+				if (clause) nested.push(clause);
+			}
 			const clause = and(...nested);
 			if (clause) conditions.push(clause);
 			continue;
 		}
 
 		if (key === 'OR' && Array.isArray(value)) {
-			const nested = value
-				.map((entry) =>
-					compileWhereInput(
-						context,
-						entry as Record<string, unknown>,
-					),
-				)
-				.filter((entry): entry is SQL => Boolean(entry));
+			const nested: SQL[] = [];
+
+			for (const entry of value) {
+				const clause = compileWhereInput(
+					context,
+					entry as Record<string, unknown>,
+				);
+				if (clause) nested.push(clause);
+			}
 			const clause = or(...nested);
 			if (clause) conditions.push(clause);
 			continue;
@@ -307,27 +363,27 @@ export const compileWhereInput = <Schema extends AnySchema, Meta>(
 
 		if (key === 'NOT') {
 			const entries = Array.isArray(value) ? value : [value];
-			const nested = entries
-				.map((entry) => {
-					const clause = compileWhereInput(
-						context,
-						entry as Record<string, unknown>,
-					);
-					return clause ? not(clause) : undefined;
-				})
-				.filter((entry): entry is SQL => Boolean(entry));
+			const nested: SQL[] = [];
+
+			for (const entry of entries) {
+				const clause = compileWhereInput(
+					context,
+					entry as Record<string, unknown>,
+				);
+				if (clause) nested.push(not(clause));
+			}
 			const clause = and(...nested);
 			if (clause) conditions.push(clause);
 			continue;
 		}
 
-		if (key in context.tableConfig.relations) {
+		if (context.runtime.relationNames.has(key)) {
 			const relationFilter = compileRelationFilter(context, key, value);
 			if (relationFilter) conditions.push(relationFilter);
 			continue;
 		}
 
-		const column = tableColumns[key];
+		const column = context.runtime.columns[key];
 		if (!column) continue;
 
 		const scalarFilter = compileScalarFilter(column, value);
@@ -343,16 +399,16 @@ export const compileOrderBy = <Schema extends AnySchema, Meta>(
 ) => {
 	if (!orderBy) return;
 
-	const tableColumns = getTableColumns(context.table);
 	const entries = Array.isArray(orderBy) ? orderBy : [orderBy];
 	const clauses: SQL[] = [];
 
 	for (const entry of entries)
-		for (const [key, direction] of Object.entries(
-			entry as Record<string, unknown>,
-		)) {
-			const column = tableColumns[key];
+		for (const key in entry as Record<string, unknown>) {
+			const direction = (entry as Record<string, unknown>)[key];
+			const column = context.runtime.columns[key];
+
 			if (!column) continue;
+
 			clauses.push(direction === 'desc' ? desc(column) : asc(column));
 		}
 
@@ -369,14 +425,16 @@ export const compileCursorWhere = <Schema extends AnySchema, Meta>(
 
 	const cursorEntries = Object.entries(cursor as Record<string, unknown>);
 	const [cursorField, cursorValue] = cursorEntries[0] ?? [];
+
 	if (!cursorField) return;
 
-	const tableColumns = getTableColumns(context.table);
-	const column = tableColumns[cursorField];
+	const column = context.runtime.columns[cursorField];
+
 	if (!column) return;
 
 	let direction: 'asc' | 'desc' =
 		take !== undefined && take < 0 ? 'desc' : 'asc';
+
 	const orderEntry = Array.isArray(orderBy) ? orderBy[0] : orderBy;
 
 	if (orderEntry && cursorField in orderEntry)
@@ -395,48 +453,60 @@ export const buildQueryConfig = <Schema extends AnySchema, Meta>(
 	const runtime = getTableRuntime(context, tableName as string);
 	const whereContext: WhereCompilerContext<Schema, Meta> = {
 		...context,
+		runtime,
 		tableName: tableName as string,
-		table: runtime.table,
-		tableConfig: runtime.tableConfig,
 		rootArgs: args,
 	};
-	const config: Record<string, unknown> = {};
+	const config = Object.create(null) as Record<string, unknown>;
 	const select = args?.select as Record<string, unknown> | undefined;
 	const include = args?.include as Record<string, unknown> | undefined;
+	let hasConfig = false;
 
 	if (select) {
-		const columns: Record<string, true> = {};
+		const columns = Object.create(null) as Record<string, true>;
+		let hasColumns = false;
 
-		for (const [key, value] of Object.entries(select))
-			if (!(key in runtime.tableConfig.relations) && value === true)
+		for (const key in select)
+			if (!runtime.relationNames.has(key) && select[key] === true) {
 				columns[key] = true;
+				hasColumns = true;
+			}
 
-		if (Object.keys(columns).length) config.columns = columns;
+		if (hasColumns) {
+			config.columns = columns;
+			hasConfig = true;
+		}
 	}
 
 	const sourceRelations = select ?? include;
 	if (sourceRelations) {
-		const withConfig: Record<string, unknown> = {};
+		const withConfig = Object.create(null) as Record<string, unknown>;
+		let hasWith = false;
 
-		for (const [key, value] of Object.entries(sourceRelations)) {
-			if (!(key in runtime.tableConfig.relations)) continue;
+		for (const key in sourceRelations) {
+			const value = sourceRelations[key];
+			if (!runtime.relationNames.has(key)) continue;
 
 			withConfig[key] =
 				value === true
 					? true
 					: buildQueryConfig(
 							context,
-							runtime.tableConfig.relations[key]
-								.referencedTableName as BetterTableKey<Schema>,
+							runtime.relations[key]
+								.tableName as BetterTableKey<Schema>,
 							value as QueryArgs<
 								Schema,
 								BetterTableKey<Schema>,
 								Meta
 							>,
 						);
+			hasWith = true;
 		}
 
-		if (Object.keys(withConfig).length) config.with = withConfig;
+		if (hasWith) {
+			config.with = withConfig;
+			hasConfig = true;
+		}
 	}
 
 	const where = compileWhereInput(
@@ -453,7 +523,10 @@ export const buildQueryConfig = <Schema extends AnySchema, Meta>(
 	);
 	const mergedWhere = and(where, cursorWhere);
 
-	if (mergedWhere) config.where = () => mergedWhere;
+	if (mergedWhere) {
+		config.where = () => mergedWhere;
+		hasConfig = true;
+	}
 
 	const orderBy = compileOrderBy(
 		whereContext,
@@ -461,12 +534,21 @@ export const buildQueryConfig = <Schema extends AnySchema, Meta>(
 			| OrderByInput<Schema, BetterTableKey<Schema>>
 			| undefined,
 	);
-	if (orderBy) config.orderBy = () => orderBy;
+	if (orderBy) {
+		config.orderBy = () => orderBy;
+		hasConfig = true;
+	}
 
-	if (args?.take !== undefined) config.limit = Math.abs(args.take);
-	if (args?.skip !== undefined) config.offset = args.skip;
+	if (args?.take !== undefined) {
+		config.limit = Math.abs(args.take);
+		hasConfig = true;
+	}
+	if (args?.skip !== undefined) {
+		config.offset = args.skip;
+		hasConfig = true;
+	}
 
-	return config;
+	return hasConfig ? config : undefined;
 };
 
 export const countRows = async <Schema extends AnySchema, Meta>(
@@ -478,9 +560,8 @@ export const countRows = async <Schema extends AnySchema, Meta>(
 	const predicate = compileWhereInput(
 		{
 			...context,
+			runtime,
 			tableName: tableName as string,
-			table: runtime.table,
-			tableConfig: runtime.tableConfig,
 		},
 		where as CompilableWhere | undefined,
 	);

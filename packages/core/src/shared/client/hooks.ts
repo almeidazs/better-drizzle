@@ -4,47 +4,58 @@ import type {
 	ErrorHookContext,
 	NullableResult,
 	RuntimeContext,
+	TableRuntime,
 	ThrowFactory,
 	ThrowingResult,
 } from '../../types';
-import { getMeta, getTableRuntime } from './context';
+import { getMeta } from './context';
 
 const HOOK_ERROR_REPORTED = Symbol('better-drizzle-hook-error-reported');
 
 export const buildHookContext = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
-	tableName: keyof Schema & string,
+	runtime: TableRuntime,
+	tableName: string,
 	action: string,
 	args: unknown,
-) => {
-	const runtime = getTableRuntime(context, tableName);
+) => ({
+	action,
+	args,
+	db: context.db,
+	meta: getMeta<Meta>(args),
+	options: context.options,
+	repository: context.repositories[tableName],
+	schema: context.fullSchema,
+	table: tableName,
+	tableConfig: runtime.tableConfig,
+	tableInstance: runtime.table,
+});
 
-	return {
-		action,
-		args,
-		db: context.db,
-		meta: getMeta<Meta>(args),
-		options: context.options,
-		repository: context.repositories[tableName],
-		schema: context.fullSchema,
-		table: tableName,
-		tableConfig: runtime.tableConfig,
-		tableInstance: runtime.table,
-	};
+const markErrorReported = (error: unknown) => {
+	if (typeof error === 'object' && error !== null)
+		Reflect.set(error, HOOK_ERROR_REPORTED, true);
 };
+
+const wasErrorReported = (error: unknown) =>
+	typeof error === 'object' &&
+	error !== null &&
+	Boolean(Reflect.get(error, HOOK_ERROR_REPORTED));
 
 export const reportError = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
-	tableName: keyof Schema & string,
+	runtime: TableRuntime,
+	tableName: string,
 	action: string,
 	args: unknown,
 	error: unknown,
 	stage: ErrorHookContext<Schema, Meta>['stage'],
 	hookName?: keyof BetterClientHooks<Schema, Meta>,
 ) => {
+	if (!context.hasOnError) return;
+
 	try {
 		await context.options.hooks?.onError?.({
-			...buildHookContext(context, tableName, action, args),
+			...buildHookContext(context, runtime, tableName, action, args),
 			action: action as ErrorHookContext<Schema, Meta>['action'],
 			error,
 			hookName,
@@ -53,18 +64,16 @@ export const reportError = async <Schema extends AnySchema, Meta>(
 	} catch {}
 };
 
-export const runHook = async <Schema extends AnySchema, Meta, Payload>(
+const runHook = async <Schema extends AnySchema, Meta, Payload>(
+	hook: ((payload: Payload) => unknown) | undefined,
 	context: RuntimeContext<Schema, Meta>,
-	tableName: keyof Schema & string,
+	runtime: TableRuntime,
+	tableName: string,
 	action: string,
 	args: unknown,
 	hookName: keyof BetterClientHooks<Schema, Meta>,
 	payload: Payload,
 ) => {
-	const hook = context.options.hooks?.[hookName] as
-		| ((payload: Payload) => unknown)
-		| undefined;
-
 	if (!hook) return;
 
 	try {
@@ -72,6 +81,7 @@ export const runHook = async <Schema extends AnySchema, Meta, Payload>(
 	} catch (error) {
 		await reportError(
 			context,
+			runtime,
 			tableName,
 			action,
 			args,
@@ -79,10 +89,7 @@ export const runHook = async <Schema extends AnySchema, Meta, Payload>(
 			hookName.startsWith('after') ? 'afterHook' : 'beforeHook',
 			hookName,
 		);
-
-		if (typeof error === 'object' && error !== null)
-			Reflect.set(error, HOOK_ERROR_REPORTED, true);
-
+		markErrorReported(error);
 		throw error;
 	}
 };
@@ -101,6 +108,7 @@ export const executeOperation = async <
 	beforePayload,
 	context,
 	operation,
+	runtime,
 	tableName,
 }: {
 	action: string;
@@ -108,27 +116,38 @@ export const executeOperation = async <
 	afterHookName?: keyof BetterClientHooks<Schema, Meta>;
 	afterPayload?: (result: Result) => unknown;
 	beforeHookName?: keyof BetterClientHooks<Schema, Meta>;
-	beforePayload?: unknown;
+	beforePayload?: () => unknown;
 	context: RuntimeContext<Schema, Meta>;
 	operation: () => Promise<Result>;
-	tableName: keyof Schema & string;
+	runtime: TableRuntime;
+	tableName: string;
 }) => {
+	const hooks = context.options.hooks;
+	const beforeHook = beforeHookName ? hooks?.[beforeHookName] : undefined;
+	const afterHook = afterHookName ? hooks?.[afterHookName] : undefined;
+
+	if (!beforeHook && !afterHook && !context.hasOnError) return operation();
+
 	try {
-		if (beforeHookName && beforePayload)
+		if (beforeHookName && beforeHook && beforePayload)
 			await runHook(
+				beforeHook as (payload: unknown) => unknown,
 				context,
+				runtime,
 				tableName,
 				action,
 				args,
 				beforeHookName,
-				beforePayload,
+				beforePayload(),
 			);
 
 		const result = await operation();
 
-		if (afterHookName && afterPayload)
+		if (afterHookName && afterHook && afterPayload)
 			await runHook(
+				afterHook as (payload: unknown) => unknown,
 				context,
+				runtime,
 				tableName,
 				action,
 				args,
@@ -138,14 +157,10 @@ export const executeOperation = async <
 
 		return result;
 	} catch (error) {
-		const wasErrorReported =
-			typeof error === 'object' &&
-			error !== null &&
-			Boolean(Reflect.get(error, HOOK_ERROR_REPORTED));
-
-		if (!wasErrorReported)
+		if (!wasErrorReported(error))
 			await reportError(
 				context,
+				runtime,
 				tableName,
 				action,
 				args,
@@ -160,10 +175,11 @@ export const executeOperation = async <
 export const attachThrow = <Schema extends AnySchema, Meta, Args, T>(
 	promise: NullableResult<T>,
 	context: RuntimeContext<Schema, Meta>,
+	runtime: TableRuntime,
 	action: string,
 	args: Args,
 	methodName: string,
-	tableName: keyof Schema & string,
+	tableName: string,
 ): ThrowingResult<T> => {
 	const wrapped = promise as ThrowingResult<T>;
 
@@ -174,12 +190,17 @@ export const attachThrow = <Schema extends AnySchema, Meta, Args, T>(
 
 		const error =
 			factory?.() ??
-			new Error(
-				`No record found for ${methodName} on "${String(tableName)}".`,
-			);
+			new Error(`No record found for ${methodName} on "${tableName}".`);
 
-		await reportError(context, tableName, action, args, error, 'operation');
-
+		await reportError(
+			context,
+			runtime,
+			tableName,
+			action,
+			args,
+			error,
+			'operation',
+		);
 		throw error;
 	};
 

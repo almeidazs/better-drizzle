@@ -1,10 +1,6 @@
-import {
-	createTableRelationsHelpers,
-	extractTablesRelationalConfig,
-	isTable,
-} from 'drizzle-orm';
+import { isTable } from 'drizzle-orm';
 
-import { createModelDelegate } from './shared/client';
+import { createModelDelegate, createRuntimeContext } from './shared/client';
 
 export * from './shared/errors';
 
@@ -14,7 +10,6 @@ import type {
 	BetterDrizzleClient,
 	BetterMeta,
 	BetterTableKey,
-	RuntimeContext,
 } from './types';
 
 /**
@@ -47,18 +42,8 @@ export const better = <Schema extends AnySchema, Meta = BetterMeta>(
 	drizzle: unknown,
 	options: BetterClientOptions<Schema, Meta>,
 ) => {
-	const client = {} as Record<string, unknown>;
-
-	const context = {
-		db: drizzle as RuntimeContext<Schema, Meta>['db'],
-		options,
-		fullSchema: options.schema,
-		relational: extractTablesRelationalConfig(
-			options.schema,
-			createTableRelationsHelpers,
-		),
-		repositories: {},
-	} as RuntimeContext<Schema, Meta>;
+	const client = Object.create(null) as Record<string, unknown>;
+	const context = createRuntimeContext(drizzle, options);
 
 	for (const [tableName, table] of Object.entries(options.schema)) {
 		if (!isTable(table)) continue;
