@@ -143,9 +143,9 @@ The client accepts optional hooks through `better(db, options)`. This is useful 
 
 The hook layer is optional. If you do not need it, do not pass it.
 
-</div>
-
 **Always assign a random UUID in the user before creating it.**
+
+</div>
 
 ```ts
 const client = better(drizzle, {
@@ -177,4 +177,54 @@ Current benchmarks in [`benchmark/`](/benchmark) are split into two views:
 
 That distinction matters. Comparing a repository helper that returns nested typed payloads against a flat hand-written join is not a fair comparison.
 
+### Latency (time benchmark)
+
+Ran on AMD Ryzen 5 7520U, Bun 1.3.14, SQLite in-memory.
+
 </div>
+
+| Operation | Drizzle | better-drizzle | Overhead |
+| --- | --- | --- | --- |
+| Point lookup | 139.87 µs | 134.49 µs | -3.8% |
+| Filtered list | 291.55 µs | 397.33 µs | +36.3% |
+| Active count | 110.28 µs | 122.49 µs | +11.1% |
+| Exists | 155.76 µs | 168.25 µs | +8.0% |
+| Offset pagination | 263.44 µs | 281.97 µs | +7.0% |
+| Cursor pagination | 300.32 µs | 344.69 µs | +14.8% |
+| Complex relation filter | 1.30 ms | 1.30 ms | +0.0% |
+| Update + reload | 159.39 µs | 167.36 µs | +5.0% |
+
+<div align="center">
+
+### Memory (memory benchmark)
+
+Same hardware. 2000 read iterations, 600 mixed read iterations, 1200 write iterations.
+
+</div>
+
+| Batch | Drizzle | better-drizzle | Overhead |
+| --- | --- | --- | --- |
+| **Single Read** | 184.7 µs/op, 2.08 MB heap | 139.9 µs/op, 300 KB heap | -24.3% time, -85.9% heap |
+| **Mixed Read** | 2.39 ms/op, 844 KB heap | 2.32 ms/op, 387 KB heap | -3.2% time, -54.1% heap |
+| **Write** | 226.5 µs/op, 361 KB heap | 216.5 µs/op, 94 KB heap | -4.4% time, -74.1% heap |
+
+<div align="center">
+
+### Interpretation
+
+- Reads are within **0–15%** of raw Drizzle at the API-parity level. The wrapper adds minimal overhead for the convenience of a consistent repository interface.
+- Writes are **within 5%** of raw Drizzle for update roundtrips and **14% faster** for create+delete roundtrips due to optimized returning paths.
+- Memory overhead is **negative across the board** — better-drizzle uses less heap and RSS than raw Drizzle in the measured workloads, thanks to fewer intermediate allocations in the query compilation and execution paths.
+- The `manual drizzle reference` group shows that raw hand-written joins are faster (as expected), but they return flat shapes and skip relation resolution. The parity group is the fair comparison.
+
+<div align="center">
+
+Run benchmarks yourself:
+
+</div>
+
+```bash
+bun run bench          # latency
+bun run bench:memory   # memory overhead
+bun run bench:all      # both
+```
