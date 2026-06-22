@@ -24,12 +24,15 @@ const nextUpdateId = (context: BenchmarkContext) => {
 	return context.counters.updateOffset + 1;
 };
 
-export const rawPointLookup = async (context: BenchmarkContext) =>
-	context.raw
+export const rawPointLookup = async (context: BenchmarkContext) => {
+	const rows = await context.raw
 		.select()
 		.from(users)
 		.where(eq(users.id, context.ids.userLookupId))
 		.limit(1);
+
+	return rows[0] ?? null;
+};
 
 export const betterPointLookup = async (context: BenchmarkContext) =>
 	context.better.users.findFirst({
@@ -87,10 +90,14 @@ export const betterRelationGraph = async (context: BenchmarkContext) =>
 	});
 
 export const rawActiveCount = async (context: BenchmarkContext) =>
-	context.raw
-		.select({ count: count() })
-		.from(users)
-		.where(and(eq(users.active, true), gte(users.age, 30)));
+	Number(
+		(
+			await context.raw
+				.select({ count: count() })
+				.from(users)
+				.where(and(eq(users.active, true), gte(users.age, 30)))
+		)[0]?.count ?? 0,
+	);
 
 export const betterActiveCount = async (context: BenchmarkContext) =>
 	context.better.users.count({
@@ -100,12 +107,15 @@ export const betterActiveCount = async (context: BenchmarkContext) =>
 		},
 	});
 
-export const rawExists = async (context: BenchmarkContext) =>
-	context.raw
+export const rawExists = async (context: BenchmarkContext) => {
+	const rows = await context.raw
 		.select({ id: users.id })
 		.from(users)
 		.where(and(eq(users.active, true), gte(users.age, 50)))
 		.limit(1);
+
+	return rows.length > 0;
+};
 
 export const betterExists = async (context: BenchmarkContext) =>
 	context.better.users.exists({
@@ -177,6 +187,28 @@ export const rawCreateDeleteRoundtrip = async (context: BenchmarkContext) => {
 	const id = nextWriteId(context);
 	const token = nextWriteToken(context);
 
+	const createdRows = await context.raw
+		.insert(benchWrites)
+		.values({
+			id,
+			payload: `payload-${id}`,
+			token,
+			value: id % 1000,
+		})
+		.returning();
+
+	await context.raw
+		.delete(benchWrites)
+		.where(eq(benchWrites.id, id))
+		.returning();
+
+	return createdRows[0] ?? null;
+};
+
+export const rawCreateDeleteBare = async (context: BenchmarkContext) => {
+	const id = nextWriteId(context);
+	const token = nextWriteToken(context);
+
 	await context.raw.insert(benchWrites).values({
 		id,
 		payload: `payload-${id}`,
@@ -184,15 +216,7 @@ export const rawCreateDeleteRoundtrip = async (context: BenchmarkContext) => {
 		value: id % 1000,
 	});
 
-	const created = await context.raw
-		.select()
-		.from(benchWrites)
-		.where(eq(benchWrites.token, token))
-		.limit(1);
-
 	await context.raw.delete(benchWrites).where(eq(benchWrites.id, id));
-
-	return created[0] ?? null;
 };
 
 export const betterCreateDeleteRoundtrip = async (
@@ -221,19 +245,14 @@ export const rawUpdateAndLoad = async (context: BenchmarkContext) => {
 	const id = nextUpdateId(context);
 	const nextValue = (context.counters.updateOffset * 19) % 10_000;
 
-	await context.raw
+	const rows = await context.raw
 		.update(benchWrites)
 		.set({
 			payload: `payload-updated-${nextValue}`,
 			value: nextValue,
 		})
-		.where(eq(benchWrites.id, id));
-
-	const rows = await context.raw
-		.select()
-		.from(benchWrites)
 		.where(eq(benchWrites.id, id))
-		.limit(1);
+		.returning();
 
 	return rows[0] ?? null;
 };
@@ -251,7 +270,30 @@ export const betterUpdateAndLoad = async (context: BenchmarkContext) => {
 	});
 };
 
-export const rawComplexJoinAggregate = async (context: BenchmarkContext) =>
+export const rawComplexRelationFilter = async (context: BenchmarkContext) =>
+	context.raw
+		.select({
+			author: {
+				active: users.active,
+				age: users.age,
+				email: users.email,
+				id: users.id,
+				name: users.name,
+			},
+			body: posts.body,
+			id: posts.id,
+			published: posts.published,
+			score: posts.score,
+			title: posts.title,
+			userId: posts.userId,
+		})
+		.from(posts)
+		.innerJoin(users, eq(posts.userId, users.id))
+		.where(and(eq(users.active, true), gte(posts.score, 100)))
+		.orderBy(desc(posts.score), asc(posts.id))
+		.limit(40);
+
+export const rawComplexJoinFlat = async (context: BenchmarkContext) =>
 	context.raw
 		.select({
 			postId: posts.id,

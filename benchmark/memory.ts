@@ -3,15 +3,17 @@ import {
 	betterComplexJoinEquivalent,
 	betterCreateDeleteRoundtrip,
 	betterCursorPaginate,
+	betterExists,
 	betterFilteredList,
 	betterOffsetPaginate,
 	betterPointLookup,
 	betterRelationGraph,
 	betterUpdateAndLoad,
 	rawActiveCount,
-	rawComplexJoinAggregate,
+	rawComplexRelationFilter,
 	rawCreateDeleteRoundtrip,
 	rawCursorPaginate,
+	rawExists,
 	rawFilteredList,
 	rawOffsetPaginate,
 	rawPointLookup,
@@ -112,8 +114,9 @@ const runMixedReadSuite = async (
 	_label: string,
 	execute: {
 		activeCount(context: BenchmarkContext): Promise<unknown>;
-		complex(context: BenchmarkContext): Promise<unknown>;
 		cursor(context: BenchmarkContext): Promise<unknown>;
+		exists(context: BenchmarkContext): Promise<unknown>;
+		complex(context: BenchmarkContext): Promise<unknown>;
 		filtered(context: BenchmarkContext): Promise<unknown>;
 		offset(context: BenchmarkContext): Promise<unknown>;
 		point(context: BenchmarkContext): Promise<unknown>;
@@ -124,10 +127,11 @@ const runMixedReadSuite = async (
 		await execute.point(context);
 		await execute.filtered(context);
 		if (iteration % 2 === 0) await execute.activeCount(context);
-		if (iteration % 3 === 0) await execute.offset(context);
-		if (iteration % 4 === 0) await execute.cursor(context);
-		if (iteration % 5 === 0) await execute.relation(context);
-		if (iteration % 6 === 0) await execute.complex(context);
+		if (iteration % 3 === 0) await execute.exists(context);
+		if (iteration % 4 === 0) await execute.offset(context);
+		if (iteration % 5 === 0) await execute.cursor(context);
+		if (iteration % 6 === 0) await execute.relation(context);
+		if (iteration % 7 === 0) await execute.complex(context);
 	});
 
 const runWriteSuite = async (
@@ -160,8 +164,9 @@ const betterSingleRead = await runReadSuite('better point', betterPointLookup);
 
 const rawMixedReads = await runMixedReadSuite('raw mixed', {
 	activeCount: rawActiveCount,
-	complex: rawComplexJoinAggregate,
 	cursor: rawCursorPaginate,
+	exists: rawExists,
+	complex: rawComplexRelationFilter,
 	filtered: rawFilteredList,
 	offset: rawOffsetPaginate,
 	point: rawPointLookup,
@@ -171,6 +176,7 @@ const betterMixedReads = await runMixedReadSuite('better mixed', {
 	activeCount: betterActiveCount,
 	complex: betterComplexJoinEquivalent,
 	cursor: betterCursorPaginate,
+	exists: betterExists,
 	filtered: betterFilteredList,
 	offset: betterOffsetPaginate,
 	point: betterPointLookup,

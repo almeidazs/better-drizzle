@@ -12,7 +12,9 @@ import {
 	betterRelationGraph,
 	betterUpdateAndLoad,
 	rawActiveCount,
-	rawComplexJoinAggregate,
+	rawComplexJoinFlat,
+	rawComplexRelationFilter,
+	rawCreateDeleteBare,
 	rawCreateDeleteRoundtrip,
 	rawCursorPaginate,
 	rawExists,
@@ -27,7 +29,7 @@ import { createBenchmarkContext } from './setup';
 const rawContext = createBenchmarkContext();
 const betterContext = createBenchmarkContext();
 
-group('reads', () => {
+group('api parity: reads', () => {
 	summary(() => {
 		bench('drizzle: point lookup', async () =>
 			do_not_optimize(await rawPointLookup(rawContext)),
@@ -78,8 +80,8 @@ group('reads', () => {
 			do_not_optimize(await betterCursorPaginate(betterContext)),
 		);
 
-		bench('drizzle: complex join', async () =>
-			do_not_optimize(await rawComplexJoinAggregate(rawContext)),
+		bench('drizzle: complex relation filter', async () =>
+			do_not_optimize(await rawComplexRelationFilter(rawContext)),
 		);
 		bench('better: complex relation filter', async () =>
 			do_not_optimize(await betterComplexJoinEquivalent(betterContext)),
@@ -87,7 +89,7 @@ group('reads', () => {
 	});
 });
 
-group('writes', () => {
+group('api parity: writes', () => {
 	summary(() => {
 		bench('drizzle: create + delete roundtrip', async () =>
 			do_not_optimize(await rawCreateDeleteRoundtrip(rawContext)),
@@ -101,6 +103,30 @@ group('writes', () => {
 		);
 		bench('better: update + reload', async () =>
 			do_not_optimize(await betterUpdateAndLoad(betterContext)),
+		);
+	});
+});
+
+group('manual drizzle reference', () => {
+	summary(() => {
+		bench('drizzle manual: complex join flat', async () =>
+			do_not_optimize(await rawComplexJoinFlat(rawContext)),
+		);
+		bench('drizzle parity: complex relation filter', async () =>
+			do_not_optimize(await rawComplexRelationFilter(rawContext)),
+		);
+		bench('better: complex relation filter', async () =>
+			do_not_optimize(await betterComplexJoinEquivalent(betterContext)),
+		);
+
+		bench('drizzle parity: create + delete roundtrip', async () =>
+			do_not_optimize(await rawCreateDeleteRoundtrip(rawContext)),
+		);
+		bench('better: create + delete roundtrip', async () =>
+			do_not_optimize(await betterCreateDeleteRoundtrip(betterContext)),
+		);
+		bench('drizzle manual: create + delete bare', async () =>
+			do_not_optimize(await rawCreateDeleteBare(rawContext)),
 		);
 	});
 });
