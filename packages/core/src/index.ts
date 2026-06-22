@@ -1,4 +1,10 @@
-import { createBetterClient } from './internal/runtime';
+import {
+	createTableRelationsHelpers,
+	extractTablesRelationalConfig,
+	isTable,
+} from 'drizzle-orm';
+
+import { createModelDelegate } from './shared/client';
 
 export * from './shared/errors';
 
@@ -7,6 +13,8 @@ import type {
 	BetterClientOptions,
 	BetterDrizzleClient,
 	BetterMeta,
+	BetterTableKey,
+	RuntimeContext,
 } from './types';
 
 /**
@@ -36,13 +44,44 @@ import type {
  * ```
  */
 export const better = <Schema extends AnySchema, Meta = BetterMeta>(
-	drizzle: Parameters<typeof createBetterClient<Schema, Meta>>[0],
+	drizzle: unknown,
 	options: BetterClientOptions<Schema, Meta>,
 ) => {
-	return createBetterClient(drizzle, options) as BetterDrizzleClient<
-		Schema,
-		Meta
-	>;
+	const client = {} as Record<string, unknown>;
+
+	const context = {
+		db: drizzle as RuntimeContext<Schema, Meta>['db'],
+		options,
+		fullSchema: options.schema,
+		relational: extractTablesRelationalConfig(
+			options.schema,
+			createTableRelationsHelpers,
+		),
+		repositories: {},
+	} as RuntimeContext<Schema, Meta>;
+
+	for (const [tableName, table] of Object.entries(options.schema)) {
+		if (!isTable(table)) continue;
+
+		const delegate = createModelDelegate(
+			context,
+			tableName as BetterTableKey<Schema>,
+		);
+
+		client[tableName] = delegate;
+		context.repositories[tableName] = delegate;
+		context.repositories[table._.name] = delegate;
+	}
+
+	client.repository = (name: string) => {
+		const repository = context.repositories[name];
+
+		if (!repository) throw new Error(`Repository "${name}" not found.`);
+
+		return repository;
+	};
+
+	return client as BetterDrizzleClient<Schema, Meta>;
 };
 
 export * from './types';

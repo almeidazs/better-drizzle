@@ -1,0 +1,382 @@
+import type { TableRelationalConfig } from 'drizzle-orm';
+
+import type { PaginationResult } from './database';
+import type {
+	IncludeInput,
+	PaginationArgs,
+	PayloadForArgs,
+	QueryArgs,
+	SelectInput,
+	WhereArg,
+} from './query';
+import type {
+	AnySchema,
+	DbNameKey,
+	InsertModelFor,
+	SourceKeyFromDbName,
+	TableConfigFor,
+	TableKey,
+} from './utils';
+
+/**
+ * A factory function that creates the error thrown when `.throw()` is invoked
+ * on a {@link ThrowingResult} and no record was found.
+ */
+export type ThrowFactory = () => unknown;
+
+/**
+ * A promise-like type that resolves to `T | null` and exposes a `.throw()`
+ * helper. Calling `.throw()` converts a `null` result into a thrown error,
+ * making it convenient for operations that must always return a record.
+ *
+ * @typeParam T - The non-null result type.
+ */
+export type ThrowingResult<T> = Promise<T | null> & {
+	throw(): Promise<import('./utils').NonNullish<T>>;
+	throw(factory: ThrowFactory): Promise<import('./utils').NonNullish<T>>;
+};
+
+/**
+ * Result returned by batch operations (`createMany`, `updateMany`, `deleteMany`).
+ *
+ * @typeParam T - The row type returned by the operation (may be `never` when
+ *   the database driver does not support `RETURNING`).
+ */
+export interface BatchResult<T> {
+	/** Number of rows affected by the operation. */
+	count: number;
+	/** The affected rows, when the driver supports returning them. */
+	data?: T[];
+}
+
+/**
+ * Arguments for the create operation.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ */
+export interface CreateArgs<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta = import('./query').BetterMeta,
+> {
+	/** The row data to insert. */
+	data: InsertModelFor<Schema, Name>;
+	/** Optional column / relation projection for the returned row. */
+	select?: SelectInput<Schema, Name>;
+	/** Optional relation-only projection for the returned row. */
+	include?: IncludeInput<Schema, Name>;
+	/** Custom metadata forwarded to hooks. */
+	meta?: Meta;
+}
+
+/**
+ * Arguments for the update operation.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ */
+export interface UpdateArgs<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta = import('./query').BetterMeta,
+> {
+	/** Filter identifying which row to update. */
+	where: WhereArg<Schema, Name>;
+	/** Partial column values to apply. */
+	data: Partial<InsertModelFor<Schema, Name>>;
+	/** Optional column / relation projection for the returned row. */
+	select?: SelectInput<Schema, Name>;
+	/** Optional relation-only projection for the returned row. */
+	include?: IncludeInput<Schema, Name>;
+	/** Custom metadata forwarded to hooks. */
+	meta?: Meta;
+}
+
+/**
+ * Arguments for the createMany operation.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ */
+export interface CreateManyArgs<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta = import('./query').BetterMeta,
+> {
+	/** Array of row data to insert. */
+	data: InsertModelFor<Schema, Name>[];
+	/** Optional column / relation projection for returned rows. */
+	select?: SelectInput<Schema, Name>;
+	/** Optional relation-only projection for returned rows. */
+	include?: IncludeInput<Schema, Name>;
+	/** Custom metadata forwarded to hooks. */
+	meta?: Meta;
+}
+
+/**
+ * Arguments for the updateMany operation.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ */
+export interface UpdateManyArgs<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta = import('./query').BetterMeta,
+> {
+	/** Optional filter. When omitted, all rows are updated. */
+	where?: WhereArg<Schema, Name>;
+	/** Partial column values to apply to every matched row. */
+	data: Partial<InsertModelFor<Schema, Name>>;
+	/** Custom metadata forwarded to hooks. */
+	meta?: Meta;
+}
+
+/**
+ * Arguments for the deleteMany operation.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ */
+export interface DeleteManyArgs<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta = import('./query').BetterMeta,
+> {
+	/** Optional filter. When omitted, all rows are deleted. */
+	where?: WhereArg<Schema, Name>;
+	/** Custom metadata forwarded to hooks. */
+	meta?: Meta;
+}
+
+/**
+ * Arguments for the delete operation.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ */
+export interface DeleteArgs<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta = import('./query').BetterMeta,
+> {
+	/** Filter identifying which row to delete. */
+	where: WhereArg<Schema, Name>;
+	/** Optional column / relation projection for the returned row. */
+	select?: SelectInput<Schema, Name>;
+	/** Optional relation-only projection for the returned row. */
+	include?: IncludeInput<Schema, Name>;
+	/** Custom metadata forwarded to hooks. */
+	meta?: Meta;
+}
+
+/**
+ * Arguments for the upsert operation.
+ * Provides both the create and update payloads alongside a where clause
+ * that determines whether to insert or update.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ */
+export interface UpsertArgs<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta = import('./query').BetterMeta,
+> {
+	/** Filter that determines whether to insert or update. */
+	where: WhereArg<Schema, Name>;
+	/** Row data used when no matching record exists. */
+	create: InsertModelFor<Schema, Name>;
+	/** Partial column values applied when a matching record exists. */
+	update: Partial<InsertModelFor<Schema, Name>>;
+	/** Optional column / relation projection for the returned row. */
+	select?: SelectInput<Schema, Name>;
+	/** Optional relation-only projection for the returned row. */
+	include?: IncludeInput<Schema, Name>;
+	/** Custom metadata forwarded to hooks. */
+	meta?: Meta;
+}
+
+type RepositoryKey<Schema extends AnySchema> =
+	| TableKey<Schema>
+	| DbNameKey<Schema>;
+
+type RepositorySourceKey<
+	Schema extends AnySchema,
+	Name extends RepositoryKey<Schema>,
+> =
+	Name extends TableKey<Schema>
+		? Name
+		: SourceKeyFromDbName<Schema, Extract<Name, string>>;
+
+type BetterDrizzleClientByTable<Schema extends AnySchema, Meta> = {
+	[K in TableKey<Schema>]: BetterDrizzleModelDelegate<Schema, K, Meta>;
+};
+
+/**
+ * The fully-typed client returned by {@link better}. Provides a delegate for
+ * every table in the schema plus a unified `repository()` accessor.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ */
+export type BetterDrizzleClient<
+	Schema extends AnySchema,
+	Meta = import('./query').BetterMeta,
+> = BetterDrizzleClientByTable<Schema, Meta> & {
+	/**
+	 * Retrieves the model delegate for the given repository name. The name can
+	 * be either the TypeScript table key or the database table name.
+	 *
+	 * @param name - Table key or database name.
+	 * @returns The model delegate for the specified table.
+	 */
+	repository<Name extends RepositoryKey<Schema>>(
+		name: Name,
+	): BetterDrizzleModelDelegate<
+		Schema,
+		RepositorySourceKey<Schema, Name>,
+		Meta
+	>;
+};
+
+/**
+ * Model delegate providing all CRUD and query methods for a single table.
+ * Each method is fully typed against the table's select/insert models and the
+ * provided query arguments.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ */
+export interface BetterDrizzleModelDelegate<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta = import('./query').BetterMeta,
+> {
+	/** Counts matching rows. */
+	count(
+		args?: import('./query').CountArgs<Schema, Name, Meta>,
+	): Promise<number>;
+	/** Returns `true` when at least one matching row exists. */
+	exists(
+		args?: import('./query').ExistsArgs<Schema, Name, Meta>,
+	): Promise<boolean>;
+	/** Inserts a single row and returns the created record. */
+	create<Args extends CreateArgs<Schema, Name, Meta>>(
+		args: Args,
+	): Promise<PayloadForArgs<Schema, Name, Args>>;
+	/** Inserts multiple rows in a single statement. */
+	createMany<Args extends CreateManyArgs<Schema, Name, Meta>>(
+		args: Args,
+	): Promise<BatchResult<PayloadForArgs<Schema, Name, Args>>>;
+	/** Inserts a row if no match is found, otherwise updates it. */
+	upsert<Args extends UpsertArgs<Schema, Name, Meta>>(
+		args: Args,
+	): Promise<PayloadForArgs<Schema, Name, Args>>;
+	/** Returns all matching rows. */
+	findMany<Args extends QueryArgs<Schema, Name, Meta>>(
+		args?: Args,
+	): Promise<PayloadForArgs<Schema, Name, Args>[]>;
+	/** Updates a single matching row and returns the updated record. */
+	update<Args extends UpdateArgs<Schema, Name, Meta>>(
+		args: Args,
+	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	/** Updates all matching rows and returns the affected count. */
+	updateMany(
+		args: UpdateManyArgs<Schema, Name, Meta>,
+	): Promise<BatchResult<never>>;
+	/** Returns the first matching row (alias for `findFirst`). */
+	findOne<Args extends QueryArgs<Schema, Name, Meta>>(
+		args?: Args,
+	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	/** Returns the first matching row. */
+	findFirst<Args extends QueryArgs<Schema, Name, Meta>>(
+		args?: Args,
+	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	/** Returns exactly one matching row; throws if not found. */
+	findUnique<Args extends QueryArgs<Schema, Name, Meta>>(
+		args: Args,
+	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	/** Returns a paginated result set. */
+	paginate<Args extends PaginationArgs<Schema, Name, Meta>>(
+		args: Args,
+	): Promise<PaginationResult<PayloadForArgs<Schema, Name, Args>>>;
+	/** Deletes a single matching row and returns the deleted record. */
+	delete<Args extends DeleteArgs<Schema, Name, Meta>>(
+		args: Args,
+	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	/** Deletes all matching rows and returns the affected count. */
+	deleteMany(
+		args: DeleteManyArgs<Schema, Name, Meta>,
+	): Promise<BatchResult<never>>;
+}
+
+/**
+ * Extracts the relational configuration for a specific table from the schema.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ */
+export type BetterTableConfig<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = TableConfigFor<Schema, Name>;
+
+/**
+ * Union of all valid table keys in the schema.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ */
+export type BetterTableKey<Schema extends AnySchema> = TableKey<Schema>;
+
+/**
+ * Singularised alias of each table key (e.g. `"users"` -> `"user"`).
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ */
+export type BetterAliasKey<Schema extends AnySchema> =
+	import('./utils').AliasKey<Schema>;
+
+/**
+ * Valid repository keys: either the TypeScript table key or the database name.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ */
+export type BetterRepositoryKey<Schema extends AnySchema> =
+	RepositoryKey<Schema>;
+
+/**
+ * Extracts the relations map for a specific table.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ */
+export type BetterTableRelations<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = TableConfigFor<Schema, Name>['relations'];
+
+/**
+ * Alias for the underlying Drizzle `TableRelationalConfig` type.
+ */
+export type BetterRelationalConfig = TableRelationalConfig;
+
+/**
+ * The select model (row type) for a specific table.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ */
+export type BetterRecord<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = import('./utils').SelectModelFor<Schema, Name>;
