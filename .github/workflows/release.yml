@@ -1,0 +1,131 @@
+name: Release
+
+on:
+    release:
+        types:
+            - published
+
+permissions:
+    contents: read
+    id-token: write
+
+jobs:
+    publish:
+        name: Publish package to npm
+        runs-on: ubuntu-latest
+        env:
+            NODE_AUTH_TOKEN: ""
+            NPM_TOKEN: ""
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v5
+
+            - name: Setup Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: latest
+
+            - name: Setup Node
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 24
+                  registry-url: https://registry.npmjs.org
+
+            - name: Upgrade npm for trusted publishing
+              run: npm install -g npm@latest
+
+            - name: Remove temporary npm config
+              run: rm -f "$NPM_CONFIG_USERCONFIG"
+
+            - name: Resolve release target
+              id: release
+              shell: bash
+              run: |
+                  tag="${{ github.event.release.tag_name }}"
+                  is_prerelease="${{ github.event.release.prerelease }}"
+
+                  case "$tag" in
+                    better-drizzle@*)
+                      package_name="better-drizzle"
+                      package_dir="packages/core"
+                      version="${tag#better-drizzle@}"
+                      ;;
+                    *)
+                      echo "::error::Unsupported release tag: $tag"
+                      echo "::error::Use the format better-drizzle@x.y.z"
+                      exit 1
+                      ;;
+                  esac
+
+                  dist_tag="latest"
+                  if [[ "$is_prerelease" == "true" ]]; then
+                    dist_tag="next"
+                  fi
+
+                  {
+                    echo "tag=$tag"
+                    echo "version=$version"
+                    echo "package_name=$package_name"
+                    echo "package_dir=$package_dir"
+                    echo "dist_tag=$dist_tag"
+                  } >> "$GITHUB_OUTPUT"
+
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
+
+            - name: Validate release metadata
+              shell: bash
+              run: |
+                  package_dir="${{ steps.release.outputs.package_dir }}"
+                  package_name="${{ steps.release.outputs.package_name }}"
+                  release_version="${{ steps.release.outputs.version }}"
+                  package_version="$(node -p "require('./${package_dir}/package.json').version")"
+                  package_json_name="$(node -p "require('./${package_dir}/package.json').name")"
+
+                  if [[ "$package_json_name" != "$package_name" ]]; then
+                    echo "::error::Package name mismatch. Expected $package_name but found $package_json_name"
+                    exit 1
+                  fi
+
+                  if [[ "$package_version" != "$release_version" ]]; then
+                    echo "::error::Release tag version $release_version does not match ${package_dir}/package.json version $package_version"
+                    exit 1
+                  fi
+
+            - name: Check if version is already published
+              id: published
+              shell: bash
+              run: |
+                  package_name="${{ steps.release.outputs.package_name }}"
+                  version="${{ steps.release.outputs.version }}"
+
+                  if npm view "${package_name}@${version}" version >/dev/null 2>&1; then
+                    echo "already_published=true" >> "$GITHUB_OUTPUT"
+                    echo "Package ${package_name}@${version} is already published." >> "$GITHUB_STEP_SUMMARY"
+                    exit 0
+                  fi
+
+                  echo "already_published=false" >> "$GITHUB_OUTPUT"
+
+            - name: Run quality checks
+              if: steps.published.outputs.already_published != 'true'
+              run: bun run check
+
+            - name: Publish to npm
+              if: steps.published.outputs.already_published != 'true'
+              working-directory: ${{ steps.release.outputs.package_dir }}
+              shell: bash
+              run: |
+                  package_name="${{ steps.release.outputs.package_name }}"
+                  version="${{ steps.release.outputs.version }}"
+                  dist_tag="${{ steps.release.outputs.dist_tag }}"
+
+                  npm publish --provenance --access public --tag "$dist_tag"
+
+                  {
+                    echo "Published \`${package_name}@${version}\`"
+                    echo ""
+                    echo "- npm dist-tag: \`${dist_tag}\`"
+                    echo "- release tag: \`${{ steps.release.outputs.tag }}\`"
+                  } >> "$GITHUB_STEP_SUMMARY"
