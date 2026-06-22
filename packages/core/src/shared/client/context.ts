@@ -32,9 +32,9 @@ export const createRuntimeContext = <
 		if (!isTable(table)) continue;
 
 		const tableConfig = relational.tables[tableName];
-		
+
 		if (!tableConfig) continue;
-		
+
 		const relations = Object.create(null) as TableRuntime['relations'];
 
 		for (const relationName in tableConfig.relations) {
@@ -97,9 +97,9 @@ export const getTableRuntime = <Schema extends AnySchema, Meta>(
 	tableName: string,
 ) => {
 	const runtime = context.tables[tableName];
-	
+
 	if (!runtime) throw new Error(`No runtime found for table "${tableName}".`);
-	
+
 	return runtime;
 };
 

@@ -7,9 +7,13 @@
 		"apps/*"
 	],
 	"scripts": {
+		"check": "bun run check:types && bun run check:lint && bun run pack:core",
+		"check:lint": "bunx @biomejs/biome check packages/core/src benchmark .github",
+		"check:types": "bunx tsc --noEmit",
 		"bench": "bun run benchmark/time.ts",
 		"bench:all": "bun run benchmark/time.ts && bun run benchmark/memory.ts",
-		"bench:memory": "bun run benchmark/memory.ts"
+		"bench:memory": "bun run benchmark/memory.ts",
+		"pack:core": "cd packages/core && npm pack --dry-run"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.5.0",

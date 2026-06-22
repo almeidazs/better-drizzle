@@ -1,6 +1,42 @@
 {
 	"name": "better-drizzle",
+	"version": "0.0.0",
+	"description": "Minimal, type-safe repository helpers for Drizzle ORM.",
+	"license": "Apache-2.0",
 	"module": "src/index.ts",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"files": [
+		"LICENSE",
+		"src",
+		"README.md"
+	],
+	"keywords": [
+		"drizzle",
+		"drizzle-orm",
+		"orm",
+		"typescript",
+		"repository",
+		"sqlite",
+		"postgres",
+		"mysql"
+	],
+	"homepage": "https://github.com/almeidazs/better-drizzle#readme",
+	"bugs": {
+		"url": "https://github.com/almeidazs/better-drizzle/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/almeidazs/better-drizzle.git",
+		"directory": "packages/core"
+	},
+	"publishConfig": {
+		"access": "public",
+		"provenance": true,
+		"registry": "https://registry.npmjs.org/"
+	},
+	"sideEffects": false,
 	"type": "module",
 	"peerDependencies": {
 		"drizzle-kit": "^0.31.10",
