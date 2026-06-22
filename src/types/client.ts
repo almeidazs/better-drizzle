@@ -262,6 +262,13 @@ export type ExistsArgs<
 	Name extends TableKey<Schema>,
 > = CountArgs<Schema, Name>;
 
+export type ThrowFactory = () => unknown;
+
+export type ThrowingResult<T> = Promise<T | null> & {
+	throw(): Promise<NonNullish<T>>;
+	throw(factory: ThrowFactory): Promise<NonNullish<T>>;
+};
+
 export type PaginationArgs<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
@@ -433,24 +440,24 @@ export interface BetterDrizzleModelDelegate<
 	findMany<Args extends QueryArgs<Schema, Name>>(
 		args?: Args,
 	): Promise<PayloadForArgs<Schema, Name, Args>[]>;
-	delete<Args extends DeleteArgs<Schema, Name>>(
-		args: Args,
-	): Promise<PayloadForArgs<Schema, Name, Args>>;
 	update<Args extends UpdateArgs<Schema, Name>>(
 		args: Args,
-	): Promise<PayloadForArgs<Schema, Name, Args>>;
+	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	findOne<Args extends QueryArgs<Schema, Name>>(
 		args?: Args,
-	): Promise<PayloadForArgs<Schema, Name, Args> | null>;
+	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	findFirst<Args extends QueryArgs<Schema, Name>>(
 		args?: Args,
-	): Promise<PayloadForArgs<Schema, Name, Args> | null>;
+	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	findUnique<Args extends QueryArgs<Schema, Name>>(
 		args: Args,
-	): Promise<PayloadForArgs<Schema, Name, Args> | null>;
+	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	paginate<Args extends PaginationArgs<Schema, Name>>(
 		args: Args,
 	): Promise<PaginationResult<PayloadForArgs<Schema, Name, Args>>>;
+	delete<Args extends DeleteArgs<Schema, Name>>(
+		args: Args,
+	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 }
 
 export type BetterTableConfig<

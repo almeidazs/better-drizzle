@@ -42,6 +42,8 @@ import type {
 	OrderByInput,
 	PaginationArgs,
 	QueryArgs,
+	ThrowFactory,
+	ThrowingResult,
 	UpdateArgs,
 	UpsertArgs,
 	WhereArg,
@@ -99,6 +101,7 @@ type WhereCompilerContext<Schema extends AnySchema> = RuntimeContext<Schema> & {
 };
 
 type CompilableWhere = Record<string, unknown> | SQL;
+type NullableResult<T> = Promise<T | null>;
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => {
 	return (
@@ -154,6 +157,29 @@ const buildPatternCondition = (
 ) => {
 	const pattern = buildLikeValue(value, mode);
 	return insensitive ? ilike(column, pattern) : like(column, pattern);
+};
+
+const attachThrow = <T>(
+	promise: NullableResult<T>,
+	methodName: string,
+	tableName: string,
+): ThrowingResult<T> => {
+	const wrapped = promise as ThrowingResult<T>;
+	wrapped.throw = async (factory?: ThrowFactory) => {
+		const result = await promise;
+
+		if (result === null)
+			throw (
+				factory?.() ??
+				new Error(
+					`No record found for ${methodName} on "${tableName}".`,
+				)
+			);
+
+		return result as Exclude<T, null | undefined>;
+	};
+
+	return wrapped;
 };
 
 const getTableRuntime = <Schema extends AnySchema>(
@@ -756,9 +782,7 @@ const updateInternal = async <Schema extends AnySchema>(
 		where: args.where,
 	});
 	if (!existing) {
-		throw new Error(
-			`No record found for update on "${String(tableName)}".`,
-		);
+		return null;
 	}
 
 	const pkWhere = getPrimaryKeyWhere(runtime.tableConfig, existing);
@@ -783,9 +807,7 @@ const deleteInternal = async <Schema extends AnySchema>(
 	const runtime = getTableRuntime(context, tableName as string);
 	const existing = await findFirstInternal(context, tableName, args);
 	if (!existing) {
-		throw new Error(
-			`No record found for delete on "${String(tableName)}".`,
-		);
+		return null;
 	}
 
 	const pkWhere = getPrimaryKeyWhere(runtime.tableConfig, existing);
@@ -908,17 +930,37 @@ const makeModelDelegate = <Schema extends AnySchema>(
 				buildQueryConfig(context, tableName, args),
 			),
 		findFirst: (args?: QueryArgs<Schema, BetterTableKey<Schema>>) =>
-			findFirstInternal(context, tableName, args),
+			attachThrow(
+				findFirstInternal(context, tableName, args),
+				'findFirst',
+				String(tableName),
+			),
 		findOne: (args?: QueryArgs<Schema, BetterTableKey<Schema>>) =>
-			findFirstInternal(context, tableName, args),
+			attachThrow(
+				findFirstInternal(context, tableName, args),
+				'findOne',
+				String(tableName),
+			),
 		findUnique: (args: QueryArgs<Schema, BetterTableKey<Schema>>) =>
-			findFirstInternal(context, tableName, args),
+			attachThrow(
+				findFirstInternal(context, tableName, args),
+				'findUnique',
+				String(tableName),
+			),
 		create: (args: { data: Record<string, unknown> }) =>
 			createInternal(context, tableName, args),
 		update: (args: UpdateArgs<Schema, BetterTableKey<Schema>>) =>
-			updateInternal(context, tableName, args),
+			attachThrow(
+				updateInternal(context, tableName, args),
+				'update',
+				String(tableName),
+			),
 		delete: (args: DeleteArgs<Schema, BetterTableKey<Schema>>) =>
-			deleteInternal(context, tableName, args),
+			attachThrow(
+				deleteInternal(context, tableName, args),
+				'delete',
+				String(tableName),
+			),
 		upsert: async (args: UpsertArgs<Schema, BetterTableKey<Schema>>) => {
 			const existing = await findFirstInternal(context, tableName, {
 				where: args.where,
