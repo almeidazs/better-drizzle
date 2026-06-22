@@ -12,6 +12,7 @@ import {
 	ilike,
 	inArray,
 	isNull,
+	isSQLWrapper,
 	isTable,
 	like,
 	lt,
@@ -43,7 +44,7 @@ import type {
 	QueryArgs,
 	UpdateArgs,
 	UpsertArgs,
-	WhereInput,
+	WhereArg,
 } from '../types/client';
 import { PaginationType } from '../types/database';
 
@@ -96,6 +97,8 @@ type WhereCompilerContext<Schema extends AnySchema> = RuntimeContext<Schema> & {
 	tableConfig: BetterRelationalConfig;
 	rootArgs?: QueryArgs<Schema, BetterTableKey<Schema>>;
 };
+
+type CompilableWhere = Record<string, unknown> | SQL;
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => {
 	return (
@@ -434,11 +437,11 @@ const compileRelationFilter = <Schema extends AnySchema>(
 
 const compileWhereInput = <Schema extends AnySchema>(
 	context: WhereCompilerContext<Schema>,
-	where?: Record<string, unknown>,
+	where?: CompilableWhere,
 ): SQL | undefined => {
-	if (!where) {
-		return undefined;
-	}
+	if (!where) return;
+
+	if (isSQLWrapper(where)) return where.getSQL();
 
 	const tableColumns = getTableColumns(context.table);
 	const conditions: (SQL | undefined)[] = [];
@@ -629,7 +632,7 @@ const buildQueryConfig = <Schema extends AnySchema>(
 
 	const where = compileWhereInput(
 		whereContext,
-		args?.where as Record<string, unknown> | undefined,
+		args?.where as CompilableWhere | undefined,
 	);
 	const cursorWhere = compileCursorWhere(
 		whereContext,
@@ -693,7 +696,7 @@ const reloadByRecord = async <Schema extends AnySchema>(
 
 	const queryConfig = buildQueryConfig(context, tableName, {
 		...args,
-		where: where as WhereInput<Schema, BetterTableKey<Schema>>,
+		where: where as WhereArg<Schema, BetterTableKey<Schema>>,
 		take: 1,
 	});
 
@@ -801,7 +804,7 @@ const deleteInternal = async <Schema extends AnySchema>(
 const countInternal = async <Schema extends AnySchema>(
 	context: RuntimeContext<Schema>,
 	tableName: BetterTableKey<Schema>,
-	where?: WhereInput<Schema, BetterTableKey<Schema>>,
+	where?: WhereArg<Schema, BetterTableKey<Schema>>,
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
 	const whereContext: WhereCompilerContext<Schema> = {
@@ -812,7 +815,7 @@ const countInternal = async <Schema extends AnySchema>(
 	};
 	const predicate = compileWhereInput(
 		whereContext,
-		where as Record<string, unknown> | undefined,
+		where as CompilableWhere | undefined,
 	);
 
 	if (typeof context.db.$count === 'function') {
@@ -892,11 +895,10 @@ const makeModelDelegate = <Schema extends AnySchema>(
 	tableName: BetterTableKey<Schema>,
 ) => {
 	return {
-		count: (args?: {
-			where?: WhereInput<Schema, BetterTableKey<Schema>>;
-		}) => countInternal(context, tableName, args?.where),
+		count: (args?: { where?: WhereArg<Schema, BetterTableKey<Schema>> }) =>
+			countInternal(context, tableName, args?.where),
 		exists: async (args?: {
-			where?: WhereInput<Schema, BetterTableKey<Schema>>;
+			where?: WhereArg<Schema, BetterTableKey<Schema>>;
 		}) => {
 			const total = await countInternal(context, tableName, args?.where);
 			return total > 0;

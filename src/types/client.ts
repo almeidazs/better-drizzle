@@ -5,6 +5,8 @@ import type {
 	InferSelectModel,
 	Many,
 	One,
+	SQL,
+	SQLWrapper,
 	Table,
 	TableRelationalConfig,
 } from 'drizzle-orm';
@@ -195,6 +197,11 @@ export type WhereInput<
 	[K in RelationKeysFor<Schema, Name>]?: RelationWhereInput<Schema, Name, K>;
 };
 
+export type WhereArg<Schema extends AnySchema, Name extends TableKey<Schema>> =
+	| WhereInput<Schema, Name>
+	| SQL
+	| SQLWrapper;
+
 type SelectRelationArg<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
@@ -236,7 +243,7 @@ export interface QueryArgs<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 > {
-	where?: WhereInput<Schema, Name>;
+	where?: WhereArg<Schema, Name>;
 	select?: SelectInput<Schema, Name>;
 	include?: IncludeInput<Schema, Name>;
 	orderBy?: OrderByInput<Schema, Name>;
@@ -273,7 +280,7 @@ export interface UpdateArgs<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 > {
-	where: WhereInput<Schema, Name>;
+	where: WhereArg<Schema, Name>;
 	data: Partial<InsertModelFor<Schema, Name>>;
 	select?: SelectInput<Schema, Name>;
 	include?: IncludeInput<Schema, Name>;
@@ -283,7 +290,7 @@ export interface DeleteArgs<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 > {
-	where: WhereInput<Schema, Name>;
+	where: WhereArg<Schema, Name>;
 	select?: SelectInput<Schema, Name>;
 	include?: IncludeInput<Schema, Name>;
 }
@@ -292,7 +299,7 @@ export interface UpsertArgs<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 > {
-	where: WhereInput<Schema, Name>;
+	where: WhereArg<Schema, Name>;
 	create: InsertModelFor<Schema, Name>;
 	update: Partial<InsertModelFor<Schema, Name>>;
 	select?: SelectInput<Schema, Name>;
