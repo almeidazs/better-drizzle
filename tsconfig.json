@@ -7,7 +7,7 @@
 		"esModuleInterop": true,
 		"forceConsistentCasingInFileNames": true,
 		"strict": true,
-		"skipLibCheck": true,
-		"paths": { "@/*": ["./src/*"] }
-	}
+		"skipLibCheck": true
+	},
+	"include": ["commitlint.config.ts", "packages/*/src/**/*.ts"]
 }

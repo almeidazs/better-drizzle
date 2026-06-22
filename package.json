@@ -1,7 +1,11 @@
 {
-	"name": "better-drizzle",
-	"module": "src/index.ts",
+	"name": "better-drizzle-workspace",
+	"private": true,
 	"type": "module",
+	"workspaces": [
+		"packages/*",
+		"apps/*"
+	],
 	"devDependencies": {
 		"@biomejs/biome": "^2.5.0",
 		"@commitlint/config-conventional": "^21.0.2",
