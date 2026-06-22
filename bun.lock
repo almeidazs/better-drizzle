@@ -12,13 +12,13 @@
         "mitata": "^1.0.34",
       },
       "peerDependencies": {
-        "drizzle-kit": "^0.31.10",
         "drizzle-orm": "^0.45.2",
         "typescript": "^5",
       },
     },
     "packages/core": {
       "name": "better-drizzle",
+      "version": "0.0.0",
       "peerDependencies": {
         "drizzle-kit": "^0.31.10",
         "drizzle-orm": "^0.45.2",
