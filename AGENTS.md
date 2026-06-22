@@ -116,6 +116,21 @@
   - module resolution is `bundler`
   - formatting uses tabs, single quotes, trailing commas
 
+## Local development database
+
+- **Docker Compose** provides a Postgres 16 instance for local development and manual testing.
+- **Files**:
+  - `docker-compose.yml`: postgres service with healthcheck and persistent volume
+  - `.env` / `.env.example`: connection config (port, credentials, db name)
+  - `docker/postgres/init/01-schema.sql`: optional init SQL mirroring benchmark schema
+- **Commands**:
+  - `docker compose up -d`: start the database
+  - `docker compose down`: stop the database
+  - `docker compose logs -f postgres`: tail postgres logs
+  - `docker compose down -v`: stop and wipe the volume
+- **Connection**: `DATABASE_URL` in `.env` defaults to `postgresql://postgres:postgres@localhost:5432/better_drizzle`
+- **Benchmarks still use SQLite in-memory**; this Postgres instance is for development, integration testing, and manual validation only.
+
 ## Style conventions for this repo
 
 - **Keep code minimal**: this repository prefers the smallest functional implementation over layered abstractions.

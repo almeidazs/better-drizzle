@@ -1,0 +1,10 @@
+node_modules
+.git
+.github
+dist
+out
+coverage
+*.tgz
+.DS_Store
+.env
+.env.*
