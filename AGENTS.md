@@ -1,0 +1,167 @@
+# Better-Drizzle Repository – Agent Field Notes
+
+> Meta note: This is the primary agent knowledge base file for this repository. When learning something about the codebase that will help with future tasks, update this file directly.
+
+- **Repository scope**: `better-drizzle` is a small Bun/TypeScript workspace focused on a single core package, `packages/core`, plus a benchmark suite used to measure API-parity performance and memory overhead against raw Drizzle ORM.
+- **Workspace layout**:
+  - `packages/core`: the published library
+  - `benchmark`: Bun + SQLite benchmark suite
+  - `README.md`: project-level documentation
+  - `packages/core/README.md`: package-level documentation, currently intentionally kept in sync with the root README
+- **Package manager and runtime**: Bun is the primary runtime for local commands and benchmarks. The workspace is configured as a TypeScript ESM monorepo.
+- **Top-level scripts**:
+  - `bun run bench`: run the time benchmark suite
+  - `bun run bench:memory`: run the memory/overhead benchmark suite
+  - `bun run bench:all`: run both benchmark suites
+- **Core dependencies**:
+  - `drizzle-orm` as a peer dependency
+  - `drizzle-kit` as a peer dependency
+  - `typescript` as a peer dependency
+  - `mitata` for benchmarking
+  - `@biomejs/biome` for formatting and linting
+
+## Architecture
+
+- **Entry point**: `packages/core/src/index.ts`
+  - Exports `better(...)`
+  - Builds a runtime context once
+  - Creates one delegate per schema table
+  - Registers repositories by TypeScript table key and database table name
+- **Runtime layout**:
+  - `packages/core/src/shared/client/context.ts`: builds the runtime context and precomputed table metadata
+  - `packages/core/src/shared/client/delegate.ts`: exposes the delegate methods for each table
+  - `packages/core/src/shared/client/operations.ts`: main query and mutation execution paths; this is the hottest file for performance work
+  - `packages/core/src/shared/client/hooks.ts`: optional hook execution
+  - `packages/core/src/shared/query/compiler.ts`: compiles typed `where`, `select`, `include`, `orderBy`, and pagination inputs into Drizzle-compatible query pieces
+  - `packages/core/src/shared/errors.ts`: shared error helpers
+  - `packages/core/src/types/*`: public type surface
+- **No internal runtime package**: the old `packages/core/src/internal/runtime.ts` was removed. Runtime logic now lives under `shared/client` and `shared/query`.
+
+## Design intent
+
+- **Primary goal**: give Drizzle users a minimal repository-style API without hiding Drizzle or rebuilding a full ORM on top of it.
+- **Non-goals**:
+  - not replacing raw Drizzle for fully manual query work
+  - not adding broad abstraction layers
+  - not adding runtime magic that duplicates schema knowledge
+- **Bias**: prefer simpler code, fewer branches, fewer allocations, fewer helpers, and fewer layers.
+
+## API surface
+
+- **Table delegates expose**:
+  - `findMany`
+  - `findFirst`
+  - `findOne`
+  - `findUnique`
+  - `create`
+  - `createMany`
+  - `update`
+  - `updateMany`
+  - `delete`
+  - `deleteMany`
+  - `upsert`
+  - `count`
+  - `exists`
+  - `paginate`
+- **Client-level lookup**:
+  - `repository(name)` resolves by schema key or db table name
+
+## Performance rules
+
+- **Performance matters here**: this repo explicitly benchmarks wrapper overhead. Do not add helpers, branching, abstractions, or allocations unless they clearly pay for themselves.
+- **Hot files**:
+  - `packages/core/src/shared/client/operations.ts`
+  - `packages/core/src/shared/query/compiler.ts`
+  - `packages/core/src/shared/client/context.ts`
+- **Current optimization strategy**:
+  - direct fast paths for simple reads
+  - direct fast paths for simple writes
+  - precomputed table and relation metadata
+  - simple predicate compilation for hot common cases
+  - native `onConflictDoUpdate` upsert path when safely possible
+  - fewer intermediate objects in query compilation
+- **Avoid**:
+  - unnecessary object spreads in hot paths
+  - generic wrappers around code used only once or twice
+  - “normalization” layers that exist only for aesthetics
+  - read-then-write upsert flows when native conflict update can be used
+  - hand-wavy “clean” abstractions that add runtime overhead
+
+## Benchmarking
+
+- **Benchmark files**:
+  - `benchmark/time.ts`: latency and throughput comparisons
+  - `benchmark/memory.ts`: heap/rss deltas and overhead summaries
+  - `benchmark/scenarios.ts`: benchmark scenarios for raw Drizzle and `better-drizzle`
+  - `benchmark/setup.ts`: benchmark database/context setup
+  - `benchmark/schema.ts`: benchmark schema
+- **Benchmark rule**: parity matters. If `better-drizzle` returns nested objects, pagination metadata, or relation payloads, the raw Drizzle comparison must return the same effective shape and do the same effective work.
+- **Two benchmark views exist intentionally**:
+  - `api parity`: fair comparison where raw Drizzle and `better-drizzle` do the same work
+  - `manual drizzle reference`: lower-level manual queries that intentionally do less work and are not parity claims
+- **When changing performance-sensitive code**:
+  - run `bun run bench`
+  - run `bun run bench:memory`
+  - interpret regressions against the parity suite first
+  - do not use the manual reference numbers as the main headline for wrapper overhead claims
+
+## Tooling and commands
+
+- **Typecheck**:
+  - `bunx tsc --noEmit`
+- **Format and lint**:
+  - `bunx @biomejs/biome check packages/core/src benchmark --write`
+- **Recent style/tooling facts**:
+  - TypeScript is `strict`
+  - module resolution is `bundler`
+  - formatting uses tabs, single quotes, trailing commas
+
+## Style conventions for this repo
+
+- **Keep code minimal**: this repository prefers the smallest functional implementation over layered abstractions.
+- **Avoid over-engineering**:
+  - remove tiny helpers if they do not pull their weight
+  - remove aliases and conversion helpers if direct code is clearer and faster
+  - keep public API small
+- **Branch style**:
+  - prefer `if (...) return ...` when a block is not needed
+  - avoid braces in simple `if`/loop bodies when the language and clarity allow it
+- **Data structures**:
+  - prefer `Object.create(null)` for internal dictionaries where prototype behavior is unnecessary
+  - prefer plain loops over extra array transforms in hot paths
+- **Comments**:
+  - keep comments sparse
+  - use comments only where the reasoning is not obvious from code
+
+## Documentation rules
+
+- **README sync**: the root `README.md` and `packages/core/README.md` are intended to stay aligned. If one changes, update the other unless there is a clear package-specific reason not to.
+- **Performance claims**: tie claims to benchmark shape and avoid vague “faster” language without context.
+- **Examples**: prefer real API examples that match the current exported API and benchmarked usage patterns.
+
+## Change checklist
+
+- **For API changes**:
+  - update public types under `packages/core/src/types`
+  - verify exports from `packages/core/src/index.ts`
+  - update both READMEs if user-facing behavior changes
+  - ensure examples still type-check conceptually against the current API
+- **For performance changes**:
+  - inspect hot-path allocations and branches
+  - rerun both benchmark suites
+  - keep raw parity scenarios fair
+  - document any meaningful benchmark interpretation changes in README if needed
+- **For benchmark changes**:
+  - keep parity scenarios honest
+  - keep manual references clearly separated
+  - do not compare flat manual joins against nested repository payloads as if they were equivalent
+
+## Repository history notes
+
+- Recent work in this repository has focused on:
+  - removing the old internal runtime file
+  - moving logic into `shared/client` and `shared/query`
+  - reducing wrapper overhead
+  - making benchmarks fairer
+  - improving README quality and positioning
+- If future tasks discover important architectural or benchmarking constraints, add them here instead of leaving them buried in commit history.
