@@ -234,6 +234,8 @@ export type OrderByInput<
 	Name extends TableKey<Schema>,
 > = OrderByField<Schema, Name> | OrderByField<Schema, Name>[];
 
+export type BetterMeta = Record<string, unknown>;
+
 export type CursorInput<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
@@ -242,6 +244,7 @@ export type CursorInput<
 export interface QueryArgs<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
+	Meta = BetterMeta,
 > {
 	where?: WhereArg<Schema, Name>;
 	select?: SelectInput<Schema, Name>;
@@ -250,17 +253,20 @@ export interface QueryArgs<
 	take?: number;
 	skip?: number;
 	cursor?: CursorInput<Schema, Name>;
+	meta?: Meta;
 }
 
 export type CountArgs<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
-> = Pick<QueryArgs<Schema, Name>, 'where' | 'cursor'>;
+	Meta = BetterMeta,
+> = Pick<QueryArgs<Schema, Name, Meta>, 'where' | 'cursor' | 'meta'>;
 
 export type ExistsArgs<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
-> = CountArgs<Schema, Name>;
+	Meta = BetterMeta,
+> = CountArgs<Schema, Name, Meta>;
 
 export type ThrowFactory = () => unknown;
 
@@ -277,69 +283,85 @@ export interface BatchResult<T> {
 export type PaginationArgs<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
-> = QueryArgs<Schema, Name> & PaginationOptions<SelectModelFor<Schema, Name>>;
+	Meta = BetterMeta,
+> = QueryArgs<Schema, Name, Meta> &
+	PaginationOptions<SelectModelFor<Schema, Name>>;
 
 export interface CreateArgs<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
+	Meta = BetterMeta,
 > {
 	data: InsertModelFor<Schema, Name>;
 	select?: SelectInput<Schema, Name>;
 	include?: IncludeInput<Schema, Name>;
+	meta?: Meta;
 }
 
 export interface UpdateArgs<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
+	Meta = BetterMeta,
 > {
 	where: WhereArg<Schema, Name>;
 	data: Partial<InsertModelFor<Schema, Name>>;
 	select?: SelectInput<Schema, Name>;
 	include?: IncludeInput<Schema, Name>;
+	meta?: Meta;
 }
 
 export interface CreateManyArgs<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
+	Meta = BetterMeta,
 > {
 	data: InsertModelFor<Schema, Name>[];
 	select?: SelectInput<Schema, Name>;
 	include?: IncludeInput<Schema, Name>;
+	meta?: Meta;
 }
 
 export interface UpdateManyArgs<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
+	Meta = BetterMeta,
 > {
 	where?: WhereArg<Schema, Name>;
 	data: Partial<InsertModelFor<Schema, Name>>;
+	meta?: Meta;
 }
 
 export interface DeleteManyArgs<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
+	Meta = BetterMeta,
 > {
 	where?: WhereArg<Schema, Name>;
+	meta?: Meta;
 }
 
 export interface DeleteArgs<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
+	Meta = BetterMeta,
 > {
 	where: WhereArg<Schema, Name>;
 	select?: SelectInput<Schema, Name>;
 	include?: IncludeInput<Schema, Name>;
+	meta?: Meta;
 }
 
 export interface UpsertArgs<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
+	Meta = BetterMeta,
 > {
 	where: WhereArg<Schema, Name>;
 	create: InsertModelFor<Schema, Name>;
 	update: Partial<InsertModelFor<Schema, Name>>;
 	select?: SelectInput<Schema, Name>;
 	include?: IncludeInput<Schema, Name>;
+	meta?: Meta;
 }
 
 type RelationPayloadFromArg<
@@ -417,19 +439,384 @@ export type PayloadForArgs<
 		? IncludedRelationPayload<Schema, Name, Include>
 		: DefaultPayload<Schema, Name>;
 
-export interface BetterClientOptions<Schema extends AnySchema> {
+export type QueryHookAction =
+	| 'findMany'
+	| 'findFirst'
+	| 'findOne'
+	| 'findUnique'
+	| 'count'
+	| 'exists'
+	| 'paginate';
+
+export type CreateHookAction = 'create' | 'createMany' | 'upsert';
+export type UpdateHookAction = 'update' | 'updateMany' | 'upsert';
+export type DeleteHookAction = 'delete' | 'deleteMany';
+export type HookAction =
+	| QueryHookAction
+	| CreateHookAction
+	| UpdateHookAction
+	| DeleteHookAction;
+
+export type HookStage = 'beforeHook' | 'afterHook' | 'operation';
+
+type HookBaseContext<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta,
+	Args,
+	Action extends HookAction,
+> = {
+	action: Action;
+	args: Args;
+	db: unknown;
+	meta: Meta | undefined;
+	options: BetterClientOptions<Schema, Meta>;
+	repository: BetterDrizzleModelDelegate<Schema, Name, Meta>;
+	schema: Schema;
+	table: Name;
+	tableConfig: BetterTableConfig<Schema, Name>;
+	tableInstance: TableFor<Schema, Name>;
+};
+
+type CreateHookArgsForAction<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta,
+	Action extends CreateHookAction,
+> = Action extends 'createMany'
+	? CreateManyArgs<Schema, Name, Meta>
+	: CreateArgs<Schema, Name, Meta>;
+
+type CreateHookResultForAction<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta,
+	Action extends CreateHookAction,
+> = Action extends 'createMany'
+	? BatchResult<
+			PayloadForArgs<Schema, Name, CreateManyArgs<Schema, Name, Meta>>
+		>
+	: PayloadForArgs<Schema, Name, CreateArgs<Schema, Name, Meta>>;
+
+type UpdateHookArgsForAction<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta,
+	Action extends UpdateHookAction,
+> = Action extends 'updateMany'
+	? UpdateManyArgs<Schema, Name, Meta>
+	: UpdateArgs<Schema, Name, Meta>;
+
+type UpdateHookResultForAction<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta,
+	Action extends UpdateHookAction,
+> = Action extends 'updateMany'
+	? BatchResult<never>
+	: PayloadForArgs<Schema, Name, UpdateArgs<Schema, Name, Meta>> | null;
+
+type DeleteHookArgsForAction<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta,
+	Action extends DeleteHookAction,
+> = Action extends 'deleteMany'
+	? DeleteManyArgs<Schema, Name, Meta>
+	: DeleteArgs<Schema, Name, Meta>;
+
+type DeleteHookResultForAction<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta,
+	Action extends DeleteHookAction,
+> = Action extends 'deleteMany'
+	? BatchResult<never>
+	: PayloadForArgs<Schema, Name, DeleteArgs<Schema, Name, Meta>> | null;
+
+type QueryHookArgsForAction<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta,
+	Action extends QueryHookAction,
+> = Action extends 'count'
+	? CountArgs<Schema, Name, Meta>
+	: Action extends 'exists'
+		? ExistsArgs<Schema, Name, Meta>
+		: Action extends 'paginate'
+			? PaginationArgs<Schema, Name, Meta>
+			: QueryArgs<Schema, Name, Meta>;
+
+type QueryHookResultForAction<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta,
+	Action extends QueryHookAction,
+> = Action extends 'findMany'
+	? PayloadForArgs<Schema, Name, QueryArgs<Schema, Name, Meta>>[]
+	: Action extends 'findFirst' | 'findOne' | 'findUnique'
+		? PayloadForArgs<Schema, Name, QueryArgs<Schema, Name, Meta>> | null
+		: Action extends 'count'
+			? number
+			: Action extends 'exists'
+				? boolean
+				: PaginationResult<
+						PayloadForArgs<
+							Schema,
+							Name,
+							PaginationArgs<Schema, Name, Meta>
+						>
+					>;
+
+type CreateHookContext<
+	Schema extends AnySchema,
+	Meta,
+	Action extends CreateHookAction,
+> = {
+	[Name in TableKey<Schema>]: HookBaseContext<
+		Schema,
+		Name,
+		Meta,
+		CreateHookArgsForAction<Schema, Name, Meta, Action>,
+		Action
+	> & {
+		result: CreateHookResultForAction<Schema, Name, Meta, Action>;
+		row?: Action extends 'createMany'
+			? never
+			: CreateHookResultForAction<Schema, Name, Meta, Action>;
+	};
+}[TableKey<Schema>];
+
+type UpdateHookContext<
+	Schema extends AnySchema,
+	Meta,
+	Action extends UpdateHookAction,
+> = {
+	[Name in TableKey<Schema>]: HookBaseContext<
+		Schema,
+		Name,
+		Meta,
+		UpdateHookArgsForAction<Schema, Name, Meta, Action>,
+		Action
+	> & {
+		result: UpdateHookResultForAction<Schema, Name, Meta, Action>;
+		row?: Action extends 'updateMany'
+			? never
+			: UpdateHookResultForAction<Schema, Name, Meta, Action>;
+	};
+}[TableKey<Schema>];
+
+type DeleteHookContext<
+	Schema extends AnySchema,
+	Meta,
+	Action extends DeleteHookAction,
+> = {
+	[Name in TableKey<Schema>]: HookBaseContext<
+		Schema,
+		Name,
+		Meta,
+		DeleteHookArgsForAction<Schema, Name, Meta, Action>,
+		Action
+	> & {
+		result: DeleteHookResultForAction<Schema, Name, Meta, Action>;
+		row?: Action extends 'deleteMany'
+			? never
+			: DeleteHookResultForAction<Schema, Name, Meta, Action>;
+	};
+}[TableKey<Schema>];
+
+type QueryHookContext<
+	Schema extends AnySchema,
+	Meta,
+	Action extends QueryHookAction,
+> = {
+	[Name in TableKey<Schema>]: HookBaseContext<
+		Schema,
+		Name,
+		Meta,
+		QueryHookArgsForAction<Schema, Name, Meta, Action>,
+		Action
+	> & {
+		result: QueryHookResultForAction<Schema, Name, Meta, Action>;
+		row?: Action extends 'findFirst' | 'findOne' | 'findUnique'
+			? QueryHookResultForAction<Schema, Name, Meta, Action>
+			: never;
+		rows?: Action extends 'findMany'
+			? QueryHookResultForAction<Schema, Name, Meta, Action>
+			: never;
+	};
+}[TableKey<Schema>];
+
+export type BeforeCreateHookContext<
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+> =
+	| {
+			[Name in TableKey<Schema>]: HookBaseContext<
+				Schema,
+				Name,
+				Meta,
+				CreateArgs<Schema, Name, Meta>,
+				'create' | 'upsert'
+			>;
+	  }[TableKey<Schema>]
+	| {
+			[Name in TableKey<Schema>]: HookBaseContext<
+				Schema,
+				Name,
+				Meta,
+				CreateManyArgs<Schema, Name, Meta>,
+				'createMany'
+			>;
+	  }[TableKey<Schema>];
+
+export type AfterCreateHookContext<
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+> =
+	| CreateHookContext<Schema, Meta, 'create'>
+	| CreateHookContext<Schema, Meta, 'createMany'>
+	| CreateHookContext<Schema, Meta, 'upsert'>;
+
+export type BeforeUpdateHookContext<
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+> =
+	| {
+			[Name in TableKey<Schema>]: HookBaseContext<
+				Schema,
+				Name,
+				Meta,
+				UpdateArgs<Schema, Name, Meta>,
+				'update' | 'upsert'
+			>;
+	  }[TableKey<Schema>]
+	| {
+			[Name in TableKey<Schema>]: HookBaseContext<
+				Schema,
+				Name,
+				Meta,
+				UpdateManyArgs<Schema, Name, Meta>,
+				'updateMany'
+			>;
+	  }[TableKey<Schema>];
+
+export type AfterUpdateHookContext<
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+> =
+	| UpdateHookContext<Schema, Meta, 'update'>
+	| UpdateHookContext<Schema, Meta, 'updateMany'>
+	| UpdateHookContext<Schema, Meta, 'upsert'>;
+
+export type BeforeDeleteHookContext<
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+> =
+	| {
+			[Name in TableKey<Schema>]: HookBaseContext<
+				Schema,
+				Name,
+				Meta,
+				DeleteArgs<Schema, Name, Meta>,
+				'delete'
+			>;
+	  }[TableKey<Schema>]
+	| {
+			[Name in TableKey<Schema>]: HookBaseContext<
+				Schema,
+				Name,
+				Meta,
+				DeleteManyArgs<Schema, Name, Meta>,
+				'deleteMany'
+			>;
+	  }[TableKey<Schema>];
+
+export type AfterDeleteHookContext<
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+> =
+	| DeleteHookContext<Schema, Meta, 'delete'>
+	| DeleteHookContext<Schema, Meta, 'deleteMany'>;
+
+export type BeforeQueryHookContext<
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+> = {
+	[Name in TableKey<Schema>]:
+		| HookBaseContext<
+				Schema,
+				Name,
+				Meta,
+				QueryArgs<Schema, Name, Meta>,
+				'findMany' | 'findFirst' | 'findOne' | 'findUnique'
+		  >
+		| HookBaseContext<
+				Schema,
+				Name,
+				Meta,
+				CountArgs<Schema, Name, Meta>,
+				'count' | 'exists'
+		  >
+		| HookBaseContext<
+				Schema,
+				Name,
+				Meta,
+				PaginationArgs<Schema, Name, Meta>,
+				'paginate'
+		  >;
+}[TableKey<Schema>];
+
+export type AfterQueryHookContext<Schema extends AnySchema, Meta = BetterMeta> =
+	| QueryHookContext<Schema, Meta, 'findMany'>
+	| QueryHookContext<Schema, Meta, 'findFirst'>
+	| QueryHookContext<Schema, Meta, 'findOne'>
+	| QueryHookContext<Schema, Meta, 'findUnique'>
+	| QueryHookContext<Schema, Meta, 'count'>
+	| QueryHookContext<Schema, Meta, 'exists'>
+	| QueryHookContext<Schema, Meta, 'paginate'>;
+
+export type ErrorHookContext<Schema extends AnySchema, Meta = BetterMeta> = {
+	action: HookAction;
+	args: unknown;
+	db: unknown;
+	error: unknown;
+	hookName?: keyof BetterClientHooks<Schema, Meta>;
+	meta: Meta | undefined;
+	options: BetterClientOptions<Schema, Meta>;
+	schema: Schema;
+	stage: HookStage;
+	table: BetterTableKey<Schema>;
+	tableConfig: BetterRelationalConfig;
+	tableInstance: Table;
+};
+
+export interface BetterClientOptions<
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+> {
 	schema: Schema;
 	plugins?: Plugin[];
-	hooks?: BetterClientHooks;
+	hooks?: BetterClientHooks<Schema, Meta>;
 }
 
-export interface BetterClientHooks {
-	afterCreate?(): unknown;
-	beforeCreate?(): unknown;
+export interface BetterClientHooks<
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+> {
+	beforeCreate?(context: BeforeCreateHookContext<Schema, Meta>): unknown;
+	afterCreate?(context: AfterCreateHookContext<Schema, Meta>): unknown;
+	beforeUpdate?(context: BeforeUpdateHookContext<Schema, Meta>): unknown;
+	afterUpdate?(context: AfterUpdateHookContext<Schema, Meta>): unknown;
+	beforeDelete?(context: BeforeDeleteHookContext<Schema, Meta>): unknown;
+	afterDelete?(context: AfterDeleteHookContext<Schema, Meta>): unknown;
+	beforeQuery?(context: BeforeQueryHookContext<Schema, Meta>): unknown;
+	afterQuery?(context: AfterQueryHookContext<Schema, Meta>): unknown;
+	onError?(context: ErrorHookContext<Schema, Meta>): unknown;
 }
 
-type BetterDrizzleClientByTable<Schema extends AnySchema> = {
-	[K in TableKey<Schema>]: BetterDrizzleModelDelegate<Schema, K>;
+type BetterDrizzleClientByTable<Schema extends AnySchema, Meta> = {
+	[K in TableKey<Schema>]: BetterDrizzleModelDelegate<Schema, K, Meta>;
 };
 
 type RepositoryKey<Schema extends AnySchema> =
@@ -444,54 +831,62 @@ type RepositorySourceKey<
 		? Name
 		: SourceKeyFromDbName<Schema, Extract<Name, string>>;
 
-export type BetterDrizzleClient<Schema extends AnySchema> =
-	BetterDrizzleClientByTable<Schema> & {
-		repository<Name extends RepositoryKey<Schema>>(
-			name: Name,
-		): BetterDrizzleModelDelegate<
-			Schema,
-			RepositorySourceKey<Schema, Name>
-		>;
-	};
+export type BetterDrizzleClient<
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+> = BetterDrizzleClientByTable<Schema, Meta> & {
+	repository<Name extends RepositoryKey<Schema>>(
+		name: Name,
+	): BetterDrizzleModelDelegate<
+		Schema,
+		RepositorySourceKey<Schema, Name>,
+		Meta
+	>;
+};
 
 export interface BetterDrizzleModelDelegate<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
+	Meta = BetterMeta,
 > {
-	count(args?: CountArgs<Schema, Name>): Promise<number>;
-	exists(args?: ExistsArgs<Schema, Name>): Promise<boolean>;
-	create<Args extends CreateArgs<Schema, Name>>(
+	count(args?: CountArgs<Schema, Name, Meta>): Promise<number>;
+	exists(args?: ExistsArgs<Schema, Name, Meta>): Promise<boolean>;
+	create<Args extends CreateArgs<Schema, Name, Meta>>(
 		args: Args,
 	): Promise<PayloadForArgs<Schema, Name, Args>>;
-	createMany<Args extends CreateManyArgs<Schema, Name>>(
+	createMany<Args extends CreateManyArgs<Schema, Name, Meta>>(
 		args: Args,
 	): Promise<BatchResult<PayloadForArgs<Schema, Name, Args>>>;
-	upsert<Args extends UpsertArgs<Schema, Name>>(
+	upsert<Args extends UpsertArgs<Schema, Name, Meta>>(
 		args: Args,
 	): Promise<PayloadForArgs<Schema, Name, Args>>;
-	findMany<Args extends QueryArgs<Schema, Name>>(
+	findMany<Args extends QueryArgs<Schema, Name, Meta>>(
 		args?: Args,
 	): Promise<PayloadForArgs<Schema, Name, Args>[]>;
-	update<Args extends UpdateArgs<Schema, Name>>(
+	update<Args extends UpdateArgs<Schema, Name, Meta>>(
 		args: Args,
 	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
-	updateMany(args: UpdateManyArgs<Schema, Name>): Promise<BatchResult<never>>;
-	findOne<Args extends QueryArgs<Schema, Name>>(
+	updateMany(
+		args: UpdateManyArgs<Schema, Name, Meta>,
+	): Promise<BatchResult<never>>;
+	findOne<Args extends QueryArgs<Schema, Name, Meta>>(
 		args?: Args,
 	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
-	findFirst<Args extends QueryArgs<Schema, Name>>(
+	findFirst<Args extends QueryArgs<Schema, Name, Meta>>(
 		args?: Args,
 	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
-	findUnique<Args extends QueryArgs<Schema, Name>>(
+	findUnique<Args extends QueryArgs<Schema, Name, Meta>>(
 		args: Args,
 	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
-	paginate<Args extends PaginationArgs<Schema, Name>>(
+	paginate<Args extends PaginationArgs<Schema, Name, Meta>>(
 		args: Args,
 	): Promise<PaginationResult<PayloadForArgs<Schema, Name, Args>>>;
-	delete<Args extends DeleteArgs<Schema, Name>>(
+	delete<Args extends DeleteArgs<Schema, Name, Meta>>(
 		args: Args,
 	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
-	deleteMany(args: DeleteManyArgs<Schema, Name>): Promise<BatchResult<never>>;
+	deleteMany(
+		args: DeleteManyArgs<Schema, Name, Meta>,
+	): Promise<BatchResult<never>>;
 }
 
 export type BetterTableConfig<
