@@ -14,8 +14,10 @@ import type {
 	BetterTableKey,
 	PluginHookKind,
 	PluginRuntimeBucket,
+	PluginRuntimeTransactionBucket,
 	RuntimeContext,
 	TableRuntime,
+	TransactionRuntime,
 } from '../../types';
 
 const getDialect = (db: { dialect?: { constructor?: { name?: string } } }) => {
@@ -57,6 +59,13 @@ const createPluginBuckets = () => {
 		upsert: createBucket(),
 	} satisfies Record<PluginHookKind, PluginRuntimeBucket>;
 };
+
+const createTransactionPluginBucket = (): PluginRuntimeTransactionBucket => ({
+	afterCommitHooks: [],
+	afterRollbackHooks: [],
+	beforeHooks: [],
+	errorHooks: [],
+});
 
 /**
  * Builds the internal runtime context used by every delegate and operation.
@@ -149,6 +158,7 @@ export const createRuntimeContext = <
 	const plugins = options.plugins ?? [];
 
 	return {
+		client: null,
 		db: db as RuntimeContext<Schema, Meta, Plugins>['db'],
 		dialect: getDialect(db as RuntimeContext<Schema, Meta, Plugins>['db']),
 		hasHooks: Boolean(
@@ -168,13 +178,40 @@ export const createRuntimeContext = <
 		plugins: {
 			byKind: createPluginBuckets(),
 			meta: [],
+			transaction: createTransactionPluginBucket(),
 		},
 		fullSchema: options.schema,
 		relational,
 		repositories: Object.create(null) as Record<string, unknown>,
 		tables,
+		transaction: null,
 	};
 };
+
+export const createDerivedRuntimeContext = <
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
+	db: unknown,
+	transaction: TransactionRuntime | null,
+): RuntimeContext<Schema, Meta, Plugins> => ({
+	client: null,
+	db: db as RuntimeContext<Schema, Meta, Plugins>['db'],
+	dialect: context.dialect,
+	hasHooks: context.hasHooks,
+	hasOnError: context.hasOnError,
+	hasPlugins: context.hasPlugins,
+	models: context.models,
+	options: context.options,
+	plugins: context.plugins,
+	fullSchema: context.fullSchema,
+	relational: context.relational,
+	repositories: Object.create(null) as Record<string, unknown>,
+	tables: context.tables,
+	transaction,
+});
 
 /**
  * Retrieves the precomputed runtime metadata for a table by name.

@@ -14,6 +14,7 @@ import type {
 	PluginModelInfo,
 	QueryArgs,
 } from '.';
+import type { TransactionOptions } from './transaction';
 
 /**
  * Minimal shape of a Drizzle query delegate used for relational queries.
@@ -95,6 +96,12 @@ export type DrizzleLikeDatabase = {
 		from(table: Table): SelectQueryLike;
 	};
 	$count?(table: Table, filters?: unknown): Promise<number>;
+	run?(query: SQL): unknown;
+	transaction?<T>(
+		callback: (tx: DrizzleLikeDatabase) => Promise<T> | T,
+		config?: unknown,
+	): Promise<T>;
+	rollback?(): never;
 };
 
 /**
@@ -156,6 +163,14 @@ export type PluginRuntimeAfterHook = (
 ) => unknown;
 
 /**
+ * Runtime signature for a plugin transaction hook function. Receives the
+ * raw transaction hook context object.
+ */
+export type PluginRuntimeTransactionHook = (
+	context: Record<string, unknown>,
+) => unknown;
+
+/**
  * Runtime signature for a plugin transform function. Receives the raw
  * operation input and may return a modified version or `undefined` to
  * skip the operation.
@@ -184,6 +199,54 @@ export type PluginRuntimeBucket = {
 };
 
 /**
+ * Bucket holding all plugin transaction hooks. Precomputed during
+ * initialization to avoid per-call iteration.
+ */
+export type PluginRuntimeTransactionBucket = {
+	/** Registered after-commit hook functions. */
+	afterCommitHooks: PluginRuntimeTransactionHook[];
+	/** Registered after-rollback hook functions. */
+	afterRollbackHooks: PluginRuntimeTransactionHook[];
+	/** Registered before-transaction hook functions. */
+	beforeHooks: PluginRuntimeTransactionHook[];
+	/** Registered on-transaction-error hook functions. */
+	errorHooks: PluginRuntimeTransactionHook[];
+};
+
+/**
+ * A callback function used in transaction lifecycle hooks (after-commit,
+ * after-rollback). May return a value or a promise.
+ */
+export type TransactionCallback = () => unknown | Promise<unknown>;
+
+/**
+ * Internal state for an active transaction. Tracks the nesting depth,
+ * retry attempt number, abort signals, and queued lifecycle callbacks.
+ */
+export type TransactionRuntime = {
+	/** Error set by an abort signal, if the transaction was aborted. */
+	abortError?: unknown;
+	/** Callbacks queued to run after the transaction commits. */
+	afterCommit: TransactionCallback[];
+	/** Callbacks queued to run after the transaction rolls back. */
+	afterRollback: TransactionCallback[];
+	/** The current retry attempt number (1-indexed). */
+	attempt: number;
+	/** Optional comment attached to the transaction (PostgreSQL only). */
+	comment?: string;
+	/** Custom context object scoped to this transaction. */
+	context?: Record<string, unknown>;
+	/** Nesting depth (0 for root transactions, incremented for savepoints). */
+	depth: number;
+	/** Optional name for named savepoints. */
+	name?: string;
+	/** The original transaction options. */
+	options: TransactionOptions;
+	/** Reference to the parent transaction state, when nested. */
+	parent?: TransactionRuntime;
+};
+
+/**
  * Internal runtime context built once during client initialization.
  * Carries the database handle, schema, precomputed table metadata,
  * plugin buckets, and configuration. Passed through all operations.
@@ -196,21 +259,45 @@ export type RuntimeContext<
 	Meta = BetterMeta,
 	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
 > = {
+	/** The bound client or transaction client, set after initialization. */
+	client:
+		| import('./delegate').BetterDrizzleClient<Schema, Meta, Plugins>
+		| import('./transaction').BetterDrizzleTransactionClient<
+				Schema,
+				Meta,
+				Plugins
+		  >
+		| null;
+	/** The raw Drizzle database instance. */
 	db: DrizzleLikeDatabase;
+	/** The detected SQL dialect (`'pg'`, `'sqlite'`, or `'mysql'`). */
 	dialect: PluginDialect;
+	/** `true` when at least one client-level hook is registered. */
 	hasHooks: boolean;
+	/** `true` when the `onError` client hook is registered. */
 	hasOnError: boolean;
+	/** `true` when at least one plugin is loaded. */
 	hasPlugins: boolean;
+	/** Per-model info descriptors keyed by table name. */
 	models: Record<string, PluginModelInfo>;
+	/** The client configuration provided to `better()`. */
 	options: BetterClientOptions<Schema, Meta, Plugins>;
+	/** Precomputed plugin buckets and metadata. */
 	plugins: {
 		byKind: Record<PluginHookKind, PluginRuntimeBucket>;
 		meta: PluginMeta[];
+		transaction: PluginRuntimeTransactionBucket;
 	};
+	/** The full Drizzle schema object. */
 	fullSchema: Schema;
+	/** The resolved relational schema from Drizzle. */
 	relational: RuntimeSchema;
+	/** Repository lookup map (TypeScript key and DB name -> delegate). */
 	repositories: Record<string, unknown>;
+	/** Precomputed per-table runtime metadata. */
 	tables: Record<string, TableRuntime>;
+	/** Active transaction state, or `null` outside a transaction. */
+	transaction: TransactionRuntime | null;
 };
 
 /**

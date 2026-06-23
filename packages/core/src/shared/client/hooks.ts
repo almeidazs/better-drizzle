@@ -37,18 +37,57 @@ export const buildHookContext = <
 	tableName: string,
 	action: string,
 	args: unknown,
-) => ({
-	action,
-	args,
-	db: context.db,
-	meta: getMeta<Meta>(args),
-	options: context.options,
-	repository: context.repositories[tableName],
-	schema: context.fullSchema,
-	table: tableName,
-	tableConfig: runtime.tableConfig,
-	tableInstance: runtime.table,
-});
+) => {
+	const registerAfterCommit = (
+		callback: () => unknown | Promise<unknown>,
+	) => {
+		const { transaction } = context;
+
+		if (!transaction)
+			throw new Error(
+				'afterCommit() can only be used inside a transaction.',
+			);
+
+		transaction.afterCommit.push(callback);
+	};
+
+	const registerAfterRollback = (
+		callback: () => unknown | Promise<unknown>,
+	) => {
+		const { transaction } = context;
+
+		if (!transaction)
+			throw new Error(
+				'afterRollback() can only be used inside a transaction.',
+			);
+
+		transaction.afterRollback.push(callback);
+	};
+
+	return {
+		action,
+		afterCommit: registerAfterCommit,
+		afterRollback: registerAfterRollback,
+		args,
+		db: context.db,
+		isInTransaction: Boolean(context.transaction),
+		meta: getMeta<Meta>(args),
+		options: context.options,
+		repository: context.repositories[tableName],
+		schema: context.fullSchema,
+		table: tableName,
+		tableConfig: runtime.tableConfig,
+		tableInstance: runtime.table,
+		transaction: context.transaction
+			? (context.client as RuntimeContext<
+					Schema,
+					Meta,
+					Plugins
+				>['client'])
+			: null,
+		transactionContext: context.transaction?.context,
+	};
+};
 
 const markErrorReported = (error: unknown) => {
 	if (typeof error === 'object' && error !== null)

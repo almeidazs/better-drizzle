@@ -26,14 +26,15 @@
 - **Entry point**: `packages/core/src/index.ts`
   - Exports `better(...)`
   - Exports `definePlugin(...)`
-  - Builds a runtime context once
+  - Delegates root/transaction client binding to `packages/core/src/shared/client/factory.ts`
+  - Builds a base runtime context once
   - Initializes plugins once during bootstrap
-  - Creates one delegate per schema table
-  - Applies plugin model/client extensions after delegates are created
+  - Re-binds delegates/extensions per bound client (`db` or `tx`) without re-running plugin setup
   - Registers repositories by TypeScript table key and database table name
 - **Runtime layout**:
   - `packages/core/src/shared/client/context.ts`: builds the runtime context and precomputed table metadata
   - `packages/core/src/shared/client/delegate.ts`: exposes the delegate methods for each table
+  - `packages/core/src/shared/client/factory.ts`: binds root and transaction clients, retries, nested savepoints, and transaction lifecycle hooks
   - `packages/core/src/shared/client/operations.ts`: main query and mutation execution paths; this is the hottest file for performance work
   - `packages/core/src/shared/client/hooks.ts`: optional hook execution
   - `packages/core/src/shared/client/plugins.ts`: plugin initialization, validation, transform pipeline, and extension application
@@ -72,11 +73,17 @@
   - `$withoutPlugins`
 - **Client-level lookup**:
   - `repository(name)` resolves by schema key or db table name
+- **Transactions**:
+  - `db.transaction(callback, options?)` is the official API
+  - transaction clients are full Better Drizzle clients with `transaction`, `rollback`, `afterCommit`, and `afterRollback`
+  - transaction context lives on the runtime context; operation/plugin hooks can read `isInTransaction`, `transaction`, and `transactionContext`
+  - nested transactions use savepoints; SQLite is handled with explicit `BEGIN`/`SAVEPOINT` SQL because Bun SQLite's native Drizzle transaction callback is synchronous
 - **Plugin composition**:
   - plugin ids must be unique
   - plugins run in `options.plugins` array order
   - `setup()` runs exactly once during client initialization
   - plugins can extend built-in operation args through `operationArgs`; these fields are typed on delegates, plugin transforms, and client hooks
+  - plugins can also observe transaction lifecycle through `beforeTransaction`, `afterTransactionCommit`, `afterTransactionRollback`, and `onTransactionError`
   - `config.requires.columns` fails fast during bootstrap if any model is incompatible
   - client hooks remain side-effect-only
   - plugin hooks/transforms are the mutation layer

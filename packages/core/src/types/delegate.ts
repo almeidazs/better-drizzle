@@ -17,6 +17,10 @@ import type {
 	WhereArg,
 } from './query';
 import type {
+	BetterDrizzleTransactionClient,
+	TransactionOptions,
+} from './transaction';
+import type {
 	AnySchema,
 	DbNameKey,
 	InsertModelFor,
@@ -237,6 +241,15 @@ export type BetterDrizzleClient<
 	Plugins extends readonly AnyPlugin[] = [],
 > = BetterDrizzleClientByTableWithPlugins<Schema, Meta, Plugins> &
 	ClientExtensionsOf<Plugins> & {
+		/**
+		 * Runs the callback inside a database transaction and returns its result.
+		 */
+		transaction<T>(
+			callback: (
+				tx: BetterDrizzleTransactionClient<Schema, Meta, Plugins>,
+			) => Promise<T> | T,
+			options?: TransactionOptions,
+		): Promise<T>;
 		/**
 		 * Retrieves the model delegate for the given repository name. The name can
 		 * be either the TypeScript table key or the database table name.

@@ -21,6 +21,10 @@ import type {
 	UpsertArgs,
 } from './delegate';
 import type { CountArgs, ExistsArgs, PaginationArgs, QueryArgs } from './query';
+import type {
+	BetterDrizzleTransactionClient,
+	TransactionOptions,
+} from './transaction';
 
 /**
  * Supported SQL dialects that plugins can target.
@@ -243,6 +247,8 @@ type PluginOperationInputBase<
 	>,
 	Kind extends PluginHookKind = PluginHookKind,
 > = {
+	afterCommit(callback: () => unknown | Promise<unknown>): void;
+	afterRollback(callback: () => unknown | Promise<unknown>): void;
 	args: PluginOperationArgsMap<Schema, Name, Meta, OperationArgs>[Kind];
 	data?: Kind extends 'create'
 		? InsertModelFor<Schema, Name>
@@ -258,6 +264,7 @@ type PluginOperationInputBase<
 					: never;
 	db: unknown;
 	dialect: PluginDialect;
+	isInTransaction: boolean;
 	include?: PluginOperationArgsMap<
 		Schema,
 		Name,
@@ -315,6 +322,12 @@ type PluginOperationInputBase<
 		: never;
 	state: State;
 	table: Name;
+	transaction: BetterDrizzleTransactionClient<
+		Schema,
+		Meta,
+		readonly AnyPlugin[]
+	> | null;
+	transactionContext: Record<string, unknown> | undefined;
 	take?: PluginOperationArgsMap<
 		Schema,
 		Name,
@@ -373,6 +386,44 @@ type PluginAfterHookContext<
 	result: PluginOperationResultMap<Schema, Name, Meta>[Kind];
 };
 
+export type PluginTransactionHookContext<
+	Schema extends AnySchema = AnySchema,
+	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
+> = {
+	afterCommit(callback: () => unknown | Promise<unknown>): void;
+	afterRollback(callback: () => unknown | Promise<unknown>): void;
+	attempt: number;
+	client: BetterDrizzleTransactionClient<Schema, Meta, Plugins>;
+	comment?: string;
+	db: unknown;
+	dialect: PluginDialect;
+	depth: number;
+	isInTransaction: true;
+	models: ModelRegistry<Schema>;
+	name?: string;
+	options: BetterClientOptions<Schema, Meta, Plugins>;
+	schema: Schema;
+	transactionContext: Record<string, unknown> | undefined;
+	transactionOptions: TransactionOptions;
+};
+
+export type PluginTransactionErrorHookContext<
+	Schema extends AnySchema = AnySchema,
+	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
+> = PluginTransactionHookContext<Schema, Meta, Plugins> & {
+	error: unknown;
+};
+
+export type PluginTransactionRollbackHookContext<
+	Schema extends AnySchema = AnySchema,
+	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
+> = PluginTransactionHookContext<Schema, Meta, Plugins> & {
+	reason?: unknown;
+};
+
 /**
  * Lifecycle hooks that a plugin can register. Each hook receives a rich
  * context object containing the operation arguments, model info, plugin
@@ -425,6 +476,20 @@ export type PluginHooks<
 			| 'findOne'
 			| 'findUnique'
 			| 'paginate'
+		>,
+	): unknown;
+	afterTransactionCommit?(
+		context: PluginTransactionHookContext<
+			Schema,
+			Meta,
+			readonly AnyPlugin[]
+		>,
+	): unknown;
+	afterTransactionRollback?(
+		context: PluginTransactionRollbackHookContext<
+			Schema,
+			Meta,
+			readonly AnyPlugin[]
 		>,
 	): unknown;
 	afterUpdate?(
@@ -495,6 +560,13 @@ export type PluginHooks<
 				| 'findUnique'
 				| 'paginate']
 		| undefined;
+	beforeTransaction?(
+		context: PluginTransactionHookContext<
+			Schema,
+			Meta,
+			readonly AnyPlugin[]
+		>,
+	): unknown;
 	beforeUpdate?(
 		context: PluginBeforeHookContext<
 			Schema,
@@ -514,6 +586,13 @@ export type PluginHooks<
 				'update' | 'updateMany'
 		  >['data']
 		| undefined;
+	onTransactionError?(
+		context: PluginTransactionErrorHookContext<
+			Schema,
+			Meta,
+			readonly AnyPlugin[]
+		>,
+	): unknown;
 };
 
 /**

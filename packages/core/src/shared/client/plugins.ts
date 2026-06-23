@@ -21,6 +21,7 @@ import type {
 	PluginRuntimeAfterHook,
 	PluginRuntimeBeforeHook,
 	PluginRuntimeBucket,
+	PluginRuntimeTransactionHook,
 	PluginRuntimeTransform,
 	PluginState,
 	QueryArgs,
@@ -112,6 +113,13 @@ type AnyArgs<
 
 type HookName = keyof PluginHooks<AnySchema, unknown, PluginState>;
 type PluginHookMap = Partial<Record<HookName, readonly PluginHookKind[]>>;
+type TransactionHookName = Extract<
+	HookName,
+	| 'afterTransactionCommit'
+	| 'afterTransactionRollback'
+	| 'beforeTransaction'
+	| 'onTransactionError'
+>;
 type BeforeHookResult<Args> = {
 	args: Args;
 	hasOverride: boolean;
@@ -144,6 +152,13 @@ const PLUGIN_HOOK_KINDS = {
 	],
 	beforeUpdate: ['update', 'updateMany'],
 } satisfies PluginHookMap;
+
+const PLUGIN_TRANSACTION_HOOK_NAMES = [
+	'afterTransactionCommit',
+	'afterTransactionRollback',
+	'beforeTransaction',
+	'onTransactionError',
+] as const satisfies readonly TransactionHookName[];
 
 const getPluginMeta = (plugin: AnyPlugin): PluginMeta => ({
 	description: plugin.description,
@@ -220,6 +235,25 @@ const registerTransform = <
 	}
 };
 
+const registerTransactionHook = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
+	hookName: TransactionHookName,
+	hook: PluginRuntimeTransactionHook,
+) => {
+	const bucket = context.plugins.transaction;
+
+	if (hookName === 'beforeTransaction') bucket.beforeHooks.push(hook);
+	else if (hookName === 'afterTransactionCommit')
+		bucket.afterCommitHooks.push(hook);
+	else if (hookName === 'afterTransactionRollback')
+		bucket.afterRollbackHooks.push(hook);
+	else bucket.errorHooks.push(hook);
+};
+
 const registerPluginHooks = <
 	Schema extends AnySchema,
 	Meta,
@@ -228,7 +262,9 @@ const registerPluginHooks = <
 	context: RuntimeContext<Schema, Meta, Plugins>,
 	hooks: PluginHooks<AnySchema, unknown, PluginState>,
 ) => {
-	for (const hookName of Object.keys(PLUGIN_HOOK_KINDS) as HookName[]) {
+	for (const hookName of Object.keys(PLUGIN_HOOK_KINDS) as Array<
+		keyof typeof PLUGIN_HOOK_KINDS
+	>) {
 		const hook = hooks[hookName];
 		if (!hook) continue;
 
@@ -248,6 +284,17 @@ const registerPluginHooks = <
 					kind,
 					hook as unknown as PluginRuntimeAfterHook,
 				);
+	}
+
+	for (const hookName of PLUGIN_TRANSACTION_HOOK_NAMES) {
+		const hook = hooks[hookName];
+		if (!hook) continue;
+
+		registerTransactionHook(
+			context,
+			hookName,
+			hook as unknown as PluginRuntimeTransactionHook,
+		);
 	}
 };
 
@@ -269,10 +316,37 @@ const createOperationInput = <
 	PluginState,
 	OperationArgsExtensionsOf<Plugins>
 > => {
+	const registerAfterCommit = (
+		callback: () => unknown | Promise<unknown>,
+	) => {
+		const { transaction } = context;
+
+		if (!transaction)
+			throw new Error(
+				'afterCommit() can only be used inside a transaction.',
+			);
+
+		transaction.afterCommit.push(callback);
+	};
+	const registerAfterRollback = (
+		callback: () => unknown | Promise<unknown>,
+	) => {
+		const { transaction } = context;
+
+		if (!transaction)
+			throw new Error(
+				'afterRollback() can only be used inside a transaction.',
+			);
+
+		transaction.afterRollback.push(callback);
+	};
 	const input = {
+		afterCommit: registerAfterCommit,
+		afterRollback: registerAfterRollback,
 		args,
 		db: context.db,
 		dialect: context.dialect,
+		isInTransaction: Boolean(context.transaction),
 		kind,
 		meta: getMeta<Meta>(args),
 		model: runtime.model,
@@ -280,6 +354,14 @@ const createOperationInput = <
 		schema: context.fullSchema,
 		state,
 		table: tableName,
+		transaction: context.transaction
+			? (context.client as RuntimeContext<
+					Schema,
+					Meta,
+					Plugins
+				>['client'])
+			: null,
+		transactionContext: context.transaction?.context,
 	} as PluginOperationInput<
 		Schema,
 		BetterTableKey<Schema>,
@@ -747,7 +829,8 @@ export const runPluginPipeline = async <
 	const beforeHookResult = await runBeforeHooks(bucket, input, delegate);
 
 	for (const transform of bucket.transforms) {
-		const nextInput = await transform(input as Record<string, unknown>);
+		const nextInput = transform(input as Record<string, unknown>);
+
 		if (nextInput) Object.assign(input, nextInput);
 	}
 
@@ -818,6 +901,28 @@ export const runPluginAfterHooks = async <
 	for (const hook of bucket.afterHooks) {
 		await hook({ ...input, client: delegate, result });
 	}
+};
+
+export const runPluginTransactionHooks = async <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
+	hookName: TransactionHookName,
+	payload: Record<string, unknown>,
+) => {
+	const bucket = context.plugins.transaction;
+	const hooks =
+		hookName === 'beforeTransaction'
+			? bucket.beforeHooks
+			: hookName === 'afterTransactionCommit'
+				? bucket.afterCommitHooks
+				: hookName === 'afterTransactionRollback'
+					? bucket.afterRollbackHooks
+					: bucket.errorHooks;
+
+	for (const hook of hooks) await hook(payload);
 };
 
 /**

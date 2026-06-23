@@ -150,6 +150,32 @@ const users = client.repository('users');
 
 The repository name can be the TypeScript schema key or the database table name.
 
+## Transactions
+
+Transactions live on the client, not on individual models. The callback receives a full Better Drizzle client bound to the underlying transaction, so model delegates, plugin args, transforms, hooks, and nested transactions all keep working.
+
+</div>
+
+```ts
+const user = await client.transaction(async (tx) => {
+	const created = await tx.users.create({
+		data: {
+			email: 'better@example.com',
+			id: 123,
+			name: 'better',
+		},
+	});
+
+	tx.afterCommit(async () => {
+		await sendWelcomeEmail(created.email);
+	});
+
+	return created;
+});
+```
+
+<div align="center">
+
 ## Plugins
 
 Plugins let you package setup logic, query transforms, and reusable client/model extensions without wrapping `better(...)` yourself.

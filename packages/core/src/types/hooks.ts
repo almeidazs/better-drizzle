@@ -18,6 +18,11 @@ import type {
 	PayloadForArgs,
 	QueryArgs,
 } from './query';
+import type {
+	BetterDrizzleTransactionClient,
+	TransactionOptions,
+	TransactionUnsupportedOptionsBehavior,
+} from './transaction';
 import type { AnySchema, TableFor, TableKey } from './utils';
 
 /** Action names for query operations. */
@@ -55,8 +60,11 @@ type HookBaseContext<
 	Action extends HookAction,
 > = {
 	action: Action;
+	afterCommit(callback: () => unknown | Promise<unknown>): void;
+	afterRollback(callback: () => unknown | Promise<unknown>): void;
 	args: Args;
 	db: unknown;
+	isInTransaction: boolean;
 	meta: Meta | undefined;
 	options: BetterClientOptions<Schema, Meta, Plugins>;
 	repository: BetterDrizzleModelDelegate<Schema, Name, Meta, Plugins>;
@@ -64,6 +72,28 @@ type HookBaseContext<
 	table: Name;
 	tableConfig: import('./delegate').BetterTableConfig<Schema, Name>;
 	tableInstance: TableFor<Schema, Name>;
+	transaction: BetterDrizzleTransactionClient<Schema, Meta, Plugins> | null;
+	transactionContext: Record<string, unknown> | undefined;
+};
+
+type TransactionHookBaseContext<
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+> = {
+	afterCommit(callback: () => unknown | Promise<unknown>): void;
+	afterRollback(callback: () => unknown | Promise<unknown>): void;
+	attempt: number;
+	client: BetterDrizzleTransactionClient<Schema, Meta, Plugins>;
+	comment?: string;
+	db: unknown;
+	depth: number;
+	isInTransaction: true;
+	name?: string;
+	options: BetterClientOptions<Schema, Meta, Plugins>;
+	schema: Schema;
+	transactionContext: Record<string, unknown> | undefined;
+	transactionOptions: TransactionOptions;
 };
 
 type CreateHookArgsForAction<
@@ -641,6 +671,68 @@ export type ErrorHookContext<
 };
 
 /**
+ * Context available in the `beforeTransaction` hook, fired before the
+ * transaction callback executes.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type. Defaults to {@link BetterMeta}.
+ * @typeParam Plugins - The plugin tuple.
+ */
+export type BeforeTransactionHookContext<
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
+> = TransactionHookBaseContext<Schema, Meta, Plugins>;
+
+/**
+ * Context available in the `afterTransactionCommit` hook, fired after a
+ * transaction commits successfully.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type. Defaults to {@link BetterMeta}.
+ * @typeParam Plugins - The plugin tuple.
+ */
+export type AfterTransactionCommitHookContext<
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
+> = TransactionHookBaseContext<Schema, Meta, Plugins>;
+
+/**
+ * Context available in the `afterTransactionRollback` hook, fired after a
+ * transaction rolls back. Includes the optional rollback reason.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type. Defaults to {@link BetterMeta}.
+ * @typeParam Plugins - The plugin tuple.
+ */
+export type AfterTransactionRollbackHookContext<
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
+> = TransactionHookBaseContext<Schema, Meta, Plugins> & {
+	/** The reason the transaction was rolled back, if any. */
+	reason?: unknown;
+};
+
+/**
+ * Context available in the `onTransactionError` hook, fired when a
+ * transaction callback throws an error. Includes the caught error.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type. Defaults to {@link BetterMeta}.
+ * @typeParam Plugins - The plugin tuple.
+ */
+export type TransactionErrorHookContext<
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
+> = TransactionHookBaseContext<Schema, Meta, Plugins> & {
+	/** The error thrown by the transaction callback. */
+	error: unknown;
+};
+
+/**
  * Configuration object passed to {@link better}. Includes the Drizzle schema,
  * optional plugins, and lifecycle hooks.
  *
@@ -656,6 +748,10 @@ export interface BetterClientOptions<
 	schema: Schema;
 	/** Optional plugins to extend the client. */
 	plugins?: Plugins;
+	/** Optional transaction configuration. */
+	transaction?: {
+		unsupportedOptions?: TransactionUnsupportedOptionsBehavior;
+	};
 	/** Optional lifecycle hooks. */
 	hooks?: BetterClientHooks<Schema, Meta, Plugins>;
 }
@@ -703,6 +799,22 @@ export interface BetterClientHooks<
 	): unknown;
 	/** Called after any read (query) operation completes. */
 	afterQuery?(context: AfterQueryHookContext<Schema, Meta, Plugins>): unknown;
+	/** Called before a transaction callback runs. */
+	beforeTransaction?(
+		context: BeforeTransactionHookContext<Schema, Meta, Plugins>,
+	): unknown;
+	/** Called after a transaction commits successfully. */
+	afterTransactionCommit?(
+		context: AfterTransactionCommitHookContext<Schema, Meta, Plugins>,
+	): unknown;
+	/** Called after a transaction rolls back. */
+	afterTransactionRollback?(
+		context: AfterTransactionRollbackHookContext<Schema, Meta, Plugins>,
+	): unknown;
 	/** Called when any operation or hook throws an error. */
 	onError?(context: ErrorHookContext<Schema, Meta, Plugins>): unknown;
+	/** Called when a transaction callback fails. */
+	onTransactionError?(
+		context: TransactionErrorHookContext<Schema, Meta, Plugins>,
+	): unknown;
 }

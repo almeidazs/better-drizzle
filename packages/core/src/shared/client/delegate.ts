@@ -116,6 +116,12 @@ export const createModelDelegate = <
 		Plugins
 	>;
 
+	const assertTransactionNotAborted = () => {
+		const abortError = context.transaction?.abortError;
+
+		if (abortError) throw abortError;
+	};
+
 	const runOperation = <Args, Result>({
 		action,
 		args,
@@ -157,6 +163,8 @@ export const createModelDelegate = <
 			| 'upsert';
 		operation: (operationArgs: Args) => Promise<Result>;
 	}): Promise<Result> => {
+		assertTransactionNotAborted();
+
 		if (!shouldApplyPlugins || !hasPluginWork(context, kind))
 			return executeOperation({
 				action,
@@ -176,6 +184,8 @@ export const createModelDelegate = <
 			});
 
 		return (async () => {
+			assertTransactionNotAborted();
+
 			const pipeline = await runPluginPipeline(
 				context,
 				runtime,
@@ -216,6 +226,8 @@ export const createModelDelegate = <
 				delegate,
 				result,
 			);
+
+			assertTransactionNotAborted();
 
 			return result;
 		})();
