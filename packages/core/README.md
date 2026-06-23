@@ -126,6 +126,18 @@ const user = await client.users.update({
 
 <div align="center">
 
+**You can where queries like drizzle too**
+
+</div>
+
+```ts
+const { count } = await client.users.delete({
+	where: eq(users.id, 123),
+});
+```
+
+<div align="center">
+
 **You can also resolve repositories dynamically.**
 
 </div>
@@ -153,7 +165,6 @@ const client = better(drizzle, {
 		timestamps({
 			createdAt: 'createdAt',
 			updatedAt: 'updatedAt',
-			mode: 'app',
 		}),
 		softDelete(),
 	],
