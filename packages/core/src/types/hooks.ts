@@ -1,6 +1,7 @@
 import type { PaginationResult } from './database';
 import type {
 	BatchResult,
+	BetterDrizzleModelDelegate,
 	CreateArgs,
 	CreateManyArgs,
 	DeleteArgs,
@@ -8,7 +9,7 @@ import type {
 	UpdateArgs,
 	UpdateManyArgs,
 } from './delegate';
-import type { Plugin } from './plugins';
+import type { AnyPlugin, OperationArgsWithPlugins } from './plugins';
 import type {
 	BetterMeta,
 	CountArgs,
@@ -49,6 +50,7 @@ type HookBaseContext<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 	Meta,
+	Plugins extends readonly AnyPlugin[],
 	Args,
 	Action extends HookAction,
 > = {
@@ -56,12 +58,8 @@ type HookBaseContext<
 	args: Args;
 	db: unknown;
 	meta: Meta | undefined;
-	options: BetterClientOptions<Schema, Meta>;
-	repository: import('./delegate').BetterDrizzleModelDelegate<
-		Schema,
-		Name,
-		Meta
-	>;
+	options: BetterClientOptions<Schema, Meta, Plugins>;
+	repository: BetterDrizzleModelDelegate<Schema, Name, Meta, Plugins>;
 	schema: Schema;
 	table: Name;
 	tableConfig: import('./delegate').BetterTableConfig<Schema, Name>;
@@ -72,80 +70,150 @@ type CreateHookArgsForAction<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 	Meta,
+	Plugins extends readonly AnyPlugin[],
 	Action extends CreateHookAction,
 > = Action extends 'createMany'
-	? CreateManyArgs<Schema, Name, Meta>
-	: CreateArgs<Schema, Name, Meta>;
+	? OperationArgsWithPlugins<
+			CreateManyArgs<Schema, Name, Meta>,
+			Plugins,
+			'createMany'
+		>
+	: OperationArgsWithPlugins<CreateArgs<Schema, Name, Meta>, Plugins, Action>;
 
 type CreateHookResultForAction<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 	Meta,
+	Plugins extends readonly AnyPlugin[],
 	Action extends CreateHookAction,
 > = Action extends 'createMany'
 	? BatchResult<
-			PayloadForArgs<Schema, Name, CreateManyArgs<Schema, Name, Meta>>
+			PayloadForArgs<
+				Schema,
+				Name,
+				CreateHookArgsForAction<Schema, Name, Meta, Plugins, Action>
+			>
 		>
-	: PayloadForArgs<Schema, Name, CreateArgs<Schema, Name, Meta>>;
+	: PayloadForArgs<
+			Schema,
+			Name,
+			CreateHookArgsForAction<Schema, Name, Meta, Plugins, Action>
+		>;
 
 type UpdateHookArgsForAction<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 	Meta,
+	Plugins extends readonly AnyPlugin[],
 	Action extends UpdateHookAction,
 > = Action extends 'updateMany'
-	? UpdateManyArgs<Schema, Name, Meta>
-	: UpdateArgs<Schema, Name, Meta>;
+	? OperationArgsWithPlugins<
+			UpdateManyArgs<Schema, Name, Meta>,
+			Plugins,
+			'updateMany'
+		>
+	: Action extends 'upsert'
+		? OperationArgsWithPlugins<
+				UpdateArgs<Schema, Name, Meta>,
+				Plugins,
+				'upsert'
+			>
+		: OperationArgsWithPlugins<
+				UpdateArgs<Schema, Name, Meta>,
+				Plugins,
+				'update'
+			>;
 
 type UpdateHookResultForAction<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 	Meta,
+	Plugins extends readonly AnyPlugin[],
 	Action extends UpdateHookAction,
 > = Action extends 'updateMany'
 	? BatchResult<never>
-	: PayloadForArgs<Schema, Name, UpdateArgs<Schema, Name, Meta>> | null;
+	: PayloadForArgs<
+			Schema,
+			Name,
+			UpdateHookArgsForAction<Schema, Name, Meta, Plugins, Action>
+		> | null;
 
 type DeleteHookArgsForAction<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 	Meta,
+	Plugins extends readonly AnyPlugin[],
 	Action extends DeleteHookAction,
 > = Action extends 'deleteMany'
-	? DeleteManyArgs<Schema, Name, Meta>
-	: DeleteArgs<Schema, Name, Meta>;
+	? OperationArgsWithPlugins<
+			DeleteManyArgs<Schema, Name, Meta>,
+			Plugins,
+			'deleteMany'
+		>
+	: OperationArgsWithPlugins<
+			DeleteArgs<Schema, Name, Meta>,
+			Plugins,
+			'delete'
+		>;
 
 type DeleteHookResultForAction<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 	Meta,
+	Plugins extends readonly AnyPlugin[],
 	Action extends DeleteHookAction,
 > = Action extends 'deleteMany'
 	? BatchResult<never>
-	: PayloadForArgs<Schema, Name, DeleteArgs<Schema, Name, Meta>> | null;
+	: PayloadForArgs<
+			Schema,
+			Name,
+			DeleteHookArgsForAction<Schema, Name, Meta, Plugins, Action>
+		> | null;
 
 type QueryHookArgsForAction<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 	Meta,
+	Plugins extends readonly AnyPlugin[],
 	Action extends QueryHookAction,
 > = Action extends 'count'
-	? CountArgs<Schema, Name, Meta>
+	? OperationArgsWithPlugins<CountArgs<Schema, Name, Meta>, Plugins, 'count'>
 	: Action extends 'exists'
-		? ExistsArgs<Schema, Name, Meta>
+		? OperationArgsWithPlugins<
+				ExistsArgs<Schema, Name, Meta>,
+				Plugins,
+				'exists'
+			>
 		: Action extends 'paginate'
-			? PaginationArgs<Schema, Name, Meta>
-			: QueryArgs<Schema, Name, Meta>;
+			? OperationArgsWithPlugins<
+					PaginationArgs<Schema, Name, Meta>,
+					Plugins,
+					'paginate'
+				>
+			: OperationArgsWithPlugins<
+					QueryArgs<Schema, Name, Meta>,
+					Plugins,
+					Action
+				>;
 
 type QueryHookResultForAction<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 	Meta,
+	Plugins extends readonly AnyPlugin[],
 	Action extends QueryHookAction,
 > = Action extends 'findMany'
-	? PayloadForArgs<Schema, Name, QueryArgs<Schema, Name, Meta>>[]
+	? PayloadForArgs<
+			Schema,
+			Name,
+			QueryHookArgsForAction<Schema, Name, Meta, Plugins, Action>
+		>[]
 	: Action extends 'findFirst' | 'findOne' | 'findUnique'
-		? PayloadForArgs<Schema, Name, QueryArgs<Schema, Name, Meta>> | null
+		? PayloadForArgs<
+				Schema,
+				Name,
+				QueryHookArgsForAction<Schema, Name, Meta, Plugins, Action>
+			> | null
 		: Action extends 'count'
 			? number
 			: Action extends 'exists'
@@ -154,85 +222,99 @@ type QueryHookResultForAction<
 						PayloadForArgs<
 							Schema,
 							Name,
-							PaginationArgs<Schema, Name, Meta>
+							QueryHookArgsForAction<
+								Schema,
+								Name,
+								Meta,
+								Plugins,
+								Action
+							>
 						>
 					>;
 
 type CreateHookContext<
 	Schema extends AnySchema,
 	Meta,
+	Plugins extends readonly AnyPlugin[],
 	Action extends CreateHookAction,
 > = {
 	[Name in TableKey<Schema>]: HookBaseContext<
 		Schema,
 		Name,
 		Meta,
-		CreateHookArgsForAction<Schema, Name, Meta, Action>,
+		Plugins,
+		CreateHookArgsForAction<Schema, Name, Meta, Plugins, Action>,
 		Action
 	> & {
-		result: CreateHookResultForAction<Schema, Name, Meta, Action>;
+		result: CreateHookResultForAction<Schema, Name, Meta, Plugins, Action>;
 		row?: Action extends 'createMany'
 			? never
-			: CreateHookResultForAction<Schema, Name, Meta, Action>;
+			: CreateHookResultForAction<Schema, Name, Meta, Plugins, Action>;
 	};
 }[TableKey<Schema>];
 
 type UpdateHookContext<
 	Schema extends AnySchema,
 	Meta,
+	Plugins extends readonly AnyPlugin[],
 	Action extends UpdateHookAction,
 > = {
 	[Name in TableKey<Schema>]: HookBaseContext<
 		Schema,
 		Name,
 		Meta,
-		UpdateHookArgsForAction<Schema, Name, Meta, Action>,
+		Plugins,
+		UpdateHookArgsForAction<Schema, Name, Meta, Plugins, Action>,
 		Action
 	> & {
-		result: UpdateHookResultForAction<Schema, Name, Meta, Action>;
+		result: UpdateHookResultForAction<Schema, Name, Meta, Plugins, Action>;
 		row?: Action extends 'updateMany'
 			? never
-			: UpdateHookResultForAction<Schema, Name, Meta, Action>;
+			: UpdateHookResultForAction<Schema, Name, Meta, Plugins, Action>;
 	};
 }[TableKey<Schema>];
 
 type DeleteHookContext<
 	Schema extends AnySchema,
 	Meta,
+	Plugins extends readonly AnyPlugin[],
 	Action extends DeleteHookAction,
 > = {
 	[Name in TableKey<Schema>]: HookBaseContext<
 		Schema,
 		Name,
 		Meta,
-		DeleteHookArgsForAction<Schema, Name, Meta, Action>,
+		Plugins,
+		DeleteHookArgsForAction<Schema, Name, Meta, Plugins, Action>,
 		Action
 	> & {
-		result: DeleteHookResultForAction<Schema, Name, Meta, Action>;
+		result: DeleteHookResultForAction<Schema, Name, Meta, Plugins, Action>;
 		row?: Action extends 'deleteMany'
 			? never
-			: DeleteHookResultForAction<Schema, Name, Meta, Action>;
+			: DeleteHookResultForAction<Schema, Name, Meta, Plugins, Action>;
 	};
 }[TableKey<Schema>];
 
 type QueryHookContext<
 	Schema extends AnySchema,
 	Meta,
+	Plugins extends readonly AnyPlugin[],
 	Action extends QueryHookAction,
 > = {
 	[Name in TableKey<Schema>]: HookBaseContext<
 		Schema,
 		Name,
 		Meta,
-		QueryHookArgsForAction<Schema, Name, Meta, Action>,
+		Plugins,
+		QueryHookArgsForAction<Schema, Name, Meta, Plugins, Action>,
 		Action
 	> & {
-		result: QueryHookResultForAction<Schema, Name, Meta, Action>;
+		result: QueryHookResultForAction<Schema, Name, Meta, Plugins, Action>;
 		row?: Action extends 'findFirst' | 'findOne' | 'findUnique'
-			? QueryHookResultForAction<Schema, Name, Meta, Action>
+			? QueryHookResultForAction<Schema, Name, Meta, Plugins, Action>
 			: never;
 		rows?: Action extends 'findMany'
-			? QueryHookResultForAction<Schema, Name, Meta, Action>
+			? QueryHookResultForAction<Schema, Name, Meta, Plugins, Action>
 			: never;
 	};
 }[TableKey<Schema>];
@@ -246,13 +328,19 @@ type QueryHookContext<
 export type BeforeCreateHookContext<
 	Schema extends AnySchema,
 	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
 > =
 	| {
 			[Name in TableKey<Schema>]: HookBaseContext<
 				Schema,
 				Name,
 				Meta,
-				CreateArgs<Schema, Name, Meta>,
+				Plugins,
+				OperationArgsWithPlugins<
+					CreateArgs<Schema, Name, Meta>,
+					Plugins,
+					'create'
+				>,
 				'create' | 'upsert'
 			>;
 	  }[TableKey<Schema>]
@@ -261,7 +349,12 @@ export type BeforeCreateHookContext<
 				Schema,
 				Name,
 				Meta,
-				CreateManyArgs<Schema, Name, Meta>,
+				Plugins,
+				OperationArgsWithPlugins<
+					CreateManyArgs<Schema, Name, Meta>,
+					Plugins,
+					'createMany'
+				>,
 				'createMany'
 			>;
 	  }[TableKey<Schema>];
@@ -276,10 +369,11 @@ export type BeforeCreateHookContext<
 export type AfterCreateHookContext<
 	Schema extends AnySchema,
 	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
 > =
-	| CreateHookContext<Schema, Meta, 'create'>
-	| CreateHookContext<Schema, Meta, 'createMany'>
-	| CreateHookContext<Schema, Meta, 'upsert'>;
+	| CreateHookContext<Schema, Meta, Plugins, 'create'>
+	| CreateHookContext<Schema, Meta, Plugins, 'createMany'>
+	| CreateHookContext<Schema, Meta, Plugins, 'upsert'>;
 
 /**
  * Context available in the `beforeUpdate` and `beforeUpdateMany` hooks.
@@ -290,13 +384,19 @@ export type AfterCreateHookContext<
 export type BeforeUpdateHookContext<
 	Schema extends AnySchema,
 	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
 > =
 	| {
 			[Name in TableKey<Schema>]: HookBaseContext<
 				Schema,
 				Name,
 				Meta,
-				UpdateArgs<Schema, Name, Meta>,
+				Plugins,
+				OperationArgsWithPlugins<
+					UpdateArgs<Schema, Name, Meta>,
+					Plugins,
+					'update'
+				>,
 				'update' | 'upsert'
 			>;
 	  }[TableKey<Schema>]
@@ -305,7 +405,12 @@ export type BeforeUpdateHookContext<
 				Schema,
 				Name,
 				Meta,
-				UpdateManyArgs<Schema, Name, Meta>,
+				Plugins,
+				OperationArgsWithPlugins<
+					UpdateManyArgs<Schema, Name, Meta>,
+					Plugins,
+					'updateMany'
+				>,
 				'updateMany'
 			>;
 	  }[TableKey<Schema>];
@@ -320,10 +425,11 @@ export type BeforeUpdateHookContext<
 export type AfterUpdateHookContext<
 	Schema extends AnySchema,
 	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
 > =
-	| UpdateHookContext<Schema, Meta, 'update'>
-	| UpdateHookContext<Schema, Meta, 'updateMany'>
-	| UpdateHookContext<Schema, Meta, 'upsert'>;
+	| UpdateHookContext<Schema, Meta, Plugins, 'update'>
+	| UpdateHookContext<Schema, Meta, Plugins, 'updateMany'>
+	| UpdateHookContext<Schema, Meta, Plugins, 'upsert'>;
 
 /**
  * Context available in the `beforeDelete` and `beforeDeleteMany` hooks.
@@ -334,13 +440,19 @@ export type AfterUpdateHookContext<
 export type BeforeDeleteHookContext<
 	Schema extends AnySchema,
 	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
 > =
 	| {
 			[Name in TableKey<Schema>]: HookBaseContext<
 				Schema,
 				Name,
 				Meta,
-				DeleteArgs<Schema, Name, Meta>,
+				Plugins,
+				OperationArgsWithPlugins<
+					DeleteArgs<Schema, Name, Meta>,
+					Plugins,
+					'delete'
+				>,
 				'delete'
 			>;
 	  }[TableKey<Schema>]
@@ -349,7 +461,12 @@ export type BeforeDeleteHookContext<
 				Schema,
 				Name,
 				Meta,
-				DeleteManyArgs<Schema, Name, Meta>,
+				Plugins,
+				OperationArgsWithPlugins<
+					DeleteManyArgs<Schema, Name, Meta>,
+					Plugins,
+					'deleteMany'
+				>,
 				'deleteMany'
 			>;
 	  }[TableKey<Schema>];
@@ -363,9 +480,10 @@ export type BeforeDeleteHookContext<
 export type AfterDeleteHookContext<
 	Schema extends AnySchema,
 	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
 > =
-	| DeleteHookContext<Schema, Meta, 'delete'>
-	| DeleteHookContext<Schema, Meta, 'deleteMany'>;
+	| DeleteHookContext<Schema, Meta, Plugins, 'delete'>
+	| DeleteHookContext<Schema, Meta, Plugins, 'deleteMany'>;
 
 /**
  * Context available in the `beforeQuery` hook (runs before any read operation).
@@ -376,27 +494,91 @@ export type AfterDeleteHookContext<
 export type BeforeQueryHookContext<
 	Schema extends AnySchema,
 	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
 > = {
 	[Name in TableKey<Schema>]:
 		| HookBaseContext<
 				Schema,
 				Name,
 				Meta,
-				QueryArgs<Schema, Name, Meta>,
-				'findMany' | 'findFirst' | 'findOne' | 'findUnique'
+				Plugins,
+				OperationArgsWithPlugins<
+					QueryArgs<Schema, Name, Meta>,
+					Plugins,
+					'findMany'
+				>,
+				'findMany'
 		  >
 		| HookBaseContext<
 				Schema,
 				Name,
 				Meta,
-				CountArgs<Schema, Name, Meta>,
-				'count' | 'exists'
+				Plugins,
+				OperationArgsWithPlugins<
+					QueryArgs<Schema, Name, Meta>,
+					Plugins,
+					'findFirst'
+				>,
+				'findFirst'
 		  >
 		| HookBaseContext<
 				Schema,
 				Name,
 				Meta,
-				PaginationArgs<Schema, Name, Meta>,
+				Plugins,
+				OperationArgsWithPlugins<
+					QueryArgs<Schema, Name, Meta>,
+					Plugins,
+					'findOne'
+				>,
+				'findOne'
+		  >
+		| HookBaseContext<
+				Schema,
+				Name,
+				Meta,
+				Plugins,
+				OperationArgsWithPlugins<
+					QueryArgs<Schema, Name, Meta>,
+					Plugins,
+					'findUnique'
+				>,
+				'findUnique'
+		  >
+		| HookBaseContext<
+				Schema,
+				Name,
+				Meta,
+				Plugins,
+				OperationArgsWithPlugins<
+					CountArgs<Schema, Name, Meta>,
+					Plugins,
+					'count'
+				>,
+				'count'
+		  >
+		| HookBaseContext<
+				Schema,
+				Name,
+				Meta,
+				Plugins,
+				OperationArgsWithPlugins<
+					ExistsArgs<Schema, Name, Meta>,
+					Plugins,
+					'exists'
+				>,
+				'exists'
+		  >
+		| HookBaseContext<
+				Schema,
+				Name,
+				Meta,
+				Plugins,
+				OperationArgsWithPlugins<
+					PaginationArgs<Schema, Name, Meta>,
+					Plugins,
+					'paginate'
+				>,
 				'paginate'
 		  >;
 }[TableKey<Schema>];
@@ -407,14 +589,18 @@ export type BeforeQueryHookContext<
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
  */
-export type AfterQueryHookContext<Schema extends AnySchema, Meta = BetterMeta> =
-	| QueryHookContext<Schema, Meta, 'findMany'>
-	| QueryHookContext<Schema, Meta, 'findFirst'>
-	| QueryHookContext<Schema, Meta, 'findOne'>
-	| QueryHookContext<Schema, Meta, 'findUnique'>
-	| QueryHookContext<Schema, Meta, 'count'>
-	| QueryHookContext<Schema, Meta, 'exists'>
-	| QueryHookContext<Schema, Meta, 'paginate'>;
+export type AfterQueryHookContext<
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
+> =
+	| QueryHookContext<Schema, Meta, Plugins, 'findMany'>
+	| QueryHookContext<Schema, Meta, Plugins, 'findFirst'>
+	| QueryHookContext<Schema, Meta, Plugins, 'findOne'>
+	| QueryHookContext<Schema, Meta, Plugins, 'findUnique'>
+	| QueryHookContext<Schema, Meta, Plugins, 'count'>
+	| QueryHookContext<Schema, Meta, Plugins, 'exists'>
+	| QueryHookContext<Schema, Meta, Plugins, 'paginate'>;
 
 /**
  * Context passed to the `onError` hook whenever an operation or another hook
@@ -423,7 +609,11 @@ export type AfterQueryHookContext<Schema extends AnySchema, Meta = BetterMeta> =
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
  */
-export type ErrorHookContext<Schema extends AnySchema, Meta = BetterMeta> = {
+export type ErrorHookContext<
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
+> = {
 	/** The operation that triggered the error. */
 	action: HookAction;
 	/** The original arguments passed to the operation. */
@@ -433,11 +623,11 @@ export type ErrorHookContext<Schema extends AnySchema, Meta = BetterMeta> = {
 	/** The error that was thrown. */
 	error: unknown;
 	/** The hook that triggered the error, if applicable. */
-	hookName?: keyof BetterClientHooks<Schema, Meta>;
+	hookName?: keyof BetterClientHooks<Schema, Meta, Plugins>;
 	/** Custom metadata from the operation arguments. */
 	meta: Meta | undefined;
 	/** The client configuration. */
-	options: BetterClientOptions<Schema, Meta>;
+	options: BetterClientOptions<Schema, Meta, Plugins>;
 	/** The full Drizzle schema object. */
 	schema: Schema;
 	/** The lifecycle stage where the error occurred. */
@@ -460,14 +650,14 @@ export type ErrorHookContext<Schema extends AnySchema, Meta = BetterMeta> = {
 export interface BetterClientOptions<
 	Schema extends AnySchema,
 	Meta = BetterMeta,
-	Plugins extends readonly Plugin[] = readonly Plugin[],
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
 > {
 	/** The Drizzle schema object containing all table definitions. */
 	schema: Schema;
 	/** Optional plugins to extend the client. */
 	plugins?: Plugins;
 	/** Optional lifecycle hooks. */
-	hooks?: BetterClientHooks<Schema, Meta>;
+	hooks?: BetterClientHooks<Schema, Meta, Plugins>;
 }
 
 /**
@@ -481,23 +671,38 @@ export interface BetterClientOptions<
 export interface BetterClientHooks<
 	Schema extends AnySchema,
 	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
 > {
 	/** Called before a single or batch create operation. */
-	beforeCreate?(context: BeforeCreateHookContext<Schema, Meta>): unknown;
+	beforeCreate?(
+		context: BeforeCreateHookContext<Schema, Meta, Plugins>,
+	): unknown;
 	/** Called after a single or batch create operation completes. */
-	afterCreate?(context: AfterCreateHookContext<Schema, Meta>): unknown;
+	afterCreate?(
+		context: AfterCreateHookContext<Schema, Meta, Plugins>,
+	): unknown;
 	/** Called before a single or batch update operation. */
-	beforeUpdate?(context: BeforeUpdateHookContext<Schema, Meta>): unknown;
+	beforeUpdate?(
+		context: BeforeUpdateHookContext<Schema, Meta, Plugins>,
+	): unknown;
 	/** Called after a single or batch update operation completes. */
-	afterUpdate?(context: AfterUpdateHookContext<Schema, Meta>): unknown;
+	afterUpdate?(
+		context: AfterUpdateHookContext<Schema, Meta, Plugins>,
+	): unknown;
 	/** Called before a single or batch delete operation. */
-	beforeDelete?(context: BeforeDeleteHookContext<Schema, Meta>): unknown;
+	beforeDelete?(
+		context: BeforeDeleteHookContext<Schema, Meta, Plugins>,
+	): unknown;
 	/** Called after a single or batch delete operation completes. */
-	afterDelete?(context: AfterDeleteHookContext<Schema, Meta>): unknown;
+	afterDelete?(
+		context: AfterDeleteHookContext<Schema, Meta, Plugins>,
+	): unknown;
 	/** Called before any read (query) operation. */
-	beforeQuery?(context: BeforeQueryHookContext<Schema, Meta>): unknown;
+	beforeQuery?(
+		context: BeforeQueryHookContext<Schema, Meta, Plugins>,
+	): unknown;
 	/** Called after any read (query) operation completes. */
-	afterQuery?(context: AfterQueryHookContext<Schema, Meta>): unknown;
+	afterQuery?(context: AfterQueryHookContext<Schema, Meta, Plugins>): unknown;
 	/** Called when any operation or hook throws an error. */
-	onError?(context: ErrorHookContext<Schema, Meta>): unknown;
+	onError?(context: ErrorHookContext<Schema, Meta, Plugins>): unknown;
 }

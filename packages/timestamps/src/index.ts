@@ -1,4 +1,4 @@
-import { definePlugin } from '../../core/src';
+import { definePlugin } from 'better-drizzle';
 import type { TimestampsOptions } from './types';
 
 type MutableRecord = Record<string, unknown>;

@@ -5,6 +5,13 @@ import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 import { better, definePlugin } from '../src';
 
+type Equal<A, B> =
+	(<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
+		? true
+		: false;
+
+type Expect<T extends true> = T;
+
 const users = sqliteTable('plugin_users', {
 	deletedAt: integer('deleted_at', { mode: 'timestamp' }),
 	id: integer('id').primaryKey(),
@@ -117,7 +124,7 @@ describe('plugins', () => {
 								return {
 									...(data as Record<string, unknown>),
 									name: 'Created by plugin',
-								};
+								} as typeof data;
 							},
 						});
 					},
@@ -146,12 +153,12 @@ describe('plugins', () => {
 					forceDelete(id: number) {
 						return client.$withoutPlugins().delete({
 							where: { id },
-						});
+						} as never);
 					},
 					withDeleted() {
 						return client.$withState({ withDeleted: true });
 					},
-				};
+				} as Record<string, unknown>;
 			},
 			id: 'soft-delete',
 			transform(operation) {
@@ -164,9 +171,11 @@ describe('plugins', () => {
 				)
 					return operation;
 
-				operation.where = operation.where
-					? { AND: [operation.where, { deletedAt: null }] }
-					: { deletedAt: null };
+				operation.where = (
+					operation.where
+						? { AND: [operation.where, { deletedAt: null }] }
+						: { deletedAt: null }
+				) as typeof operation.where;
 
 				return operation;
 			},
@@ -215,6 +224,168 @@ describe('plugins', () => {
 		close();
 	});
 
+	test('operationArgs extends built-in methods and reaches hooks/transforms', async () => {
+		const { raw, close } = createContext();
+		const deleteModes: Array<'soft' | 'hard' | undefined> = [];
+
+		const softDelete = definePlugin({
+			hooks: {
+				beforeDelete(context) {
+					if (context.kind === 'delete')
+						deleteModes.push(context.args.mode);
+				},
+			},
+			id: 'soft-delete-args',
+			operationArgs: {
+				count: {
+					deleted: undefined as
+						| 'without'
+						| 'with'
+						| 'only'
+						| undefined,
+				},
+				delete: {
+					deletedBy: undefined as string | undefined,
+					mode: undefined as 'soft' | 'hard' | undefined,
+				},
+				exists: {
+					deleted: undefined as
+						| 'without'
+						| 'with'
+						| 'only'
+						| undefined,
+				},
+				findFirst: {
+					deleted: undefined as
+						| 'without'
+						| 'with'
+						| 'only'
+						| undefined,
+				},
+				findMany: {
+					deleted: undefined as
+						| 'without'
+						| 'with'
+						| 'only'
+						| undefined,
+				},
+			},
+			transform(operation) {
+				if (
+					operation.kind !== 'findMany' &&
+					operation.kind !== 'findFirst' &&
+					operation.kind !== 'count' &&
+					operation.kind !== 'exists'
+				)
+					return operation;
+
+				if (operation.args.deleted === 'with') return operation;
+				if (operation.args.deleted === 'only') {
+					operation.where = (
+						operation.where
+							? {
+									AND: [
+										operation.where,
+										{ deletedAt: { not: null } },
+									],
+								}
+							: { deletedAt: { not: null } }
+					) as typeof operation.where;
+					return operation;
+				}
+
+				operation.where = (
+					operation.where
+						? { AND: [operation.where, { deletedAt: null }] }
+						: { deletedAt: null }
+				) as typeof operation.where;
+				return operation;
+			},
+		});
+
+		const client = better(raw, {
+			hooks: {
+				beforeDelete(context) {
+					if (context.action !== 'delete') return;
+
+					const mode: 'soft' | 'hard' | undefined = context.args.mode;
+					expect(mode).toBeDefined();
+				},
+				beforeQuery(context) {
+					if (
+						context.action === 'findMany' &&
+						context.args.deleted === 'only'
+					) {
+						const deleted: 'without' | 'with' | 'only' | undefined =
+							context.args.deleted;
+						expect(deleted).toBe('only');
+					}
+				},
+			},
+			plugins: [softDelete],
+			schema,
+		});
+
+		const onlyDeleted = await client.users.findMany({
+			deleted: 'only',
+			orderBy: { id: 'asc' },
+		});
+		const withDeleted = await client.users.findMany({
+			deleted: 'with',
+			orderBy: { id: 'asc' },
+		});
+		const visibleCount = await client.users.count({ deleted: 'without' });
+		const deletedExists = await client.users.exists({
+			deleted: 'only',
+			where: { id: 2 },
+		});
+
+		await client.users.delete({
+			deletedBy: 'admin',
+			mode: 'soft',
+			where: { id: 1 },
+		});
+
+		expect(onlyDeleted).toHaveLength(1);
+		expect(withDeleted).toHaveLength(2);
+		expect(visibleCount).toBe(1);
+		expect(deletedExists).toBe(true);
+		expect(deleteModes).toEqual(['soft']);
+		close();
+	});
+
+	test('fails when two plugins declare the same operation arg key', () => {
+		const { raw, close } = createContext();
+
+		expect(() =>
+			better(raw, {
+				plugins: [
+					definePlugin({
+						id: 'soft-a',
+						operationArgs: {
+							delete: {
+								mode: undefined as 'soft' | undefined,
+							},
+						},
+					}),
+					definePlugin({
+						id: 'soft-b',
+						operationArgs: {
+							delete: {
+								mode: undefined as 'hard' | undefined,
+							},
+						},
+					}),
+				],
+				schema,
+			}),
+		).toThrow(
+			'Plugin "soft-b" cannot override operation arg "mode" on "delete" because it is already declared by plugin "soft-a".',
+		);
+
+		close();
+	});
+
 	test('extendClient adds root helpers', async () => {
 		const { raw, close } = createContext();
 
@@ -222,10 +393,14 @@ describe('plugins', () => {
 			plugins: [
 				definePlugin({
 					extendClient({ client }) {
+						const typedClient = client as typeof client & {
+							users: { count(): Promise<number> };
+						};
+
 						return {
 							stats: {
 								activeUsers() {
-									return client.users.count();
+									return typedClient.users.count();
 								},
 							},
 						};
@@ -257,7 +432,7 @@ describe('plugins', () => {
 							return {
 								...(data as Record<string, unknown>),
 								name: `${(data as { name: string }).name}-A`,
-							};
+							} as typeof data;
 						},
 					},
 					id: 'a',
@@ -268,7 +443,7 @@ describe('plugins', () => {
 							return {
 								...(data as Record<string, unknown>),
 								name: `${(data as { name: string }).name}-B`,
-							};
+							} as typeof data;
 						},
 					},
 					id: 'b',
@@ -282,6 +457,79 @@ describe('plugins', () => {
 		});
 
 		expect(created?.name).toBe('Base-A-B');
+		close();
+	});
+
+	test('operationArgs types are exposed on delegates and hooks', () => {
+		const { raw, close } = createContext();
+		const softDelete = definePlugin({
+			id: 'soft-delete-types',
+			operationArgs: {
+				delete: {
+					mode: undefined as 'soft' | 'hard' | undefined,
+				},
+				findMany: {
+					deleted: undefined as
+						| 'without'
+						| 'with'
+						| 'only'
+						| undefined,
+				},
+			},
+			transform(operation) {
+				if (operation.kind === 'delete') {
+					type _DeleteMode = Expect<
+						Equal<
+							typeof operation.args.mode,
+							'soft' | 'hard' | undefined
+						>
+					>;
+					const check: _DeleteMode = true;
+					void check;
+				}
+				if (operation.kind === 'findMany') {
+					type _DeletedFilter = Expect<
+						Equal<
+							typeof operation.args.deleted,
+							'without' | 'with' | 'only' | undefined
+						>
+					>;
+					const check: _DeletedFilter = true;
+					void check;
+				}
+				return operation;
+			},
+		});
+
+		const client = better(raw, {
+			hooks: {
+				beforeDelete(context) {
+					if (context.action !== 'delete') return;
+
+					type _Mode = Expect<
+						Equal<
+							typeof context.args.mode,
+							'soft' | 'hard' | undefined
+						>
+					>;
+					const check: _Mode = true;
+					void check;
+				},
+			},
+			plugins: [softDelete],
+			schema,
+		});
+
+		type _FindManyDeleted = Expect<
+			Equal<
+				NonNullable<
+					Parameters<typeof client.users.findMany>[0]
+				>['deleted'],
+				'without' | 'with' | 'only' | undefined
+			>
+		>;
+		const check: _FindManyDeleted = true;
+		void check;
 		close();
 	});
 });

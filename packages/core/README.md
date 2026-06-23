@@ -154,6 +154,8 @@ The repository name can be the TypeScript schema key or the database table name.
 
 Plugins let you package setup logic, query transforms, and reusable client/model extensions without wrapping `better(...)` yourself.
 
+Plugins can also extend the built-in operation args in a fully typed way through `operationArgs`, so custom fields like `deleted` or `mode` flow from the delegate call into plugin transforms and hooks.
+
 </div>
 
 ```ts
@@ -165,11 +167,20 @@ const client = better(drizzle, {
 	schema,
 	plugins: [
 		timestamps({
-			createdAt: 'createdAt',
-			updatedAt: 'updatedAt',
+			createdAt: 'created_at',
+			updatedAt: 'updated_at',
 		}),
 		softDelete(),
 	],
+});
+
+await client.users.delete({
+	mode: 'soft',
+	where: { id: 1 },
+});
+
+await client.users.findMany({
+	deleted: 'only',
 });
 ```
 

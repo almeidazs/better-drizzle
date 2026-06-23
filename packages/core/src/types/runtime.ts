@@ -2,12 +2,12 @@ import type { AnyColumn, SQL, Table } from 'drizzle-orm';
 import type { extractTablesRelationalConfig } from 'drizzle-orm/relations';
 
 import type {
+	AnyPlugin,
 	AnySchema,
 	BetterClientOptions,
 	BetterMeta,
 	BetterRelationalConfig,
 	BetterTableKey,
-	Plugin,
 	PluginDialect,
 	PluginHookKind,
 	PluginMeta,
@@ -191,14 +191,18 @@ export type PluginRuntimeBucket = {
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Meta   - Custom metadata type. Defaults to {@link BetterMeta}.
  */
-export type RuntimeContext<Schema extends AnySchema, Meta = BetterMeta> = {
+export type RuntimeContext<
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
+> = {
 	db: DrizzleLikeDatabase;
 	dialect: PluginDialect;
 	hasHooks: boolean;
 	hasOnError: boolean;
 	hasPlugins: boolean;
 	models: Record<string, PluginModelInfo>;
-	options: BetterClientOptions<Schema, Meta, readonly Plugin[]>;
+	options: BetterClientOptions<Schema, Meta, Plugins>;
 	plugins: {
 		byKind: Record<PluginHookKind, PluginRuntimeBucket>;
 		meta: PluginMeta[];

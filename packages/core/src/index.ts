@@ -11,12 +11,12 @@ import {
 export * from './shared/errors';
 
 import type {
+	AnyPlugin,
 	AnySchema,
 	BetterClientOptions,
 	BetterDrizzleClient,
 	BetterMeta,
 	BetterTableKey,
-	Plugin,
 } from './types';
 
 /**
@@ -48,7 +48,7 @@ import type {
 export const better = <
 	Schema extends AnySchema,
 	Meta = BetterMeta,
-	Plugins extends readonly Plugin[] = [],
+	const Plugins extends readonly AnyPlugin[] = [],
 >(
 	drizzle: unknown,
 	options: BetterClientOptions<Schema, Meta, Plugins>,

@@ -7,11 +7,11 @@ import {
 } from 'drizzle-orm';
 
 import type {
+	AnyPlugin,
 	AnySchema,
 	BetterClientOptions,
 	BetterMeta,
 	BetterTableKey,
-	Plugin,
 	PluginHookKind,
 	PluginRuntimeBucket,
 	RuntimeContext,
@@ -61,11 +61,11 @@ const createPluginBuckets = () => {
 export const createRuntimeContext = <
 	Schema extends AnySchema,
 	Meta = BetterMeta,
-	Plugins extends readonly Plugin[] = readonly Plugin[],
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
 >(
 	db: unknown,
 	options: BetterClientOptions<Schema, Meta, Plugins>,
-): RuntimeContext<Schema, Meta> => {
+): RuntimeContext<Schema, Meta, Plugins> => {
 	const relational = extractTablesRelationalConfig(
 		options.schema,
 		createTableRelationsHelpers,
@@ -73,7 +73,8 @@ export const createRuntimeContext = <
 	const tables = Object.create(null) as Record<string, TableRuntime>;
 	const models = Object.create(null) as RuntimeContext<
 		Schema,
-		Meta
+		Meta,
+		Plugins
 	>['models'];
 
 	for (const [tableName, table] of Object.entries(options.schema)) {
@@ -136,8 +137,8 @@ export const createRuntimeContext = <
 	const plugins = options.plugins ?? [];
 
 	return {
-		db: db as RuntimeContext<Schema, Meta>['db'],
-		dialect: getDialect(db as RuntimeContext<Schema, Meta>['db']),
+		db: db as RuntimeContext<Schema, Meta, Plugins>['db'],
+		dialect: getDialect(db as RuntimeContext<Schema, Meta, Plugins>['db']),
 		hasHooks: Boolean(
 			hooks?.beforeCreate ||
 				hooks?.afterCreate ||
@@ -151,7 +152,7 @@ export const createRuntimeContext = <
 		hasOnError: Boolean(hooks?.onError),
 		hasPlugins: plugins.length > 0,
 		models,
-		options: options as BetterClientOptions<Schema, Meta>,
+		options,
 		plugins: {
 			byKind: createPluginBuckets(),
 			meta: [],

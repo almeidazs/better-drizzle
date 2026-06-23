@@ -1,4 +1,5 @@
 import type {
+	AnyPlugin,
 	AnySchema,
 	BetterDrizzleClient,
 	BetterDrizzleModelDelegate,
@@ -9,11 +10,13 @@ import type {
 	DeleteArgs,
 	DeleteManyArgs,
 	ExistsArgs,
+	OperationArgsExtensionsOf,
+	OperationArgsWithPlugins,
 	PaginationArgs,
-	Plugin,
 	PluginHookKind,
 	PluginHooks,
 	PluginMeta,
+	PluginOperationArgsExtensionMap,
 	PluginOperationInput,
 	PluginRuntimeAfterHook,
 	PluginRuntimeBeforeHook,
@@ -31,18 +34,81 @@ import { getMeta, isSimpleRecord } from './context';
 
 const SKIP_PLUGINS_STATE = '__betterDrizzleSkipPlugins';
 
-type AnyArgs<Schema extends AnySchema, Meta> =
-	| CountArgs<Schema, BetterTableKey<Schema>, Meta>
-	| CreateArgs<Schema, BetterTableKey<Schema>, Meta>
-	| CreateManyArgs<Schema, BetterTableKey<Schema>, Meta>
-	| DeleteArgs<Schema, BetterTableKey<Schema>, Meta>
-	| DeleteManyArgs<Schema, BetterTableKey<Schema>, Meta>
-	| ExistsArgs<Schema, BetterTableKey<Schema>, Meta>
-	| PaginationArgs<Schema, BetterTableKey<Schema>, Meta>
-	| QueryArgs<Schema, BetterTableKey<Schema>, Meta>
-	| UpdateArgs<Schema, BetterTableKey<Schema>, Meta>
-	| UpdateManyArgs<Schema, BetterTableKey<Schema>, Meta>
-	| UpsertArgs<Schema, BetterTableKey<Schema>, Meta>;
+type AnyArgs<
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+> =
+	| OperationArgsWithPlugins<
+			CountArgs<Schema, BetterTableKey<Schema>, Meta>,
+			Plugins,
+			'count'
+	  >
+	| OperationArgsWithPlugins<
+			CreateArgs<Schema, BetterTableKey<Schema>, Meta>,
+			Plugins,
+			'create'
+	  >
+	| OperationArgsWithPlugins<
+			CreateManyArgs<Schema, BetterTableKey<Schema>, Meta>,
+			Plugins,
+			'createMany'
+	  >
+	| OperationArgsWithPlugins<
+			DeleteArgs<Schema, BetterTableKey<Schema>, Meta>,
+			Plugins,
+			'delete'
+	  >
+	| OperationArgsWithPlugins<
+			DeleteManyArgs<Schema, BetterTableKey<Schema>, Meta>,
+			Plugins,
+			'deleteMany'
+	  >
+	| OperationArgsWithPlugins<
+			ExistsArgs<Schema, BetterTableKey<Schema>, Meta>,
+			Plugins,
+			'exists'
+	  >
+	| OperationArgsWithPlugins<
+			PaginationArgs<Schema, BetterTableKey<Schema>, Meta>,
+			Plugins,
+			'paginate'
+	  >
+	| OperationArgsWithPlugins<
+			QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
+			Plugins,
+			'findMany'
+	  >
+	| OperationArgsWithPlugins<
+			QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
+			Plugins,
+			'findFirst'
+	  >
+	| OperationArgsWithPlugins<
+			QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
+			Plugins,
+			'findOne'
+	  >
+	| OperationArgsWithPlugins<
+			QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
+			Plugins,
+			'findUnique'
+	  >
+	| OperationArgsWithPlugins<
+			UpdateArgs<Schema, BetterTableKey<Schema>, Meta>,
+			Plugins,
+			'update'
+	  >
+	| OperationArgsWithPlugins<
+			UpdateManyArgs<Schema, BetterTableKey<Schema>, Meta>,
+			Plugins,
+			'updateMany'
+	  >
+	| OperationArgsWithPlugins<
+			UpsertArgs<Schema, BetterTableKey<Schema>, Meta>,
+			Plugins,
+			'upsert'
+	  >;
 
 type HookName = keyof PluginHooks<AnySchema, unknown, PluginState>;
 type PluginHookMap = Partial<Record<HookName, readonly PluginHookKind[]>>;
@@ -74,7 +140,7 @@ const PLUGIN_HOOK_KINDS = {
 	beforeUpdate: ['update', 'updateMany'],
 } satisfies PluginHookMap;
 
-const getPluginMeta = (plugin: Plugin): PluginMeta => ({
+const getPluginMeta = (plugin: AnyPlugin): PluginMeta => ({
 	description: plugin.description,
 	id: plugin.id,
 	name: plugin.name,
@@ -95,13 +161,21 @@ const getBeforeHookName = (
 	return 'beforeQuery';
 };
 
-const getBucket = <Schema extends AnySchema, Meta>(
-	context: RuntimeContext<Schema, Meta>,
+const getBucket = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
 	kind: PluginHookKind,
 ) => context.plugins.byKind[kind];
 
-const registerBeforeHook = <Schema extends AnySchema, Meta>(
-	context: RuntimeContext<Schema, Meta>,
+const registerBeforeHook = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
 	kind: PluginHookKind,
 	hook: PluginRuntimeBeforeHook,
 ) => {
@@ -110,8 +184,12 @@ const registerBeforeHook = <Schema extends AnySchema, Meta>(
 	bucket.hasBeforeHooks = true;
 };
 
-const registerAfterHook = <Schema extends AnySchema, Meta>(
-	context: RuntimeContext<Schema, Meta>,
+const registerAfterHook = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
 	kind: PluginHookKind,
 	hook: PluginRuntimeAfterHook,
 ) => {
@@ -120,8 +198,12 @@ const registerAfterHook = <Schema extends AnySchema, Meta>(
 	bucket.hasAfterHooks = true;
 };
 
-const registerTransform = <Schema extends AnySchema, Meta>(
-	context: RuntimeContext<Schema, Meta>,
+const registerTransform = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
 	transform: PluginRuntimeTransform,
 ) => {
 	for (const kind of Object.keys(
@@ -133,8 +215,12 @@ const registerTransform = <Schema extends AnySchema, Meta>(
 	}
 };
 
-const registerPluginHooks = <Schema extends AnySchema, Meta>(
-	context: RuntimeContext<Schema, Meta>,
+const registerPluginHooks = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
 	hooks: PluginHooks<AnySchema, unknown, PluginState>,
 ) => {
 	for (const hookName of Object.keys(PLUGIN_HOOK_KINDS) as HookName[]) {
@@ -160,14 +246,24 @@ const registerPluginHooks = <Schema extends AnySchema, Meta>(
 	}
 };
 
-const createOperationInput = <Schema extends AnySchema, Meta>(
-	context: RuntimeContext<Schema, Meta>,
+const createOperationInput = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
 	runtime: TableRuntime,
 	tableName: BetterTableKey<Schema>,
 	kind: PluginHookKind,
-	args: AnyArgs<Schema, Meta>,
+	args: AnyArgs<Schema, Meta, Plugins>,
 	state: PluginState,
-): PluginOperationInput<Schema, BetterTableKey<Schema>, Meta> => {
+): PluginOperationInput<
+	Schema,
+	BetterTableKey<Schema>,
+	Meta,
+	PluginState,
+	OperationArgsExtensionsOf<Plugins>
+> => {
 	const input = {
 		args,
 		db: context.db,
@@ -179,7 +275,13 @@ const createOperationInput = <Schema extends AnySchema, Meta>(
 		schema: context.fullSchema,
 		state,
 		table: tableName,
-	} as PluginOperationInput<Schema, BetterTableKey<Schema>, Meta>;
+	} as PluginOperationInput<
+		Schema,
+		BetterTableKey<Schema>,
+		Meta,
+		PluginState,
+		OperationArgsExtensionsOf<Plugins>
+	>;
 
 	if ('where' in args) input.where = args.where as typeof input.where;
 	if ('select' in args) input.select = args.select as typeof input.select;
@@ -200,10 +302,20 @@ const createOperationInput = <Schema extends AnySchema, Meta>(
 	return input;
 };
 
-const assignOperationArgs = <Schema extends AnySchema, Meta>(
+const assignOperationArgs = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
 	kind: PluginHookKind,
-	args: AnyArgs<Schema, Meta>,
-	input: PluginOperationInput<Schema, BetterTableKey<Schema>, Meta>,
+	args: AnyArgs<Schema, Meta, Plugins>,
+	input: PluginOperationInput<
+		Schema,
+		BetterTableKey<Schema>,
+		Meta,
+		PluginState,
+		OperationArgsExtensionsOf<Plugins>
+	>,
 ) => {
 	(args as Record<string, unknown>).where = input.where as unknown;
 	(args as Record<string, unknown>).select = input.select as unknown;
@@ -242,8 +354,12 @@ export const shouldRunPlugins = (
 	state: PluginState | undefined,
 ) => hasPlugins && !state?.[SKIP_PLUGINS_STATE];
 
-export const hasPluginWork = <Schema extends AnySchema, Meta>(
-	context: RuntimeContext<Schema, Meta>,
+export const hasPluginWork = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
 	kind: PluginHookKind,
 ) => {
 	const bucket = getBucket(context, kind);
@@ -258,11 +374,22 @@ export const createPluginState = (state?: PluginState) =>
 export const mergePluginState = (state: PluginState, next: PluginState) =>
 	Object.assign(Object.create(null), state, next) as PluginState;
 
-export const initializePlugins = <Schema extends AnySchema, Meta>(
-	context: RuntimeContext<Schema, Meta>,
+export const initializePlugins = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
 ) => {
 	const seenIds = new Set<string>();
+	const seenOperationArgs = Object.create(null) as Record<
+		PluginHookKind,
+		Record<string, string>
+	>;
 	const plugins = context.options.plugins ?? [];
+
+	for (const kind of Object.keys(context.plugins.byKind) as PluginHookKind[])
+		seenOperationArgs[kind] = Object.create(null) as Record<string, string>;
 
 	for (const plugin of plugins) {
 		if (seenIds.has(plugin.id))
@@ -291,6 +418,26 @@ export const initializePlugins = <Schema extends AnySchema, Meta>(
 						throw new Error(
 							`Plugin "${plugin.id}" requires column "${requirement.column}" on model "${model.name}".`,
 						);
+
+		if (plugin.operationArgs)
+			for (const kind of Object.keys(
+				plugin.operationArgs,
+			) as PluginHookKind[]) {
+				const extension = (
+					plugin.operationArgs as Partial<PluginOperationArgsExtensionMap>
+				)[kind];
+				if (!extension) continue;
+
+				for (const key of Object.keys(extension)) {
+					const owner = seenOperationArgs[kind]?.[key];
+					if (owner)
+						throw new Error(
+							`Plugin "${plugin.id}" cannot override operation arg "${key}" on "${kind}" because it is already declared by plugin "${owner}".`,
+						);
+
+					seenOperationArgs[kind][key] = plugin.id;
+				}
+			}
 
 		context.plugins.meta.push(getPluginMeta(plugin));
 		if (plugin.hooks) registerPluginHooks(context, plugin.hooks);
@@ -341,10 +488,19 @@ const assertExtensionKeys = (
 			);
 };
 
-export const applyModelExtensions = <Schema extends AnySchema, Meta>(
-	context: RuntimeContext<Schema, Meta>,
+export const applyModelExtensions = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
 	tableName: BetterTableKey<Schema>,
-	delegate: BetterDrizzleModelDelegate<Schema, BetterTableKey<Schema>, Meta>,
+	delegate: BetterDrizzleModelDelegate<
+		Schema,
+		BetterTableKey<Schema>,
+		Meta,
+		Plugins
+	>,
 ) => {
 	const plugins = context.options.plugins ?? [];
 	const runtime = context.tables[tableName as string];
@@ -373,9 +529,13 @@ export const applyModelExtensions = <Schema extends AnySchema, Meta>(
 	return delegate;
 };
 
-export const applyClientExtensions = <Schema extends AnySchema, Meta>(
-	context: RuntimeContext<Schema, Meta>,
-	client: BetterDrizzleClient<Schema, Meta, readonly Plugin[]>,
+export const applyClientExtensions = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
+	client: BetterDrizzleClient<Schema, Meta, Plugins>,
 ) => {
 	const plugins = context.options.plugins ?? [];
 
@@ -400,10 +560,25 @@ export const applyClientExtensions = <Schema extends AnySchema, Meta>(
 	}
 };
 
-const runBeforeHooks = async <Schema extends AnySchema, Meta>(
+const runBeforeHooks = async <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
 	bucket: PluginRuntimeBucket,
-	input: PluginOperationInput<Schema, BetterTableKey<Schema>, Meta>,
-	delegate: BetterDrizzleModelDelegate<Schema, BetterTableKey<Schema>, Meta>,
+	input: PluginOperationInput<
+		Schema,
+		BetterTableKey<Schema>,
+		Meta,
+		PluginState,
+		OperationArgsExtensionsOf<Plugins>
+	>,
+	delegate: BetterDrizzleModelDelegate<
+		Schema,
+		BetterTableKey<Schema>,
+		Meta,
+		Plugins
+	>,
 ) => {
 	if (!bucket.hasBeforeHooks) return;
 
@@ -418,21 +593,31 @@ const runBeforeHooks = async <Schema extends AnySchema, Meta>(
 	}
 };
 
-export const runPluginPipeline = async <Schema extends AnySchema, Meta>(
-	context: RuntimeContext<Schema, Meta>,
+export const runPluginPipeline = async <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
 	runtime: TableRuntime,
 	tableName: BetterTableKey<Schema>,
 	kind: PluginHookKind,
-	args: AnyArgs<Schema, Meta>,
+	args: AnyArgs<Schema, Meta, Plugins>,
 	state: PluginState,
-	delegate: BetterDrizzleModelDelegate<Schema, BetterTableKey<Schema>, Meta>,
+	delegate: BetterDrizzleModelDelegate<
+		Schema,
+		BetterTableKey<Schema>,
+		Meta,
+		Plugins
+	>,
 ) => {
 	const bucket = getBucket(context, kind);
 	if (!bucket.hasBeforeHooks && !bucket.hasTransforms) return args;
 
 	const nextArgs = cloneArgs(args as Record<string, unknown>) as AnyArgs<
 		Schema,
-		Meta
+		Meta,
+		Plugins
 	>;
 	const input = createOperationInput(
 		context,
@@ -457,15 +642,21 @@ export const runPluginPipeline = async <Schema extends AnySchema, Meta>(
 export const runPluginAfterHooks = async <
 	Schema extends AnySchema,
 	Meta,
+	Plugins extends readonly AnyPlugin[],
 	Result,
 >(
-	context: RuntimeContext<Schema, Meta>,
+	context: RuntimeContext<Schema, Meta, Plugins>,
 	runtime: TableRuntime,
 	tableName: BetterTableKey<Schema>,
 	kind: PluginHookKind,
-	args: AnyArgs<Schema, Meta>,
+	args: AnyArgs<Schema, Meta, Plugins>,
 	state: PluginState,
-	delegate: BetterDrizzleModelDelegate<Schema, BetterTableKey<Schema>, Meta>,
+	delegate: BetterDrizzleModelDelegate<
+		Schema,
+		BetterTableKey<Schema>,
+		Meta,
+		Plugins
+	>,
 	result: Result,
 ) => {
 	const bucket = getBucket(context, kind);

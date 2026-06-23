@@ -144,25 +144,53 @@ export type PluginHookKind =
 	| 'updateMany'
 	| 'upsert';
 
+export type PluginOperationArgsExtensionMap = {
+	[K in PluginHookKind]: Record<string, unknown>;
+};
+
+type OperationArgsForKind<OperationArgs, Kind extends PluginHookKind> =
+	OperationArgs extends Partial<PluginOperationArgsExtensionMap>
+		? Kind extends keyof OperationArgs
+			? OperationArgs[Kind] extends Record<string, unknown>
+				? OperationArgs[Kind]
+				: Record<never, never>
+			: Record<never, never>
+		: Record<never, never>;
+
 type PluginOperationArgsMap<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 	Meta,
+	OperationArgs extends Partial<PluginOperationArgsExtensionMap>,
 > = {
-	count: CountArgs<Schema, Name, Meta>;
-	create: CreateArgs<Schema, Name, Meta>;
-	createMany: CreateManyArgs<Schema, Name, Meta>;
-	delete: DeleteArgs<Schema, Name, Meta>;
-	deleteMany: DeleteManyArgs<Schema, Name, Meta>;
-	exists: ExistsArgs<Schema, Name, Meta>;
-	findFirst: QueryArgs<Schema, Name, Meta>;
-	findMany: QueryArgs<Schema, Name, Meta>;
-	findOne: QueryArgs<Schema, Name, Meta>;
-	findUnique: QueryArgs<Schema, Name, Meta>;
-	paginate: PaginationArgs<Schema, Name, Meta>;
-	update: UpdateArgs<Schema, Name, Meta>;
-	updateMany: UpdateManyArgs<Schema, Name, Meta>;
-	upsert: UpsertArgs<Schema, Name, Meta>;
+	count: CountArgs<Schema, Name, Meta> &
+		OperationArgsForKind<OperationArgs, 'count'>;
+	create: CreateArgs<Schema, Name, Meta> &
+		OperationArgsForKind<OperationArgs, 'create'>;
+	createMany: CreateManyArgs<Schema, Name, Meta> &
+		OperationArgsForKind<OperationArgs, 'createMany'>;
+	delete: DeleteArgs<Schema, Name, Meta> &
+		OperationArgsForKind<OperationArgs, 'delete'>;
+	deleteMany: DeleteManyArgs<Schema, Name, Meta> &
+		OperationArgsForKind<OperationArgs, 'deleteMany'>;
+	exists: ExistsArgs<Schema, Name, Meta> &
+		OperationArgsForKind<OperationArgs, 'exists'>;
+	findFirst: QueryArgs<Schema, Name, Meta> &
+		OperationArgsForKind<OperationArgs, 'findFirst'>;
+	findMany: QueryArgs<Schema, Name, Meta> &
+		OperationArgsForKind<OperationArgs, 'findMany'>;
+	findOne: QueryArgs<Schema, Name, Meta> &
+		OperationArgsForKind<OperationArgs, 'findOne'>;
+	findUnique: QueryArgs<Schema, Name, Meta> &
+		OperationArgsForKind<OperationArgs, 'findUnique'>;
+	paginate: PaginationArgs<Schema, Name, Meta> &
+		OperationArgsForKind<OperationArgs, 'paginate'>;
+	update: UpdateArgs<Schema, Name, Meta> &
+		OperationArgsForKind<OperationArgs, 'update'>;
+	updateMany: UpdateManyArgs<Schema, Name, Meta> &
+		OperationArgsForKind<OperationArgs, 'updateMany'>;
+	upsert: UpsertArgs<Schema, Name, Meta> &
+		OperationArgsForKind<OperationArgs, 'upsert'>;
 };
 
 type PluginOperationResultMap<
@@ -198,14 +226,18 @@ type PluginOperationResultMap<
  * @typeParam State  - Plugin state type. Defaults to {@link PluginState}.
  * @typeParam Kind   - The operation kind discriminant.
  */
-export type PluginOperationInput<
+type PluginOperationInputBase<
 	Schema extends AnySchema = AnySchema,
 	Name extends TableKey<Schema> = TableKey<Schema>,
 	Meta = BetterMeta,
 	State extends PluginState = PluginState,
+	OperationArgs extends Partial<PluginOperationArgsExtensionMap> = Record<
+		never,
+		never
+	>,
 	Kind extends PluginHookKind = PluginHookKind,
 > = {
-	args: PluginOperationArgsMap<Schema, Name, Meta>[Kind];
+	args: PluginOperationArgsMap<Schema, Name, Meta, OperationArgs>[Kind];
 	data?: Kind extends 'create'
 		? InsertModelFor<Schema, Name>
 		: Kind extends 'createMany'
@@ -220,7 +252,12 @@ export type PluginOperationInput<
 					: never;
 	db: unknown;
 	dialect: PluginDialect;
-	include?: PluginOperationArgsMap<Schema, Name, Meta>[Kind] extends {
+	include?: PluginOperationArgsMap<
+		Schema,
+		Name,
+		Meta,
+		OperationArgs
+	>[Kind] extends {
 		include?: infer Include;
 	}
 		? Include
@@ -228,49 +265,94 @@ export type PluginOperationInput<
 	kind: Kind;
 	meta: Meta | undefined;
 	model: PluginModelInfo<Schema, Name>;
-	options: BetterClientOptions<Schema, Meta, readonly Plugin[]>;
-	orderBy?: PluginOperationArgsMap<Schema, Name, Meta>[Kind] extends {
+	options: BetterClientOptions<Schema, Meta, readonly AnyPlugin[]>;
+	orderBy?: PluginOperationArgsMap<
+		Schema,
+		Name,
+		Meta,
+		OperationArgs
+	>[Kind] extends {
 		orderBy?: infer OrderBy;
 	}
 		? OrderBy
 		: never;
-	cursor?: PluginOperationArgsMap<Schema, Name, Meta>[Kind] extends {
+	cursor?: PluginOperationArgsMap<
+		Schema,
+		Name,
+		Meta,
+		OperationArgs
+	>[Kind] extends {
 		cursor?: infer Cursor;
 	}
 		? Cursor
 		: never;
 	schema: Schema;
-	select?: PluginOperationArgsMap<Schema, Name, Meta>[Kind] extends {
+	select?: PluginOperationArgsMap<
+		Schema,
+		Name,
+		Meta,
+		OperationArgs
+	>[Kind] extends {
 		select?: infer Select;
 	}
 		? Select
 		: never;
-	skip?: PluginOperationArgsMap<Schema, Name, Meta>[Kind] extends {
+	skip?: PluginOperationArgsMap<
+		Schema,
+		Name,
+		Meta,
+		OperationArgs
+	>[Kind] extends {
 		skip?: infer Skip;
 	}
 		? Skip
 		: never;
 	state: State;
 	table: Name;
-	take?: PluginOperationArgsMap<Schema, Name, Meta>[Kind] extends {
+	take?: PluginOperationArgsMap<
+		Schema,
+		Name,
+		Meta,
+		OperationArgs
+	>[Kind] extends {
 		take?: infer Take;
 	}
 		? Take
 		: never;
-	where?: PluginOperationArgsMap<Schema, Name, Meta>[Kind] extends {
+	where?: PluginOperationArgsMap<
+		Schema,
+		Name,
+		Meta,
+		OperationArgs
+	>[Kind] extends {
 		where?: infer Where;
 	}
 		? Where
 		: never;
 };
 
+export type PluginOperationInput<
+	Schema extends AnySchema = AnySchema,
+	Name extends TableKey<Schema> = TableKey<Schema>,
+	Meta = BetterMeta,
+	State extends PluginState = PluginState,
+	OperationArgs extends Partial<PluginOperationArgsExtensionMap> = Record<
+		never,
+		never
+	>,
+	Kind extends PluginHookKind = PluginHookKind,
+> = Kind extends PluginHookKind
+	? PluginOperationInputBase<Schema, Name, Meta, State, OperationArgs, Kind>
+	: never;
+
 type PluginBeforeHookContext<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 	Meta,
 	State extends PluginState,
+	OperationArgs extends Partial<PluginOperationArgsExtensionMap>,
 	Kind extends PluginHookKind,
-> = PluginOperationInput<Schema, Name, Meta, State, Kind> & {
+> = PluginOperationInput<Schema, Name, Meta, State, OperationArgs, Kind> & {
 	client: BetterDrizzleModelDelegate<Schema, Name, Meta>;
 };
 
@@ -279,8 +361,9 @@ type PluginAfterHookContext<
 	Name extends TableKey<Schema>,
 	Meta,
 	State extends PluginState,
+	OperationArgs extends Partial<PluginOperationArgsExtensionMap>,
 	Kind extends PluginHookKind,
-> = PluginBeforeHookContext<Schema, Name, Meta, State, Kind> & {
+> = PluginBeforeHookContext<Schema, Name, Meta, State, OperationArgs, Kind> & {
 	result: PluginOperationResultMap<Schema, Name, Meta>[Kind];
 };
 
@@ -297,6 +380,10 @@ export type PluginHooks<
 	Schema extends AnySchema = AnySchema,
 	Meta = BetterMeta,
 	State extends PluginState = PluginState,
+	OperationArgs extends Partial<PluginOperationArgsExtensionMap> = Record<
+		never,
+		never
+	>,
 > = {
 	afterCreate?(
 		context: PluginAfterHookContext<
@@ -304,6 +391,7 @@ export type PluginHooks<
 			BetterTableKey<Schema>,
 			Meta,
 			State,
+			OperationArgs,
 			'create' | 'createMany' | 'upsert'
 		>,
 	): unknown;
@@ -313,6 +401,7 @@ export type PluginHooks<
 			BetterTableKey<Schema>,
 			Meta,
 			State,
+			OperationArgs,
 			'delete' | 'deleteMany'
 		>,
 	): unknown;
@@ -322,6 +411,7 @@ export type PluginHooks<
 			BetterTableKey<Schema>,
 			Meta,
 			State,
+			OperationArgs,
 			| 'count'
 			| 'exists'
 			| 'findFirst'
@@ -337,6 +427,7 @@ export type PluginHooks<
 			BetterTableKey<Schema>,
 			Meta,
 			State,
+			OperationArgs,
 			'update' | 'updateMany'
 		>,
 	): unknown;
@@ -346,6 +437,7 @@ export type PluginHooks<
 			BetterTableKey<Schema>,
 			Meta,
 			State,
+			OperationArgs,
 			'create' | 'createMany' | 'upsert'
 		>,
 	):
@@ -354,6 +446,7 @@ export type PluginHooks<
 				BetterTableKey<Schema>,
 				Meta,
 				State,
+				OperationArgs,
 				'create' | 'createMany' | 'upsert'
 		  >['data']
 		| undefined;
@@ -363,6 +456,7 @@ export type PluginHooks<
 			BetterTableKey<Schema>,
 			Meta,
 			State,
+			OperationArgs,
 			'delete' | 'deleteMany'
 		>,
 	): unknown;
@@ -372,6 +466,7 @@ export type PluginHooks<
 			BetterTableKey<Schema>,
 			Meta,
 			State,
+			OperationArgs,
 			| 'count'
 			| 'exists'
 			| 'findFirst'
@@ -387,6 +482,7 @@ export type PluginHooks<
 			BetterTableKey<Schema>,
 			Meta,
 			State,
+			OperationArgs,
 			'update' | 'updateMany'
 		>,
 	):
@@ -395,6 +491,7 @@ export type PluginHooks<
 				BetterTableKey<Schema>,
 				Meta,
 				State,
+				OperationArgs,
 				'update' | 'updateMany'
 		  >['data']
 		| undefined;
@@ -413,12 +510,17 @@ export type PluginTransform<
 	Schema extends AnySchema = AnySchema,
 	Meta = BetterMeta,
 	State extends PluginState = PluginState,
+	OperationArgs extends Partial<PluginOperationArgsExtensionMap> = Record<
+		never,
+		never
+	>,
 > = (
 	operation: PluginOperationInput<
 		Schema,
 		BetterTableKey<Schema>,
 		Meta,
 		State,
+		OperationArgs,
 		PluginHookKind
 	>,
 ) =>
@@ -427,6 +529,7 @@ export type PluginTransform<
 			BetterTableKey<Schema>,
 			Meta,
 			State,
+			OperationArgs,
 			PluginHookKind
 	  >
 	| undefined;
@@ -444,9 +547,15 @@ export type PluginSetupContext<
 	Schema extends AnySchema = AnySchema,
 	Meta = BetterMeta,
 	State extends PluginState = PluginState,
+	OperationArgs extends Partial<PluginOperationArgsExtensionMap> = Record<
+		never,
+		never
+	>,
 > = {
-	addHook(hook: PluginHooks<Schema, Meta, State>): void;
-	addTransform(transform: PluginTransform<Schema, Meta, State>): void;
+	addHook(hook: PluginHooks<Schema, Meta, State, OperationArgs>): void;
+	addTransform(
+		transform: PluginTransform<Schema, Meta, State, OperationArgs>,
+	): void;
 	dialect: PluginDialect;
 	isColumnExists(model: string, column: string): boolean;
 	models: ModelRegistry<Schema>;
@@ -484,7 +593,7 @@ export type PluginModelExtensionContext<
 export type PluginClientExtensionContext<
 	Schema extends AnySchema = AnySchema,
 	Meta = BetterMeta,
-	Plugins extends readonly Plugin[] = readonly Plugin[],
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
 > = {
 	client: BetterDrizzleClient<Schema, Meta, Plugins>;
 	db: unknown;
@@ -509,24 +618,70 @@ export interface Plugin<
 	ClientExtension extends PluginExtension = Record<never, never>,
 	ModelExtension extends PluginExtension = Record<never, never>,
 	State extends PluginState = PluginState,
+	OperationArgs extends Partial<PluginOperationArgsExtensionMap> = Record<
+		never,
+		never
+	>,
 > extends PluginMeta<Options> {
 	config?: PluginConfig;
 	extendClient?<
 		Schema extends AnySchema,
 		Meta,
-		Plugins extends readonly Plugin[],
+		Plugins extends readonly AnyPlugin[],
 	>(
 		context: PluginClientExtensionContext<Schema, Meta, Plugins>,
 	): ClientExtension | undefined;
 	extendModel?<Schema extends AnySchema, Meta>(
 		context: PluginModelExtensionContext<Schema, Meta>,
 	): ModelExtension | undefined;
-	hooks?: PluginHooks<AnySchema, BetterMeta, State>;
+	hooks?: PluginHooks<AnySchema, BetterMeta, State, NoInfer<OperationArgs>>;
+	operationArgs?: OperationArgs;
 	setup?<Schema extends AnySchema, Meta>(
-		context: PluginSetupContext<Schema, Meta, State>,
+		context: PluginSetupContext<
+			Schema,
+			Meta,
+			State,
+			NoInfer<OperationArgs>
+		>,
 	): void;
-	transform?: PluginTransform<AnySchema, BetterMeta, State>;
+	transform?: PluginTransform<
+		AnySchema,
+		BetterMeta,
+		State,
+		NoInfer<OperationArgs>
+	>;
 }
+
+// biome-ignore lint/suspicious/noExplicitAny: intentionally erase plugin generics for constraints
+export type AnyPlugin = Plugin<any, any, any, any, any>;
+
+type PluginDefinition<
+	Options,
+	ClientExtension extends PluginExtension,
+	ModelExtension extends PluginExtension,
+	State extends PluginState,
+	OperationArgs extends Partial<PluginOperationArgsExtensionMap>,
+> = Omit<
+	Plugin<Options, ClientExtension, ModelExtension, State, OperationArgs>,
+	'hooks' | 'operationArgs' | 'setup' | 'transform'
+> & {
+	hooks?: PluginHooks<AnySchema, BetterMeta, State, NoInfer<OperationArgs>>;
+	operationArgs?: OperationArgs;
+	setup?<Schema extends AnySchema, Meta>(
+		context: PluginSetupContext<
+			Schema,
+			Meta,
+			State,
+			NoInfer<OperationArgs>
+		>,
+	): void;
+	transform?: PluginTransform<
+		AnySchema,
+		BetterMeta,
+		State,
+		NoInfer<OperationArgs>
+	>;
+};
 
 /**
  * Extracts the client-level extension type from a plugin definition.
@@ -538,7 +693,8 @@ export type ClientExtensionOf<PluginDef> =
 		unknown,
 		infer Extension,
 		PluginExtension,
-		PluginState
+		PluginState,
+		Partial<PluginOperationArgsExtensionMap>
 	>
 		? Extension
 		: Record<never, never>;
@@ -553,9 +709,21 @@ export type ModelExtensionOf<PluginDef> =
 		unknown,
 		PluginExtension,
 		infer Extension,
-		PluginState
+		PluginState,
+		Partial<PluginOperationArgsExtensionMap>
 	>
 		? Extension
+		: Record<never, never>;
+
+export type OperationArgsOf<PluginDef> =
+	PluginDef extends Plugin<
+		unknown,
+		PluginExtension,
+		PluginExtension,
+		PluginState,
+		infer OperationArgs
+	>
+		? OperationArgs
 		: Record<never, never>;
 
 /**
@@ -578,7 +746,7 @@ export type UnionToIntersection<Value> = (
  *
  * @typeParam Plugins - The plugin tuple.
  */
-export type ClientExtensionsOf<Plugins extends readonly Plugin[]> =
+export type ClientExtensionsOf<Plugins extends readonly AnyPlugin[]> =
 	UnionToIntersection<
 		ClientExtensionOf<Plugins[number]>
 	> extends infer Extension
@@ -587,13 +755,35 @@ export type ClientExtensionsOf<Plugins extends readonly Plugin[]> =
 			: Record<never, never>
 		: Record<never, never>;
 
+export type PluginOperationArgsFor<
+	Plugins extends readonly AnyPlugin[],
+	Kind extends PluginHookKind,
+> =
+	UnionToIntersection<
+		OperationArgsForKind<OperationArgsOf<Plugins[number]>, Kind>
+	> extends infer Extension
+		? Extension extends Record<string, unknown>
+			? Extension
+			: Record<never, never>
+		: Record<never, never>;
+
+export type OperationArgsExtensionsOf<Plugins extends readonly AnyPlugin[]> = {
+	[K in PluginHookKind]: PluginOperationArgsFor<Plugins, K>;
+};
+
+export type OperationArgsWithPlugins<
+	Args,
+	Plugins extends readonly AnyPlugin[],
+	Kind extends PluginHookKind,
+> = Args & PluginOperationArgsFor<Plugins, Kind>;
+
 /**
  * Merges the model-level extension types from all plugins in a tuple
  * into a single intersection type.
  *
  * @typeParam Plugins - The plugin tuple.
  */
-export type ModelExtensionsOf<Plugins extends readonly Plugin[]> =
+export type ModelExtensionsOf<Plugins extends readonly AnyPlugin[]> =
 	UnionToIntersection<
 		ModelExtensionOf<Plugins[number]>
 	> extends infer Extension
@@ -625,12 +815,25 @@ export type ModelExtensionsOf<Plugins extends readonly Plugin[]> =
  * ```
  */
 export const definePlugin = <
-	const PluginDef extends Plugin<
-		unknown,
-		PluginExtension,
-		PluginExtension,
-		PluginState
-	>,
+	const Options = unknown,
+	const ClientExtension extends PluginExtension = Record<never, never>,
+	const ModelExtension extends PluginExtension = Record<never, never>,
+	const State extends PluginState = PluginState,
+	const OperationArgs extends
+		Partial<PluginOperationArgsExtensionMap> = Record<never, never>,
 >(
-	plugin: PluginDef,
-) => plugin;
+	plugin: PluginDefinition<
+		Options,
+		ClientExtension,
+		ModelExtension,
+		State,
+		OperationArgs
+	>,
+) =>
+	plugin as Plugin<
+		Options,
+		ClientExtension,
+		ModelExtension,
+		State,
+		OperationArgs
+	>;

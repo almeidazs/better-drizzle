@@ -1,4 +1,5 @@
 import type {
+	AnyPlugin,
 	AnySchema,
 	BetterClientHooks,
 	ErrorHookContext,
@@ -12,8 +13,12 @@ import { getMeta } from './context';
 
 const HOOK_ERROR_REPORTED = Symbol('better-drizzle-hook-error-reported');
 
-export const buildHookContext = <Schema extends AnySchema, Meta>(
-	context: RuntimeContext<Schema, Meta>,
+export const buildHookContext = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
 	runtime: TableRuntime,
 	tableName: string,
 	action: string,
@@ -41,37 +46,46 @@ const wasErrorReported = (error: unknown) =>
 	error !== null &&
 	Boolean(Reflect.get(error, HOOK_ERROR_REPORTED));
 
-export const reportError = async <Schema extends AnySchema, Meta>(
-	context: RuntimeContext<Schema, Meta>,
+export const reportError = async <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
 	runtime: TableRuntime,
 	tableName: string,
 	action: string,
 	args: unknown,
 	error: unknown,
-	stage: ErrorHookContext<Schema, Meta>['stage'],
-	hookName?: keyof BetterClientHooks<Schema, Meta>,
+	stage: ErrorHookContext<Schema, Meta, Plugins>['stage'],
+	hookName?: keyof BetterClientHooks<Schema, Meta, Plugins>,
 ) => {
 	if (!context.hasOnError) return;
 
 	try {
 		await context.options.hooks?.onError?.({
 			...buildHookContext(context, runtime, tableName, action, args),
-			action: action as ErrorHookContext<Schema, Meta>['action'],
+			action: action as ErrorHookContext<Schema, Meta, Plugins>['action'],
 			error,
 			hookName,
 			stage,
-		} as unknown as ErrorHookContext<Schema, Meta>);
+		} as unknown as ErrorHookContext<Schema, Meta, Plugins>);
 	} catch {}
 };
 
-const runHook = async <Schema extends AnySchema, Meta, Payload>(
+const runHook = async <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+	Payload,
+>(
 	hook: ((payload: Payload) => unknown) | undefined,
-	context: RuntimeContext<Schema, Meta>,
+	context: RuntimeContext<Schema, Meta, Plugins>,
 	runtime: TableRuntime,
 	tableName: string,
 	action: string,
 	args: unknown,
-	hookName: keyof BetterClientHooks<Schema, Meta>,
+	hookName: keyof BetterClientHooks<Schema, Meta, Plugins>,
 	payload: Payload,
 ) => {
 	if (!hook) return;
@@ -97,6 +111,7 @@ const runHook = async <Schema extends AnySchema, Meta, Payload>(
 export const executeOperation = async <
 	Schema extends AnySchema,
 	Meta,
+	Plugins extends readonly AnyPlugin[],
 	Args,
 	Result,
 >({
@@ -113,11 +128,11 @@ export const executeOperation = async <
 }: {
 	action: string;
 	args: Args;
-	afterHookName?: keyof BetterClientHooks<Schema, Meta>;
+	afterHookName?: keyof BetterClientHooks<Schema, Meta, Plugins>;
 	afterPayload?: (result: Result) => unknown;
-	beforeHookName?: keyof BetterClientHooks<Schema, Meta>;
+	beforeHookName?: keyof BetterClientHooks<Schema, Meta, Plugins>;
 	beforePayload?: () => unknown;
-	context: RuntimeContext<Schema, Meta>;
+	context: RuntimeContext<Schema, Meta, Plugins>;
 	operation: () => Promise<Result>;
 	runtime: TableRuntime;
 	tableName: string;
@@ -172,9 +187,15 @@ export const executeOperation = async <
 	}
 };
 
-export const attachThrow = <Schema extends AnySchema, Meta, Args, T>(
+export const attachThrow = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+	Args,
+	T,
+>(
 	promise: NullableResult<T>,
-	context: RuntimeContext<Schema, Meta>,
+	context: RuntimeContext<Schema, Meta, Plugins>,
 	runtime: TableRuntime,
 	action: string,
 	args: Args,

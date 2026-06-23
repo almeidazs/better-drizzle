@@ -74,6 +74,7 @@
   - plugin ids must be unique
   - plugins run in `options.plugins` array order
   - `setup()` runs exactly once during client initialization
+  - plugins can extend built-in operation args through `operationArgs`; these fields are typed on delegates, plugin transforms, and client hooks
   - `config.requires.columns` fails fast during bootstrap if any model is incompatible
   - client hooks remain side-effect-only
   - plugin hooks/transforms are the mutation layer
