@@ -1,4 +1,7 @@
 import { Database } from 'bun:sqlite';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 
 import { better } from '../packages/core/src';
@@ -13,7 +16,8 @@ const BENCH_WRITE_COUNT = 2048;
 export type BenchmarkContext = ReturnType<typeof createBenchmarkContext>;
 
 export const createBenchmarkContext = () => {
-	const sqlite = new Database(':memory:');
+	const dir = mkdtempSync(join(tmpdir(), 'bench-'));
+	const sqlite = new Database(join(dir, 'bench.db'));
 
 	sqlite.exec(`
 PRAGMA journal_mode = MEMORY;
@@ -111,6 +115,7 @@ ${createTablesSql}
 		sqlite,
 		close() {
 			sqlite.close();
+			rmSync(dir, { recursive: true, force: true });
 		},
 	};
 };

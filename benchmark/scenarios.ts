@@ -322,3 +322,254 @@ export const betterComplexJoinEquivalent = async (context: BenchmarkContext) =>
 			},
 		},
 	});
+
+// ---------------------------------------------------------------------------
+// Transaction benchmarks
+// ---------------------------------------------------------------------------
+
+/**
+ * Raw Drizzle: simple transaction – one insert + one select inside a
+ * `db.transaction()` callback.
+ */
+export const rawSimpleTransaction = async (context: BenchmarkContext) =>
+	context.raw.transaction(async (tx) => {
+		const id = nextWriteId(context);
+		const token = nextWriteToken(context);
+
+		await tx
+			.insert(benchWrites)
+			.values({
+				id,
+				payload: `payload-${id}`,
+				token,
+				value: id % 1000,
+			})
+			.returning();
+
+		return tx
+			.select()
+			.from(benchWrites)
+			.where(eq(benchWrites.id, id))
+			.limit(1);
+	});
+
+/**
+ * Better Drizzle: simple transaction – one insert + one select inside a
+ * `client.transaction()` callback.
+ */
+export const betterSimpleTransaction = async (context: BenchmarkContext) =>
+	context.better.transaction(async (tx) => {
+		const id = nextWriteId(context);
+		const token = nextWriteToken(context);
+
+		await tx.benchWrites.create({
+			data: {
+				id,
+				payload: `payload-${id}`,
+				token,
+				value: id % 1000,
+			},
+		});
+
+		return tx.benchWrites.findFirst({
+			where: { id },
+		});
+	});
+
+/**
+ * Raw Drizzle: multi-operation transaction – three inserts, one update,
+ * and one select inside a single transaction.
+ */
+export const rawMultiOpTransaction = async (context: BenchmarkContext) =>
+	context.raw.transaction(async (tx) => {
+		const baseId = nextWriteId(context);
+		const id2 = nextWriteId(context);
+		const id3 = nextWriteId(context);
+		const baseToken = nextWriteToken(context);
+
+		await tx
+			.insert(benchWrites)
+			.values({
+				id: baseId,
+				payload: `payload-${baseId}`,
+				token: baseToken,
+				value: baseId % 1000,
+			})
+			.returning();
+
+		await tx
+			.insert(benchWrites)
+			.values({
+				id: id2,
+				payload: `payload-${id2}`,
+				token: `bench-${context.counters.createDeleteToken}`,
+				value: id2 % 1000,
+			})
+			.returning();
+		context.counters.createDeleteToken += 1;
+
+		await tx
+			.insert(benchWrites)
+			.values({
+				id: id3,
+				payload: `payload-${id3}`,
+				token: `bench-${context.counters.createDeleteToken}`,
+				value: id3 % 1000,
+			})
+			.returning();
+		context.counters.createDeleteToken += 1;
+
+		const nextValue = (context.counters.updateOffset * 19) % 10_000;
+		await tx
+			.update(benchWrites)
+			.set({
+				payload: `payload-updated-${nextValue}`,
+				value: nextValue,
+			})
+			.where(eq(benchWrites.id, baseId))
+			.returning();
+
+		return tx
+			.select()
+			.from(benchWrites)
+			.where(eq(benchWrites.id, baseId))
+			.limit(1);
+	});
+
+/**
+ * Better Drizzle: multi-operation transaction – three creates, one update,
+ * and one findFirst inside a single transaction.
+ */
+export const betterMultiOpTransaction = async (context: BenchmarkContext) =>
+	context.better.transaction(async (tx) => {
+		const baseId = nextWriteId(context);
+		const id2 = nextWriteId(context);
+		const id3 = nextWriteId(context);
+		const baseToken = nextWriteToken(context);
+
+		await tx.benchWrites.create({
+			data: {
+				id: baseId,
+				payload: `payload-${baseId}`,
+				token: baseToken,
+				value: baseId % 1000,
+			},
+		});
+
+		await tx.benchWrites.create({
+			data: {
+				id: id2,
+				payload: `payload-${id2}`,
+				token: `bench-${context.counters.createDeleteToken}`,
+				value: id2 % 1000,
+			},
+		});
+		context.counters.createDeleteToken += 1;
+
+		await tx.benchWrites.create({
+			data: {
+				id: id3,
+				payload: `payload-${id3}`,
+				token: `bench-${context.counters.createDeleteToken}`,
+				value: id3 % 1000,
+			},
+		});
+		context.counters.createDeleteToken += 1;
+
+		const nextValue = (context.counters.updateOffset * 19) % 10_000;
+		await tx.benchWrites.update({
+			data: {
+				payload: `payload-updated-${nextValue}`,
+				value: nextValue,
+			},
+			where: { id: baseId },
+		});
+
+		return tx.benchWrites.findFirst({
+			where: { id: baseId },
+		});
+	});
+
+/**
+ * Better Drizzle: nested transaction with savepoints – an outer transaction
+ * creates a row, then spawns an inner savepoint transaction that creates
+ * another row and reads both. This scenario has no raw Drizzle parity
+ * equivalent because Drizzle's SQLite transaction does not natively support
+ * nested savepoints.
+ */
+export const betterNestedTransaction = async (context: BenchmarkContext) =>
+	context.better.transaction(async (tx) => {
+		const outerId = nextWriteId(context);
+		const outerToken = nextWriteToken(context);
+
+		await tx.benchWrites.create({
+			data: {
+				id: outerId,
+				payload: `payload-${outerId}`,
+				token: outerToken,
+				value: outerId % 1000,
+			},
+		});
+
+		await tx.transaction(async (innerTx) => {
+			const innerId = nextWriteId(context);
+			const innerToken = nextWriteToken(context);
+
+			await innerTx.benchWrites.create({
+				data: {
+					id: innerId,
+					payload: `payload-${innerId}`,
+					token: innerToken,
+					value: innerId % 1000,
+				},
+			});
+
+			return innerTx.benchWrites.findMany({
+				where: {
+					id: { in: [outerId, innerId] },
+				},
+			});
+		});
+
+		return tx.benchWrites.findFirst({
+			where: { id: outerId },
+		});
+	});
+
+/**
+ * Raw Drizzle: read-only transaction – two selects inside a transaction to
+ * verify that read-path transaction overhead is minimal.
+ */
+export const rawReadOnlyTransaction = async (context: BenchmarkContext) =>
+	context.raw.transaction(async (tx) => {
+		const first = await tx
+			.select()
+			.from(users)
+			.where(eq(users.id, context.ids.userLookupId))
+			.limit(1);
+
+		const second = await tx
+			.select()
+			.from(benchWrites)
+			.where(eq(benchWrites.id, context.ids.userLookupId))
+			.limit(1);
+
+		return { benchWrite: second[0] ?? null, user: first[0] ?? null };
+	});
+
+/**
+ * Better Drizzle: read-only transaction – two findFirst calls inside a
+ * transaction to compare with the raw read-only transaction path.
+ */
+export const betterReadOnlyTransaction = async (context: BenchmarkContext) =>
+	context.better.transaction(async (tx) => {
+		const user = await tx.users.findFirst({
+			where: { id: context.ids.userLookupId },
+		});
+
+		const benchWrite = await tx.benchWrites.findFirst({
+			where: { id: context.ids.userLookupId },
+		});
+
+		return { benchWrite, user };
+	});

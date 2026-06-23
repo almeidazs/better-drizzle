@@ -5,9 +5,13 @@ import {
 	betterCursorPaginate,
 	betterExists,
 	betterFilteredList,
+	betterMultiOpTransaction,
+	betterNestedTransaction,
 	betterOffsetPaginate,
 	betterPointLookup,
+	betterReadOnlyTransaction,
 	betterRelationGraph,
+	betterSimpleTransaction,
 	betterUpdateAndLoad,
 	rawActiveCount,
 	rawComplexRelationFilter,
@@ -15,9 +19,12 @@ import {
 	rawCursorPaginate,
 	rawExists,
 	rawFilteredList,
+	rawMultiOpTransaction,
 	rawOffsetPaginate,
 	rawPointLookup,
+	rawReadOnlyTransaction,
 	rawRelationGraph,
+	rawSimpleTransaction,
 	rawUpdateAndLoad,
 } from './scenarios';
 import {
@@ -146,6 +153,23 @@ const runWriteSuite = async (
 		if (iteration % 2 === 0) await execute.createDelete(context);
 	});
 
+const runTransactionSuite = async (
+	_label: string,
+	execute: {
+		simple(context: BenchmarkContext): Promise<unknown>;
+		multiOp(context: BenchmarkContext): Promise<unknown>;
+		readOnly(context: BenchmarkContext): Promise<unknown>;
+		nested?(context: BenchmarkContext): Promise<unknown>;
+	},
+) =>
+	measure(800, async (context, iteration) => {
+		await execute.simple(context);
+		if (iteration % 2 === 0) await execute.multiOp(context);
+		if (iteration % 3 === 0) await execute.readOnly(context);
+		if (execute.nested && iteration % 4 === 0)
+			await execute.nested(context);
+	});
+
 const printSuite = (title: string, raw: SuiteResult, better: SuiteResult) => {
 	console.log(`\n${title}`);
 	console.log(
@@ -192,7 +216,20 @@ const betterWrites = await runWriteSuite('better writes', {
 	update: betterUpdateAndLoad,
 });
 
+const rawTransactions = await runTransactionSuite('raw transactions', {
+	multiOp: rawMultiOpTransaction,
+	readOnly: rawReadOnlyTransaction,
+	simple: rawSimpleTransaction,
+});
+const betterTransactions = await runTransactionSuite('better transactions', {
+	multiOp: betterMultiOpTransaction,
+	nested: betterNestedTransaction,
+	readOnly: betterReadOnlyTransaction,
+	simple: betterSimpleTransaction,
+});
+
 console.log('Benchmark memory and overhead summary');
 printSuite('Single Read Batch', rawSingleRead, betterSingleRead);
 printSuite('Mixed Read Batch', rawMixedReads, betterMixedReads);
 printSuite('Write Batch', rawWrites, betterWrites);
+printSuite('Transaction Batch', rawTransactions, betterTransactions);

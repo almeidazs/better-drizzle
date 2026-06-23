@@ -7,9 +7,13 @@ import {
 	betterCursorPaginate,
 	betterExists,
 	betterFilteredList,
+	betterMultiOpTransaction,
+	betterNestedTransaction,
 	betterOffsetPaginate,
 	betterPointLookup,
+	betterReadOnlyTransaction,
 	betterRelationGraph,
+	betterSimpleTransaction,
 	betterUpdateAndLoad,
 	rawActiveCount,
 	rawComplexJoinFlat,
@@ -19,9 +23,12 @@ import {
 	rawCursorPaginate,
 	rawExists,
 	rawFilteredList,
+	rawMultiOpTransaction,
 	rawOffsetPaginate,
 	rawPointLookup,
+	rawReadOnlyTransaction,
 	rawRelationGraph,
+	rawSimpleTransaction,
 	rawUpdateAndLoad,
 } from './scenarios';
 import { createBenchmarkContext } from './setup';
@@ -103,6 +110,35 @@ group('api parity: writes', () => {
 		);
 		bench('better: update + reload', async () =>
 			do_not_optimize(await betterUpdateAndLoad(betterContext)),
+		);
+	});
+});
+
+group('api parity: transactions', () => {
+	summary(() => {
+		bench('drizzle: simple transaction', async () =>
+			do_not_optimize(await rawSimpleTransaction(rawContext)),
+		);
+		bench('better: simple transaction', async () =>
+			do_not_optimize(await betterSimpleTransaction(betterContext)),
+		);
+
+		bench('drizzle: multi-op transaction', async () =>
+			do_not_optimize(await rawMultiOpTransaction(rawContext)),
+		);
+		bench('better: multi-op transaction', async () =>
+			do_not_optimize(await betterMultiOpTransaction(betterContext)),
+		);
+
+		bench('drizzle: read-only transaction', async () =>
+			do_not_optimize(await rawReadOnlyTransaction(rawContext)),
+		);
+		bench('better: read-only transaction', async () =>
+			do_not_optimize(await betterReadOnlyTransaction(betterContext)),
+		);
+
+		bench('better: nested transaction (savepoint)', async () =>
+			do_not_optimize(await betterNestedTransaction(betterContext)),
 		);
 	});
 });

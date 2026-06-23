@@ -249,6 +249,6 @@ const client = better(drizzle, {
 
 ## Performance
 
-See the full benchmark suite and results in [`benchmark/README.md`](/benchmark).
+See the full benchmark suite and results in [`benchmark/README.md`](/benchmark). The suite covers reads, writes, and transactions (including nested savepoints) with fair API-parity comparisons against raw Drizzle.
 
 </div>

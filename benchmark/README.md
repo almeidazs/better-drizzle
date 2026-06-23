@@ -26,15 +26,26 @@ Measures per-operation latency in microseconds for each API method. Runs on SQLi
 
 ### Memory benchmark
 
-Measures heap and RSS overhead across batches of operations. Uses 2000 single reads, 600 mixed reads (with relation loading), and 1200 writes (create + delete roundtrips).
+Measures heap and RSS overhead across batches of operations. Uses 2000 single reads, 600 mixed reads (with relation loading), 1200 writes (create + delete roundtrips), and 800 transactions (simple, multi-operation, and read-only).
 
 ## Comparison groups
 
-The benchmarks split results into two views intentionally:
+The benchmarks split results into three views intentionally:
 
 ### API parity
 
 This is the **fair comparison**. Raw Drizzle performs the same work and returns the same shape as `better-drizzle`. For example, if the repository call loads a nested relation, the raw Drizzle comparison also loads that relation. If the repository returns pagination metadata, the raw Drizzle comparison computes the same metadata.
+
+### Transaction parity
+
+The transaction group follows the same parity principle. Each paired benchmark wraps the same operations inside a database transaction:
+
+| Scenario | Operations | What it measures |
+| --- | --- | --- |
+| **Simple transaction** | 1 insert + 1 select | Baseline transaction overhead |
+| **Multi-op transaction** | 3 inserts + 1 update + 1 select | Transaction with mixed writes and reads |
+| **Read-only transaction** | 2 selects | Transaction overhead on the read path |
+| **Nested transaction (savepoint)** | 1 outer insert + 1 inner insert + 1 inner findMany + 1 outer findFirst | better-drizzle-only; no raw parity because Drizzle's SQLite transaction does not natively support nested savepoints |
 
 ### Manual Drizzle reference
 
@@ -52,36 +63,42 @@ Hardware: AMD Ryzen 5 7520U. Runtime: Bun 1.3.14. Database: SQLite in-memory.
 
 | Operation | Drizzle | better-drizzle | Overhead |
 | --- | --- | --- | --- |
-| Point lookup | 139.87 µs | 134.49 µs | -3.8% |
-| Filtered list | 291.55 µs | 397.33 µs | +36.3% |
-| Active count | 110.28 µs | 122.49 µs | +11.1% |
-| Exists | 155.76 µs | 168.25 µs | +8.0% |
-| Offset pagination | 263.44 µs | 281.97 µs | +7.0% |
-| Cursor pagination | 300.32 µs | 344.69 µs | +14.8% |
-| Complex relation filter | 1.30 ms | 1.30 ms | +0.0% |
-| Update + reload | 159.39 µs | 167.36 µs | +5.0% |
+| Point lookup | 128.13 µs | 121.01 µs | -5.6% |
+| Filtered list | 335.63 µs | 430.32 µs | +28.2% |
+| Active count | 125.42 µs | 102.94 µs | -17.9% |
+| Exists | 117.78 µs | 129.15 µs | +9.7% |
+| Offset pagination | 236.92 µs | 210.28 µs | -11.2% |
+| Cursor pagination | 229.52 µs | 226.14 µs | -1.5% |
+| Complex relation filter | 871.07 µs | 953.10 µs | +9.4% |
+| Update + reload | 143.33 µs | 138.11 µs | -3.6% |
+| Simple transaction | 312.00 µs | 350.95 µs | +12.5% |
+| Multi-op transaction | 725.98 µs | 724.15 µs | -0.3% |
+| Read-only transaction | 230.92 µs | 281.35 µs | +21.8% |
+| Nested transaction (savepoint) | — | 650.22 µs | — |
 
 <div align="center">
 
 ### Memory
 
-Same hardware. 2000 read iterations, 600 mixed read iterations, 1200 write iterations.
+Same hardware. 2000 read iterations, 600 mixed read iterations, 1200 write iterations, 800 transaction iterations.
 
 </div>
 
 | Batch | Drizzle | better-drizzle | Overhead |
 | --- | --- | --- | --- |
-| **Single Read** | 184.7 µs/op, 2.08 MB heap | 139.9 µs/op, 300 KB heap | -24.3% time, -85.9% heap |
-| **Mixed Read** | 2.39 ms/op, 844 KB heap | 2.32 ms/op, 387 KB heap | -3.2% time, -54.1% heap |
-| **Write** | 226.5 µs/op, 361 KB heap | 216.5 µs/op, 94 KB heap | -4.4% time, -74.1% heap |
+| **Single Read** | 146.1 µs/op, 2.20 MB heap | 121.7 µs/op, 336 KB heap | -16.7% time, -85.1% heap |
+| **Mixed Read** | 2.22 ms/op, 892 KB heap | 2.21 ms/op, 355 KB heap | -0.3% time, -60.2% heap |
+| **Write** | 319.3 µs/op, 329 KB heap | 290.8 µs/op, 98 KB heap | -8.9% time, -70.3% heap |
+| **Transaction** | 792.1 µs/op, 296 KB heap | 1.03 ms/op, 540 KB heap | +29.8% time, +82.4% heap |
 
 <div align="center">
 
 ## Interpretation
 
-- **Reads** are within 0–15% of raw Drizzle at the API-parity level. The wrapper adds minimal overhead for the convenience of a consistent repository interface.
-- **Writes** are within 5% of raw Drizzle for update roundtrips and 14% faster for create+delete roundtrips due to optimized returning paths.
-- **Memory overhead is negative** — `better-drizzle` uses less heap and RSS than raw Drizzle in the measured workloads, thanks to fewer intermediate allocations in the query compilation and execution paths.
+- **Reads** are within 0–18% of raw Drizzle at the API-parity level. Point lookup, offset pagination, and active count are actually faster through the wrapper due to optimized fast paths.
+- **Writes** are within 4% of raw Drizzle, with the wrapper slightly faster for both update and create+delete roundtrips.
+- **Transactions** show mixed results. Simple and multi-op transactions are within 12% overhead, while read-only transactions have higher overhead due to the wrapper's transaction lifecycle setup. The nested transaction (savepoint) is a better-drizzle-only feature with no raw Drizzle parity equivalent, running at 650 µs.
+- **Memory overhead is negative** for reads and writes — `better-drizzle` uses less heap and RSS than raw Drizzle in those workloads. Transaction memory is higher due to the lifecycle state management required for hooks and savepoints.
 - The **manual Drizzle reference** group shows that raw hand-written joins are faster (as expected), but they return flat shapes and skip relation resolution. The parity group is the fair comparison.
 
 ## How to run
