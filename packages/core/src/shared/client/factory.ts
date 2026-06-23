@@ -1,4 +1,4 @@
-import { isTable, sql } from 'drizzle-orm';
+import { isTable, SQL, type SQLWrapper, sql } from 'drizzle-orm';
 
 import type {
 	AnyPlugin,
@@ -9,6 +9,9 @@ import type {
 	BetterDrizzleTransactionClient,
 	BetterMeta,
 	BetterTableKey,
+	RawExecutionResult,
+	RawOptions,
+	RawSql,
 	RuntimeContext,
 	TransactionOptions,
 	TransactionRetryReason,
@@ -22,6 +25,7 @@ import {
 	applyClientExtensions,
 	applyModelExtensions,
 	initializePlugins,
+	runPluginRawHooks,
 	runPluginTransactionHooks,
 } from './plugins';
 
@@ -58,6 +62,30 @@ const handleUnsupportedTransactionOption = <
 ) => {
 	const behavior = getUnsupportedBehavior(context);
 	const message = `Transaction option "${option}" is not supported for dialect "${context.dialect}".`;
+
+	if (behavior === 'ignore') return;
+	if (behavior === 'throw') throw new Error(message);
+	console.warn(message);
+};
+
+const getRawUnsupportedBehavior = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
+) => context.options.raw?.unsupportedOptions ?? 'warn';
+
+const handleUnsupportedRawOption = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
+	option: string,
+) => {
+	const behavior = getRawUnsupportedBehavior(context);
+	const message = `Raw option "${option}" is not supported for dialect "${context.dialect}".`;
 
 	if (behavior === 'ignore') return;
 	if (behavior === 'throw') throw new Error(message);
@@ -106,6 +134,51 @@ const createAbortError = (reason: string) => {
 	const error = new Error(reason);
 	error.name = 'AbortError';
 	return error;
+};
+
+const isSqlWrapper = (value: unknown): value is RawSql =>
+	value instanceof SQL ||
+	(typeof value === 'object' &&
+		value !== null &&
+		'getSQL' in value &&
+		typeof (value as { getSQL?: unknown }).getSQL === 'function');
+
+const toSqlText = (query: SQL) => {
+	const built = query.toQuery({
+		casing: {} as never,
+		escapeName(name) {
+			return name;
+		},
+		escapeParam(index, _value) {
+			return `$${index + 1}`;
+		},
+		escapeString(value) {
+			return value;
+		},
+		inlineParams: false,
+		paramStartIndex: { value: 0 },
+	});
+
+	return built.sql;
+};
+
+const withSqlComment = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
+	query: SQL,
+	comment: string | undefined,
+) => {
+	if (!comment) return query;
+	if (context.dialect !== 'pg') {
+		handleUnsupportedRawOption(context, 'comment');
+		return query;
+	}
+
+	const sanitized = comment.replaceAll('*/', '* /');
+	return sql.join([sql.raw(`/* ${sanitized} */ `), query]);
 };
 
 const runCallbacks = async (
@@ -257,6 +330,21 @@ const runTransactionHooks = async <
 	await runPluginTransactionHooks(context, hookName, payload);
 };
 
+const runRawHooks = async <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
+	hookName: 'afterRaw' | 'beforeRaw' | 'onRawError',
+	payload: Record<string, unknown>,
+) => {
+	const hook = context.options.hooks?.[hookName];
+	if (hook)
+		await (hook as (ctx: Record<string, unknown>) => unknown)(payload);
+	await runPluginRawHooks(context, hookName, payload);
+};
+
 const mergeTransactionQueues = (
 	parent: TransactionRuntime,
 	child: TransactionRuntime,
@@ -336,6 +424,166 @@ const createTransactionState = (
 const getSqliteSavepointName = (transaction: TransactionRuntime) =>
 	`better_drizzle_sp_${transaction.depth}_${transaction.attempt}`;
 
+const assertRawAllowed = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
+	options: RawOptions,
+	unsafe: boolean,
+) => {
+	const rawOptions = context.options.raw;
+
+	if (rawOptions?.enabled === false)
+		throw new Error('Raw SQL is disabled for this Better Drizzle client.');
+	if (unsafe && rawOptions?.allowUnsafe !== true)
+		throw new Error(
+			'Unsafe raw SQL is disabled. Set raw.allowUnsafe = true to enable `$rawUnsafe()`.',
+		);
+	if (rawOptions?.requireComment && !options.comment)
+		throw new Error('Raw SQL requires `options.comment`.');
+};
+
+const withAbortGuard = async <T>(
+	options: RawOptions,
+	operation: () => Promise<T> | T,
+) => {
+	const aborted = () =>
+		options.signal?.aborted
+			? (options.signal.reason ?? createAbortError('Raw query aborted.'))
+			: undefined;
+	const initialAbort = aborted();
+	if (initialAbort) throw initialAbort;
+
+	if (options.timeoutMs !== undefined && options.timeoutMs <= 0)
+		throw createAbortError('Raw query timed out.');
+
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		const promise = Promise.resolve().then(operation);
+		const races: Array<Promise<T>> = [promise];
+
+		if (options.timeoutMs !== undefined)
+			races.push(
+				new Promise<T>((_, reject) => {
+					timer = setTimeout(
+						() => reject(createAbortError('Raw query timed out.')),
+						options.timeoutMs,
+					);
+				}),
+			);
+
+		if (options.signal)
+			races.push(
+				new Promise<T>((_, reject) => {
+					const onAbort = () =>
+						reject(
+							options.signal?.reason ??
+								createAbortError('Raw query aborted.'),
+						);
+
+					options.signal?.addEventListener('abort', onAbort, {
+						once: true,
+					});
+				}),
+			);
+
+		const result = await Promise.race(races);
+		const finalAbort = aborted();
+		if (finalAbort) throw finalAbort;
+		return result;
+	} finally {
+		if (timer) clearTimeout(timer);
+	}
+};
+
+const executeRawQuery = async <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+	Result,
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
+	action: 'raw' | 'executeRaw' | 'rawUnsafe',
+	queryInput: RawSql,
+	options: RawOptions | undefined,
+	executor: (query: SQL) => Promise<Result> | Result,
+) => {
+	const rawOptions = {
+		comment: options?.comment,
+		map: options?.map,
+		name: options?.name,
+		signal: options?.signal,
+		timeoutMs: options?.timeoutMs ?? context.options.raw?.timeoutMs,
+	} satisfies RawOptions;
+	const query = withSqlComment(
+		context,
+		queryInput instanceof SQL ? queryInput : queryInput.getSQL(),
+		rawOptions.comment,
+	);
+	const buildPayload = (result: Result | undefined, error?: unknown) => {
+		const registerAfterCommit = (
+			callback: () => unknown | Promise<unknown>,
+		) => {
+			if (!context.transaction)
+				throw new Error(
+					'afterCommit() can only be used inside a transaction.',
+				);
+
+			context.transaction.afterCommit.push(callback);
+		};
+		const registerAfterRollback = (
+			callback: () => unknown | Promise<unknown>,
+		) => {
+			if (!context.transaction)
+				throw new Error(
+					'afterRollback() can only be used inside a transaction.',
+				);
+
+			context.transaction.afterRollback.push(callback);
+		};
+
+		return {
+			action,
+			afterCommit: registerAfterCommit,
+			afterRollback: registerAfterRollback,
+			comment: rawOptions.comment,
+			db: context.db,
+			dialect: context.dialect,
+			error,
+			isInTransaction: Boolean(context.transaction),
+			map: rawOptions.map,
+			name: rawOptions.name,
+			options: context.options,
+			query: toSqlText(query),
+			rawOptions,
+			result,
+			schema: context.fullSchema,
+			signal: rawOptions.signal,
+			sql: query,
+			timeoutMs: rawOptions.timeoutMs,
+			transaction: context.transaction ? context.client : null,
+			transactionContext: context.transaction?.context,
+		};
+	};
+
+	await runRawHooks(context, 'beforeRaw', buildPayload(undefined));
+
+	try {
+		const result = await withAbortGuard(rawOptions, () => executor(query));
+		await runRawHooks(context, 'afterRaw', buildPayload(result));
+		return result;
+	} catch (error) {
+		await runRawHooks(
+			context,
+			'onRawError',
+			buildPayload(undefined, error),
+		);
+		throw error;
+	}
+};
+
 type BoundClient<
 	Schema extends AnySchema,
 	Meta,
@@ -343,6 +591,13 @@ type BoundClient<
 > =
 	| BetterDrizzleClient<Schema, Meta, Plugins>
 	| BetterDrizzleTransactionClient<Schema, Meta, Plugins>;
+
+const isTemplateStringsArray = (
+	value: unknown,
+): value is TemplateStringsArray =>
+	Array.isArray(value) &&
+	'raw' in value &&
+	Array.isArray((value as TemplateStringsArray).raw);
 
 const runBetterTransaction = async <
 	Schema extends AnySchema,
@@ -640,6 +895,157 @@ export const createBoundClient = <
 		if (!repository) throw new Error(`Repository "${name}" not found.`);
 
 		return repository;
+	};
+	client.$raw = async <T = unknown[]>(
+		queryOrStrings: TemplateStringsArray | RawSql,
+		...paramsOrOptions: unknown[]
+	) => {
+		const rawOptions = (
+			isTemplateStringsArray(queryOrStrings)
+				? {}
+				: ((paramsOrOptions[0] as RawOptions | undefined) ?? {})
+		) as RawOptions;
+		const query = isTemplateStringsArray(queryOrStrings)
+			? sql(queryOrStrings, ...paramsOrOptions)
+			: queryOrStrings;
+		if (!isTemplateStringsArray(queryOrStrings) && !isSqlWrapper(query))
+			throw new Error(
+				'Safe raw queries must use a tagged template or a Drizzle SQL object.',
+			);
+		assertRawAllowed(context, rawOptions, false);
+
+		return executeRawQuery(
+			context,
+			'raw',
+			query,
+			rawOptions,
+			async (query) => {
+				const rows = (
+					context.dialect === 'sqlite'
+						? await Promise.resolve(context.db.all?.(query) ?? [])
+						: await Promise.resolve(
+								context.db.execute?.(query) ?? [],
+							)
+				) as unknown[];
+
+				const mapped = rawOptions.map
+					? rows.map((row: unknown) => rawOptions.map?.(row))
+					: rows;
+
+				return mapped as T;
+			},
+		);
+	};
+	client.$executeRaw = async (
+		queryOrStrings: TemplateStringsArray | RawSql,
+		...paramsOrOptions: unknown[]
+	) => {
+		const rawOptions = (
+			isTemplateStringsArray(queryOrStrings)
+				? {}
+				: ((paramsOrOptions[0] as RawOptions | undefined) ?? {})
+		) as RawOptions;
+		const query = isTemplateStringsArray(queryOrStrings)
+			? sql(queryOrStrings, ...paramsOrOptions)
+			: queryOrStrings;
+		if (!isTemplateStringsArray(queryOrStrings) && !isSqlWrapper(query))
+			throw new Error(
+				'Safe raw queries must use a tagged template or a Drizzle SQL object.',
+			);
+		assertRawAllowed(context, rawOptions, false);
+
+		return executeRawQuery(
+			context,
+			'executeRaw',
+			query,
+			rawOptions,
+			async (query) => {
+				const result =
+					context.dialect === 'sqlite'
+						? context.db.run?.(query)
+						: await Promise.resolve(
+								context.db.execute?.(query) ??
+									context.db.run?.(query),
+							);
+
+				if (typeof result === 'number')
+					return {
+						rowsAffected: result,
+					} satisfies RawExecutionResult;
+				if (
+					typeof result === 'object' &&
+					result !== null &&
+					'changes' in result &&
+					typeof (result as { changes?: unknown }).changes ===
+						'number'
+				)
+					return {
+						rowsAffected: (result as { changes: number }).changes,
+					} satisfies RawExecutionResult;
+				if (
+					typeof result === 'object' &&
+					result !== null &&
+					'rowCount' in result &&
+					typeof (result as { rowCount?: unknown }).rowCount ===
+						'number'
+				)
+					return {
+						rowsAffected: (result as { rowCount: number }).rowCount,
+					} satisfies RawExecutionResult;
+
+				return {} satisfies RawExecutionResult;
+			},
+		);
+	};
+	client.$rawUnsafe = async <T = unknown[]>(
+		query: string,
+		params?: unknown[],
+		options?: RawOptions,
+	) => {
+		const rawOptions = (options ?? {}) as RawOptions;
+		assertRawAllowed(context, rawOptions, true);
+
+		return executeRawQuery(
+			context,
+			'rawUnsafe',
+			(() => {
+				if (!params?.length) return sql.raw(query);
+
+				const parts = query.split('?');
+				if (parts.length - 1 !== params.length)
+					throw new Error(
+						'Raw unsafe parameter count does not match "?" placeholder count.',
+					);
+
+				const chunks: Array<SQL | SQLWrapper> = [];
+				for (let index = 0; index < parts.length; index += 1) {
+					const part = parts[index];
+					if (part) chunks.push(sql.raw(part));
+					if (index < params.length)
+						chunks.push(sql`${params[index]}`);
+				}
+
+				return sql.join(chunks);
+			})(),
+			rawOptions,
+			async (safeQuery) => {
+				const rows = (
+					context.dialect === 'sqlite'
+						? await Promise.resolve(
+								context.db.all?.(safeQuery) ?? [],
+							)
+						: await Promise.resolve(
+								context.db.execute?.(safeQuery) ?? [],
+							)
+				) as unknown[];
+
+				const mapped = rawOptions.map
+					? rows.map((row: unknown) => rawOptions.map?.(row))
+					: rows;
+
+				return mapped as T;
+			},
+		);
 	};
 	client.transaction = <T>(
 		callback: (

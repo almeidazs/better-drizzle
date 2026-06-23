@@ -78,6 +78,13 @@
   - transaction clients are full Better Drizzle clients with `transaction`, `rollback`, `afterCommit`, and `afterRollback`
   - transaction context lives on the runtime context; operation/plugin hooks can read `isInTransaction`, `transaction`, and `transactionContext`
   - nested transactions use savepoints; SQLite is handled with explicit `BEGIN`/`SAVEPOINT` SQL because Bun SQLite's native Drizzle transaction callback is synchronous
+- **Raw SQL**:
+  - raw APIs live on the client: `$raw`, `$executeRaw`, and `$rawUnsafe`
+  - safe raw calls accept tagged templates or Drizzle `sql` objects; plain strings are only allowed through `$rawUnsafe`
+  - `raw.allowUnsafe` defaults to disabled and gates `$rawUnsafe`
+  - raw execution bypasses model transforms and CRUD hooks, but has dedicated client/plugin hooks: `beforeRaw`, `afterRaw`, and `onRawError`
+  - raw queries still bind to transaction-scoped Drizzle clients inside `db.transaction(...)`
+  - SQLite raw reads use `db.all(...)` and raw execute uses `db.run(...)`; pg/mysql-style drivers use `db.execute(...)`
 - **Plugin composition**:
   - plugin ids must be unique
   - plugins run in `options.plugins` array order

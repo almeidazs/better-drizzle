@@ -16,6 +16,7 @@ import type {
 	SelectInput,
 	WhereArg,
 } from './query';
+import type { RawExecutionResult, RawOptions, RawSql } from './raw';
 import type {
 	BetterDrizzleTransactionClient,
 	TransactionOptions,
@@ -241,6 +242,39 @@ export type BetterDrizzleClient<
 	Plugins extends readonly AnyPlugin[] = [],
 > = BetterDrizzleClientByTableWithPlugins<Schema, Meta, Plugins> &
 	ClientExtensionsOf<Plugins> & {
+		/** Executes a safe raw SQL query and returns rows. */
+		$raw<Row = unknown>(
+			query: TemplateStringsArray,
+			...params: unknown[]
+		): Promise<Row[]>;
+		/** Executes a safe raw SQL query and returns rows. */
+		$raw<Row = unknown>(query: RawSql): Promise<Row[]>;
+		/** Executes a safe raw SQL query and returns mapped rows. */
+		$raw<Row = unknown, Mapped = Row>(
+			query: RawSql,
+			options: RawOptions<Row, Mapped>,
+		): Promise<Mapped[]>;
+		/** Executes a safe raw SQL statement and returns a normalized result. */
+		$executeRaw(
+			query: TemplateStringsArray,
+			...params: unknown[]
+		): Promise<RawExecutionResult>;
+		/** Executes a safe raw SQL statement and returns a normalized result. */
+		$executeRaw(
+			query: RawSql,
+			options?: RawOptions,
+		): Promise<RawExecutionResult>;
+		/** Executes a raw SQL string, optionally with parameter bindings. */
+		$rawUnsafe<Row = unknown>(
+			query: string,
+			params?: unknown[],
+		): Promise<Row[]>;
+		/** Executes a raw SQL string, optionally with parameter bindings, and returns mapped rows. */
+		$rawUnsafe<Row = unknown, Mapped = Row>(
+			query: string,
+			params: unknown[] | undefined,
+			options: RawOptions<Row, Mapped>,
+		): Promise<Mapped[]>;
 		/**
 		 * Runs the callback inside a database transaction and returns its result.
 		 */

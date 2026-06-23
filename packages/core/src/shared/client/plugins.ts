@@ -120,6 +120,7 @@ type TransactionHookName = Extract<
 	| 'beforeTransaction'
 	| 'onTransactionError'
 >;
+type RawHookName = Extract<HookName, 'afterRaw' | 'beforeRaw' | 'onRawError'>;
 type BeforeHookResult<Args> = {
 	args: Args;
 	hasOverride: boolean;
@@ -159,6 +160,12 @@ const PLUGIN_TRANSACTION_HOOK_NAMES = [
 	'beforeTransaction',
 	'onTransactionError',
 ] as const satisfies readonly TransactionHookName[];
+
+const PLUGIN_RAW_HOOK_NAMES = [
+	'afterRaw',
+	'beforeRaw',
+	'onRawError',
+] as const satisfies readonly RawHookName[];
 
 const getPluginMeta = (plugin: AnyPlugin): PluginMeta => ({
 	description: plugin.description,
@@ -254,6 +261,22 @@ const registerTransactionHook = <
 	else bucket.errorHooks.push(hook);
 };
 
+const registerRawHook = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
+	hookName: RawHookName,
+	hook: PluginRuntimeAfterHook,
+) => {
+	const bucket = context.plugins.raw;
+
+	if (hookName === 'beforeRaw') bucket.beforeHooks.push(hook);
+	else if (hookName === 'afterRaw') bucket.afterHooks.push(hook);
+	else bucket.errorHooks.push(hook);
+};
+
 const registerPluginHooks = <
 	Schema extends AnySchema,
 	Meta,
@@ -294,6 +317,17 @@ const registerPluginHooks = <
 			context,
 			hookName,
 			hook as unknown as PluginRuntimeTransactionHook,
+		);
+	}
+
+	for (const hookName of PLUGIN_RAW_HOOK_NAMES) {
+		const hook = hooks[hookName];
+		if (!hook) continue;
+
+		registerRawHook(
+			context,
+			hookName,
+			hook as unknown as PluginRuntimeAfterHook,
 		);
 	}
 };
@@ -921,6 +955,26 @@ export const runPluginTransactionHooks = async <
 				: hookName === 'afterTransactionRollback'
 					? bucket.afterRollbackHooks
 					: bucket.errorHooks;
+
+	for (const hook of hooks) await hook(payload);
+};
+
+export const runPluginRawHooks = async <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
+	hookName: RawHookName,
+	payload: Record<string, unknown>,
+) => {
+	const bucket = context.plugins.raw;
+	const hooks =
+		hookName === 'beforeRaw'
+			? bucket.beforeHooks
+			: hookName === 'afterRaw'
+				? bucket.afterHooks
+				: bucket.errorHooks;
 
 	for (const hook of hooks) await hook(payload);
 };

@@ -14,6 +14,7 @@ import type {
 	BetterTableKey,
 	PluginHookKind,
 	PluginRuntimeBucket,
+	PluginRuntimeRawBucket,
 	PluginRuntimeTransactionBucket,
 	RuntimeContext,
 	TableRuntime,
@@ -63,6 +64,12 @@ const createPluginBuckets = () => {
 const createTransactionPluginBucket = (): PluginRuntimeTransactionBucket => ({
 	afterCommitHooks: [],
 	afterRollbackHooks: [],
+	beforeHooks: [],
+	errorHooks: [],
+});
+
+const createRawPluginBucket = (): PluginRuntimeRawBucket => ({
+	afterHooks: [],
 	beforeHooks: [],
 	errorHooks: [],
 });
@@ -178,6 +185,7 @@ export const createRuntimeContext = <
 		plugins: {
 			byKind: createPluginBuckets(),
 			meta: [],
+			raw: createRawPluginBucket(),
 			transaction: createTransactionPluginBucket(),
 		},
 		fullSchema: options.schema,

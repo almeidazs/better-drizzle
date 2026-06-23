@@ -174,29 +174,7 @@ const user = await client.transaction(async (tx) => {
 });
 ```
 
-```ts
-await client.transaction(
-	async (tx) => {
-		await tx.users.create({
-			data: {
-				email: 'nested@example.com',
-				id: 124,
-				name: 'nested',
-			},
-		});
-
-		await tx.transaction(async (nestedTx) => {
-			await nestedTx.users.update({
-				data: { name: 'nested-updated' },
-				where: { id: 124 },
-			});
-		});
-	},
-	{
-		context: { tenantId: 'team-a' },
-		retries: { attempts: 3, on: ['deadlock', 'serializationFailure'] },
-	},
-);
+<div align="center">
 
 ## Plugins
 
@@ -271,6 +249,6 @@ const client = better(drizzle, {
 
 ## Performance
 
-See the full benchmark suite and results in [`benchmark/README.md`](/benchmark).
+See the full benchmark suite and results in [`benchmark/README.md`](/benchmark). The suite covers reads, writes, and transactions (including nested savepoints) with fair API-parity comparisons against raw Drizzle.
 
 </div>

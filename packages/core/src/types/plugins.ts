@@ -21,6 +21,7 @@ import type {
 	UpsertArgs,
 } from './delegate';
 import type { CountArgs, ExistsArgs, PaginationArgs, QueryArgs } from './query';
+import type { RawExecutionResult, RawOptions } from './raw';
 import type {
 	BetterDrizzleTransactionClient,
 	TransactionOptions,
@@ -424,6 +425,55 @@ export type PluginTransactionRollbackHookContext<
 	reason?: unknown;
 };
 
+export type PluginRawHookContext<
+	Schema extends AnySchema = AnySchema,
+	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
+	Action extends 'raw' | 'executeRaw' | 'rawUnsafe' =
+		| 'raw'
+		| 'executeRaw'
+		| 'rawUnsafe',
+	Result = unknown,
+> = {
+	action: Action;
+	afterCommit(callback: () => unknown | Promise<unknown>): void;
+	afterRollback(callback: () => unknown | Promise<unknown>): void;
+	comment?: string;
+	db: unknown;
+	dialect: PluginDialect;
+	isInTransaction: boolean;
+	map?: RawOptions['map'];
+	name?: string;
+	options: BetterClientOptions<Schema, Meta, Plugins>;
+	query: string;
+	rawOptions: RawOptions;
+	result: Result;
+	schema: Schema;
+	signal?: AbortSignal;
+	sql?: unknown;
+	timeoutMs?: number;
+	transaction: BetterDrizzleTransactionClient<
+		Schema,
+		Meta,
+		readonly AnyPlugin[]
+	> | null;
+	transactionContext: Record<string, unknown> | undefined;
+};
+
+export type PluginRawErrorHookContext<
+	Schema extends AnySchema = AnySchema,
+	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
+> = PluginRawHookContext<
+	Schema,
+	Meta,
+	Plugins,
+	'raw' | 'executeRaw' | 'rawUnsafe',
+	unknown
+> & {
+	error: unknown;
+};
+
 /**
  * Lifecycle hooks that a plugin can register. Each hook receives a rich
  * context object containing the operation arguments, model info, plugin
@@ -484,6 +534,23 @@ export type PluginHooks<
 			Meta,
 			readonly AnyPlugin[]
 		>,
+	): unknown;
+	afterRaw?(
+		context:
+			| PluginRawHookContext<
+					Schema,
+					Meta,
+					readonly AnyPlugin[],
+					'raw' | 'rawUnsafe',
+					unknown[]
+			  >
+			| PluginRawHookContext<
+					Schema,
+					Meta,
+					readonly AnyPlugin[],
+					'executeRaw',
+					RawExecutionResult
+			  >,
 	): unknown;
 	afterTransactionRollback?(
 		context: PluginTransactionRollbackHookContext<
@@ -567,6 +634,15 @@ export type PluginHooks<
 			readonly AnyPlugin[]
 		>,
 	): unknown;
+	beforeRaw?(
+		context: PluginRawHookContext<
+			Schema,
+			Meta,
+			readonly AnyPlugin[],
+			'raw' | 'executeRaw' | 'rawUnsafe',
+			unknown
+		>,
+	): unknown;
 	beforeUpdate?(
 		context: PluginBeforeHookContext<
 			Schema,
@@ -592,6 +668,9 @@ export type PluginHooks<
 			Meta,
 			readonly AnyPlugin[]
 		>,
+	): unknown;
+	onRawError?(
+		context: PluginRawErrorHookContext<Schema, Meta, readonly AnyPlugin[]>,
 	): unknown;
 };
 

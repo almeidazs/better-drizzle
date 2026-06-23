@@ -18,6 +18,7 @@ import type {
 	PayloadForArgs,
 	QueryArgs,
 } from './query';
+import type { RawClientOptions, RawExecutionResult, RawOptions } from './raw';
 import type {
 	BetterDrizzleTransactionClient,
 	TransactionOptions,
@@ -47,6 +48,9 @@ export type HookAction =
 	| CreateHookAction
 	| UpdateHookAction
 	| DeleteHookAction;
+
+/** Action names for raw SQL operations. */
+export type RawHookAction = 'raw' | 'executeRaw' | 'rawUnsafe';
 
 /** Stage within a hook lifecycle. */
 export type HookStage = 'beforeHook' | 'afterHook' | 'operation';
@@ -94,6 +98,34 @@ type TransactionHookBaseContext<
 	schema: Schema;
 	transactionContext: Record<string, unknown> | undefined;
 	transactionOptions: TransactionOptions;
+};
+
+type RawHookBaseContext<
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+	Action extends RawHookAction,
+	Result,
+> = {
+	action: Action;
+	afterCommit(callback: () => unknown | Promise<unknown>): void;
+	afterRollback(callback: () => unknown | Promise<unknown>): void;
+	comment?: string;
+	db: unknown;
+	error?: unknown;
+	isInTransaction: boolean;
+	map?: RawOptions['map'];
+	name?: string;
+	options: BetterClientOptions<Schema, Meta, Plugins>;
+	query: string;
+	rawOptions: RawOptions;
+	result: Result;
+	schema: Schema;
+	signal?: AbortSignal;
+	sql?: unknown;
+	timeoutMs?: number;
+	transaction: BetterDrizzleTransactionClient<Schema, Meta, Plugins> | null;
+	transactionContext: Record<string, unknown> | undefined;
 };
 
 type CreateHookArgsForAction<
@@ -733,6 +765,43 @@ export type TransactionErrorHookContext<
 };
 
 /**
+ * Context available in the `beforeRaw` hook.
+ */
+export type BeforeRawHookContext<
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
+> = RawHookBaseContext<Schema, Meta, Plugins, RawHookAction, unknown>;
+
+/**
+ * Context available in the `afterRaw` hook.
+ */
+export type AfterRawHookContext<
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
+> =
+	| RawHookBaseContext<Schema, Meta, Plugins, 'raw' | 'rawUnsafe', unknown[]>
+	| RawHookBaseContext<
+			Schema,
+			Meta,
+			Plugins,
+			'executeRaw',
+			RawExecutionResult
+	  >;
+
+/**
+ * Context available in the `onRawError` hook.
+ */
+export type RawErrorHookContext<
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
+> = RawHookBaseContext<Schema, Meta, Plugins, RawHookAction, unknown> & {
+	error: unknown;
+};
+
+/**
  * Configuration object passed to {@link better}. Includes the Drizzle schema,
  * optional plugins, and lifecycle hooks.
  *
@@ -752,6 +821,8 @@ export interface BetterClientOptions<
 	transaction?: {
 		unsupportedOptions?: TransactionUnsupportedOptionsBehavior;
 	};
+	/** Optional raw SQL configuration. */
+	raw?: RawClientOptions;
 	/** Optional lifecycle hooks. */
 	hooks?: BetterClientHooks<Schema, Meta, Plugins>;
 }
@@ -803,16 +874,22 @@ export interface BetterClientHooks<
 	beforeTransaction?(
 		context: BeforeTransactionHookContext<Schema, Meta, Plugins>,
 	): unknown;
+	/** Called before any raw SQL query executes. */
+	beforeRaw?(context: BeforeRawHookContext<Schema, Meta, Plugins>): unknown;
 	/** Called after a transaction commits successfully. */
 	afterTransactionCommit?(
 		context: AfterTransactionCommitHookContext<Schema, Meta, Plugins>,
 	): unknown;
+	/** Called after any raw SQL query completes. */
+	afterRaw?(context: AfterRawHookContext<Schema, Meta, Plugins>): unknown;
 	/** Called after a transaction rolls back. */
 	afterTransactionRollback?(
 		context: AfterTransactionRollbackHookContext<Schema, Meta, Plugins>,
 	): unknown;
 	/** Called when any operation or hook throws an error. */
 	onError?(context: ErrorHookContext<Schema, Meta, Plugins>): unknown;
+	/** Called when a raw SQL query fails. */
+	onRawError?(context: RawErrorHookContext<Schema, Meta, Plugins>): unknown;
 	/** Called when a transaction callback fails. */
 	onTransactionError?(
 		context: TransactionErrorHookContext<Schema, Meta, Plugins>,

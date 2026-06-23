@@ -1,4 +1,4 @@
-import type { AnyColumn, SQL, Table } from 'drizzle-orm';
+import type { AnyColumn, SQL, SQLWrapper, Table } from 'drizzle-orm';
 import type { extractTablesRelationalConfig } from 'drizzle-orm/relations';
 
 import type {
@@ -81,6 +81,8 @@ export type DrizzleLikeDatabase = {
 		};
 	};
 	query: Record<string, DrizzleQueryDelegate>;
+	all?(query: SQL | SQLWrapper | string): Promise<unknown[]> | unknown[];
+	execute?(query: SQL | SQLWrapper | string): Promise<unknown> | unknown;
 	insert(table: Table): {
 		values(data: unknown): InsertBuilderLike & Promise<unknown>;
 	};
@@ -214,6 +216,19 @@ export type PluginRuntimeTransactionBucket = {
 };
 
 /**
+ * Bucket holding all plugin raw-query hooks. Precomputed during
+ * initialization to avoid per-call iteration.
+ */
+export type PluginRuntimeRawBucket = {
+	/** Registered after-raw hook functions. */
+	afterHooks: PluginRuntimeAfterHook[];
+	/** Registered before-raw hook functions. */
+	beforeHooks: PluginRuntimeBeforeHook[];
+	/** Registered raw error hook functions. */
+	errorHooks: PluginRuntimeAfterHook[];
+};
+
+/**
  * A callback function used in transaction lifecycle hooks (after-commit,
  * after-rollback). May return a value or a promise.
  */
@@ -286,6 +301,7 @@ export type RuntimeContext<
 	plugins: {
 		byKind: Record<PluginHookKind, PluginRuntimeBucket>;
 		meta: PluginMeta[];
+		raw: PluginRuntimeRawBucket;
 		transaction: PluginRuntimeTransactionBucket;
 	};
 	/** The full Drizzle schema object. */
