@@ -49,6 +49,7 @@ It gets repetitive when every service ends up re-writing the same patterns:
 - `include` and `select` support with typed payload inference
 - Unified pagination return shape
 - Optional lifecycle hooks for cross-cutting behavior
+- First-class plugins with setup, transforms, and client/model extensions
 - Fast paths for simple reads and writes to reduce wrapper overhead
 - Consistent table delegates: `findMany`, `findFirst`, `create`, `update`, `delete`, `paginate`, `count`, `exists`, `upsert`
 
@@ -137,15 +138,43 @@ const users = client.repository('users');
 
 The repository name can be the TypeScript schema key or the database table name.
 
+## Plugins
+
+Plugins let you package setup logic, query transforms, and reusable client/model extensions without wrapping `better(...)` yourself.
+
+```ts
+import { better } from 'better-drizzle';
+import { timestamps } from '@better-drizzle/timestamps';
+import { softDelete } from '@better-drizzle/soft-delete';
+
+const client = better(drizzle, {
+	schema,
+	plguins: [
+		timestamps(),
+		softDelete(),
+	],
+});
+```
+
+Now you can soft delete rows easily and also have timestamps fields injected automatically.
+
+</div>
+
+```ts
+import { better } from 'better-drizzle';
+```
+
+<div align="center">
+
 ## Hooks
 
 The client accepts optional hooks through `better(db, options)`. This is useful for auditing, tracing, metrics, authorization, and other cross-cutting concerns that you do not want duplicated in every repository call.
 
 The hook layer is optional. If you do not need it, do not pass it.
 
-</div>
-
 **Always assign a random UUID in the user before creating it.**
+
+</div>
 
 ```ts
 const client = better(drizzle, {
@@ -181,28 +210,34 @@ That distinction matters. Comparing a repository helper that returns nested type
 
 Ran on AMD Ryzen 5 7520U, Bun 1.3.14, SQLite in-memory.
 
+</div>
+
 | Operation | Drizzle | better-drizzle | Overhead |
 | --- | --- | --- | --- |
 | Point lookup | 139.87 µs | 134.49 µs | -3.8% |
 | Filtered list | 291.55 µs | 397.33 µs | +36.3% |
-| Relation graph | 10.75 ms | 9.93 ms | -7.6% |
 | Active count | 110.28 µs | 122.49 µs | +11.1% |
 | Exists | 155.76 µs | 168.25 µs | +8.0% |
 | Offset pagination | 263.44 µs | 281.97 µs | +7.0% |
 | Cursor pagination | 300.32 µs | 344.69 µs | +14.8% |
 | Complex relation filter | 1.30 ms | 1.30 ms | +0.0% |
-| Create + delete roundtrip | 274.02 µs | 235.47 µs | -14.1% |
 | Update + reload | 159.39 µs | 167.36 µs | +5.0% |
+
+<div align="center">
 
 ### Memory (memory benchmark)
 
 Same hardware. 2000 read iterations, 600 mixed read iterations, 1200 write iterations.
+
+</div>
 
 | Batch | Drizzle | better-drizzle | Overhead |
 | --- | --- | --- | --- |
 | **Single Read** | 184.7 µs/op, 2.08 MB heap | 139.9 µs/op, 300 KB heap | -24.3% time, -85.9% heap |
 | **Mixed Read** | 2.39 ms/op, 844 KB heap | 2.32 ms/op, 387 KB heap | -3.2% time, -54.1% heap |
 | **Write** | 226.5 µs/op, 361 KB heap | 216.5 µs/op, 94 KB heap | -4.4% time, -74.1% heap |
+
+<div align="center">
 
 ### Interpretation
 
@@ -211,12 +246,14 @@ Same hardware. 2000 read iterations, 600 mixed read iterations, 1200 write itera
 - Memory overhead is **negative across the board** — better-drizzle uses less heap and RSS than raw Drizzle in the measured workloads, thanks to fewer intermediate allocations in the query compilation and execution paths.
 - The `manual drizzle reference` group shows that raw hand-written joins are faster (as expected), but they return flat shapes and skip relation resolution. The parity group is the fair comparison.
 
+<div align="center">
+
 Run benchmarks yourself:
+
+</div>
 
 ```bash
 bun run bench          # latency
 bun run bench:memory   # memory overhead
 bun run bench:all      # both
 ```
-
-</div>

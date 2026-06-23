@@ -460,11 +460,12 @@ export type ErrorHookContext<Schema extends AnySchema, Meta = BetterMeta> = {
 export interface BetterClientOptions<
 	Schema extends AnySchema,
 	Meta = BetterMeta,
+	Plugins extends readonly Plugin[] = readonly Plugin[],
 > {
 	/** The Drizzle schema object containing all table definitions. */
 	schema: Schema;
 	/** Optional plugins to extend the client. */
-	plugins?: Plugin[];
+	plugins?: Plugins;
 	/** Optional lifecycle hooks. */
 	hooks?: BetterClientHooks<Schema, Meta>;
 }

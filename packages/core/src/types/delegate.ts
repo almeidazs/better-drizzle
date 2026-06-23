@@ -2,6 +2,12 @@ import type { TableRelationalConfig } from 'drizzle-orm';
 
 import type { PaginationResult } from './database';
 import type {
+	ClientExtensionsOf,
+	ModelExtensionsOf,
+	Plugin,
+	PluginState,
+} from './plugins';
+import type {
 	IncludeInput,
 	PaginationArgs,
 	PayloadForArgs,
@@ -217,10 +223,6 @@ type RepositorySourceKey<
 		? Name
 		: SourceKeyFromDbName<Schema, Extract<Name, string>>;
 
-type BetterDrizzleClientByTable<Schema extends AnySchema, Meta> = {
-	[K in TableKey<Schema>]: BetterDrizzleModelDelegate<Schema, K, Meta>;
-};
-
 /**
  * The fully-typed client returned by {@link better}. Provides a delegate for
  * every table in the schema plus a unified `repository()` accessor.
@@ -231,20 +233,36 @@ type BetterDrizzleClientByTable<Schema extends AnySchema, Meta> = {
 export type BetterDrizzleClient<
 	Schema extends AnySchema,
 	Meta = import('./query').BetterMeta,
-> = BetterDrizzleClientByTable<Schema, Meta> & {
-	/**
-	 * Retrieves the model delegate for the given repository name. The name can
-	 * be either the TypeScript table key or the database table name.
-	 *
-	 * @param name - Table key or database name.
-	 * @returns The model delegate for the specified table.
-	 */
-	repository<Name extends RepositoryKey<Schema>>(
-		name: Name,
-	): BetterDrizzleModelDelegate<
+	Plugins extends readonly Plugin[] = [],
+> = BetterDrizzleClientByTableWithPlugins<Schema, Meta, Plugins> &
+	ClientExtensionsOf<Plugins> & {
+		/**
+		 * Retrieves the model delegate for the given repository name. The name can
+		 * be either the TypeScript table key or the database table name.
+		 *
+		 * @param name - Table key or database name.
+		 * @returns The model delegate for the specified table.
+		 */
+		repository<Name extends RepositoryKey<Schema>>(
+			name: Name,
+		): BetterDrizzleModelDelegate<
+			Schema,
+			RepositorySourceKey<Schema, Name>,
+			Meta,
+			ModelExtensionsOf<Plugins>
+		>;
+	};
+
+type BetterDrizzleClientByTableWithPlugins<
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly Plugin[],
+> = {
+	[K in TableKey<Schema>]: BetterDrizzleModelDelegate<
 		Schema,
-		RepositorySourceKey<Schema, Name>,
-		Meta
+		K,
+		Meta,
+		ModelExtensionsOf<Plugins>
 	>;
 };
 
@@ -257,11 +275,31 @@ export type BetterDrizzleClient<
  * @typeParam Name - The table key within the schema.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
  */
-export interface BetterDrizzleModelDelegate<
+export type BetterDrizzleModelDelegate<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 	Meta = import('./query').BetterMeta,
-> {
+	ModelExtension extends Record<string, unknown> = Record<never, never>,
+> = {
+	/** Internal model metadata useful for plugins. */
+	$model: {
+		dbName: string;
+		hasColumn(column: string): boolean;
+		name: Name;
+	};
+	/** Ephemeral plugin state carried by cloned delegates. */
+	$state: PluginState;
+	/** Returns a cloned delegate with merged plugin state. */
+	$withState(
+		state: PluginState,
+	): BetterDrizzleModelDelegate<Schema, Name, Meta, ModelExtension>;
+	/** Returns a cloned delegate that bypasses plugin hooks and transforms. */
+	$withoutPlugins(): BetterDrizzleModelDelegate<
+		Schema,
+		Name,
+		Meta,
+		ModelExtension
+	>;
 	/** Counts matching rows. */
 	count(
 		args?: import('./query').CountArgs<Schema, Name, Meta>,
@@ -318,7 +356,7 @@ export interface BetterDrizzleModelDelegate<
 	deleteMany(
 		args: DeleteManyArgs<Schema, Name, Meta>,
 	): Promise<BatchResult<never>>;
-}
+} & ModelExtension;
 
 /**
  * Extracts the relational configuration for a specific table from the schema.

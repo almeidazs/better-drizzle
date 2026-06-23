@@ -7,6 +7,11 @@ import type {
 	BetterMeta,
 	BetterRelationalConfig,
 	BetterTableKey,
+	Plugin,
+	PluginDialect,
+	PluginHookKind,
+	PluginMeta,
+	PluginModelInfo,
 	QueryArgs,
 } from '.';
 
@@ -42,6 +47,11 @@ export type SelectQueryLike = SQL &
 	};
 
 export type DrizzleLikeDatabase = {
+	dialect?: {
+		constructor?: {
+			name?: string;
+		};
+	};
 	query: Record<string, DrizzleQueryDelegate>;
 	insert(table: Table): {
 		values(data: unknown): InsertBuilderLike & Promise<unknown>;
@@ -67,6 +77,8 @@ export type RuntimeSchema = ReturnType<
 export type TableRuntime = {
 	columns: Record<string, AnyColumn>;
 	dbName: string;
+	hasColumn(column: string): boolean;
+	model: PluginModelInfo;
 	primaryKeyFields: string[];
 	relations: Record<
 		string,
@@ -82,11 +94,39 @@ export type TableRuntime = {
 	tableConfig: BetterRelationalConfig;
 };
 
+export type PluginRuntimeBeforeHook = (
+	context: Record<string, unknown>,
+) => unknown;
+
+export type PluginRuntimeAfterHook = (
+	context: Record<string, unknown>,
+) => unknown;
+
+export type PluginRuntimeTransform = (
+	operation: Record<string, unknown>,
+) => Record<string, unknown> | undefined;
+
+export type PluginRuntimeBucket = {
+	afterHooks: PluginRuntimeAfterHook[];
+	beforeHooks: PluginRuntimeBeforeHook[];
+	hasAfterHooks: boolean;
+	hasBeforeHooks: boolean;
+	hasTransforms: boolean;
+	transforms: PluginRuntimeTransform[];
+};
+
 export type RuntimeContext<Schema extends AnySchema, Meta = BetterMeta> = {
 	db: DrizzleLikeDatabase;
+	dialect: PluginDialect;
 	hasHooks: boolean;
 	hasOnError: boolean;
-	options: BetterClientOptions<Schema, Meta>;
+	hasPlugins: boolean;
+	models: Record<string, PluginModelInfo>;
+	options: BetterClientOptions<Schema, Meta, readonly Plugin[]>;
+	plugins: {
+		byKind: Record<PluginHookKind, PluginRuntimeBucket>;
+		meta: PluginMeta[];
+	};
 	fullSchema: Schema;
 	relational: RuntimeSchema;
 	repositories: Record<string, unknown>;

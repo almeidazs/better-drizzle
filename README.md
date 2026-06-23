@@ -49,6 +49,7 @@ It gets repetitive when every service ends up re-writing the same patterns:
 - `include` and `select` support with typed payload inference
 - Unified pagination return shape
 - Optional lifecycle hooks for cross-cutting behavior
+- First-class plugins with setup, transforms, and client/model extensions
 - Fast paths for simple reads and writes to reduce wrapper overhead
 - Consistent table delegates: `findMany`, `findFirst`, `create`, `update`, `delete`, `paginate`, `count`, `exists`, `upsert`
 
@@ -136,6 +137,34 @@ const users = client.repository('users');
 <div align="center">
 
 The repository name can be the TypeScript schema key or the database table name.
+
+## Plugins
+
+Plugins let you package setup logic, query transforms, and reusable client/model extensions without wrapping `better(...)` yourself.
+
+```ts
+import { better } from 'better-drizzle';
+import { timestamps } from '@better-drizzle/timestamps';
+import { softDelete } from '@better-drizzle/soft-delete';
+
+const client = better(drizzle, {
+	schema,
+	plguins: [
+		timestamps(),
+		softDelete(),
+	],
+});
+```
+
+Now you can soft delete rows easily and also have timestamps fields injected automatically.
+
+</div>
+
+```ts
+import { better } from 'better-drizzle';
+```
+
+<div align="center">
 
 ## Hooks
 

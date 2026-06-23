@@ -11,22 +11,70 @@ import type {
 	BetterClientOptions,
 	BetterMeta,
 	BetterTableKey,
+	Plugin,
+	PluginHookKind,
+	PluginRuntimeBucket,
 	RuntimeContext,
 	TableRuntime,
 } from '../../types';
 
+const getDialect = (db: { dialect?: { constructor?: { name?: string } } }) => {
+	const name = db.dialect?.constructor?.name?.toLowerCase() ?? '';
+
+	if (name.includes('sqlite')) return 'sqlite';
+	if (name.includes('mysql')) return 'mysql';
+	if (name.includes('pg') || name.includes('postgres')) return 'pg';
+
+	throw new Error(
+		`Unable to infer Better Drizzle dialect from "${db.dialect?.constructor?.name ?? 'unknown'}".`,
+	);
+};
+
+const createPluginBuckets = () => {
+	const createBucket = (): PluginRuntimeBucket => ({
+		afterHooks: [],
+		beforeHooks: [],
+		hasAfterHooks: false,
+		hasBeforeHooks: false,
+		hasTransforms: false,
+		transforms: [],
+	});
+
+	return {
+		count: createBucket(),
+		create: createBucket(),
+		createMany: createBucket(),
+		delete: createBucket(),
+		deleteMany: createBucket(),
+		exists: createBucket(),
+		findFirst: createBucket(),
+		findMany: createBucket(),
+		findOne: createBucket(),
+		findUnique: createBucket(),
+		paginate: createBucket(),
+		update: createBucket(),
+		updateMany: createBucket(),
+		upsert: createBucket(),
+	} satisfies Record<PluginHookKind, PluginRuntimeBucket>;
+};
+
 export const createRuntimeContext = <
 	Schema extends AnySchema,
 	Meta = BetterMeta,
+	Plugins extends readonly Plugin[] = readonly Plugin[],
 >(
 	db: unknown,
-	options: BetterClientOptions<Schema, Meta>,
+	options: BetterClientOptions<Schema, Meta, Plugins>,
 ): RuntimeContext<Schema, Meta> => {
 	const relational = extractTablesRelationalConfig(
 		options.schema,
 		createTableRelationsHelpers,
 	);
 	const tables = Object.create(null) as Record<string, TableRuntime>;
+	const models = Object.create(null) as RuntimeContext<
+		Schema,
+		Meta
+	>['models'];
 
 	for (const [tableName, table] of Object.entries(options.schema)) {
 		if (!isTable(table)) continue;
@@ -34,6 +82,7 @@ export const createRuntimeContext = <
 		const tableConfig = relational.tables[tableName];
 
 		if (!tableConfig) continue;
+		const columns = getTableColumns(table);
 
 		const relations = Object.create(null) as TableRuntime['relations'];
 
@@ -57,8 +106,19 @@ export const createRuntimeContext = <
 		}
 
 		tables[tableName] = {
-			columns: getTableColumns(table),
+			columns,
 			dbName: tableConfig.dbName,
+			hasColumn(column: string) {
+				return column in this.columns;
+			},
+			model: {
+				columns,
+				dbName: tableConfig.dbName,
+				hasColumn(column: string) {
+					return column in columns;
+				},
+				name: tableName as never,
+			} as TableRuntime['model'],
 			primaryKeyFields: tableConfig.primaryKey.map(
 				(column) => column.name,
 			),
@@ -67,12 +127,17 @@ export const createRuntimeContext = <
 			table,
 			tableConfig,
 		};
+		const tableRuntime = tables[tableName];
+		if (!tableRuntime) continue;
+		models[tableName] = tableRuntime.model;
 	}
 
 	const hooks = options.hooks;
+	const plugins = options.plugins ?? [];
 
 	return {
 		db: db as RuntimeContext<Schema, Meta>['db'],
+		dialect: getDialect(db as RuntimeContext<Schema, Meta>['db']),
 		hasHooks: Boolean(
 			hooks?.beforeCreate ||
 				hooks?.afterCreate ||
@@ -84,7 +149,13 @@ export const createRuntimeContext = <
 				hooks?.afterQuery,
 		),
 		hasOnError: Boolean(hooks?.onError),
-		options,
+		hasPlugins: plugins.length > 0,
+		models,
+		options: options as BetterClientOptions<Schema, Meta>,
+		plugins: {
+			byKind: createPluginBuckets(),
+			meta: [],
+		},
 		fullSchema: options.schema,
 		relational,
 		repositories: Object.create(null) as Record<string, unknown>,
