@@ -198,14 +198,6 @@ await client.users.restore({
 
 Now you can soft delete rows easily and also have timestamps fields injected automatically.
 
-</div>
-
-```ts
-import { better } from 'better-drizzle';
-```
-
-<div align="center">
-
 ## Hooks
 
 The client accepts optional hooks through `better(db, options)`. This is useful for auditing, tracing, metrics, authorization, and other cross-cutting concerns that you do not want duplicated in every repository call.
