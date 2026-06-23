@@ -22,46 +22,112 @@ import type {
 } from './delegate';
 import type { CountArgs, ExistsArgs, PaginationArgs, QueryArgs } from './query';
 
+/**
+ * Supported SQL dialects that plugins can target.
+ * - `'pg'` — PostgreSQL
+ * - `'mysql'` — MySQL / MariaDB
+ * - `'sqlite'` — SQLite
+ */
 export type PluginDialect = 'pg' | 'mysql' | 'sqlite';
+
+/**
+ * Arbitrary key-value state carried by a plugin instance and forwarded to
+ * every hook and transform invocation. Plugins use this to share data
+ * across operations within a single request lifecycle.
+ */
 export type PluginState = Record<string, unknown>;
+
+/**
+ * Shape of the object returned by a plugin's `extendClient` or
+ * `extendModel` methods. Each key becomes a property on the delegate
+ * or client instance.
+ */
 export type PluginExtension = Record<string, unknown>;
 
+/**
+ * Describes a column that a plugin requires on a model. Used in
+ * {@link PluginConfig.requires.columns} to fail fast during bootstrap
+ * when a model is missing a required column.
+ */
 export type PluginColumnRequirement = {
+	/** The column name that must exist. */
 	column: string;
+	/** When `true`, the plugin can operate without this column. */
 	optional?: boolean;
+	/** Expected Drizzle column type name (for informational purposes). */
 	type?: string;
 };
 
+/**
+ * Static configuration for a plugin. Controls which dialects the plugin
+ * supports and which model requirements must be satisfied.
+ */
 export type PluginConfig = {
+	/** Restrict the plugin to specific SQL dialects. When omitted the plugin runs on all dialects. */
 	dialects?: PluginDialect[];
+	/** Model-level requirements that must be met before the plugin can initialise. */
 	requires?: {
+		/** Columns that must be present on every model the plugin operates on. */
 		columns?: PluginColumnRequirement[];
 	};
 };
 
+/**
+ * Descriptive metadata for a plugin. Returned by {@link definePlugin} and
+ * forwarded to setup contexts and extension callbacks.
+ *
+ * @typeParam Options - The options shape accepted by the plugin.
+ */
 export type PluginMeta<Options = unknown> = {
+	/** Human-readable description of what the plugin does. */
 	description?: string;
+	/** Unique identifier for the plugin (e.g. `"soft-delete"`). */
 	id: string;
+	/** Human-readable display name. */
 	name?: string;
+	/** Plugin-specific options stored for later reference. */
 	options?: Options;
+	/** Semver version string. */
 	version?: string;
 };
 
+/**
+ * Per-model information exposed to plugins during setup, hooks, and
+ * extension callbacks.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name  - The table key within the schema.
+ */
 export type PluginModelInfo<
 	Schema extends AnySchema = AnySchema,
 	Name extends string = Extract<TableKey<Schema>, string>,
 > = {
+	/** Map of column name to Drizzle column instance. */
 	columns: Record<string, AnyColumn>;
+	/** The database table name. */
 	dbName: string;
+	/** Checks whether a column with the given name exists on this model. */
 	hasColumn(column: string): boolean;
+	/** The TypeScript table key. */
 	name: Name;
 };
 
+/**
+ * Registry mapping TypeScript table keys to their {@link PluginModelInfo}
+ * descriptors. Provided to plugins during setup and extension callbacks.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ */
 export type ModelRegistry<Schema extends AnySchema = AnySchema> = Record<
 	string,
 	PluginModelInfo<Schema, string>
 >;
 
+/**
+ * Discriminated union of all operation kinds that plugin hooks can
+ * intercept. Each kind maps to its corresponding argument and result
+ * types in {@link PluginOperationInput}.
+ */
 export type PluginHookKind =
 	| 'count'
 	| 'create'
@@ -120,6 +186,18 @@ type PluginOperationResultMap<
 	upsert: unknown;
 };
 
+/**
+ * Fully-typed input passed to plugin hooks and transforms for every
+ * operation. The shape is narrowed by the `Kind` type parameter so that
+ * `args`, `data`, `select`, `include`, `where`, etc. reflect the
+ * concrete operation being performed.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name   - The table key within the schema.
+ * @typeParam Meta   - Custom metadata type. Defaults to {@link BetterMeta}.
+ * @typeParam State  - Plugin state type. Defaults to {@link PluginState}.
+ * @typeParam Kind   - The operation kind discriminant.
+ */
 export type PluginOperationInput<
 	Schema extends AnySchema = AnySchema,
 	Name extends TableKey<Schema> = TableKey<Schema>,
@@ -206,6 +284,15 @@ type PluginAfterHookContext<
 	result: PluginOperationResultMap<Schema, Name, Meta>[Kind];
 };
 
+/**
+ * Lifecycle hooks that a plugin can register. Each hook receives a rich
+ * context object containing the operation arguments, model info, plugin
+ * state, and (for after-hooks) the operation result.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type. Defaults to {@link BetterMeta}.
+ * @typeParam State  - Plugin state type. Defaults to {@link PluginState}.
+ */
 export type PluginHooks<
 	Schema extends AnySchema = AnySchema,
 	Meta = BetterMeta,
@@ -313,6 +400,15 @@ export type PluginHooks<
 		| undefined;
 };
 
+/**
+ * Transform function that can modify an operation's input before it
+ * reaches the database. Return `undefined` to skip the operation
+ * entirely, or return a (possibly modified) {@link PluginOperationInput}.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type. Defaults to {@link BetterMeta}.
+ * @typeParam State  - Plugin state type. Defaults to {@link PluginState}.
+ */
 export type PluginTransform<
 	Schema extends AnySchema = AnySchema,
 	Meta = BetterMeta,
@@ -335,6 +431,15 @@ export type PluginTransform<
 	  >
 	| undefined;
 
+/**
+ * Context object passed to a plugin's `setup()` method during client
+ * initialization. Provides helpers to register hooks and transforms, and
+ * read-only access to the schema, dialect, and model registry.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type. Defaults to {@link BetterMeta}.
+ * @typeParam State  - Plugin state type. Defaults to {@link PluginState}.
+ */
 export type PluginSetupContext<
 	Schema extends AnySchema = AnySchema,
 	Meta = BetterMeta,
@@ -349,6 +454,13 @@ export type PluginSetupContext<
 	schema: Schema;
 };
 
+/**
+ * Context passed to a plugin's `extendModel()` callback. Provides access
+ * to the delegate, database instance, dialect, model info, and schema.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type. Defaults to {@link BetterMeta}.
+ */
 export type PluginModelExtensionContext<
 	Schema extends AnySchema = AnySchema,
 	Meta = BetterMeta,
@@ -361,6 +473,14 @@ export type PluginModelExtensionContext<
 	schema: Schema;
 };
 
+/**
+ * Context passed to a plugin's `extendClient()` callback. Provides access
+ * to the full client, database instance, dialect, model registry, and schema.
+ *
+ * @typeParam Schema  - The Drizzle schema type.
+ * @typeParam Meta    - Custom metadata type. Defaults to {@link BetterMeta}.
+ * @typeParam Plugins - The plugin tuple. Defaults to `readonly Plugin[]`.
+ */
 export type PluginClientExtensionContext<
 	Schema extends AnySchema = AnySchema,
 	Meta = BetterMeta,
@@ -374,6 +494,16 @@ export type PluginClientExtensionContext<
 	schema: Schema;
 };
 
+/**
+ * A Better Drizzle plugin definition. Plugins extend the client with
+ * additional properties, per-model methods, lifecycle hooks, and
+ * operation transforms.
+ *
+ * @typeParam Options          - Plugin-specific options shape.
+ * @typeParam ClientExtension  - Properties added to the client by `extendClient`.
+ * @typeParam ModelExtension   - Properties added to each delegate by `extendModel`.
+ * @typeParam State            - Plugin state type carried through hooks and transforms.
+ */
 export interface Plugin<
 	Options = unknown,
 	ClientExtension extends PluginExtension = Record<never, never>,
@@ -398,6 +528,11 @@ export interface Plugin<
 	transform?: PluginTransform<AnySchema, BetterMeta, State>;
 }
 
+/**
+ * Extracts the client-level extension type from a plugin definition.
+ *
+ * @typeParam PluginDef - The plugin type to extract from.
+ */
 export type ClientExtensionOf<PluginDef> =
 	PluginDef extends Plugin<
 		unknown,
@@ -408,6 +543,11 @@ export type ClientExtensionOf<PluginDef> =
 		? Extension
 		: Record<never, never>;
 
+/**
+ * Extracts the model-level extension type from a plugin definition.
+ *
+ * @typeParam PluginDef - The plugin type to extract from.
+ */
 export type ModelExtensionOf<PluginDef> =
 	PluginDef extends Plugin<
 		unknown,
@@ -418,6 +558,12 @@ export type ModelExtensionOf<PluginDef> =
 		? Extension
 		: Record<never, never>;
 
+/**
+ * Converts a union type `A | B` into an intersection type `A & B`.
+ * Used internally to merge extension types from multiple plugins.
+ *
+ * @typeParam Value - The union type to convert.
+ */
 export type UnionToIntersection<Value> = (
 	Value extends unknown
 		? (input: Value) => void
@@ -426,6 +572,12 @@ export type UnionToIntersection<Value> = (
 	? Intersection
 	: never;
 
+/**
+ * Merges the client-level extension types from all plugins in a tuple
+ * into a single intersection type.
+ *
+ * @typeParam Plugins - The plugin tuple.
+ */
 export type ClientExtensionsOf<Plugins extends readonly Plugin[]> =
 	UnionToIntersection<
 		ClientExtensionOf<Plugins[number]>
@@ -435,6 +587,12 @@ export type ClientExtensionsOf<Plugins extends readonly Plugin[]> =
 			: Record<never, never>
 		: Record<never, never>;
 
+/**
+ * Merges the model-level extension types from all plugins in a tuple
+ * into a single intersection type.
+ *
+ * @typeParam Plugins - The plugin tuple.
+ */
 export type ModelExtensionsOf<Plugins extends readonly Plugin[]> =
 	UnionToIntersection<
 		ModelExtensionOf<Plugins[number]>
@@ -444,6 +602,28 @@ export type ModelExtensionsOf<Plugins extends readonly Plugin[]> =
 			: Record<never, never>
 		: Record<never, never>;
 
+/**
+ * Helper that creates a well-typed plugin definition. Use this to get
+ * full type inference for hooks, transforms, extensions, and state.
+ *
+ * @typeParam PluginDef - The concrete plugin definition.
+ * @param plugin - The plugin definition object.
+ * @returns The same plugin object, narrowed to its literal types.
+ *
+ * @example
+ * ```ts
+ * import { definePlugin } from 'better-drizzle';
+ *
+ * const myPlugin = definePlugin({
+ *   id: 'soft-delete',
+ *   name: 'Soft Delete',
+ *   version: '1.0.0',
+ *   setup(ctx) {
+ *     ctx.addHook({ beforeDelete(c) { c.args; } });
+ *   },
+ * });
+ * ```
+ */
 export const definePlugin = <
 	const PluginDef extends Plugin<
 		unknown,
