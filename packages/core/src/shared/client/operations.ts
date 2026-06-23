@@ -580,10 +580,9 @@ export const upsertRecord = async <Schema extends AnySchema, Meta>(
 	const createData = args.create as Record<string, unknown>;
 	const updateData = args.update as Record<string, unknown>;
 	const insertBuilder = context.db.insert(runtime.table).values(createData);
-	const onConflictDoUpdate = insertBuilder.onConflictDoUpdate;
 
 	if (
-		typeof onConflictDoUpdate === 'function' &&
+		typeof insertBuilder.onConflictDoUpdate === 'function' &&
 		canUsePrimaryKeyConflict(runtime, args.where, createData)
 	) {
 		const target = getPrimaryKeyTarget(runtime);
@@ -596,7 +595,7 @@ export const upsertRecord = async <Schema extends AnySchema, Meta>(
 				select: args.select,
 			});
 
-		const builder = onConflictDoUpdate({
+		const builder = insertBuilder.onConflictDoUpdate({
 			set: updateData,
 			target: conflictTarget,
 		});

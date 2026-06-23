@@ -51,9 +51,14 @@ jobs:
                       package_dir="packages/core"
                       version="${tag#better-drizzle@}"
                       ;;
+                    @better-drizzle/timestamps@*)
+                      package_name="@better-drizzle/timestamps"
+                      package_dir="packages/timestamps"
+                      version="${tag#@better-drizzle/timestamps@}"
+                      ;;
                     *)
                       echo "::error::Unsupported release tag: $tag"
-                      echo "::error::Use the format better-drizzle@x.y.z"
+                      echo "::error::Use the format better-drizzle@x.y.z or @better-drizzle/timestamps@x.y.z"
                       exit 1
                       ;;
                   esac

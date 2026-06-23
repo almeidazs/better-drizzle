@@ -149,8 +149,12 @@ import { softDelete } from '@better-drizzle/soft-delete';
 
 const client = better(drizzle, {
 	schema,
-	plguins: [
-		timestamps(),
+	plugins: [
+		timestamps({
+			createdAt: 'createdAt',
+			updatedAt: 'updatedAt',
+			mode: 'app',
+		}),
 		softDelete(),
 	],
 });
