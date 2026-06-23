@@ -112,6 +112,11 @@ type AnyArgs<
 
 type HookName = keyof PluginHooks<AnySchema, unknown, PluginState>;
 type PluginHookMap = Partial<Record<HookName, readonly PluginHookKind[]>>;
+type BeforeHookResult<Args> = {
+	args: Args;
+	hasOverride: boolean;
+	overrideResult: unknown;
+};
 
 const PLUGIN_HOOK_KINDS = {
 	afterCreate: ['create', 'createMany', 'upsert'],
@@ -655,6 +660,9 @@ const runBeforeHooks = async <
 	if (!bucket.hasBeforeHooks) return;
 
 	const hookName = getBeforeHookName(input.kind);
+	let hasOverride = false;
+	let overrideResult: unknown;
+
 	for (const hook of bucket.beforeHooks) {
 		const result = await hook({ ...input, client: delegate });
 		if (
@@ -662,7 +670,21 @@ const runBeforeHooks = async <
 			(hookName === 'beforeCreate' || hookName === 'beforeUpdate')
 		)
 			input.data = result as typeof input.data;
+		else if (
+			result !== undefined &&
+			(hookName === 'beforeDelete' || hookName === 'beforeQuery')
+		) {
+			hasOverride = true;
+			overrideResult = result;
+		}
 	}
+
+	return hasOverride
+		? {
+				hasOverride,
+				result: overrideResult,
+			}
+		: undefined;
 };
 
 /**
@@ -699,9 +721,14 @@ export const runPluginPipeline = async <
 		Meta,
 		Plugins
 	>,
-) => {
+): Promise<BeforeHookResult<AnyArgs<Schema, Meta, Plugins>>> => {
 	const bucket = getBucket(context, kind);
-	if (!bucket.hasBeforeHooks && !bucket.hasTransforms) return args;
+	if (!bucket.hasBeforeHooks && !bucket.hasTransforms)
+		return {
+			args,
+			hasOverride: false,
+			overrideResult: undefined,
+		};
 
 	const nextArgs = cloneArgs(args as Record<string, unknown>) as AnyArgs<
 		Schema,
@@ -717,7 +744,7 @@ export const runPluginPipeline = async <
 		state,
 	);
 
-	await runBeforeHooks(bucket, input, delegate);
+	const beforeHookResult = await runBeforeHooks(bucket, input, delegate);
 
 	for (const transform of bucket.transforms) {
 		const nextInput = await transform(input as Record<string, unknown>);
@@ -725,7 +752,17 @@ export const runPluginPipeline = async <
 	}
 
 	assignOperationArgs(kind, nextArgs, input);
-	return nextArgs;
+	return beforeHookResult
+		? {
+				args: nextArgs,
+				hasOverride: true,
+				overrideResult: beforeHookResult.result,
+			}
+		: {
+				args: nextArgs,
+				hasOverride: false,
+				overrideResult: undefined,
+			};
 };
 
 /**

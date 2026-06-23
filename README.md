@@ -170,17 +170,27 @@ const client = better(drizzle, {
 			createdAt: 'created_at',
 			updatedAt: 'updated_at',
 		}),
-		softDelete(),
+		softDelete({
+			column: 'deletedAt',
+			deletedByColumn: 'deletedById',
+			defaults: {
+				mode: 'soft',
+				visibility: 'without',
+			},
+		}),
 	],
 });
 
 await client.users.delete({
-	mode: 'soft',
 	where: { id: 1 },
 });
 
 await client.users.findMany({
 	deleted: 'only',
+});
+
+await client.users.restore({
+	where: { id: 1 },
 });
 ```
 

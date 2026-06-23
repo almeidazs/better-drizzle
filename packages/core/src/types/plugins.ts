@@ -465,7 +465,11 @@ export type PluginHooks<
 			OperationArgs,
 			'delete' | 'deleteMany'
 		>,
-	): unknown;
+	):
+		| PluginOperationResultMap<Schema, BetterTableKey<Schema>, Meta>[
+				| 'delete'
+				| 'deleteMany']
+		| undefined;
 	beforeQuery?(
 		context: PluginBeforeHookContext<
 			Schema,
@@ -481,7 +485,16 @@ export type PluginHooks<
 			| 'findUnique'
 			| 'paginate'
 		>,
-	): unknown;
+	):
+		| PluginOperationResultMap<Schema, BetterTableKey<Schema>, Meta>[
+				| 'count'
+				| 'exists'
+				| 'findFirst'
+				| 'findMany'
+				| 'findOne'
+				| 'findUnique'
+				| 'paginate']
+		| undefined;
 	beforeUpdate?(
 		context: PluginBeforeHookContext<
 			Schema,

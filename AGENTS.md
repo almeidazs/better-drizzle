@@ -5,6 +5,8 @@
 - **Repository scope**: `better-drizzle` is a small Bun/TypeScript workspace focused on a single core package, `packages/core`, plus a benchmark suite used to measure API-parity performance and memory overhead against raw Drizzle ORM.
 - **Workspace layout**:
   - `packages/core`: the published library
+  - `packages/soft-delete`: official soft delete plugin
+  - `packages/timestamps`: official timestamps plugin
   - `benchmark`: Bun + SQLite benchmark suite
   - `README.md`: project-level documentation
   - `packages/core/README.md`: package-level documentation, currently intentionally kept in sync with the root README

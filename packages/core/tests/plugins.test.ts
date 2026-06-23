@@ -421,6 +421,41 @@ describe('plugins', () => {
 		close();
 	});
 
+	test('beforeDelete can short-circuit the built-in operation', async () => {
+		const { raw, close } = createContext();
+
+		const client = better(raw, {
+			plugins: [
+				definePlugin({
+					hooks: {
+						beforeDelete({ client, kind, where }) {
+							if (kind !== 'delete') return;
+
+							return client.$withoutPlugins().update({
+								data: { name: 'Soft Deleted' },
+								where: where as { id: number },
+							});
+						},
+					},
+					id: 'soft-delete-short-circuit',
+				}),
+			],
+			schema,
+		});
+
+		const deleted = await client.users.delete({
+			where: { id: 1 },
+		});
+		const remaining = await client.users.findMany({
+			orderBy: { id: 'asc' },
+		});
+
+		expect(deleted?.name).toBe('Soft Deleted');
+		expect(remaining).toHaveLength(2);
+		expect(remaining[0]?.name).toBe('Soft Deleted');
+		close();
+	});
+
 	test('plugin order follows the array order', async () => {
 		const { raw, close } = createContext();
 

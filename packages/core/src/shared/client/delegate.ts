@@ -176,7 +176,7 @@ export const createModelDelegate = <
 			});
 
 		return (async () => {
-			const operationArgs = await runPluginPipeline(
+			const pipeline = await runPluginPipeline(
 				context,
 				runtime,
 				tableName,
@@ -185,19 +185,23 @@ export const createModelDelegate = <
 				state,
 				delegate,
 			);
+			const operationArgs = pipeline.args as Args;
 			const result = await executeOperation({
 				action,
-				args: operationArgs as Args,
+				args: operationArgs,
 				afterHookName,
 				afterPayload: afterPayload
-					? (value) => afterPayload(value, operationArgs as Args)
+					? (value) => afterPayload(value, operationArgs)
 					: undefined,
 				beforeHookName,
 				beforePayload: beforePayload
-					? () => beforePayload(operationArgs as Args)
+					? () => beforePayload(operationArgs)
 					: undefined,
 				context,
-				operation: () => operation(operationArgs as Args),
+				operation: () =>
+					pipeline.hasOverride
+						? Promise.resolve(pipeline.overrideResult as Result)
+						: operation(operationArgs),
 				runtime,
 				tableName: name,
 			});
