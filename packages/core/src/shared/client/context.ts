@@ -58,6 +58,18 @@ const createPluginBuckets = () => {
 	} satisfies Record<PluginHookKind, PluginRuntimeBucket>;
 };
 
+/**
+ * Builds the internal runtime context used by every delegate and operation.
+ * Extracts relational config, precomputes table metadata, and registers
+ * plugin hooks and transforms once during client initialization.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type carried through hooks.
+ * @typeParam Plugins - The plugin tuple.
+ * @param db     - The raw Drizzle database instance.
+ * @param options - Client options including schema, plugins, and hooks.
+ * @returns A fully-initialised runtime context.
+ */
 export const createRuntimeContext = <
 	Schema extends AnySchema,
 	Meta = BetterMeta,
@@ -164,6 +176,16 @@ export const createRuntimeContext = <
 	};
 };
 
+/**
+ * Retrieves the precomputed runtime metadata for a table by name.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type.
+ * @param context   - The runtime context.
+ * @param tableName - The TypeScript table key.
+ * @returns The table runtime metadata.
+ * @throws If no runtime is found for the given table name.
+ */
 export const getTableRuntime = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: string,
@@ -175,11 +197,25 @@ export const getTableRuntime = <Schema extends AnySchema, Meta>(
 	return runtime;
 };
 
+/**
+ * Extracts the custom metadata value from an operation's arguments object.
+ *
+ * @typeParam Meta - The expected metadata type.
+ * @param args - The operation arguments (may contain a `meta` property).
+ * @returns The metadata value, or `undefined` when not present.
+ */
 export const getMeta = <Meta>(args: unknown): Meta | undefined =>
 	typeof args === 'object' && args !== null && 'meta' in args
 		? (args as { meta?: Meta }).meta
 		: undefined;
 
+/**
+ * Builds a where-clause object from a record's primary key values.
+ *
+ * @param runtime - The table runtime metadata.
+ * @param record  - The record to extract primary key values from.
+ * @returns A where-clause object containing only primary key fields with defined values.
+ */
 export const getPrimaryKeyWhere = (
 	runtime: TableRuntime,
 	record: Record<string, unknown>,
@@ -192,11 +228,25 @@ export const getPrimaryKeyWhere = (
 	return where;
 };
 
+/**
+ * Checks whether a value is a plain object (not an array or null).
+ *
+ * @param value - The value to check.
+ * @returns `true` when the value is a non-null, non-array object.
+ */
 export const isSimpleRecord = (
 	value: unknown,
 ): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null && !Array.isArray(value);
 
+/**
+ * Checks whether a string key corresponds to a table in the runtime context.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @param context - The runtime context.
+ * @param key     - The key to check.
+ * @returns `true` when the key is a valid table key in the schema.
+ */
 export const isTableKey = <Schema extends AnySchema>(
 	context: RuntimeContext<Schema>,
 	key: string,

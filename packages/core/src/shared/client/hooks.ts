@@ -13,6 +13,20 @@ import { getMeta } from './context';
 
 const HOOK_ERROR_REPORTED = Symbol('better-drizzle-hook-error-reported');
 
+/**
+ * Builds the context object passed to client hooks (beforeCreate, afterQuery, etc.).
+ * Includes the database handle, schema, table metadata, operation args, and meta.
+ *
+ * @typeParam Schema  - The Drizzle schema type.
+ * @typeParam Meta    - Custom metadata type.
+ * @typeParam Plugins - The plugin tuple.
+ * @param context   - The runtime context.
+ * @param runtime   - The table runtime metadata.
+ * @param tableName - The TypeScript table key.
+ * @param action    - The hook action name (e.g. `"create"`, `"findMany"`).
+ * @param args      - The original operation arguments.
+ * @returns A hook context object.
+ */
 export const buildHookContext = <
 	Schema extends AnySchema,
 	Meta,
@@ -46,6 +60,23 @@ const wasErrorReported = (error: unknown) =>
 	error !== null &&
 	Boolean(Reflect.get(error, HOOK_ERROR_REPORTED));
 
+/**
+ * Reports an error to the `onError` client hook, if one is registered.
+ * The error is marked as reported to prevent duplicate reporting when
+ * the same error propagates through multiple layers.
+ *
+ * @typeParam Schema  - The Drizzle schema type.
+ * @typeParam Meta    - Custom metadata type.
+ * @typeParam Plugins - The plugin tuple.
+ * @param context   - The runtime context.
+ * @param runtime   - The table runtime metadata.
+ * @param tableName - The TypeScript table key.
+ * @param action    - The hook action name.
+ * @param args      - The original operation arguments.
+ * @param error     - The error that was thrown.
+ * @param stage     - The lifecycle stage where the error occurred.
+ * @param hookName  - The specific hook that threw (if applicable).
+ */
 export const reportError = async <
 	Schema extends AnySchema,
 	Meta,
@@ -108,6 +139,17 @@ const runHook = async <
 	}
 };
 
+/**
+ * Executes an operation with optional before/after client hooks and error
+ * reporting. When no hooks or error handler are registered this falls
+ * through to a direct `operation()` call for zero overhead.
+ *
+ * @typeParam Schema  - The Drizzle schema type.
+ * @typeParam Meta    - Custom metadata type.
+ * @typeParam Plugins - The plugin tuple.
+ * @typeParam Args    - The operation arguments type.
+ * @typeParam Result  - The operation result type.
+ */
 export const executeOperation = async <
 	Schema extends AnySchema,
 	Meta,
@@ -187,6 +229,25 @@ export const executeOperation = async <
 	}
 };
 
+/**
+ * Wraps a nullable promise result with a `.throw()` helper. When the
+ * result is `null`, calling `.throw()` invokes the `onError` hook and
+ * throws an error (either from the provided factory or a default message).
+ *
+ * @typeParam Schema  - The Drizzle schema type.
+ * @typeParam Meta    - Custom metadata type.
+ * @typeParam Plugins - The plugin tuple.
+ * @typeParam Args    - The operation arguments type.
+ * @typeParam T       - The non-null result type.
+ * @param promise   - The promise that resolves to `T | null`.
+ * @param context   - The runtime context.
+ * @param runtime   - The table runtime metadata.
+ * @param action    - The hook action name.
+ * @param args      - The original operation arguments.
+ * @param methodName - The delegate method name (e.g. `"findFirst"`).
+ * @param tableName - The TypeScript table key.
+ * @returns A `ThrowingResult<T>` promise with a `.throw()` method.
+ */
 export const attachThrow = <
 	Schema extends AnySchema,
 	Meta,

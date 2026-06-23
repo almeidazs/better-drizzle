@@ -51,6 +51,21 @@ import {
 	skipPluginsState,
 } from './plugins';
 
+/**
+ * Creates a model delegate for a single table. The delegate exposes all
+ * CRUD methods (`findMany`, `findFirst`, `create`, `update`, `delete`,
+ * etc.) as well as plugin state management helpers (`$withState`,
+ * `$withoutPlugins`). Each method wires up the appropriate before/after
+ * client hooks, plugin pipeline, and error reporting.
+ *
+ * @typeParam Schema  - The Drizzle schema type.
+ * @typeParam Meta    - Custom metadata type carried through hooks.
+ * @typeParam Plugins - The plugin tuple.
+ * @param context   - The runtime context.
+ * @param tableName - The table to create a delegate for.
+ * @param state     - Initial plugin state (defaults to an empty state).
+ * @returns A fully-typed model delegate.
+ */
 export const createModelDelegate = <
 	Schema extends AnySchema,
 	Meta,

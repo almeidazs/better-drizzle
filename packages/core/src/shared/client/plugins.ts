@@ -349,11 +349,31 @@ const cloneArgs = <Args extends Record<string, unknown> | undefined>(
 		? Record<string, never>
 		: Args;
 
+/**
+ * Determines whether the plugin pipeline should run for a given operation.
+ * Returns `false` when there are no plugins or the state explicitly
+ * disables plugin execution (e.g. via `$withoutPlugins()`).
+ *
+ * @param hasPlugins - Whether any plugins are registered on the client.
+ * @param state      - The current plugin state.
+ * @returns `true` when the plugin pipeline should execute.
+ */
 export const shouldRunPlugins = (
 	hasPlugins: boolean,
 	state: PluginState | undefined,
 ) => hasPlugins && !state?.[SKIP_PLUGINS_STATE];
 
+/**
+ * Checks whether the given operation kind has any registered plugin
+ * hooks or transforms that need to run.
+ *
+ * @typeParam Schema  - The Drizzle schema type.
+ * @typeParam Meta    - Custom metadata type.
+ * @typeParam Plugins - The plugin tuple.
+ * @param context - The runtime context.
+ * @param kind    - The operation kind to check.
+ * @returns `true` when at least one before-hook, after-hook, or transform is registered.
+ */
 export const hasPluginWork = <
 	Schema extends AnySchema,
 	Meta,
@@ -368,12 +388,38 @@ export const hasPluginWork = <
 	);
 };
 
+/**
+ * Creates an initial plugin state object. Returns the provided state
+ * or a new empty object when none is given.
+ *
+ * @param state - Optional existing state to preserve.
+ * @returns A `PluginState` object.
+ */
 export const createPluginState = (state?: PluginState) =>
 	(state ?? Object.create(null)) as PluginState;
 
+/**
+ * Merges two plugin state objects into a new object without mutating
+ * either input. Later properties take precedence.
+ *
+ * @param state - The base state.
+ * @param next  - The state to merge on top.
+ * @returns A new `PluginState` containing all properties from both inputs.
+ */
 export const mergePluginState = (state: PluginState, next: PluginState) =>
 	Object.assign(Object.create(null), state, next) as PluginState;
 
+/**
+ * Initialises all registered plugins during client bootstrap. Validates
+ * plugin IDs (uniqueness), dialect compatibility, column requirements,
+ * and operation-arg ownership. Runs each plugin's `setup()` method
+ * and registers their hooks, transforms, and extensions.
+ *
+ * @typeParam Schema  - The Drizzle schema type.
+ * @typeParam Meta    - Custom metadata type.
+ * @typeParam Plugins - The plugin tuple.
+ * @param context - The runtime context to populate with plugin data.
+ */
 export const initializePlugins = <
 	Schema extends AnySchema,
 	Meta,
@@ -488,6 +534,20 @@ const assertExtensionKeys = (
 			);
 };
 
+/**
+ * Applies model-level extensions from all registered plugins to a
+ * delegate instance. Each plugin's `extendModel()` callback is invoked
+ * and its returned properties are merged onto the delegate. Throws if
+ * a plugin attempts to override an existing property.
+ *
+ * @typeParam Schema  - The Drizzle schema type.
+ * @typeParam Meta    - Custom metadata type.
+ * @typeParam Plugins - The plugin tuple.
+ * @param context   - The runtime context.
+ * @param tableName - The table key to apply extensions for.
+ * @param delegate  - The model delegate to extend.
+ * @returns The delegate with plugin extensions applied.
+ */
 export const applyModelExtensions = <
 	Schema extends AnySchema,
 	Meta,
@@ -529,6 +589,18 @@ export const applyModelExtensions = <
 	return delegate;
 };
 
+/**
+ * Applies client-level extensions from all registered plugins to the
+ * Better Drizzle client. Each plugin's `extendClient()` callback is
+ * invoked and its returned properties are merged onto the client.
+ * Throws if a plugin attempts to override an existing property.
+ *
+ * @typeParam Schema  - The Drizzle schema type.
+ * @typeParam Meta    - Custom metadata type.
+ * @typeParam Plugins - The plugin tuple.
+ * @param context - The runtime context.
+ * @param client  - The Better Drizzle client to extend.
+ */
 export const applyClientExtensions = <
 	Schema extends AnySchema,
 	Meta,
@@ -593,6 +665,23 @@ const runBeforeHooks = async <
 	}
 };
 
+/**
+ * Runs the full plugin pipeline for a given operation: clones the args,
+ * builds a `PluginOperationInput`, executes all before-hooks and
+ * transforms, then assigns the (possibly modified) args back.
+ *
+ * @typeParam Schema  - The Drizzle schema type.
+ * @typeParam Meta    - Custom metadata type.
+ * @typeParam Plugins - The plugin tuple.
+ * @param context   - The runtime context.
+ * @param runtime   - The table runtime metadata.
+ * @param tableName - The TypeScript table key.
+ * @param kind      - The operation kind.
+ * @param args      - The original operation arguments.
+ * @param state     - The current plugin state.
+ * @param delegate  - The model delegate (passed to before-hooks).
+ * @returns The operation arguments after all transforms have been applied.
+ */
 export const runPluginPipeline = async <
 	Schema extends AnySchema,
 	Meta,
@@ -639,6 +728,24 @@ export const runPluginPipeline = async <
 	return nextArgs;
 };
 
+/**
+ * Runs all registered after-hooks for a given operation kind. After-hooks
+ * receive the operation result and can perform side-effects (logging,
+ * metrics, cache invalidation) but cannot modify the result.
+ *
+ * @typeParam Schema  - The Drizzle schema type.
+ * @typeParam Meta    - Custom metadata type.
+ * @typeParam Plugins - The plugin tuple.
+ * @typeParam Result  - The operation result type.
+ * @param context   - The runtime context.
+ * @param runtime   - The table runtime metadata.
+ * @param tableName - The TypeScript table key.
+ * @param kind      - The operation kind.
+ * @param args      - The (possibly transformed) operation arguments.
+ * @param state     - The current plugin state.
+ * @param delegate  - The model delegate (passed to after-hooks).
+ * @param result    - The result of the executed operation.
+ */
 export const runPluginAfterHooks = async <
 	Schema extends AnySchema,
 	Meta,
@@ -676,6 +783,12 @@ export const runPluginAfterHooks = async <
 	}
 };
 
+/**
+ * Creates a special plugin state that explicitly disables plugin
+ * execution for the current operation. Used by `$withoutPlugins()`.
+ *
+ * @returns A `PluginState` with the skip-plugins flag set.
+ */
 export const skipPluginsState = () =>
 	({
 		[SKIP_PLUGINS_STATE]: true,

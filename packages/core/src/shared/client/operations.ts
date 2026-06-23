@@ -322,6 +322,18 @@ const buildJoinedOneRelationQuery = <Schema extends AnySchema, Meta>(
 	return query;
 };
 
+/**
+ * Finds multiple records matching the given query arguments. Uses a fast
+ * direct-read path when no relation loading is needed, a joined single-relation
+ * path for single `One` includes, and falls back to the relational query API.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type.
+ * @param context   - The runtime context.
+ * @param tableName - The table to query.
+ * @param args      - Query arguments (where, select, include, orderBy, take, skip, cursor).
+ * @returns A promise resolving to an array of matching records.
+ */
 export const findManyRecords = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
@@ -338,6 +350,18 @@ export const findManyRecords = <Schema extends AnySchema, Meta>(
 	);
 };
 
+/**
+ * Finds a single record matching the given query arguments. Uses the same
+ * fast-path strategy as {@link findManyRecords} but limits the result to
+ * one row and returns `null` when no match is found.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type.
+ * @param context   - The runtime context.
+ * @param tableName - The table to query.
+ * @param args      - Query arguments.
+ * @returns A promise resolving to the first matching record or `null`.
+ */
 export const findFirstRecord = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
@@ -381,6 +405,17 @@ export const findFirstRecord = async <Schema extends AnySchema, Meta>(
 	return (rows[0] ?? null) as Record<string, unknown> | null;
 };
 
+/**
+ * Checks whether at least one record matches the given where-clause.
+ * Performs a `SELECT 1 … LIMIT 1` query for efficiency.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type.
+ * @param context   - The runtime context.
+ * @param tableName - The table to check.
+ * @param args      - Optional where-clause to filter by.
+ * @returns A promise resolving to `true` if a matching record exists.
+ */
 export const existsRecord = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
@@ -397,6 +432,18 @@ export const existsRecord = async <Schema extends AnySchema, Meta>(
 	return rows.length > 0;
 };
 
+/**
+ * Reloads a single record from the database using its primary key values.
+ * Falls back to all non-undefined fields when primary keys are not available.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type.
+ * @param context   - The runtime context.
+ * @param tableName - The table to reload from.
+ * @param record    - The record whose primary key values are used for lookup.
+ * @param args      - Optional query arguments for projection and relation loading.
+ * @returns A promise resolving to the reloaded record or `null`.
+ */
 export const reloadRecord = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
@@ -423,6 +470,18 @@ export const reloadRecord = async <Schema extends AnySchema, Meta>(
 	return (rows[0] ?? null) as Record<string, unknown> | null;
 };
 
+/**
+ * Reloads multiple records in parallel using their primary key values.
+ * Filters out any records that could not be found after reload.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type.
+ * @param context   - The runtime context.
+ * @param tableName - The table to reload from.
+ * @param records   - The records to reload.
+ * @param args      - Optional query arguments for projection and relation loading.
+ * @returns A promise resolving to an array of successfully reloaded records.
+ */
 export const reloadRecords = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
@@ -436,6 +495,19 @@ export const reloadRecords = async <Schema extends AnySchema, Meta>(
 	return rows.filter((row): row is Record<string, unknown> => row !== null);
 };
 
+/**
+ * Inserts a single record and returns the created row. When the database
+ * supports `RETURNING`, the row is returned directly; otherwise it is
+ * reloaded from the database. When `select` or `include` is specified,
+ * the record is reloaded with the requested projection.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type.
+ * @param context   - The runtime context.
+ * @param tableName - The table to insert into.
+ * @param args      - Create arguments including `data` and optional projection.
+ * @returns A promise resolving to the created record or `null`.
+ */
 export const createRecord = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
@@ -461,6 +533,19 @@ export const createRecord = async <Schema extends AnySchema, Meta>(
 	);
 };
 
+/**
+ * Inserts multiple records in a single query. Returns a `BatchResult`
+ * containing the count of inserted rows and, when supported, the
+ * inserted data. When `select` or `include` is specified, the
+ * inserted records are reloaded with the requested projection.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type.
+ * @param context   - The runtime context.
+ * @param tableName - The table to insert into.
+ * @param args      - CreateMany arguments including `data` array and optional projection.
+ * @returns A promise resolving to a `BatchResult` with count and optional data.
+ */
 export const createManyRecords = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
@@ -482,6 +567,19 @@ export const createManyRecords = async <Schema extends AnySchema, Meta>(
 	return { count: args.data.length, data: data.length ? data : undefined };
 };
 
+/**
+ * Updates a single record matching the where-clause and returns the updated row.
+ * Uses `RETURNING` when available; otherwise reloads from the database. When
+ * `select` or `include` is specified, the record is reloaded with the
+ * requested projection.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type.
+ * @param context   - The runtime context.
+ * @param tableName - The table to update.
+ * @param args      - Update arguments including `data` and `where`.
+ * @returns A promise resolving to the updated record or `null` if not found.
+ */
 export const updateRecord = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
@@ -513,6 +611,19 @@ export const updateRecord = async <Schema extends AnySchema, Meta>(
 	return reloadRecord(context, tableName, existing, args);
 };
 
+/**
+ * Deletes a single record matching the where-clause and returns the deleted row.
+ * Uses `RETURNING` when available; otherwise reloads before deletion. When
+ * `select` or `include` is specified, the record is reloaded with the
+ * requested projection.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type.
+ * @param context   - The runtime context.
+ * @param tableName - The table to delete from.
+ * @param args      - Delete arguments including `where`.
+ * @returns A promise resolving to the deleted record or `null` if not found.
+ */
 export const deleteRecord = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
@@ -539,6 +650,18 @@ export const deleteRecord = async <Schema extends AnySchema, Meta>(
 	return existing;
 };
 
+/**
+ * Updates all records matching the where-clause. First counts the
+ * affected rows, then performs the update. Returns a `BatchResult`
+ * with the count of updated rows.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type.
+ * @param context   - The runtime context.
+ * @param tableName - The table to update.
+ * @param args      - UpdateMany arguments including `data` and optional `where`.
+ * @returns A promise resolving to a `BatchResult` with the affected count.
+ */
 export const updateManyRecords = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
@@ -555,6 +678,18 @@ export const updateManyRecords = async <Schema extends AnySchema, Meta>(
 	return { count: affectedCount };
 };
 
+/**
+ * Deletes all records matching the where-clause. First counts the
+ * affected rows, then performs the delete. Returns a `BatchResult`
+ * with the count of deleted rows.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type.
+ * @param context   - The runtime context.
+ * @param tableName - The table to delete from.
+ * @param args      - DeleteMany arguments including optional `where`.
+ * @returns A promise resolving to a `BatchResult` with the affected count.
+ */
 export const deleteManyRecords = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
@@ -571,6 +706,19 @@ export const deleteManyRecords = async <Schema extends AnySchema, Meta>(
 	return { count: affectedCount };
 };
 
+/**
+ * Upserts a record: inserts it if it does not exist, or updates it if
+ * it does. When the database supports `ON CONFLICT DO UPDATE` and the
+ * where-clause targets the primary key, a native conflict-update is used.
+ * Otherwise falls back to a read-then-write flow.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type.
+ * @param context   - The runtime context.
+ * @param tableName - The table to upsert into.
+ * @param args      - Upsert arguments including `create`, `update`, and `where`.
+ * @returns A promise resolving to the upserted record or `null`.
+ */
 export const upsertRecord = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
@@ -633,6 +781,18 @@ export const upsertRecord = async <Schema extends AnySchema, Meta>(
 	});
 };
 
+/**
+ * Executes a paginated query, returning the data slice alongside
+ * pagination metadata (total count, hasNext, hasPrevious). Supports
+ * both offset-based and cursor-based pagination strategies.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type.
+ * @param context   - The runtime context.
+ * @param tableName - The table to paginate.
+ * @param args      - Pagination arguments (type, limit, take, skip, after, before, where).
+ * @returns A promise resolving to `{ data, pagination }`.
+ */
 export const paginateRecords = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,

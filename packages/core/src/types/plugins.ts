@@ -144,6 +144,12 @@ export type PluginHookKind =
 	| 'updateMany'
 	| 'upsert';
 
+/**
+ * Maps each {@link PluginHookKind} to a record of extra operation-argument
+ * keys that a plugin can declare. Plugins use this to type-safely extend
+ * delegate method signatures with additional fields (e.g. a `traced`
+ * flag on every operation).
+ */
 export type PluginOperationArgsExtensionMap = {
 	[K in PluginHookKind]: Record<string, unknown>;
 };
@@ -652,6 +658,11 @@ export interface Plugin<
 	>;
 }
 
+/**
+ * Erased plugin type used as a constraint in generic tuples. All plugin
+ * generics are widened to `any` so that `readonly AnyPlugin[]` accepts
+ * any combination of plugins.
+ */
 // biome-ignore lint/suspicious/noExplicitAny: intentionally erase plugin generics for constraints
 export type AnyPlugin = Plugin<any, any, any, any, any>;
 
@@ -715,6 +726,13 @@ export type ModelExtensionOf<PluginDef> =
 		? Extension
 		: Record<never, never>;
 
+/**
+ * Extracts the operation-args extension map from a plugin definition.
+ * Returns `Record<never, never>` when the plugin does not declare any
+ * custom operation arguments.
+ *
+ * @typeParam PluginDef - The plugin type to extract from.
+ */
 export type OperationArgsOf<PluginDef> =
 	PluginDef extends Plugin<
 		unknown,
@@ -755,6 +773,13 @@ export type ClientExtensionsOf<Plugins extends readonly AnyPlugin[]> =
 			: Record<never, never>
 		: Record<never, never>;
 
+/**
+ * Merges the operation-args extension types from all plugins in a tuple
+ * for a specific operation kind into a single intersection type.
+ *
+ * @typeParam Plugins - The plugin tuple.
+ * @typeParam Kind    - The operation kind to merge args for.
+ */
 export type PluginOperationArgsFor<
 	Plugins extends readonly AnyPlugin[],
 	Kind extends PluginHookKind,
@@ -767,10 +792,26 @@ export type PluginOperationArgsFor<
 			: Record<never, never>
 		: Record<never, never>;
 
+/**
+ * Builds the full operation-args extension map for all plugins in a
+ * tuple, keyed by {@link PluginHookKind}. Used to type the extra fields
+ * that plugins inject into delegate method arguments.
+ *
+ * @typeParam Plugins - The plugin tuple.
+ */
 export type OperationArgsExtensionsOf<Plugins extends readonly AnyPlugin[]> = {
 	[K in PluginHookKind]: PluginOperationArgsFor<Plugins, K>;
 };
 
+/**
+ * Intersects a base operation-args type with the plugin-declared
+ * operation-args extensions for a given operation kind. The result is
+ * the full args type that delegates expose for that operation.
+ *
+ * @typeParam Args    - The base operation arguments type.
+ * @typeParam Plugins - The plugin tuple.
+ * @typeParam Kind    - The operation kind.
+ */
 export type OperationArgsWithPlugins<
 	Args,
 	Plugins extends readonly AnyPlugin[],
