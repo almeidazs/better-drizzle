@@ -1,10 +1,17 @@
 import { isTable } from 'drizzle-orm';
 
-import { createModelDelegate, createRuntimeContext } from './shared/client';
+import {
+	applyClientExtensions,
+	applyModelExtensions,
+	createModelDelegate,
+	createRuntimeContext,
+	initializePlugins,
+} from './shared/client';
 
 export * from './shared/errors';
 
 import type {
+	AnyPlugin,
 	AnySchema,
 	BetterClientOptions,
 	BetterDrizzleClient,
@@ -38,23 +45,29 @@ import type {
  * const users = await client.user.findMany({ where: { active: true } });
  * ```
  */
-export const better = <Schema extends AnySchema, Meta = BetterMeta>(
+export const better = <
+	Schema extends AnySchema,
+	Meta = BetterMeta,
+	const Plugins extends readonly AnyPlugin[] = [],
+>(
 	drizzle: unknown,
-	options: BetterClientOptions<Schema, Meta>,
+	options: BetterClientOptions<Schema, Meta, Plugins>,
 ) => {
 	const client = Object.create(null) as Record<string, unknown>;
 	const context = createRuntimeContext(drizzle, options);
 
+	initializePlugins(context);
+
 	for (const [tableName, table] of Object.entries(options.schema)) {
 		if (!isTable(table)) continue;
 
-		const delegate = createModelDelegate(
+		const delegate = applyModelExtensions(
 			context,
 			tableName as BetterTableKey<Schema>,
+			createModelDelegate(context, tableName as BetterTableKey<Schema>),
 		);
-		const dbName =
-			context.relational.tables[tableName as BetterTableKey<Schema>]
-				?.dbName ?? tableName;
+
+		const dbName = context.tables[tableName]?.dbName ?? tableName;
 
 		client[tableName] = delegate;
 		context.repositories[tableName] = delegate;
@@ -69,7 +82,12 @@ export const better = <Schema extends AnySchema, Meta = BetterMeta>(
 		return repository;
 	};
 
-	return client as BetterDrizzleClient<Schema, Meta>;
+	applyClientExtensions(
+		context,
+		client as BetterDrizzleClient<Schema, Meta, Plugins>,
+	);
+
+	return client as BetterDrizzleClient<Schema, Meta, Plugins>;
 };
 
 export * from './types';

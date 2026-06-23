@@ -2,6 +2,13 @@ import type { TableRelationalConfig } from 'drizzle-orm';
 
 import type { PaginationResult } from './database';
 import type {
+	AnyPlugin,
+	ClientExtensionsOf,
+	ModelExtensionsOf,
+	OperationArgsWithPlugins,
+	PluginState,
+} from './plugins';
+import type {
 	IncludeInput,
 	PaginationArgs,
 	PayloadForArgs,
@@ -217,10 +224,6 @@ type RepositorySourceKey<
 		? Name
 		: SourceKeyFromDbName<Schema, Extract<Name, string>>;
 
-type BetterDrizzleClientByTable<Schema extends AnySchema, Meta> = {
-	[K in TableKey<Schema>]: BetterDrizzleModelDelegate<Schema, K, Meta>;
-};
-
 /**
  * The fully-typed client returned by {@link better}. Provides a delegate for
  * every table in the schema plus a unified `repository()` accessor.
@@ -231,20 +234,36 @@ type BetterDrizzleClientByTable<Schema extends AnySchema, Meta> = {
 export type BetterDrizzleClient<
 	Schema extends AnySchema,
 	Meta = import('./query').BetterMeta,
-> = BetterDrizzleClientByTable<Schema, Meta> & {
-	/**
-	 * Retrieves the model delegate for the given repository name. The name can
-	 * be either the TypeScript table key or the database table name.
-	 *
-	 * @param name - Table key or database name.
-	 * @returns The model delegate for the specified table.
-	 */
-	repository<Name extends RepositoryKey<Schema>>(
-		name: Name,
-	): BetterDrizzleModelDelegate<
+	Plugins extends readonly AnyPlugin[] = [],
+> = BetterDrizzleClientByTableWithPlugins<Schema, Meta, Plugins> &
+	ClientExtensionsOf<Plugins> & {
+		/**
+		 * Retrieves the model delegate for the given repository name. The name can
+		 * be either the TypeScript table key or the database table name.
+		 *
+		 * @param name - Table key or database name.
+		 * @returns The model delegate for the specified table.
+		 */
+		repository<Name extends RepositoryKey<Schema>>(
+			name: Name,
+		): BetterDrizzleModelDelegate<
+			Schema,
+			RepositorySourceKey<Schema, Name>,
+			Meta,
+			Plugins
+		>;
+	};
+
+type BetterDrizzleClientByTableWithPlugins<
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+> = {
+	[K in TableKey<Schema>]: BetterDrizzleModelDelegate<
 		Schema,
-		RepositorySourceKey<Schema, Name>,
-		Meta
+		K,
+		Meta,
+		Plugins
 	>;
 };
 
@@ -257,68 +276,148 @@ export type BetterDrizzleClient<
  * @typeParam Name - The table key within the schema.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
  */
-export interface BetterDrizzleModelDelegate<
+export type BetterDrizzleModelDelegate<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 	Meta = import('./query').BetterMeta,
-> {
+	Plugins extends readonly AnyPlugin[] = [],
+	ModelExtension extends Record<string, unknown> = ModelExtensionsOf<Plugins>,
+> = {
+	/** Internal model metadata useful for plugins. */
+	$model: {
+		dbName: string;
+		hasColumn(column: string): boolean;
+		name: Name;
+	};
+	/** Ephemeral plugin state carried by cloned delegates. */
+	$state: PluginState;
+	/** Returns a cloned delegate with merged plugin state. */
+	$withState(
+		state: PluginState,
+	): BetterDrizzleModelDelegate<Schema, Name, Meta, Plugins, ModelExtension>;
+	/** Returns a cloned delegate that bypasses plugin hooks and transforms. */
+	$withoutPlugins(): BetterDrizzleModelDelegate<
+		Schema,
+		Name,
+		Meta,
+		Plugins,
+		ModelExtension
+	>;
 	/** Counts matching rows. */
 	count(
-		args?: import('./query').CountArgs<Schema, Name, Meta>,
+		args?: OperationArgsWithPlugins<
+			import('./query').CountArgs<Schema, Name, Meta>,
+			Plugins,
+			'count'
+		>,
 	): Promise<number>;
 	/** Returns `true` when at least one matching row exists. */
 	exists(
-		args?: import('./query').ExistsArgs<Schema, Name, Meta>,
+		args?: OperationArgsWithPlugins<
+			import('./query').ExistsArgs<Schema, Name, Meta>,
+			Plugins,
+			'exists'
+		>,
 	): Promise<boolean>;
 	/** Inserts a single row and returns the created record. */
-	create<Args extends CreateArgs<Schema, Name, Meta>>(
-		args: Args,
-	): Promise<PayloadForArgs<Schema, Name, Args>>;
+	create<
+		Args extends OperationArgsWithPlugins<
+			CreateArgs<Schema, Name, Meta>,
+			Plugins,
+			'create'
+		>,
+	>(args: Args): Promise<PayloadForArgs<Schema, Name, Args>>;
 	/** Inserts multiple rows in a single statement. */
-	createMany<Args extends CreateManyArgs<Schema, Name, Meta>>(
-		args: Args,
-	): Promise<BatchResult<PayloadForArgs<Schema, Name, Args>>>;
+	createMany<
+		Args extends OperationArgsWithPlugins<
+			CreateManyArgs<Schema, Name, Meta>,
+			Plugins,
+			'createMany'
+		>,
+	>(args: Args): Promise<BatchResult<PayloadForArgs<Schema, Name, Args>>>;
 	/** Inserts a row if no match is found, otherwise updates it. */
-	upsert<Args extends UpsertArgs<Schema, Name, Meta>>(
-		args: Args,
-	): Promise<PayloadForArgs<Schema, Name, Args>>;
+	upsert<
+		Args extends OperationArgsWithPlugins<
+			UpsertArgs<Schema, Name, Meta>,
+			Plugins,
+			'upsert'
+		>,
+	>(args: Args): Promise<PayloadForArgs<Schema, Name, Args>>;
 	/** Returns all matching rows. */
-	findMany<Args extends QueryArgs<Schema, Name, Meta>>(
-		args?: Args,
-	): Promise<PayloadForArgs<Schema, Name, Args>[]>;
+	findMany<
+		Args extends OperationArgsWithPlugins<
+			QueryArgs<Schema, Name, Meta>,
+			Plugins,
+			'findMany'
+		>,
+	>(args?: Args): Promise<PayloadForArgs<Schema, Name, Args>[]>;
 	/** Updates a single matching row and returns the updated record. */
-	update<Args extends UpdateArgs<Schema, Name, Meta>>(
-		args: Args,
-	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	update<
+		Args extends OperationArgsWithPlugins<
+			UpdateArgs<Schema, Name, Meta>,
+			Plugins,
+			'update'
+		>,
+	>(args: Args): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	/** Updates all matching rows and returns the affected count. */
 	updateMany(
-		args: UpdateManyArgs<Schema, Name, Meta>,
+		args: OperationArgsWithPlugins<
+			UpdateManyArgs<Schema, Name, Meta>,
+			Plugins,
+			'updateMany'
+		>,
 	): Promise<BatchResult<never>>;
 	/** Returns the first matching row (alias for `findFirst`). */
-	findOne<Args extends QueryArgs<Schema, Name, Meta>>(
-		args?: Args,
-	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	findOne<
+		Args extends OperationArgsWithPlugins<
+			QueryArgs<Schema, Name, Meta>,
+			Plugins,
+			'findOne'
+		>,
+	>(args?: Args): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	/** Returns the first matching row. */
-	findFirst<Args extends QueryArgs<Schema, Name, Meta>>(
-		args?: Args,
-	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	findFirst<
+		Args extends OperationArgsWithPlugins<
+			QueryArgs<Schema, Name, Meta>,
+			Plugins,
+			'findFirst'
+		>,
+	>(args?: Args): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	/** Returns exactly one matching row; throws if not found. */
-	findUnique<Args extends QueryArgs<Schema, Name, Meta>>(
-		args: Args,
-	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	findUnique<
+		Args extends OperationArgsWithPlugins<
+			QueryArgs<Schema, Name, Meta>,
+			Plugins,
+			'findUnique'
+		>,
+	>(args: Args): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	/** Returns a paginated result set. */
-	paginate<Args extends PaginationArgs<Schema, Name, Meta>>(
+	paginate<
+		Args extends OperationArgsWithPlugins<
+			PaginationArgs<Schema, Name, Meta>,
+			Plugins,
+			'paginate'
+		>,
+	>(
 		args: Args,
 	): Promise<PaginationResult<PayloadForArgs<Schema, Name, Args>>>;
 	/** Deletes a single matching row and returns the deleted record. */
-	delete<Args extends DeleteArgs<Schema, Name, Meta>>(
-		args: Args,
-	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	delete<
+		Args extends OperationArgsWithPlugins<
+			DeleteArgs<Schema, Name, Meta>,
+			Plugins,
+			'delete'
+		>,
+	>(args: Args): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	/** Deletes all matching rows and returns the affected count. */
 	deleteMany(
-		args: DeleteManyArgs<Schema, Name, Meta>,
+		args: OperationArgsWithPlugins<
+			DeleteManyArgs<Schema, Name, Meta>,
+			Plugins,
+			'deleteMany'
+		>,
 	): Promise<BatchResult<never>>;
-}
+} & ModelExtension;
 
 /**
  * Extracts the relational configuration for a specific table from the schema.

@@ -1,0 +1,45 @@
+{
+	"name": "@better-drizzle/soft-delete",
+	"version": "0.0.0",
+	"description": "Soft delete plugin for better-drizzle.",
+	"license": "Apache-2.0",
+	"module": "src/index.ts",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"files": [
+		"LICENSE",
+		"src",
+		"README.md"
+	],
+	"keywords": [
+		"better-drizzle",
+		"drizzle",
+		"drizzle-orm",
+		"plugin",
+		"soft-delete"
+	],
+	"homepage": "https://github.com/almeidazs/better-drizzle#readme",
+	"bugs": {
+		"url": "https://github.com/almeidazs/better-drizzle/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/almeidazs/better-drizzle.git",
+		"directory": "packages/soft-delete"
+	},
+	"publishConfig": {
+		"access": "public",
+		"provenance": true,
+		"registry": "https://registry.npmjs.org/"
+	},
+	"sideEffects": false,
+	"type": "module",
+	"dependencies": {
+		"better-drizzle": "workspace:*"
+	},
+	"peerDependencies": {
+		"drizzle-orm": "^0.45.2",
+		"typescript": "^5"
+	}
+}

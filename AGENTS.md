@@ -5,6 +5,8 @@
 - **Repository scope**: `better-drizzle` is a small Bun/TypeScript workspace focused on a single core package, `packages/core`, plus a benchmark suite used to measure API-parity performance and memory overhead against raw Drizzle ORM.
 - **Workspace layout**:
   - `packages/core`: the published library
+  - `packages/soft-delete`: official soft delete plugin
+  - `packages/timestamps`: official timestamps plugin
   - `benchmark`: Bun + SQLite benchmark suite
   - `README.md`: project-level documentation
   - `packages/core/README.md`: package-level documentation, currently intentionally kept in sync with the root README
@@ -15,7 +17,6 @@
   - `bun run bench:all`: run both benchmark suites
 - **Core dependencies**:
   - `drizzle-orm` as a peer dependency
-  - `drizzle-kit` as a peer dependency
   - `typescript` as a peer dependency
   - `mitata` for benchmarking
   - `@biomejs/biome` for formatting and linting
@@ -24,14 +25,18 @@
 
 - **Entry point**: `packages/core/src/index.ts`
   - Exports `better(...)`
+  - Exports `definePlugin(...)`
   - Builds a runtime context once
+  - Initializes plugins once during bootstrap
   - Creates one delegate per schema table
+  - Applies plugin model/client extensions after delegates are created
   - Registers repositories by TypeScript table key and database table name
 - **Runtime layout**:
   - `packages/core/src/shared/client/context.ts`: builds the runtime context and precomputed table metadata
   - `packages/core/src/shared/client/delegate.ts`: exposes the delegate methods for each table
   - `packages/core/src/shared/client/operations.ts`: main query and mutation execution paths; this is the hottest file for performance work
   - `packages/core/src/shared/client/hooks.ts`: optional hook execution
+  - `packages/core/src/shared/client/plugins.ts`: plugin initialization, validation, transform pipeline, and extension application
   - `packages/core/src/shared/query/compiler.ts`: compiles typed `where`, `select`, `include`, `orderBy`, and pagination inputs into Drizzle-compatible query pieces
   - `packages/core/src/shared/errors.ts`: shared error helpers
   - `packages/core/src/types/*`: public type surface
@@ -63,8 +68,18 @@
   - `count`
   - `exists`
   - `paginate`
+  - `$withState`
+  - `$withoutPlugins`
 - **Client-level lookup**:
   - `repository(name)` resolves by schema key or db table name
+- **Plugin composition**:
+  - plugin ids must be unique
+  - plugins run in `options.plugins` array order
+  - `setup()` runs exactly once during client initialization
+  - plugins can extend built-in operation args through `operationArgs`; these fields are typed on delegates, plugin transforms, and client hooks
+  - `config.requires.columns` fails fast during bootstrap if any model is incompatible
+  - client hooks remain side-effect-only
+  - plugin hooks/transforms are the mutation layer
 
 ## Performance rules
 

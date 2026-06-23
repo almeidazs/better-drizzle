@@ -11,13 +11,25 @@ type ErrorWithFields = {
 	sqlMessage?: unknown;
 };
 
+/**
+ * Parsed information about a database error. Normalises the various
+ * error shapes from PostgreSQL, SQLite, and MySQL into a single
+ * deterministic structure.
+ */
 export interface DatabaseErrorInfo {
+	/** The detected database driver (`'pg'`, `'sqlite'`, `'mysql'`, or `'unknown'`). */
 	driver: DatabaseDriver;
+	/** Driver-specific error code (e.g. `'23505'` for PostgreSQL unique violation). */
 	code?: string;
+	/** Errno value from MySQL errors, when available. */
 	errno?: number;
+	/** Name of the constraint that was violated, when detectable. */
 	constraint?: string;
+	/** The table involved in the error, when detectable. */
 	table?: string;
+	/** The column involved in the error, when detectable. */
 	column?: string;
+	/** The original error message. */
 	message: string;
 }
 
@@ -112,6 +124,24 @@ const getDriver = (
 	return 'unknown';
 };
 
+/**
+ * Checks whether the given value looks like a database error (has a
+ * `message`, `code`, `errno`, or `sqlState` property).
+ *
+ * @param error - The value to check.
+ * @returns `true` when the value matches the database error shape.
+ *
+ * @example
+ * ```ts
+ * try {
+ *   await db.insert(users).values(data);
+ * } catch (error) {
+ *   if (isDatabaseError(error)) {
+ *     console.error(error.code);
+ *   }
+ * }
+ * ```
+ */
 export const isDatabaseError = (error: unknown): error is ErrorWithFields => {
 	const fields = getErrorFields(error);
 	if (!fields) return false;
@@ -124,6 +154,14 @@ export const isDatabaseError = (error: unknown): error is ErrorWithFields => {
 	);
 };
 
+/**
+ * Parses a raw error value into a normalised {@link DatabaseErrorInfo}
+ * object. Detects the database driver and extracts the error code,
+ * constraint name, table, column, and message.
+ *
+ * @param error - The raw error value (typically caught from a Drizzle operation).
+ * @returns A normalised error info object.
+ */
 export const getDatabaseErrorInfo = (error: unknown): DatabaseErrorInfo => {
 	const fields = getErrorFields(error);
 	const message = getMessage(error, fields);
@@ -141,6 +179,16 @@ export const getDatabaseErrorInfo = (error: unknown): DatabaseErrorInfo => {
 	};
 };
 
+/**
+ * Checks whether the error is a unique constraint violation. Supports
+ * PostgreSQL (`23505`), SQLite (`SQLITE_CONSTRAINT_UNIQUE`), and MySQL
+ * (`ER_DUP_ENTRY` / errno `1062`).
+ *
+ * @param error      - The raw error value.
+ * @param constraint - Optional constraint name to match against.
+ * @returns `true` when the error is a unique violation (optionally for
+ *   the specified constraint).
+ */
 export const isUniqueViolation = (
 	error: unknown,
 	constraint?: string,
@@ -172,6 +220,16 @@ export const isUniqueViolation = (
 	return false;
 };
 
+/**
+ * Checks whether the error is a foreign key constraint violation. Supports
+ * PostgreSQL (`23503`), SQLite (`SQLITE_CONSTRAINT_FOREIGNKEY`), and MySQL
+ * (`ER_NO_REFERENCED_ROW_2` / `ER_ROW_IS_REFERENCED_2`).
+ *
+ * @param error      - The raw error value.
+ * @param constraint - Optional constraint name to match against.
+ * @returns `true` when the error is a foreign key violation (optionally
+ *   for the specified constraint).
+ */
 export const isForeignKeyViolation = (
 	error: unknown,
 	constraint?: string,
@@ -207,6 +265,16 @@ export const isForeignKeyViolation = (
 	return false;
 };
 
+/**
+ * Checks whether the error is a NOT NULL constraint violation. Supports
+ * PostgreSQL (`23502`), SQLite (`SQLITE_CONSTRAINT_NOTNULL`), and MySQL
+ * (`ER_BAD_NULL_ERROR` / errno `1048`).
+ *
+ * @param error  - The raw error value.
+ * @param column - Optional column name to match against.
+ * @returns `true` when the error is a NOT NULL violation (optionally for
+ *   the specified column).
+ */
 export const isNotNullViolation = (
 	error: unknown,
 	column?: string,
@@ -234,6 +302,16 @@ export const isNotNullViolation = (
 	return false;
 };
 
+/**
+ * Checks whether the error is a CHECK constraint violation. Supports
+ * PostgreSQL (`23514`), SQLite (`SQLITE_CONSTRAINT_CHECK`), and MySQL
+ * (`ER_CHECK_CONSTRAINT_VIOLATED` / errno `3819`).
+ *
+ * @param error      - The raw error value.
+ * @param constraint - Optional constraint name to match against.
+ * @returns `true` when the error is a CHECK violation (optionally for
+ *   the specified constraint).
+ */
 export const isCheckViolation = (
 	error: unknown,
 	constraint?: string,

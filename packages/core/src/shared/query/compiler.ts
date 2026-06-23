@@ -313,6 +313,18 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 	}
 };
 
+/**
+ * Compiles a structured where-clause input into a Drizzle SQL expression.
+ * Handles scalar equality, scalar filters (equals, in, lt, gt, contains, etc.),
+ * logical combinators (AND, OR, NOT), nested relation filters, and raw
+ * SQLWrapper values.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type.
+ * @param context - The where-compiler context (runtime, table, db, etc.).
+ * @param where   - The structured where-clause input.
+ * @returns A Drizzle SQL expression, or `undefined` when no filter is needed.
+ */
 export const compileWhereInput = <Schema extends AnySchema, Meta>(
 	context: WhereCompilerContext<Schema, Meta>,
 	where?: CompilableWhere,
@@ -393,6 +405,16 @@ export const compileWhereInput = <Schema extends AnySchema, Meta>(
 	return conditions.length ? and(...conditions) : undefined;
 };
 
+/**
+ * Compiles an `OrderByInput` into an array of Drizzle SQL order-by clauses.
+ * Supports single or multi-column ordering with ascending/descending direction.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type.
+ * @param context - The where-compiler context.
+ * @param orderBy - The sort specification (single object or array).
+ * @returns An array of Drizzle SQL order-by clauses, or `undefined` when none is provided.
+ */
 export const compileOrderBy = <Schema extends AnySchema, Meta>(
 	context: WhereCompilerContext<Schema, Meta>,
 	orderBy?: OrderByInput<Schema, BetterTableKey<Schema>>,
@@ -415,6 +437,18 @@ export const compileOrderBy = <Schema extends AnySchema, Meta>(
 	return clauses.length ? clauses : undefined;
 };
 
+/**
+ * Compiles a cursor-based where-clause. Uses the cursor column and value
+ * to generate a `gt` or `lt` condition based on the current sort direction.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type.
+ * @param context - The where-compiler context.
+ * @param cursor  - The cursor position (column name and value).
+ * @param orderBy - The sort specification used to determine direction.
+ * @param take    - The take value; negative values reverse the cursor direction.
+ * @returns A Drizzle SQL expression, or `undefined` when no cursor is provided.
+ */
 export const compileCursorWhere = <Schema extends AnySchema, Meta>(
 	context: WhereCompilerContext<Schema, Meta>,
 	cursor?: CursorInput<Schema, BetterTableKey<Schema>>,
@@ -445,6 +479,19 @@ export const compileCursorWhere = <Schema extends AnySchema, Meta>(
 		: gt(column, cursorValue);
 };
 
+/**
+ * Builds a Drizzle relational query config object from typed `QueryArgs`.
+ * Compiles where-clauses, order-by, cursor, pagination, select/include
+ * projections, and nested relation configs into the shape expected by
+ * `db.query[tableName].findMany()` / `findFirst()`.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type.
+ * @param context   - The runtime context.
+ * @param tableName - The table to build the config for.
+ * @param args      - The query arguments.
+ * @returns A Drizzle query config object, or `undefined` when no config is needed.
+ */
 export const buildQueryConfig = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
@@ -551,6 +598,18 @@ export const buildQueryConfig = <Schema extends AnySchema, Meta>(
 	return hasConfig ? config : undefined;
 };
 
+/**
+ * Counts the number of rows matching an optional where-clause. Uses
+ * Drizzle's `$count` method when available, otherwise falls back to
+ * a `SELECT count()` query.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type.
+ * @param context   - The runtime context.
+ * @param tableName - The table to count.
+ * @param where     - Optional where-clause to filter by.
+ * @returns A promise resolving to the row count.
+ */
 export const countRows = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
@@ -577,6 +636,16 @@ export const countRows = async <Schema extends AnySchema, Meta>(
 	return Number(result[0]?.count ?? 0);
 };
 
+/**
+ * Builds the query arguments for a paginated request. Handles both
+ * offset-based (skip/limit) and cursor-based (after/before) pagination.
+ * For cursor pagination, the `before` cursor reverses the take direction.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type.
+ * @param args - The pagination arguments.
+ * @returns An object with `take` and `query` ready for `findManyRecords`.
+ */
 export const buildPaginationQuery = <Schema extends AnySchema, Meta>(
 	args: PaginationArgs<Schema, BetterTableKey<Schema>, Meta>,
 ) => {
