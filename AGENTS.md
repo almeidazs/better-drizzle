@@ -8,6 +8,7 @@
   - `packages/soft-delete`: official soft delete plugin
   - `packages/timestamps`: official timestamps plugin
   - `benchmark`: Bun + SQLite benchmark suite
+  - `examples`: Markdown-only example catalog and usage guides
   - `README.md`: project-level documentation
   - `packages/core/README.md`: package-level documentation, currently intentionally kept in sync with the root README
 - **Package manager and runtime**: Bun is the primary runtime for local commands and benchmarks. The workspace is configured as a TypeScript ESM monorepo.
@@ -182,6 +183,7 @@
 - **README sync**: the root `README.md` and `packages/core/README.md` are intended to stay aligned. If one changes, update the other unless there is a clear package-specific reason not to.
 - **Performance claims**: tie claims to benchmark shape and avoid vague “faster” language without context.
 - **Examples**: prefer real API examples that match the current exported API and benchmarked usage patterns.
+- **Examples catalog**: `examples/` is a Markdown-first reference library. Prefer adding focused topic pages under `basics`, `frameworks`, `plugins`, `performance`, and `cookbook` instead of growing one giant examples file.
 
 ## Change checklist
 
