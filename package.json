@@ -20,7 +20,7 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.5.1",
-		"@commitlint/config-conventional": "^21.0.2",
+		"@commitlint/config-conventional": "^21.1.0",
 		"@types/bun": "latest",
 		"commitlint": "^21.0.2",
 		"mitata": "^1.0.34"
