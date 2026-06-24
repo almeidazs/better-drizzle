@@ -19,7 +19,7 @@
 		"test": "bun test packages/core/tests packages/timestamps/tests packages/soft-delete/tests"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.5.0",
+		"@biomejs/biome": "^2.5.1",
 		"@commitlint/config-conventional": "^21.0.2",
 		"@types/bun": "latest",
 		"commitlint": "^21.0.2",
