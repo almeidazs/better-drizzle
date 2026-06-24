@@ -23,6 +23,7 @@ export const client = better(db, { schema });
 
 ```ts
 import express from 'express';
+import { BetterDrizzleError, BetterDrizzleErrorCode } from 'better-drizzle';
 import { client } from './client';
 
 const app = express();
@@ -52,13 +53,22 @@ app.get('/users/:id', async (req, res) => {
 ## Transaction example
 
 ```ts
+import { BetterDrizzleError, BetterDrizzleErrorCode } from 'better-drizzle';
+
 app.post('/users/:id/publish-post', async (req, res) => {
 	const userId = Number(req.params.id);
 
 	const post = await client.transaction(async (tx) => {
 		const user = await tx.users.findUnique({
 			where: { id: userId },
-		}).throw(() => new Error('User not found'));
+		}).throw(
+			() =>
+				new BetterDrizzleError({
+					code: BetterDrizzleErrorCode.ResultNotFound,
+					message: 'User not found',
+					status: 404,
+				}),
+		);
 
 		return tx.posts.create({
 			data: {

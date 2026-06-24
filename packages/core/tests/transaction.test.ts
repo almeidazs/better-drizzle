@@ -4,6 +4,8 @@ import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 import {
+	BetterDrizzleError,
+	BetterDrizzleErrorCode,
 	BetterDrizzleTransactionRollbackError,
 	better,
 	definePlugin,
@@ -184,7 +186,16 @@ describe('transactions', () => {
 					nestedTx.rollback('nested rollback');
 				});
 			} catch (error) {
-				expect(error).toBe('nested rollback');
+				expect(error).toBeInstanceOf(
+					BetterDrizzleTransactionRollbackError,
+				);
+				expect(error).toBeInstanceOf(BetterDrizzleError);
+				expect(
+					(error as BetterDrizzleTransactionRollbackError).reason,
+				).toBe('nested rollback');
+				expect((error as BetterDrizzleError).code).toBe(
+					BetterDrizzleErrorCode.TransactionRollback,
+				);
 			}
 
 			await tx.users.create({

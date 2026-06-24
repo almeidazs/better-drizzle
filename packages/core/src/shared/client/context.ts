@@ -20,6 +20,7 @@ import type {
 	TableRuntime,
 	TransactionRuntime,
 } from '../../types';
+import { BetterDrizzleError, BetterDrizzleErrorCode } from '../errors';
 
 const getDialect = (db: { dialect?: { constructor?: { name?: string } } }) => {
 	const name = db.dialect?.constructor?.name?.toLowerCase() ?? '';
@@ -28,9 +29,13 @@ const getDialect = (db: { dialect?: { constructor?: { name?: string } } }) => {
 	if (name.includes('mysql')) return 'mysql';
 	if (name.includes('pg') || name.includes('postgres')) return 'pg';
 
-	throw new Error(
-		`Unable to infer Better Drizzle dialect from "${db.dialect?.constructor?.name ?? 'unknown'}".`,
-	);
+	throw new BetterDrizzleError({
+		code: BetterDrizzleErrorCode.DialectInferenceFailed,
+		details: {
+			dialectConstructorName: db.dialect?.constructor?.name ?? 'unknown',
+		},
+		message: `Unable to infer Better Drizzle dialect from "${db.dialect?.constructor?.name ?? 'unknown'}".`,
+	});
 };
 
 const createPluginBuckets = () => {
@@ -237,7 +242,12 @@ export const getTableRuntime = <Schema extends AnySchema, Meta>(
 ) => {
 	const runtime = context.tables[tableName];
 
-	if (!runtime) throw new Error(`No runtime found for table "${tableName}".`);
+	if (!runtime)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.TableRuntimeNotFound,
+			message: `No runtime found for table "${tableName}".`,
+			table: tableName,
+		});
 
 	return runtime;
 };

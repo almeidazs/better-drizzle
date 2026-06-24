@@ -1,3 +1,4 @@
+import { BetterDrizzleError, BetterDrizzleErrorCode } from '../shared/errors';
 import type { AnyPlugin } from './plugins';
 import type { AnySchema } from './utils';
 
@@ -80,12 +81,20 @@ export type TransactionUnsupportedOptionsBehavior = 'ignore' | 'throw' | 'warn';
  *
  * The optional `reason` property carries the value passed to `rollback()`.
  */
-export class BetterDrizzleTransactionRollbackError extends Error {
+export class BetterDrizzleTransactionRollbackError extends BetterDrizzleError {
 	/** The optional reason supplied to `rollback()`. */
 	reason?: unknown;
 
 	constructor(reason?: unknown) {
-		super('Transaction rolled back.');
+		super({
+			code: BetterDrizzleErrorCode.TransactionRollback,
+			cause: reason,
+			details: { reason },
+			message:
+				typeof reason === 'string' && reason
+					? reason
+					: 'Transaction rolled back.',
+		});
 
 		this.reason = reason;
 		this.name = 'BetterDrizzleTransactionRollbackError';

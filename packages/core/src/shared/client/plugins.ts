@@ -31,6 +31,7 @@ import type {
 	UpdateManyArgs,
 	UpsertArgs,
 } from '../../types';
+import { BetterDrizzleError, BetterDrizzleErrorCode } from '../errors';
 import { getMeta, isSimpleRecord } from './context';
 
 const SKIP_PLUGINS_STATE = '__betterDrizzleSkipPlugins';
@@ -356,9 +357,10 @@ const createOperationInput = <
 		const { transaction } = context;
 
 		if (!transaction)
-			throw new Error(
-				'afterCommit() can only be used inside a transaction.',
-			);
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.AfterCommitOutsideTransaction,
+				message: 'afterCommit() can only be used inside a transaction.',
+			});
 
 		transaction.afterCommit.push(callback);
 	};
@@ -368,9 +370,11 @@ const createOperationInput = <
 		const { transaction } = context;
 
 		if (!transaction)
-			throw new Error(
-				'afterRollback() can only be used inside a transaction.',
-			);
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.AfterRollbackOutsideTransaction,
+				message:
+					'afterRollback() can only be used inside a transaction.',
+			});
 
 		transaction.afterRollback.push(callback);
 	};
@@ -560,9 +564,11 @@ export const initializePlugins = <
 
 	for (const plugin of plugins) {
 		if (seenIds.has(plugin.id))
-			throw new Error(
-				`Duplicate Better Drizzle plugin id "${plugin.id}".`,
-			);
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.PluginDuplicateId,
+				message: `Duplicate Better Drizzle plugin id "${plugin.id}".`,
+				details: { pluginId: plugin.id },
+			});
 
 		seenIds.add(plugin.id);
 
@@ -570,9 +576,12 @@ export const initializePlugins = <
 			plugin.config?.dialects?.length &&
 			!plugin.config.dialects.includes(context.dialect)
 		)
-			throw new Error(
-				`Plugin "${plugin.id}" does not support dialect "${context.dialect}".`,
-			);
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.PluginDialectUnsupported,
+				dialect: context.dialect,
+				message: `Plugin "${plugin.id}" does not support dialect "${context.dialect}".`,
+				details: { pluginId: plugin.id },
+			});
 
 		const requiredColumns = plugin.config?.requires?.columns;
 		if (requiredColumns?.length)
@@ -582,9 +591,13 @@ export const initializePlugins = <
 			}>)
 				for (const requirement of requiredColumns)
 					if (!model.hasColumn(requirement.column))
-						throw new Error(
-							`Plugin "${plugin.id}" requires column "${requirement.column}" on model "${model.name}".`,
-						);
+						throw new BetterDrizzleError({
+							code: BetterDrizzleErrorCode.PluginRequiredColumnMissing,
+							column: requirement.column,
+							message: `Plugin "${plugin.id}" requires column "${requirement.column}" on model "${model.name}".`,
+							table: model.name,
+							details: { pluginId: plugin.id },
+						});
 
 		if (plugin.operationArgs)
 			for (const kind of Object.keys(
@@ -598,9 +611,16 @@ export const initializePlugins = <
 				for (const key of Object.keys(extension)) {
 					const owner = seenOperationArgs[kind]?.[key];
 					if (owner)
-						throw new Error(
-							`Plugin "${plugin.id}" cannot override operation arg "${key}" on "${kind}" because it is already declared by plugin "${owner}".`,
-						);
+						throw new BetterDrizzleError({
+							code: BetterDrizzleErrorCode.PluginOperationArgConflict,
+							message: `Plugin "${plugin.id}" cannot override operation arg "${key}" on "${kind}" because it is already declared by plugin "${owner}".`,
+							operation: kind,
+							details: {
+								key,
+								owner,
+								pluginId: plugin.id,
+							},
+						});
 
 					seenOperationArgs[kind][key] = plugin.id;
 				}
@@ -650,9 +670,15 @@ const assertExtensionKeys = (
 ) => {
 	for (const key in extension)
 		if (key in target)
-			throw new Error(
-				`Plugin "${plugin.id}" cannot override "${key}" on ${scope}.`,
-			);
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.PluginExtensionConflict,
+				message: `Plugin "${plugin.id}" cannot override "${key}" on ${scope}.`,
+				details: {
+					key,
+					pluginId: plugin.id,
+					scope,
+				},
+			});
 };
 
 /**

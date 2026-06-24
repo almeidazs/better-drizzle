@@ -1,4 +1,4 @@
-type DatabaseDriver = 'pg' | 'sqlite' | 'mysql' | 'unknown';
+export type DatabaseDriver = 'pg' | 'sqlite' | 'mysql' | 'unknown';
 
 type ErrorWithFields = {
 	code?: unknown;
@@ -9,6 +9,80 @@ type ErrorWithFields = {
 	column?: unknown;
 	sqlState?: unknown;
 	sqlMessage?: unknown;
+	cause?: unknown;
+};
+
+export enum BetterDrizzleErrorCode {
+	AfterCommitOutsideTransaction = 'AFTER_COMMIT_OUTSIDE_TRANSACTION',
+	AfterRollbackOutsideTransaction = 'AFTER_ROLLBACK_OUTSIDE_TRANSACTION',
+	DatabaseError = 'DATABASE_ERROR',
+	DialectInferenceFailed = 'DIALECT_INFERENCE_FAILED',
+	HookError = 'HOOK_ERROR',
+	OperationError = 'OPERATION_ERROR',
+	PluginDialectUnsupported = 'PLUGIN_DIALECT_UNSUPPORTED',
+	PluginDuplicateId = 'PLUGIN_DUPLICATE_ID',
+	PluginExtensionConflict = 'PLUGIN_EXTENSION_CONFLICT',
+	PluginOperationArgConflict = 'PLUGIN_OPERATION_ARG_CONFLICT',
+	PluginRequiredColumnMissing = 'PLUGIN_REQUIRED_COLUMN_MISSING',
+	RawCommentRequired = 'RAW_COMMENT_REQUIRED',
+	RawAborted = 'RAW_ABORTED',
+	RawDisabled = 'RAW_DISABLED',
+	RawInvalidQuery = 'RAW_INVALID_QUERY',
+	RawTimeout = 'RAW_TIMEOUT',
+	RawUnsafeDisabled = 'RAW_UNSAFE_DISABLED',
+	RawUnsafePlaceholderMismatch = 'RAW_UNSAFE_PLACEHOLDER_MISMATCH',
+	RawUnsupportedOption = 'RAW_UNSUPPORTED_OPTION',
+	RepositoryNotFound = 'REPOSITORY_NOT_FOUND',
+	ResultNotFound = 'RESULT_NOT_FOUND',
+	TableRuntimeNotFound = 'TABLE_RUNTIME_NOT_FOUND',
+	TransactionAborted = 'TRANSACTION_ABORTED',
+	TransactionLifecycleStateMissing = 'TRANSACTION_LIFECYCLE_STATE_MISSING',
+	TransactionRuntimeNotInitialized = 'TRANSACTION_RUNTIME_NOT_INITIALIZED',
+	TransactionRollback = 'TRANSACTION_ROLLBACK',
+	TransactionsUnsupported = 'TRANSACTIONS_UNSUPPORTED',
+	TransactionTimeout = 'TRANSACTION_TIMEOUT',
+	TransactionUnsupportedOption = 'TRANSACTION_UNSUPPORTED_OPTION',
+	Unknown = 'UNKNOWN',
+}
+
+export interface BetterDrizzleErrorOptions {
+	code: BetterDrizzleErrorCode;
+	message: string;
+	status?: number;
+	driver?: DatabaseDriver;
+	cause?: unknown;
+	column?: string;
+	constraint?: string;
+	details?: Record<string, unknown>;
+	dialect?: string;
+	errno?: number;
+	hookName?: string;
+	operation?: string;
+	sqlState?: string;
+	stage?: string;
+	table?: string;
+}
+
+const getDefaultStatus = (code: BetterDrizzleErrorCode) => {
+	switch (code) {
+		case BetterDrizzleErrorCode.ResultNotFound:
+			return 404;
+		case BetterDrizzleErrorCode.RawCommentRequired:
+		case BetterDrizzleErrorCode.RawInvalidQuery:
+		case BetterDrizzleErrorCode.RawUnsafePlaceholderMismatch:
+		case BetterDrizzleErrorCode.RawUnsupportedOption:
+		case BetterDrizzleErrorCode.TransactionUnsupportedOption:
+			return 400;
+		case BetterDrizzleErrorCode.TransactionRollback:
+			return 409;
+		case BetterDrizzleErrorCode.RawAborted:
+		case BetterDrizzleErrorCode.TransactionAborted:
+		case BetterDrizzleErrorCode.TransactionTimeout:
+		case BetterDrizzleErrorCode.RawTimeout:
+			return 408;
+		default:
+			return 500;
+	}
 };
 
 /**
@@ -31,6 +105,162 @@ export interface DatabaseErrorInfo {
 	column?: string;
 	/** The original error message. */
 	message: string;
+}
+
+export class BetterDrizzleError extends Error {
+	code: BetterDrizzleErrorCode;
+	status: number;
+	driver?: DatabaseDriver;
+	column?: string;
+	constraint?: string;
+	details?: Record<string, unknown>;
+	dialect?: string;
+	errno?: number;
+	hookName?: string;
+	operation?: string;
+	sqlState?: string;
+	stage?: string;
+	table?: string;
+
+	constructor(options: BetterDrizzleErrorOptions) {
+		super(options.message, options.cause ? { cause: options.cause } : {});
+
+		this.name = 'BetterDrizzleError';
+		this.code = options.code;
+		this.status = options.status ?? getDefaultStatus(options.code);
+		this.driver = options.driver;
+		this.column = options.column;
+		this.constraint = options.constraint;
+		this.details = options.details;
+		this.dialect = options.dialect;
+		this.errno = options.errno;
+		this.hookName = options.hookName;
+		this.operation = options.operation;
+		this.sqlState = options.sqlState;
+		this.stage = options.stage;
+		this.table = options.table;
+	}
+
+	static is(error: unknown): error is BetterDrizzleError {
+		return error instanceof BetterDrizzleError;
+	}
+
+	static from(
+		error: unknown,
+		overrides: Partial<BetterDrizzleErrorOptions> = {},
+	): BetterDrizzleError {
+		if (error instanceof BetterDrizzleError)
+			return new BetterDrizzleError({
+				code: overrides.code ?? error.code,
+				message: overrides.message ?? error.message,
+				status: overrides.status ?? error.status,
+				driver: overrides.driver ?? error.driver,
+				cause: overrides.cause ?? error.cause,
+				column: overrides.column ?? error.column,
+				constraint: overrides.constraint ?? error.constraint,
+				details: overrides.details ?? error.details,
+				dialect: overrides.dialect ?? error.dialect,
+				errno: overrides.errno ?? error.errno,
+				hookName: overrides.hookName ?? error.hookName,
+				operation: overrides.operation ?? error.operation,
+				sqlState: overrides.sqlState ?? error.sqlState,
+				stage: overrides.stage ?? error.stage,
+				table: overrides.table ?? error.table,
+			});
+
+		const info = isDatabaseError(error)
+			? getDatabaseErrorInfo(error)
+			: null;
+
+		return new BetterDrizzleError({
+			code:
+				overrides.code ??
+				(info
+					? BetterDrizzleErrorCode.DatabaseError
+					: BetterDrizzleErrorCode.Unknown),
+			message:
+				overrides.message ??
+				info?.message ??
+				(error instanceof Error ? error.message : String(error)),
+			status: overrides.status,
+			driver: overrides.driver ?? info?.driver,
+			cause: overrides.cause ?? error,
+			column: overrides.column ?? info?.column,
+			constraint: overrides.constraint ?? info?.constraint,
+			details:
+				overrides.details ??
+				(error instanceof Error
+					? { name: error.name }
+					: info
+						? { database: info }
+						: undefined),
+			dialect: overrides.dialect,
+			errno: overrides.errno ?? info?.errno,
+			hookName: overrides.hookName,
+			operation: overrides.operation,
+			sqlState: overrides.sqlState ?? info?.code,
+			stage: overrides.stage,
+			table: overrides.table ?? info?.table,
+		});
+	}
+
+	static fromDatabaseError(
+		error: unknown,
+		overrides: Partial<BetterDrizzleErrorOptions> = {},
+	) {
+		const info = getDatabaseErrorInfo(error);
+
+		return new BetterDrizzleError({
+			code: overrides.code ?? BetterDrizzleErrorCode.DatabaseError,
+			message: overrides.message ?? info.message,
+			status: overrides.status,
+			driver: overrides.driver ?? info.driver,
+			cause: overrides.cause ?? error,
+			column: overrides.column ?? info.column,
+			constraint: overrides.constraint ?? info.constraint,
+			details: overrides.details ?? { database: info },
+			dialect: overrides.dialect,
+			errno: overrides.errno ?? info.errno,
+			hookName: overrides.hookName,
+			operation: overrides.operation,
+			sqlState: overrides.sqlState ?? info.code,
+			stage: overrides.stage,
+			table: overrides.table ?? info.table,
+		});
+	}
+
+	withCause(cause: unknown) {
+		return BetterDrizzleError.from(this, { cause });
+	}
+
+	withDetails(details: Record<string, unknown>) {
+		return BetterDrizzleError.from(this, {
+			details: {
+				...(this.details ?? {}),
+				...details,
+			},
+		});
+	}
+
+	toJSON() {
+		return {
+			name: this.name,
+			message: this.message,
+			code: this.code,
+			status: this.status,
+			driver: this.driver,
+			column: this.column,
+			constraint: this.constraint,
+			details: this.details,
+			dialect: this.dialect,
+			errno: this.errno,
+			hookName: this.hookName,
+			operation: this.operation,
+			sqlState: this.sqlState,
+			stage: this.stage,
+			table: this.table,
+		};
+	}
 }
 
 const getErrorFields = (error: unknown): ErrorWithFields | null => {

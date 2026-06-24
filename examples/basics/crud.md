@@ -34,6 +34,8 @@ console.log(batch.data);
 `update()` returns a throwing result helper. You can treat it as `Promise<Row | null>` or call `.throw()`.
 
 ```ts
+import { BetterDrizzleError, BetterDrizzleErrorCode } from 'better-drizzle';
+
 const updated = await client.users.update({
 	data: {
 		name: 'Alice Updated',
@@ -44,7 +46,11 @@ const updated = await client.users.update({
 });
 
 if (!updated) {
-	throw new Error('Update target not found');
+	throw new BetterDrizzleError({
+		code: BetterDrizzleErrorCode.ResultNotFound,
+		message: 'Update target not found',
+		status: 404,
+	});
 }
 ```
 

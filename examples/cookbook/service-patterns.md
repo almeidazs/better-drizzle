@@ -24,11 +24,20 @@ export async function getUserProfile(userId: number) {
 ## A good write flow
 
 ```ts
+import { BetterDrizzleError, BetterDrizzleErrorCode } from 'better-drizzle';
+
 export async function renameUser(userId: number, name: string) {
 	return client.users.update({
 		data: { name },
 		where: { id: userId },
-	}).throw(() => new Error('User not found'));
+	}).throw(
+		() =>
+			new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.ResultNotFound,
+				message: 'User not found',
+				status: 404,
+			}),
+	);
 }
 ```
 

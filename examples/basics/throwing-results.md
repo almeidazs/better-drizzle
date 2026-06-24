@@ -51,9 +51,18 @@ const deleted = await client.users.delete({
 ## Custom error factory
 
 ```ts
+import { BetterDrizzleError, BetterDrizzleErrorCode } from 'better-drizzle';
+
 const user = await client.users.findOne({
 	where: { id: 9999 },
-}).throw(() => new Error('User not found'));
+}).throw(
+	() =>
+		new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.ResultNotFound,
+			message: 'User not found',
+			status: 404,
+		}),
+);
 ```
 
 ## Why this is useful

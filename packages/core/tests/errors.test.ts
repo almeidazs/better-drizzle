@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+	BetterDrizzleError,
+	BetterDrizzleErrorCode,
 	getDatabaseErrorInfo,
 	isCheckViolation,
 	isDatabaseError,
@@ -42,6 +44,69 @@ describe('isDatabaseError', () => {
 
 	test('returns true for Error instances', () => {
 		expect(isDatabaseError(new Error('fail'))).toBe(true);
+	});
+
+	test('returns true for BetterDrizzleError instances', () => {
+		expect(
+			isDatabaseError(
+				new BetterDrizzleError({
+					code: BetterDrizzleErrorCode.Unknown,
+					message: 'fail',
+				}),
+			),
+		).toBe(true);
+	});
+});
+
+describe('BetterDrizzleError', () => {
+	test('keeps explicit code and default status', () => {
+		const error = new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.ResultNotFound,
+			message: 'missing',
+		});
+
+		expect(error.code).toBe(BetterDrizzleErrorCode.ResultNotFound);
+		expect(error.status).toBe(404);
+	});
+
+	test('normalizes plain Error instances', () => {
+		const error = BetterDrizzleError.from(new Error('boom'), {
+			code: BetterDrizzleErrorCode.OperationError,
+			operation: 'create',
+		});
+
+		expect(error).toBeInstanceOf(BetterDrizzleError);
+		expect(error.message).toBe('boom');
+		expect(error.code).toBe(BetterDrizzleErrorCode.OperationError);
+		expect(error.operation).toBe('create');
+	});
+
+	test('normalizes database errors with parsed driver info', () => {
+		const error = BetterDrizzleError.fromDatabaseError({
+			code: '23505',
+			constraint: 'users_email_key',
+			message: 'duplicate key',
+		});
+
+		expect(error.code).toBe(BetterDrizzleErrorCode.DatabaseError);
+		expect(error.driver).toBe('pg');
+		expect(error.constraint).toBe('users_email_key');
+	});
+
+	test('serializes useful metadata', () => {
+		const error = new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.PluginDuplicateId,
+			details: { pluginId: 'timestamps' },
+			message: 'Duplicate plugin',
+		});
+
+		expect(error.toJSON()).toEqual(
+			expect.objectContaining({
+				code: BetterDrizzleErrorCode.PluginDuplicateId,
+				details: { pluginId: 'timestamps' },
+				message: 'Duplicate plugin',
+			}),
+		);
 	});
 });
 

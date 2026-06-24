@@ -21,21 +21,39 @@ return user;
 ## Pattern 2: throw inside the service
 
 ```ts
+import { BetterDrizzleError, BetterDrizzleErrorCode } from 'better-drizzle';
+
 const user = await client.users.findUnique({
 	where: {
 		email: 'alice@example.com',
 	},
-}).throw(() => new Error('User not found'));
+}).throw(
+	() =>
+		new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.ResultNotFound,
+			message: 'User not found',
+			status: 404,
+		}),
+);
 ```
 
 ## Pattern 3: map errors at the HTTP boundary
 
 ```ts
+import { BetterDrizzleError, BetterDrizzleErrorCode } from 'better-drizzle';
+
 app.get('/users/:id', async (req, res) => {
 	try {
 		const user = await client.users.findOne({
 			where: { id: Number(req.params.id) },
-		}).throw(() => new Error('Not found'));
+		}).throw(
+			() =>
+				new BetterDrizzleError({
+					code: BetterDrizzleErrorCode.ResultNotFound,
+					message: 'Not found',
+					status: 404,
+				}),
+		);
 
 		res.json(user);
 	} catch (error) {

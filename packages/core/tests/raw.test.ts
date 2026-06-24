@@ -295,8 +295,8 @@ describe('raw sql', () => {
 			'plugin:after:raw',
 			'client:before:raw',
 			'plugin:before:raw',
-			'client:error:raw:SQLiteError: no such column: missing_column',
-			'plugin:error:raw:SQLiteError: no such column: missing_column',
+			'client:error:raw:BetterDrizzleError: no such column: missing_column',
+			'plugin:error:raw:BetterDrizzleError: no such column: missing_column',
 		]);
 
 		ctx.close();

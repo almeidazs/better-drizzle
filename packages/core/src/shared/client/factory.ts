@@ -19,6 +19,11 @@ import type {
 	TransactionUnsupportedOptionsBehavior,
 } from '../../types';
 import { BetterDrizzleTransactionRollbackError } from '../../types';
+import {
+	BetterDrizzleError,
+	BetterDrizzleErrorCode,
+	type DatabaseDriver,
+} from '../errors';
 import { createDerivedRuntimeContext, createRuntimeContext } from './context';
 import { createModelDelegate } from './delegate';
 import {
@@ -41,7 +46,7 @@ const isRollbackSignal = (error: unknown): error is TransactionRollbackSignal =>
 	error instanceof TransactionRollbackSignal;
 
 const normalizeRollbackReason = (reason?: unknown) =>
-	reason === undefined ? new BetterDrizzleTransactionRollbackError() : reason;
+	new BetterDrizzleTransactionRollbackError(reason);
 
 const getUnsupportedBehavior = <
 	Schema extends AnySchema,
@@ -64,7 +69,13 @@ const handleUnsupportedTransactionOption = <
 	const message = `Transaction option "${option}" is not supported for dialect "${context.dialect}".`;
 
 	if (behavior === 'ignore') return;
-	if (behavior === 'throw') throw new Error(message);
+	if (behavior === 'throw')
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.TransactionUnsupportedOption,
+			dialect: context.dialect,
+			message,
+			details: { option },
+		});
 	console.warn(message);
 };
 
@@ -88,7 +99,13 @@ const handleUnsupportedRawOption = <
 	const message = `Raw option "${option}" is not supported for dialect "${context.dialect}".`;
 
 	if (behavior === 'ignore') return;
-	if (behavior === 'throw') throw new Error(message);
+	if (behavior === 'throw')
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.RawUnsupportedOption,
+			dialect: context.dialect,
+			message,
+			details: { option },
+		});
 	console.warn(message);
 };
 
@@ -130,8 +147,20 @@ const getDrizzleTransactionConfig = <
 	return Object.keys(config).length ? config : undefined;
 };
 
-const createAbortError = (reason: string) => {
-	const error = new Error(reason);
+const createAbortError = (
+	reason: string,
+	code:
+		| BetterDrizzleErrorCode.TransactionAborted
+		| BetterDrizzleErrorCode.TransactionTimeout
+		| BetterDrizzleErrorCode.RawAborted
+		| BetterDrizzleErrorCode.RawTimeout,
+	driver?: DatabaseDriver,
+) => {
+	const error = new BetterDrizzleError({
+		code,
+		driver,
+		message: reason,
+	});
 	error.name = 'AbortError';
 	return error;
 };
@@ -264,9 +293,11 @@ const createLifecyclePayload = <
 ) => {
 	const transaction = context.transaction;
 	if (!transaction)
-		throw new Error(
-			'Transaction lifecycle payload requires transaction state.',
-		);
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.TransactionLifecycleStateMissing,
+			message:
+				'Transaction lifecycle payload requires transaction state.',
+		});
 
 	const registerAfterCommit = (
 		callback: () => unknown | Promise<unknown>,
@@ -362,10 +393,21 @@ const bindAbortSignals = (transaction: TransactionRuntime) => {
 
 	if (options.timeoutMs !== undefined) {
 		if (options.timeoutMs <= 0)
-			abort(createAbortError('Transaction timed out.'));
+			abort(
+				createAbortError(
+					'Transaction timed out.',
+					BetterDrizzleErrorCode.TransactionTimeout,
+				),
+			);
 		else {
 			const timer = setTimeout(
-				() => abort(createAbortError('Transaction timed out.')),
+				() =>
+					abort(
+						createAbortError(
+							'Transaction timed out.',
+							BetterDrizzleErrorCode.TransactionTimeout,
+						),
+					),
 				options.timeoutMs,
 			);
 			cleanups.push(() => clearTimeout(timer));
@@ -375,14 +417,26 @@ const bindAbortSignals = (transaction: TransactionRuntime) => {
 	if (options.signal) {
 		if (options.signal.aborted)
 			abort(
-				options.signal.reason ??
-					createAbortError('Transaction aborted.'),
+				options.signal.reason
+					? BetterDrizzleError.from(options.signal.reason, {
+							code: BetterDrizzleErrorCode.TransactionAborted,
+						})
+					: createAbortError(
+							'Transaction aborted.',
+							BetterDrizzleErrorCode.TransactionAborted,
+						),
 			);
 		else {
 			const onAbort = () =>
 				abort(
-					options.signal?.reason ??
-						createAbortError('Transaction aborted.'),
+					options.signal?.reason
+						? BetterDrizzleError.from(options.signal.reason, {
+								code: BetterDrizzleErrorCode.TransactionAborted,
+							})
+						: createAbortError(
+								'Transaction aborted.',
+								BetterDrizzleErrorCode.TransactionAborted,
+							),
 				);
 
 			options.signal.addEventListener('abort', onAbort, { once: true });
@@ -436,13 +490,21 @@ const assertRawAllowed = <
 	const rawOptions = context.options.raw;
 
 	if (rawOptions?.enabled === false)
-		throw new Error('Raw SQL is disabled for this Better Drizzle client.');
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.RawDisabled,
+			message: 'Raw SQL is disabled for this Better Drizzle client.',
+		});
 	if (unsafe && rawOptions?.allowUnsafe !== true)
-		throw new Error(
-			'Unsafe raw SQL is disabled. Set raw.allowUnsafe = true to enable `$rawUnsafe()`.',
-		);
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.RawUnsafeDisabled,
+			message:
+				'Unsafe raw SQL is disabled. Set raw.allowUnsafe = true to enable `$rawUnsafe()`.',
+		});
 	if (rawOptions?.requireComment && !options.comment)
-		throw new Error('Raw SQL requires `options.comment`.');
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.RawCommentRequired,
+			message: 'Raw SQL requires `options.comment`.',
+		});
 };
 
 const withAbortGuard = async <T>(
@@ -451,13 +513,23 @@ const withAbortGuard = async <T>(
 ) => {
 	const aborted = () =>
 		options.signal?.aborted
-			? (options.signal.reason ?? createAbortError('Raw query aborted.'))
+			? (options.signal.reason ??
+				createAbortError(
+					'Raw query aborted.',
+					BetterDrizzleErrorCode.RawAborted,
+				))
 			: undefined;
 	const initialAbort = aborted();
-	if (initialAbort) throw initialAbort;
+	if (initialAbort)
+		throw BetterDrizzleError.from(initialAbort, {
+			code: BetterDrizzleErrorCode.RawAborted,
+		});
 
 	if (options.timeoutMs !== undefined && options.timeoutMs <= 0)
-		throw createAbortError('Raw query timed out.');
+		throw createAbortError(
+			'Raw query timed out.',
+			BetterDrizzleErrorCode.RawTimeout,
+		);
 
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	try {
@@ -468,7 +540,13 @@ const withAbortGuard = async <T>(
 			races.push(
 				new Promise<T>((_, reject) => {
 					timer = setTimeout(
-						() => reject(createAbortError('Raw query timed out.')),
+						() =>
+							reject(
+								createAbortError(
+									'Raw query timed out.',
+									BetterDrizzleErrorCode.RawTimeout,
+								),
+							),
 						options.timeoutMs,
 					);
 				}),
@@ -480,7 +558,10 @@ const withAbortGuard = async <T>(
 					const onAbort = () =>
 						reject(
 							options.signal?.reason ??
-								createAbortError('Raw query aborted.'),
+								createAbortError(
+									'Raw query aborted.',
+									BetterDrizzleErrorCode.RawAborted,
+								),
 						);
 
 					options.signal?.addEventListener('abort', onAbort, {
@@ -491,7 +572,10 @@ const withAbortGuard = async <T>(
 
 		const result = await Promise.race(races);
 		const finalAbort = aborted();
-		if (finalAbort) throw finalAbort;
+		if (finalAbort)
+			throw BetterDrizzleError.from(finalAbort, {
+				code: BetterDrizzleErrorCode.RawAborted,
+			});
 		return result;
 	} finally {
 		if (timer) clearTimeout(timer);
@@ -527,9 +611,11 @@ const executeRawQuery = async <
 			callback: () => unknown | Promise<unknown>,
 		) => {
 			if (!context.transaction)
-				throw new Error(
-					'afterCommit() can only be used inside a transaction.',
-				);
+				throw new BetterDrizzleError({
+					code: BetterDrizzleErrorCode.AfterCommitOutsideTransaction,
+					message:
+						'afterCommit() can only be used inside a transaction.',
+				});
 
 			context.transaction.afterCommit.push(callback);
 		};
@@ -537,9 +623,11 @@ const executeRawQuery = async <
 			callback: () => unknown | Promise<unknown>,
 		) => {
 			if (!context.transaction)
-				throw new Error(
-					'afterRollback() can only be used inside a transaction.',
-				);
+				throw new BetterDrizzleError({
+					code: BetterDrizzleErrorCode.AfterRollbackOutsideTransaction,
+					message:
+						'afterRollback() can only be used inside a transaction.',
+				});
 
 			context.transaction.afterRollback.push(callback);
 		};
@@ -575,12 +663,16 @@ const executeRawQuery = async <
 		await runRawHooks(context, 'afterRaw', buildPayload(result));
 		return result;
 	} catch (error) {
+		const normalized = BetterDrizzleError.from(error, {
+			code: BetterDrizzleErrorCode.OperationError,
+			operation: action,
+		});
 		await runRawHooks(
 			context,
 			'onRawError',
-			buildPayload(undefined, error),
+			buildPayload(undefined, normalized),
 		);
-		throw error;
+		throw normalized;
 	}
 };
 
@@ -613,9 +705,11 @@ const runBetterTransaction = async <
 ): Promise<T> => {
 	const transactionRunner = context.db.transaction;
 	if (context.dialect !== 'sqlite' && typeof transactionRunner !== 'function')
-		throw new Error(
-			'The provided Drizzle client does not support transactions.',
-		);
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.TransactionsUnsupported,
+			message:
+				'The provided Drizzle client does not support transactions.',
+		});
 
 	let attempt = 0;
 
@@ -694,22 +788,28 @@ const runBetterTransaction = async <
 				return result;
 			} catch (error) {
 				context.db.run?.(rollbackSql);
+				const normalizedError = isRollbackSignal(error)
+					? null
+					: BetterDrizzleError.from(error, {
+							code: BetterDrizzleErrorCode.OperationError,
+							operation: 'transaction',
+						});
 
 				const rollbackReason = isRollbackSignal(error)
 					? normalizeRollbackReason(error.reason)
-					: error;
+					: normalizedError;
 				const rollbackPayload = {
 					...payload,
 					reason: rollbackReason,
 				};
 
-				if (!isRollbackSignal(error))
+				if (normalizedError)
 					await runTransactionHooks(
 						attemptContext,
 						'onTransactionError',
 						{
 							...rollbackPayload,
-							error,
+							error: normalizedError,
 						},
 					);
 
@@ -723,7 +823,7 @@ const runBetterTransaction = async <
 
 				if (isRollbackSignal(error)) throw rollbackReason;
 				if (!shouldRetryTransaction(error, options, attempt))
-					throw error;
+					throw normalizedError;
 
 				await delayRetry(options, attempt);
 				continue;
@@ -779,7 +879,10 @@ const runBetterTransaction = async <
 			);
 
 			if (!attemptState || !attemptContext || !attemptClient)
-				throw new Error('Transaction runtime was not initialized.');
+				throw new BetterDrizzleError({
+					code: BetterDrizzleErrorCode.TransactionRuntimeNotInitialized,
+					message: 'Transaction runtime was not initialized.',
+				});
 			const state = attemptState as TransactionRuntime;
 			const txContext = attemptContext as RuntimeContext<
 				Schema,
@@ -809,7 +912,11 @@ const runBetterTransaction = async <
 
 			return envelope as T;
 		} catch (error) {
-			if (!attemptState || !attemptContext || !attemptClient) throw error;
+			if (!attemptState || !attemptContext || !attemptClient)
+				throw BetterDrizzleError.from(error, {
+					code: BetterDrizzleErrorCode.OperationError,
+					operation: 'transaction',
+				});
 			const state = attemptState as TransactionRuntime;
 			const txContext = attemptContext as RuntimeContext<
 				Schema,
@@ -821,19 +928,25 @@ const runBetterTransaction = async <
 				Meta,
 				Plugins
 			>;
+			const normalizedError = isRollbackSignal(error)
+				? null
+				: BetterDrizzleError.from(error, {
+						code: BetterDrizzleErrorCode.OperationError,
+						operation: 'transaction',
+					});
 
 			const rollbackReason = isRollbackSignal(error)
 				? normalizeRollbackReason(error.reason)
-				: error;
+				: normalizedError;
 			const payload = {
 				...createLifecyclePayload(txContext, txClient, options),
 				reason: rollbackReason,
 			};
 
-			if (!isRollbackSignal(error))
+			if (normalizedError)
 				await runTransactionHooks(txContext, 'onTransactionError', {
 					...payload,
-					error,
+					error: normalizedError,
 				});
 
 			await runTransactionHooks(
@@ -844,7 +957,8 @@ const runBetterTransaction = async <
 			await runCallbacks(state.afterRollback);
 
 			if (isRollbackSignal(error)) throw rollbackReason;
-			if (!shouldRetryTransaction(error, options, attempt)) throw error;
+			if (!shouldRetryTransaction(error, options, attempt))
+				throw normalizedError;
 
 			await delayRetry(options, attempt);
 		}
@@ -892,7 +1006,12 @@ export const createBoundClient = <
 	client.repository = (name: string) => {
 		const repository = context.repositories[name];
 
-		if (!repository) throw new Error(`Repository "${name}" not found.`);
+		if (!repository)
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.RepositoryNotFound,
+				message: `Repository "${name}" not found.`,
+				details: { name },
+			});
 
 		return repository;
 	};
@@ -909,9 +1028,11 @@ export const createBoundClient = <
 			? sql(queryOrStrings, ...paramsOrOptions)
 			: queryOrStrings;
 		if (!isTemplateStringsArray(queryOrStrings) && !isSqlWrapper(query))
-			throw new Error(
-				'Safe raw queries must use a tagged template or a Drizzle SQL object.',
-			);
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.RawInvalidQuery,
+				message:
+					'Safe raw queries must use a tagged template or a Drizzle SQL object.',
+			});
 		assertRawAllowed(context, rawOptions, false);
 
 		return executeRawQuery(
@@ -949,9 +1070,11 @@ export const createBoundClient = <
 			? sql(queryOrStrings, ...paramsOrOptions)
 			: queryOrStrings;
 		if (!isTemplateStringsArray(queryOrStrings) && !isSqlWrapper(query))
-			throw new Error(
-				'Safe raw queries must use a tagged template or a Drizzle SQL object.',
-			);
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.RawInvalidQuery,
+				message:
+					'Safe raw queries must use a tagged template or a Drizzle SQL object.',
+			});
 		assertRawAllowed(context, rawOptions, false);
 
 		return executeRawQuery(
@@ -1013,9 +1136,15 @@ export const createBoundClient = <
 
 				const parts = query.split('?');
 				if (parts.length - 1 !== params.length)
-					throw new Error(
-						'Raw unsafe parameter count does not match "?" placeholder count.',
-					);
+					throw new BetterDrizzleError({
+						code: BetterDrizzleErrorCode.RawUnsafePlaceholderMismatch,
+						message:
+							'Raw unsafe parameter count does not match "?" placeholder count.',
+						details: {
+							params: params.length,
+							placeholders: parts.length - 1,
+						},
+					});
 
 				const chunks: Array<SQL | SQLWrapper> = [];
 				for (let index = 0; index < parts.length; index += 1) {

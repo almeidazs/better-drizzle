@@ -9,6 +9,7 @@ import type {
 	ThrowFactory,
 	ThrowingResult,
 } from '../../types';
+import { BetterDrizzleError, BetterDrizzleErrorCode } from '../errors';
 import { getMeta } from './context';
 
 const HOOK_ERROR_REPORTED = Symbol('better-drizzle-hook-error-reported');
@@ -44,9 +45,10 @@ export const buildHookContext = <
 		const { transaction } = context;
 
 		if (!transaction)
-			throw new Error(
-				'afterCommit() can only be used inside a transaction.',
-			);
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.AfterCommitOutsideTransaction,
+				message: 'afterCommit() can only be used inside a transaction.',
+			});
 
 		transaction.afterCommit.push(callback);
 	};
@@ -57,9 +59,11 @@ export const buildHookContext = <
 		const { transaction } = context;
 
 		if (!transaction)
-			throw new Error(
-				'afterRollback() can only be used inside a transaction.',
-			);
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.AfterRollbackOutsideTransaction,
+				message:
+					'afterRollback() can only be used inside a transaction.',
+			});
 
 		transaction.afterRollback.push(callback);
 	};
@@ -163,18 +167,30 @@ const runHook = async <
 	try {
 		await hook(payload);
 	} catch (error) {
+		const normalized = BetterDrizzleError.from(error, {
+			code: BetterDrizzleErrorCode.HookError,
+			hookName: String(hookName),
+			operation: action,
+			stage: hookName.startsWith('after') ? 'afterHook' : 'beforeHook',
+			table: tableName,
+		});
+
 		await reportError(
 			context,
 			runtime,
 			tableName,
 			action,
 			args,
-			error,
-			hookName.startsWith('after') ? 'afterHook' : 'beforeHook',
+			normalized,
+			normalized.stage as ErrorHookContext<
+				Schema,
+				Meta,
+				Plugins
+			>['stage'],
 			hookName,
 		);
-		markErrorReported(error);
-		throw error;
+		markErrorReported(normalized);
+		throw normalized;
 	}
 };
 
@@ -253,6 +269,12 @@ export const executeOperation = async <
 
 		return result;
 	} catch (error) {
+		const normalized = BetterDrizzleError.from(error, {
+			code: BetterDrizzleErrorCode.OperationError,
+			operation: action,
+			table: tableName,
+		});
+
 		if (!wasErrorReported(error))
 			await reportError(
 				context,
@@ -260,11 +282,11 @@ export const executeOperation = async <
 				tableName,
 				action,
 				args,
-				error,
+				normalized,
 				'operation',
 			);
 
-		throw error;
+		throw normalized;
 	}
 };
 
@@ -309,9 +331,23 @@ export const attachThrow = <
 
 		if (result !== null) return result as Exclude<T, null | undefined>;
 
+		const fallbackMessage = `No record found for ${methodName} on "${tableName}".`;
+		const produced = factory?.();
 		const error =
-			factory?.() ??
-			new Error(`No record found for ${methodName} on "${tableName}".`);
+			produced === undefined
+				? new BetterDrizzleError({
+						code: BetterDrizzleErrorCode.ResultNotFound,
+						message: fallbackMessage,
+						operation: methodName,
+						status: 404,
+						table: tableName,
+					})
+				: BetterDrizzleError.from(produced, {
+						code: BetterDrizzleErrorCode.ResultNotFound,
+						operation: methodName,
+						status: 404,
+						table: tableName,
+					});
 
 		await reportError(
 			context,

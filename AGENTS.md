@@ -95,6 +95,11 @@
   - `config.requires.columns` fails fast during bootstrap if any model is incompatible
   - client hooks remain side-effect-only
   - plugin hooks/transforms are the mutation layer
+- **Error model**:
+  - runtime-thrown library errors should use `BetterDrizzleError` from `packages/core/src/shared/errors.ts`
+  - `BetterDrizzleError` carries `message`, `status`, `code`, `driver`, and structured metadata such as `table`, `column`, `constraint`, `operation`, and `details`
+  - `BetterDrizzleTransactionRollbackError` extends `BetterDrizzleError` and is the canonical rollback error shape
+  - when normalizing external/database failures, prefer `BetterDrizzleError.from(...)` or `BetterDrizzleError.fromDatabaseError(...)` instead of throwing raw `Error`
 
 ## Performance rules
 

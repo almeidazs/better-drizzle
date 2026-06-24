@@ -25,6 +25,7 @@ import type {
 	UpdateManyArgs,
 	UpsertArgs,
 } from '../../types';
+import { BetterDrizzleError, BetterDrizzleErrorCode } from '../errors';
 import { countRows } from '../query';
 import { getTableRuntime } from './context';
 import { attachThrow, buildHookContext, executeOperation } from './hooks';
@@ -119,7 +120,10 @@ export const createModelDelegate = <
 	const assertTransactionNotAborted = () => {
 		const abortError = context.transaction?.abortError;
 
-		if (abortError) throw abortError;
+		if (abortError)
+			throw BetterDrizzleError.from(abortError, {
+				code: BetterDrizzleErrorCode.TransactionAborted,
+			});
 	};
 
 	const runOperation = <Args, Result>({
