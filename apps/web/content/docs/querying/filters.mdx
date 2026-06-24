@@ -1,0 +1,142 @@
+---
+title: Filters
+description: The where model — scalar operators, logical combinators, null handling, and dropping to raw Drizzle SQL.
+icon: Filter
+---
+
+`where` is shared by every read, `count`, `exists`, `update`, `delete`, and `upsert`. It is typed against your table's columns and relations.
+
+## Equality shorthand
+
+The simplest filter is a direct value — it means "equals":
+
+```ts
+await client.users.findMany({
+	where: { active: true, name: 'Alice' },
+});
+```
+
+That is identical to the explicit form:
+
+```ts
+await client.users.findMany({
+	where: { active: { equals: true } },
+});
+```
+
+Multiple keys are combined with **AND**.
+
+## String filters
+
+String columns accept equality, membership, and pattern operators:
+
+```ts
+await client.users.findMany({
+	where: {
+		name: { contains: 'ali', mode: 'insensitive' },
+		email: { endsWith: '@example.com' },
+	},
+});
+```
+
+| Operator | Meaning |
+| --- | --- |
+| `equals` | exact match |
+| `in` / `notIn` | value is (not) in a list |
+| `contains` | substring match |
+| `startsWith` / `endsWith` | prefix / suffix match |
+| `mode` | `'default'` (case-sensitive) or `'insensitive'` |
+| `not` | negate a value or a nested filter |
+
+## Numeric and date filters
+
+Numbers, bigints, and dates accept range comparisons:
+
+```ts
+await client.users.findMany({
+	where: {
+		id: { gte: 100, lte: 200 },
+	},
+});
+```
+
+| Operator | Meaning |
+| --- | --- |
+| `equals` | exact match |
+| `in` / `notIn` | value is (not) in a list |
+| `lt` / `lte` | less than / less than or equal |
+| `gt` / `gte` | greater than / greater than or equal |
+| `not` | negate a value or a nested filter |
+
+## Boolean filters
+
+```ts
+await client.users.findMany({
+	where: { active: { equals: true } },
+});
+```
+
+Boolean columns support `equals` and `not`.
+
+## Null and negation
+
+Nullable columns accept `null` directly, and any operator can be negated with `not`:
+
+```ts
+await client.posts.findMany({
+	where: {
+		deletedAt: null, // IS NULL
+		title: { not: { contains: 'draft' } },
+	},
+});
+```
+
+## Logical operators
+
+Combine conditions with `AND`, `OR`, and `NOT`. They nest arbitrarily:
+
+```ts
+await client.users.findMany({
+	where: {
+		AND: [
+			{ active: true },
+			{
+				OR: [
+					{ email: { endsWith: '@company.com' } },
+					{ name: { startsWith: 'Admin' } },
+				],
+			},
+		],
+	},
+});
+```
+
+<Callout title="Top-level keys are already AND-ed">
+	You only need explicit `AND` when you want to group an `OR` next to other
+	conditions, or to express the same condition on a field twice.
+</Callout>
+
+## Filtering by relations
+
+`where` also reaches across relations with `some` / `every` / `none` (to-many) and `is` / `isNot` (to-one). That has its own page:
+
+<Cards>
+	<Card title="Relation filters" href="/docs/querying/relations">
+		`some`, `every`, `none`, `is`, `isNot`, and combining them with scalars.
+	</Card>
+</Cards>
+
+## Dropping to raw Drizzle SQL
+
+When you need an expression the structured filter does not model, pass a Drizzle `SQL` fragment straight into `where`:
+
+```ts
+import { eq } from 'drizzle-orm';
+import { users } from './schema';
+
+const user = await client.users.findFirst({
+	where: eq(users.id, 1),
+});
+```
+
+Anything that produces a Drizzle `SQL` / `SQLWrapper` is accepted, so you keep the full expressive power of Drizzle for the cases that need it.

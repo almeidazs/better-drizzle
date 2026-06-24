@@ -1,0 +1,125 @@
+---
+title: Reads
+description: findMany, findFirst, findOne, findUnique, count, and exists — and how to choose between them.
+icon: ListFilter
+---
+
+Every table delegate exposes the same read methods. They differ in how many rows they return and how they handle "not found".
+
+| Method | Returns | Not-found behavior |
+| --- | --- | --- |
+| `findMany` | `Row[]` | empty array |
+| `findFirst` | `Row \| null` | `null`, or `.throw()` |
+| `findOne` | `Row \| null` | `null`, or `.throw()` (alias of `findFirst`) |
+| `findUnique` | `Row \| null` | `null`, or `.throw()` |
+| `count` | `number` | `0` |
+| `exists` | `boolean` | `false` |
+
+## `findMany`
+
+Returns every matching row. The default when you want a list, a feed, or relation loading.
+
+```ts
+const users = await client.users.findMany({
+	where: { active: true },
+	orderBy: [{ id: 'asc' }],
+	take: 25,
+});
+```
+
+`findMany` accepts the full query surface: [`where`](/docs/querying/filters), [`select` / `include`](/docs/querying/selecting-fields), `orderBy`, `take`, `skip`, and `cursor`.
+
+## `findFirst`
+
+The first row after filtering and ordering. Use it when the query can match many rows but you only want one.
+
+```ts
+const newest = await client.users.findFirst({
+	where: { active: true },
+	orderBy: [{ id: 'desc' }],
+});
+```
+
+## `findOne`
+
+An alias for `findFirst`, read for intent: a single nullable row where the **caller** owns the not-found decision.
+
+```ts
+const user = await client.users.findOne({
+	where: { id: 42 },
+});
+```
+
+## `findUnique`
+
+Reads best when the lookup is driven by a unique field such as `email` or a slug.
+
+```ts
+const user = await client.users.findUnique({
+	where: { email: 'alice@example.com' },
+});
+```
+
+## `count` and `exists`
+
+`count` returns the number of matching rows. `exists` is a cheap existence check that never materializes a row.
+
+```ts
+const activeCount = await client.users.count({
+	where: { active: true },
+});
+
+const taken = await client.users.exists({
+	where: { email: 'alice@example.com' },
+});
+```
+
+<Callout type="info">
+	`count` and `exists` accept only `where`, `cursor`, and `meta` — projections
+	and ordering do not apply to them.
+</Callout>
+
+## Ordering, limit, and offset
+
+```ts
+const page = await client.posts.findMany({
+	orderBy: [{ published: 'desc' }, { id: 'desc' }],
+	skip: 20,
+	take: 10,
+});
+```
+
+- `orderBy` takes one field map or an array for multi-column ordering.
+- `take` caps the number of rows. A **negative** `take` reverses the order and takes from the end.
+- `skip` offsets from the start.
+
+For full pages with metadata (`count`, `hasNext`, `hasPrevious`), use [`paginate`](/docs/querying/pagination) instead of assembling it by hand.
+
+## Throwing when a row is required
+
+`findFirst`, `findOne`, and `findUnique` return a value that is both awaitable as `Row | null` **and** exposes `.throw()`:
+
+```ts
+// Treat not-found as null
+const maybeUser = await client.users.findUnique({
+	where: { email },
+});
+
+// Treat not-found as exceptional
+const user = await client.users
+	.findUnique({ where: { email } })
+	.throw(() => new Error('User not found'));
+```
+
+See [throwing results](/docs/writing/throwing-results) for the full pattern.
+
+## Choosing a read method
+
+| Use… | When |
+| --- | --- |
+| `findMany` | lists, feeds, admin tables, relation loading |
+| `findFirst` | the first match after ordering/filtering |
+| `findOne` | a single nullable row, caller handles not-found |
+| `findUnique` | lookup by a unique field like email or slug |
+| `count` | an aggregate count for a filtered set |
+| `exists` | a cheap "is there at least one?" check |

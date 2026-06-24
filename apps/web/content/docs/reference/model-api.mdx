@@ -1,0 +1,55 @@
+---
+title: Model delegate
+description: Every method on a table delegate — reads, writes, pagination, and the plugin-related helpers.
+icon: Table2
+---
+
+A model delegate is what you get from `client.users`, `client.posts`, or `client.repository(name)`. Every table has the same surface, typed against its own columns and relations.
+
+## Reads
+
+| Method | Signature | Returns |
+| --- | --- | --- |
+| `findMany` | `(args?: QueryArgs)` | `Row[]` |
+| `findFirst` | `(args?: QueryArgs)` | `ThrowingResult<Row>` |
+| `findOne` | `(args?: QueryArgs)` | `ThrowingResult<Row>` (alias of `findFirst`) |
+| `findUnique` | `(args: QueryArgs)` | `ThrowingResult<Row>` |
+| `count` | `(args?: CountArgs)` | `number` |
+| `exists` | `(args?: ExistsArgs)` | `boolean` |
+| `paginate` | `(args: PaginationArgs)` | `PaginationResult<Row>` |
+
+`ThrowingResult<T>` is a `Promise<T | null>` with a `.throw()` method — see [throwing results](/docs/writing/throwing-results). All read args are documented in [query options](/docs/reference/query-options).
+
+## Writes
+
+| Method | Signature | Returns |
+| --- | --- | --- |
+| `create` | `(args: { data, select?, include?, meta? })` | `Row` |
+| `createMany` | `(args: { data: Row[], select?, include?, meta? })` | `BatchResult<Row>` |
+| `update` | `(args: { where, data, select?, include?, meta? })` | `ThrowingResult<Row>` |
+| `updateMany` | `(args: { where?, data, meta? })` | `BatchResult<never>` |
+| `upsert` | `(args: { where, create, update, select?, include?, meta? })` | `Row` |
+| `delete` | `(args: { where, select?, include?, meta? })` | `ThrowingResult<Row>` |
+| `deleteMany` | `(args: { where?, meta? })` | `BatchResult<never>` |
+
+`BatchResult<T>` is `{ count: number; data?: T[] }` — `data` is populated when the driver supports `RETURNING`.
+
+## Plugin helpers
+
+These exist on every delegate and are mostly used by [plugins](/docs/plugins/writing-plugins):
+
+| Member | Description |
+| --- | --- |
+| `$model` | `{ name, dbName, hasColumn(column) }` metadata for the table |
+| `$state` | the current ephemeral plugin state |
+| `$withState(state)` | clone the delegate with merged plugin state |
+| `$withoutPlugins()` | clone the delegate with all plugin transforms/hooks bypassed |
+
+Plugins can also **add** methods here — for example the soft-delete plugin adds `restore()` and `restoreById()` to compatible models.
+
+<Callout title="Args are extensible">
+	Plugins that declare `operationArgs` add typed fields to these method
+	signatures. For example, with the soft-delete plugin, `findMany` accepts a
+	`deleted: 'with' | 'without' | 'only'` argument, and `delete` accepts
+	`mode: 'soft' | 'hard'`.
+</Callout>

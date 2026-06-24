@@ -1,0 +1,92 @@
+---
+title: Introduction
+description: Minimal, type-safe repository helpers for Drizzle ORM — keep the type-safety, drop the repetitive query glue.
+icon: Sparkles
+---
+
+**better-drizzle** wraps an existing Drizzle client and gives every table a small, consistent API for reads, writes, pagination, nested filters, relation loading, and optional hooks.
+
+It is not a new ORM, and it does not try to hide Drizzle. You still define your schema, choose your driver, and reach for raw SQL whenever you want. better-drizzle just removes the query glue you would otherwise rewrite in every service.
+
+```ts
+import { better } from 'better-drizzle';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+
+const db = drizzle(sqlite, { schema });
+const client = better(db, { schema });
+
+const posts = await client.posts.findMany({
+	where: {
+		published: true,
+		author: { is: { active: true } },
+	},
+	include: { author: true },
+	orderBy: [{ id: 'desc' }],
+	take: 20,
+});
+```
+
+<Callout title="Type-safety, all the way down">
+	Every delegate is generated from your Drizzle schema. Filters, projections,
+	relation includes, and return payloads are all inferred — `posts` above is
+	typed as the post row plus its `author`, no casts required.
+</Callout>
+
+## Why it exists
+
+Drizzle is excellent when you want explicit, SQL-first control. It gets repetitive when every service re-writes the same patterns:
+
+- point lookups by id or unique field
+- relation includes and projections
+- pagination payloads with `count` / `hasNext` / `hasPrevious`
+- existence checks and counts
+- consistent CRUD return shapes
+- nested `where` filters across relations
+
+better-drizzle packages those patterns into a repository-style API — without replacing Drizzle itself.
+
+## What you get
+
+<Cards>
+	<Card title="A delegate per table" href="/docs/getting-started">
+		`client.users`, `client.posts`, … each with `findMany`, `findFirst`,
+		`create`, `update`, `delete`, `paginate`, `count`, `exists`, and `upsert`.
+	</Card>
+	<Card title="Typed nested filters" href="/docs/querying/relations">
+		Filter by related rows with `some` / `every` / `none` / `is`, fully typed
+		against your relations.
+	</Card>
+	<Card title="One pagination shape" href="/docs/querying/pagination">
+		Offset and cursor pagination return the same `{ data, pagination }` shape.
+	</Card>
+	<Card title="First-class plugins" href="/docs/plugins/overview">
+		Timestamps, soft delete, and your own — with transforms, hooks, and typed
+		operation args.
+	</Card>
+	<Card title="Hooks & transactions" href="/docs/advanced/transactions">
+		Lifecycle hooks for cross-cutting concerns; transactions with nested
+		savepoints, retries, and `afterCommit`.
+	</Card>
+	<Card title="Close to the metal" href="/docs/performance/benchmarks">
+		Fast paths for common reads and writes. Reads land within 0–18% of raw
+		Drizzle — and use less memory.
+	</Card>
+</Cards>
+
+## How the layers fit
+
+1. You define tables and relations with **Drizzle**.
+2. You create a normal **Drizzle client** with your driver of choice.
+3. You wrap it once with **`better(db, { schema })`**.
+4. You call typed delegates from your services — and drop down to raw SQL whenever it reads better.
+
+## Next steps
+
+<Cards>
+	<Card title="Get started" href="/docs/getting-started">
+		Install, define a schema, and run your first queries.
+	</Card>
+	<Card title="Compare with raw Drizzle" href="/docs/comparison">
+		See the before/after, and what better-drizzle does and does not change.
+	</Card>
+</Cards>

@@ -1,0 +1,5 @@
+{
+	"title": "Performance",
+	"icon": "Gauge",
+	"pages": ["benchmarks", "parity"]
+}

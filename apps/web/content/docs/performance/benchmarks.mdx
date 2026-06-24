@@ -1,0 +1,63 @@
+---
+title: Benchmarks
+description: Wrapper overhead vs raw Drizzle across latency and memory, measured with fair API-parity comparisons.
+icon: Gauge
+---
+
+better-drizzle is not trying to beat raw Drizzle at being raw Drizzle. It is trying to stay close while giving you a higher-level repository API. The benchmark suite quantifies exactly that overhead.
+
+<Callout title="Run them yourself">
+	Numbers below are from the repository's suite on an AMD Ryzen 5 7520U, Bun
+	1.3.14, SQLite in-memory (to isolate wrapper overhead from I/O). Reproduce
+	with `bun run bench` and `bun run bench:memory` from the repo root.
+</Callout>
+
+## Latency
+
+Per-operation latency at the **API-parity** level — raw Drizzle does the same work and returns the same shape.
+
+| Operation | Drizzle | better-drizzle | Overhead |
+| --- | --- | --- | --- |
+| Point lookup | 128.13 µs | 121.01 µs | **−5.6%** |
+| Filtered list | 335.63 µs | 430.32 µs | +28.2% |
+| Active count | 125.42 µs | 102.94 µs | **−17.9%** |
+| Exists | 117.78 µs | 129.15 µs | +9.7% |
+| Offset pagination | 236.92 µs | 210.28 µs | **−11.2%** |
+| Cursor pagination | 229.52 µs | 226.14 µs | −1.5% |
+| Complex relation filter | 871.07 µs | 953.10 µs | +9.4% |
+| Update + reload | 143.33 µs | 138.11 µs | **−3.6%** |
+| Simple transaction | 312.00 µs | 350.95 µs | +12.5% |
+| Multi-op transaction | 725.98 µs | 724.15 µs | −0.3% |
+| Read-only transaction | 230.92 µs | 281.35 µs | +21.8% |
+| Nested transaction (savepoint) | — | 650.22 µs | — |
+
+## Memory
+
+Heap overhead across batches of operations.
+
+| Batch | Drizzle | better-drizzle | Overhead |
+| --- | --- | --- | --- |
+| Single read | 2.20 MB heap | 336 KB heap | **−85.1%** |
+| Mixed read | 892 KB heap | 355 KB heap | **−60.2%** |
+| Write | 329 KB heap | 98 KB heap | **−70.3%** |
+| Transaction | 296 KB heap | 540 KB heap | +82.4% |
+
+## How to read this
+
+- **Reads** land within 0–18% of raw Drizzle at parity. Point lookup, offset pagination, and active count are *faster* through the wrapper thanks to optimized fast paths.
+- **Writes** are within ~4%, with the wrapper slightly faster on update and create+delete roundtrips.
+- **Transactions** are mixed: simple and multi-op are within ~12%; read-only carries more overhead from lifecycle setup. Nested savepoints are a better-drizzle-only capability with no raw Drizzle equivalent.
+- **Memory is *negative*** for reads and writes — the wrapper uses materially less heap. Transactions use more, because hook and savepoint state has to be tracked.
+
+## Comparison groups
+
+The suite reports three views on purpose:
+
+1. **API parity** — the fair comparison. Same work, same shape (relations loaded, pagination metadata computed).
+2. **Transaction parity** — the same operations wrapped in a transaction.
+3. **Manual Drizzle reference** — intentionally lower-level raw queries (flat joins, no relation resolution, no pagination metadata). These are *faster* but do *less*.
+
+<Callout type="warn" title="Don't compare across groups">
+	The manual reference does less work, so it is not a fair overhead claim. Use
+	the API-parity group as the headline number — see [parity](/docs/performance/parity).
+</Callout>

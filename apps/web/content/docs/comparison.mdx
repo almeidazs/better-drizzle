@@ -1,0 +1,85 @@
+---
+title: better-drizzle vs raw Drizzle
+description: What better-drizzle changes, what it leaves alone, and when to reach for raw Drizzle instead.
+icon: GitCompareArrows
+---
+
+better-drizzle is a thin repository layer over Drizzle. The goal is to remove repeated query glue while keeping Drizzle's type-safety and staying close to the metal. This page makes the trade-off concrete.
+
+## The same query, both ways
+
+A common request: *published posts whose author is active, newest first, with the author attached, projected for an API response.*
+
+```ts title="Raw Drizzle"
+import { and, desc, eq } from 'drizzle-orm';
+
+const rows = await db
+	.select({
+		id: posts.id,
+		title: posts.title,
+		author: { id: users.id, name: users.name },
+	})
+	.from(posts)
+	.innerJoin(users, eq(posts.authorId, users.id))
+	.where(and(eq(posts.published, true), eq(users.active, true)))
+	.orderBy(desc(posts.id))
+	.limit(20);
+```
+
+```ts title="better-drizzle"
+const rows = await client.posts.findMany({
+	where: {
+		published: true,
+		author: { is: { active: true } },
+	},
+	select: {
+		id: true,
+		title: true,
+		author: { select: { id: true, name: true } },
+	},
+	orderBy: [{ id: 'desc' }],
+	take: 20,
+});
+```
+
+Both are fully typed. The difference shows up when you have *dozens* of these across a codebase — the second form is the same shape every time, and the relation join is derived from your schema instead of hand-written.
+
+## What it changes
+
+| Area | Raw Drizzle | better-drizzle |
+| --- | --- | --- |
+| Point lookups | `db.select().from().where(eq(...))` + unwrap | `findUnique({ where: { email } })` |
+| Relation loading | manual joins or `db.query` config | `include` / `select` with inferred payloads |
+| Nested relation filters | hand-built `exists` subqueries | `some` / `every` / `none` / `is` |
+| Pagination | rebuild `count` + `hasNext` each time | `paginate()` → `{ data, pagination }` |
+| Not-found handling | check for `undefined` everywhere | nullable result **or** `.throw()` |
+| Cross-cutting concerns | sprinkle through call sites | client hooks and plugins |
+| Timestamps / soft delete | repeat in every write | official plugins |
+
+## What it leaves alone
+
+- **Your schema.** Tables and relations stay in Drizzle, exactly as you write them today.
+- **Your driver.** SQLite, PostgreSQL, MySQL — you pick it; the dialect is detected.
+- **Raw SQL.** First-class [`$raw` / `$executeRaw`](/docs/advanced/raw-sql) for anything the delegate API should not model.
+- **Drizzle expressions.** You can pass a Drizzle `sql` fragment straight into `where`.
+- **Performance posture.** The wrapper is measured against raw Drizzle and uses fast paths for common operations.
+
+## When to use raw Drizzle instead
+
+better-drizzle is additive, so "both" is usually the answer. Reach for raw Drizzle (directly, or via [`$raw`](/docs/advanced/raw-sql)) when:
+
+- you need database-specific SQL functions or window functions
+- a reporting query reads better as SQL than as a builder
+- you are writing a one-off statement that the delegate API should not try to model
+- you are in a measured hot path and want to hand-tune the exact query
+
+<Callout title="It is not all-or-nothing">
+	The Better client and your raw Drizzle `db` operate on the same connection
+	and the same transaction. Use the repository API for routine CRUD and drop to
+	raw SQL where it earns its place — even inside the same
+	[transaction](/docs/advanced/transactions).
+</Callout>
+
+## How it compares to a full ORM
+
+If you have used Prisma, the delegate API will feel familiar — `findMany`, `where`, `include`, `select`, `upsert`. The difference is that better-drizzle generates that surface *from your Drizzle schema* and compiles down to Drizzle queries, so there is no separate schema language, no generate step, and no client process. You keep Drizzle's model and add the ergonomics.

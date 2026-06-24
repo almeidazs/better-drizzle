@@ -1,0 +1,5 @@
+{
+	"title": "Guides",
+	"icon": "Map",
+	"pages": ["service-patterns", "dynamic-repositories", "multi-tenancy", "frameworks"]
+}

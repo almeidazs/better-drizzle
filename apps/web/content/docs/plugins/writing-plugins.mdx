@@ -1,0 +1,191 @@
+---
+title: Writing a plugin
+description: definePlugin — typed operation args, transforms, lifecycle hooks, client and model extensions, and plugin state.
+icon: Wrench
+---
+
+`definePlugin(...)` is the entry point for reusable behavior. It gives you full type inference for hooks, transforms, extensions, and state.
+
+```ts
+import { definePlugin } from 'better-drizzle';
+
+export const myPlugin = definePlugin({
+	id: '@example/my-plugin',
+	name: 'My Plugin',
+	version: '1.0.0',
+	description: 'What it does, in one line.',
+});
+```
+
+## Anatomy
+
+| Field | Purpose |
+| --- | --- |
+| `id` | stable unique identifier (required) |
+| `name` / `version` / `description` | metadata surfaced to setup and extensions |
+| `config` | supported `dialects` and model `requires` (fail-fast checks) |
+| `operationArgs` | extra **typed** arguments added to delegate methods |
+| `setup(ctx)` | runs once at bootstrap — validation, hook/transform registration |
+| `hooks` | lifecycle observers (CRUD, query, transaction, raw) |
+| `transform(op)` | mutate an operation before it executes |
+| `extendClient(ctx)` | add top-level client methods |
+| `extendModel(ctx)` | add per-delegate helper methods |
+
+## Lifecycle
+
+<Steps>
+<Step>
+### Bootstrap
+
+`better(db, { schema, plugins })` initializes the runtime once.
+</Step>
+<Step>
+### Initialize in order
+
+Each plugin is set up in array order; `setup()` runs once.
+</Step>
+<Step>
+### Build extensions
+
+`extendClient()` and `extendModel()` add client and delegate APIs.
+</Step>
+<Step>
+### Per operation
+
+For each call, registered transforms and hooks run against the bound delegate (or transaction client).
+</Step>
+</Steps>
+
+## A realistic example
+
+This plugin adds a typed `traceId` arg to `findMany`, a `withDeleted()` state toggle, a `forceDelete()` helper that bypasses plugins, and a transform that hides soft-deleted rows:
+
+```ts
+import { definePlugin } from 'better-drizzle';
+
+export const traceAndVisibility = definePlugin({
+	id: '@example/trace-and-visibility',
+	name: 'Trace And Visibility',
+	description: 'Adds trace metadata and a withDeleted state flag.',
+	operationArgs: {
+		findMany: {
+			traceId: undefined as string | undefined,
+		},
+	},
+	extendModel({ client, model }) {
+		if (!model.hasColumn('deletedAt')) return;
+
+		return {
+			withDeleted() {
+				return client.$withState({ withDeleted: true });
+			},
+			forceDelete(id: number) {
+				return client.$withoutPlugins().delete({ where: { id } } as never);
+			},
+		};
+	},
+	hooks: {
+		beforeQuery(ctx) {
+			if (ctx.action === 'findMany' && ctx.args.traceId) {
+				console.log('trace', ctx.args.traceId);
+			}
+		},
+	},
+	transform(operation) {
+		if (!operation.model.hasColumn('deletedAt')) return operation;
+		if (operation.state.withDeleted) return operation;
+		if (
+			operation.kind !== 'findMany' &&
+			operation.kind !== 'findFirst' &&
+			operation.kind !== 'count'
+		) {
+			return operation;
+		}
+
+		operation.where = (
+			operation.where
+				? { AND: [operation.where, { deletedAt: null }] }
+				: { deletedAt: null }
+		) as typeof operation.where;
+
+		return operation;
+	},
+});
+```
+
+Using it — the `traceId` arg and `withDeleted()` helper are both typed:
+
+```ts
+const client = better(db, { schema, plugins: [traceAndVisibility] });
+
+const visible = await client.users.findMany({ traceId: 'req_123' });
+const all = await client.users.withDeleted().findMany({ traceId: 'req_123' });
+```
+
+## Typed operation args
+
+`operationArgs` adds fields to specific operations, keyed by operation kind. Their types flow from the delegate call all the way into your transforms and hooks — this is how the soft-delete plugin exposes `deleted` and `mode` in a fully typed way.
+
+```ts
+operationArgs: {
+	findMany: { deleted: 'without' as 'with' | 'without' | 'only' },
+	delete: { mode: 'soft' as 'soft' | 'hard' },
+},
+```
+
+## Transforms
+
+A `transform` receives the operation and returns a (possibly modified) operation — or `undefined` to skip it. Common uses: rewriting `where` for visibility, injecting `data`, or enforcing a tenant filter. Read `operation.kind`, `operation.where`, `operation.data`, `operation.state`, and `operation.model` to decide.
+
+## Setup and fail-fast requirements
+
+`setup()` is the place for one-time validation and registering hooks/transforms via `ctx.addHook` / `ctx.addTransform`. You can also declare hard requirements so an incompatible model fails at bootstrap rather than at runtime:
+
+```ts
+definePlugin({
+	id: 'requires-deleted-at',
+	config: {
+		dialects: ['pg', 'sqlite'],
+		requires: {
+			columns: [{ column: 'deletedAt' }],
+		},
+	},
+});
+```
+
+## Client and model extensions
+
+- `extendClient(ctx)` returns an object merged onto the client — new top-level methods.
+- `extendModel(ctx)` returns an object merged onto each delegate — model-specific helpers (like `restore()` on soft-deletable tables). Return nothing to skip a model.
+
+Both receive the dialect, schema, model registry, and a bound client/delegate.
+
+## Bypassing plugins
+
+Two delegate escape hatches are especially useful from inside plugins — and from application code:
+
+### `$withState(state)`
+
+Returns a cloned delegate with merged plugin state. Use it for a per-call flag without permanently changing the base delegate:
+
+```ts
+const repo = client.users.$withState({ withDeleted: true });
+const users = await repo.findMany({ orderBy: [{ id: 'asc' }] });
+```
+
+A transform can then read it via `operation.state.withDeleted`.
+
+### `$withoutPlugins()`
+
+Returns a cloned delegate that bypasses **all** plugin transforms and hooks:
+
+```ts
+await client.users.$withoutPlugins().delete({ where: { id: 1 } });
+```
+
+Good for forcing a hard delete beneath a soft-delete plugin, repair scripts, or framework glue that must intentionally skip cross-cutting transforms.
+
+<Callout type="warn" title="An escape hatch, not a default">
+	`$withoutPlugins()` is powerful, but the point of plugins is a consistent
+	normal path. Reach for it deliberately.
+</Callout>

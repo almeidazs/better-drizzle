@@ -1,0 +1,125 @@
+---
+title: Soft delete
+description: Turn delete() into a recoverable state change, filter deleted rows by default, and add restore helpers.
+icon: Trash2
+---
+
+`@better-drizzle/soft-delete` extends the built-in methods with typed soft-delete controls, default visibility filtering, and restore helpers.
+
+## Install
+
+<Tabs items={['npm', 'pnpm', 'yarn', 'bun']}>
+
+<Tab value="npm">
+
+```bash
+npm install @better-drizzle/soft-delete
+```
+
+</Tab>
+
+<Tab value="pnpm">
+
+```bash
+pnpm add @better-drizzle/soft-delete
+```
+
+</Tab>
+
+<Tab value="yarn">
+
+```bash
+yarn add @better-drizzle/soft-delete
+```
+
+</Tab>
+
+<Tab value="bun">
+
+```bash
+bun add @better-drizzle/soft-delete
+```
+
+</Tab>
+
+</Tabs>
+
+## Usage
+
+```ts
+import { better } from 'better-drizzle';
+import { softDelete } from '@better-drizzle/soft-delete';
+
+const client = better(db, {
+	schema,
+	plugins: [
+		softDelete({
+			column: 'deletedAt',
+			deletedByColumn: 'deletedById',
+			defaults: {
+				mode: 'soft',
+				visibility: 'without',
+			},
+		}),
+	],
+});
+```
+
+Every option is optional. Defaults:
+
+- `column: 'deletedAt'`
+- `deletedByColumn: 'deletedById'`
+- `defaults.mode: 'soft'`
+- `defaults.visibility: 'without'`
+
+## Reads exclude deleted rows by default
+
+`findMany`, `findFirst`, `count`, and `exists` filter out soft-deleted rows automatically:
+
+```ts
+await client.users.findMany(); // visible rows only
+```
+
+Opt in per query with the typed `deleted` arg:
+
+```ts
+await client.users.findMany({ deleted: 'with' }); // include deleted
+await client.users.findMany({ deleted: 'only' }); // only deleted
+await client.users.count({ deleted: 'with' });
+```
+
+## Deleting and restoring
+
+```ts
+// Soft delete (default)
+await client.users.delete({ where: { id: 1 } });
+
+// Record who deleted it (when the column exists)
+await client.users.delete({ where: { id: 1 }, deletedBy: 'admin_42' });
+
+// Force a real, physical delete
+await client.users.delete({ where: { id: 1 }, mode: 'hard' });
+
+// Restore
+await client.users.restore({ where: { id: 1 } });
+await client.users.restoreById(1);
+```
+
+## Behavior details
+
+- Models without the configured column are ignored automatically.
+- `deletedBy` is written only when the configured column exists on the model.
+- `restore()` and `restoreById()` bypass plugin transforms so they can always clear the soft-delete fields directly.
+- `mode: 'hard'` falls back to the built-in physical delete.
+
+<Callout title="Need a one-off hard delete elsewhere?">
+	Any delegate can bypass plugins for a single call with
+	[`$withoutPlugins()`](/docs/plugins/writing-plugins#bypassing-plugins) — handy
+	for repair scripts that must delete beneath the soft-delete layer.
+</Callout>
+
+## Where it fits best
+
+- audit-sensitive systems
+- admin tools where deleted rows must remain inspectable
+- apps where "delete" should default to reversible

@@ -1,0 +1,63 @@
+---
+title: Throwing results
+description: Operations that return a nullable result plus a .throw() helper, so you can opt into exception-driven flow.
+icon: TriangleAlert
+---
+
+Some operations can legitimately match nothing. better-drizzle keeps that honest in the type — they return `T | null` — while letting you opt into throwing when not-found is genuinely exceptional.
+
+These operations return a **throwing result**:
+
+- `findFirst`
+- `findOne`
+- `findUnique`
+- `update`
+- `delete`
+
+A throwing result is a `Promise<T | null>` with an extra `.throw()` method, so you get both styles from one API:
+
+```ts
+// Style 1 — nullable
+const user = await client.users.findUnique({ where: { id } });
+//    ^? User | null
+
+// Style 2 — throw on null
+const user = await client.users.findUnique({ where: { id } }).throw();
+//    ^? User
+```
+
+## `.throw()`
+
+Call `.throw()` to turn a `null` result into a thrown error and a non-null type:
+
+```ts
+const user = await client.users
+	.findUnique({ where: { email: 'alice@example.com' } })
+	.throw();
+
+const updated = await client.users
+	.update({ where: { id: 1 }, data: { name: 'Updated' } })
+	.throw();
+```
+
+## Custom error factory
+
+Pass a factory to control exactly what is thrown — useful for typed domain errors or HTTP-aware errors:
+
+```ts
+const user = await client.users
+	.findOne({ where: { id: 9999 } })
+	.throw(() => new Error('User not found'));
+```
+
+## Why it works this way
+
+This keeps the low-level API truthful about nullability while letting higher-level services choose exception-driven flow when that reads better. A repository can stay honest (`T | null`); the service layer decides where a missing row should become a 404.
+
+<Callout title="Where to put the decision">
+	Keep not-found mapping close to the boundary that understands the protocol
+	(HTTP, RPC). Use `.throw()` inside a service when it makes that code
+	materially clearer — not as a reflex.
+</Callout>
+
+See [error handling](/docs/advanced/error-handling) for end-to-end patterns.

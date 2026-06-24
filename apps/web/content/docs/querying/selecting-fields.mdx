@@ -1,0 +1,86 @@
+---
+title: Selecting fields
+description: where vs select vs include — which rows qualify, and which fields survive.
+icon: Columns3
+---
+
+Three options control a query's result, and they solve different problems:
+
+| Goal | Use |
+| --- | --- |
+| "Only rows that match these conditions" | [`where`](/docs/querying/filters) |
+| "Only these scalar and relation fields" | `select` |
+| "The full row, plus these relations" | `include` |
+
+`where` filters rows. `select` and `include` shape the payload — and the return type is inferred from whichever you use.
+
+## `where` filters rows
+
+```ts
+await client.posts.findMany({
+	where: { published: true },
+});
+```
+
+Without `select` or `include`, you get the full row for each table — all scalar columns, no relations.
+
+## `select` narrows the payload
+
+`select` lists exactly the fields you want. Anything not listed is dropped, and the return type narrows to match:
+
+```ts
+const rows = await client.posts.findMany({
+	select: {
+		id: true,
+		title: true,
+	},
+});
+//    ^? { id: number; title: string }[]
+```
+
+Reach for `select` when:
+
+- you want to reduce payload size
+- the response goes straight to an API boundary
+- you do not want to accidentally leak extra columns
+
+## `include` keeps the row and adds relations
+
+`include` keeps every scalar column and attaches the relations you name:
+
+```ts
+const posts = await client.posts.findMany({
+	include: { author: true },
+});
+//    ^? (Post & { author: User | null })[]
+```
+
+Reach for `include` when a handler wants the model *plus* related records.
+
+<Callout title="Pick one">
+	`select` and `include` are mutually exclusive on a single query level — use
+	`select` to narrow, or `include` to keep-and-extend. (You can still narrow a
+	relation **inside** an `include`; see below.)
+</Callout>
+
+## Projecting relations
+
+Both `select` and `include` can shape a relation by giving it a nested query instead of `true`:
+
+```ts
+const posts = await client.posts.findMany({
+	select: {
+		id: true,
+		title: true,
+		author: {
+			select: { id: true, name: true },
+		},
+	},
+});
+```
+
+The nested object accepts the same `where`, `select`, `orderBy`, and `take` you would use on a top-level query — so you can filter and order related rows too.
+
+## A note on API boundaries
+
+At API boundaries, prefer explicit shapes. Returning large default payloads "because it was easy" is how extra columns leak into responses. A narrow `select` (or a small `include`) keeps the contract obvious and the payload small.

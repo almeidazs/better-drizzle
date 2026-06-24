@@ -1,0 +1,78 @@
+---
+title: Multi-tenancy & request context
+description: Thread tenant and request metadata through hooks, plugins, and transactions.
+icon: Building2
+---
+
+better-drizzle does not impose a multitenancy model, but it gives you enough surface to thread request metadata through cleanly — and to enforce tenant scoping with a plugin when you want it automatic.
+
+## Attach metadata with `meta`
+
+Every operation accepts a `meta` object. Use it to carry correlation and tenant context:
+
+```ts
+await client.users.findMany({
+	where: { active: true },
+	meta: {
+		requestId: 'req_123',
+		tenantId: 'tenant_42',
+		userId: 'admin_7',
+	},
+});
+```
+
+Read it in [hooks](/docs/advanced/hooks):
+
+```ts
+const client = better(db, {
+	schema,
+	hooks: {
+		beforeQuery(ctx) {
+			console.log(ctx.meta?.tenantId, ctx.meta?.requestId);
+		},
+	},
+});
+```
+
+## Transaction context
+
+[Transactions](/docs/advanced/transactions) accept a `context` object, readable by hooks and plugins as `transactionContext`:
+
+```ts
+await client.transaction(
+	async (tx) => tx.users.findMany(),
+	{ context: { requestId: 'req_123', tenantId: 'tenant_42' } },
+);
+```
+
+## Enforcing tenant scope automatically
+
+`meta` is for *observation*. To *enforce* that every query is scoped to a tenant, use a [plugin transform](/docs/plugins/writing-plugins#transforms) that injects the tenant filter, combined with [`$withState`](/docs/plugins/writing-plugins#withstatestate) to pass the current tenant per request:
+
+```ts
+transform(operation) {
+	const tenantId = operation.state.tenantId;
+	if (!tenantId) return operation;
+	if (!operation.model.hasColumn('tenantId')) return operation;
+
+	operation.where = (
+		operation.where
+			? { AND: [operation.where, { tenantId }] }
+			: { tenantId }
+	) as typeof operation.where;
+
+	return operation;
+}
+```
+
+```ts
+// per request
+const scoped = client.users.$withState({ tenantId: currentTenant });
+await scoped.findMany();
+```
+
+## Where this fits
+
+- tenant-aware audit logging
+- request tracing with correlation IDs
+- consistent tenant scoping across repository calls and raw SQL

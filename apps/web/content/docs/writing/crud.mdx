@@ -1,0 +1,126 @@
+---
+title: Create, update & delete
+description: The write surface — create, createMany, update, updateMany, delete, deleteMany, and upsert.
+icon: SquarePen
+---
+
+The write methods mirror the read API and return predictable shapes. Single-row mutations return the affected row; batch mutations return a summary.
+
+## `create`
+
+Inserts one row and returns the created record:
+
+```ts
+const user = await client.users.create({
+	data: {
+		email: 'alice@example.com',
+		name: 'Alice',
+		active: true,
+	},
+});
+```
+
+## `createMany`
+
+Inserts many rows in one statement and returns a batch summary:
+
+```ts
+const batch = await client.users.createMany({
+	data: [
+		{ email: 'a@example.com', name: 'A', active: true },
+		{ email: 'b@example.com', name: 'B', active: false },
+	],
+});
+
+batch.count; // number inserted
+batch.data; // inserted rows, when the driver supports RETURNING
+```
+
+## `update`
+
+Updates a single matching row. The result is nullable (the target may not exist) and also exposes [`.throw()`](/docs/writing/throwing-results):
+
+```ts
+const updated = await client.users.update({
+	where: { id: 1 },
+	data: { name: 'Alice Updated' },
+});
+
+if (!updated) {
+	throw new Error('Update target not found');
+}
+```
+
+## `updateMany`
+
+Updates every matching row and returns the affected count:
+
+```ts
+const batch = await client.users.updateMany({
+	where: { active: true },
+	data: { active: false },
+});
+
+batch.count; // rows updated
+```
+
+## `delete`
+
+Deletes a single matching row and returns it (nullable, with `.throw()`):
+
+```ts
+const deleted = await client.users.delete({
+	where: { id: 1 },
+});
+```
+
+## `deleteMany`
+
+Deletes every matching row and returns the affected count:
+
+```ts
+const batch = await client.users.deleteMany({
+	where: { active: false },
+});
+
+batch.count; // rows deleted
+```
+
+## `upsert`
+
+"Create if missing, update if present" — without branching in your own code:
+
+```ts
+const user = await client.users.upsert({
+	where: { email: 'alice@example.com' },
+	create: {
+		email: 'alice@example.com',
+		name: 'Alice',
+		active: true,
+	},
+	update: {
+		name: 'Alice Renamed',
+	},
+});
+```
+
+`upsert` is usually cleaner than "find, then branch, then write" when the behavior is genuinely upsert-shaped.
+
+## Projecting write results
+
+`create`, `update`, `delete`, and `upsert` accept `select` and `include`, so you can narrow or expand the returned row:
+
+```ts
+const user = await client.users.create({
+	data: { email: 'writer@example.com', name: 'Writer', active: true },
+	select: { id: true, email: true },
+});
+//    ^? { id: number; email: string }
+```
+
+## Notes
+
+- `createMany`, `updateMany`, and `deleteMany` return a `{ count, data? }` summary, not individual rows.
+- `update` and `delete` are nullable by default because the target row may not exist — handle `null`, or call `.throw()`.
+- Returning affected rows (`data`) depends on the driver supporting `RETURNING`.
+- Need lifecycle behavior on writes — timestamps, soft delete, audit trails? That belongs in [plugins](/docs/plugins/overview) or [hooks](/docs/advanced/hooks), not duplicated per call.

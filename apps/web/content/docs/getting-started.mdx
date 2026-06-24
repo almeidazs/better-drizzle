@@ -1,0 +1,174 @@
+---
+title: Getting started
+description: Install better-drizzle, define a Drizzle schema, create the client, and run your first typed queries.
+icon: Rocket
+---
+
+This page shows the smallest realistic setup and the mental model behind it.
+
+## Install
+
+better-drizzle sits on top of Drizzle, so install both. Pick your package manager:
+
+<Tabs items={['npm', 'pnpm', 'yarn', 'bun']}>
+
+<Tab value="npm">
+
+```bash
+npm install better-drizzle drizzle-orm
+```
+
+</Tab>
+
+<Tab value="pnpm">
+
+```bash
+pnpm add better-drizzle drizzle-orm
+```
+
+</Tab>
+
+<Tab value="yarn">
+
+```bash
+yarn add better-drizzle drizzle-orm
+```
+
+</Tab>
+
+<Tab value="bun">
+
+```bash
+bun add better-drizzle drizzle-orm
+```
+
+</Tab>
+
+</Tabs>
+
+<Callout type="info">
+	better-drizzle declares `drizzle-orm` and `typescript` as peer dependencies.
+	Use Drizzle `^0.45` and TypeScript `^5`.
+</Callout>
+
+## Define a schema
+
+better-drizzle reads your Drizzle schema — including relations — to generate each table's typed API. A small `users → posts` schema:
+
+```ts title="schema.ts"
+import { relations } from 'drizzle-orm';
+import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+
+export const users = sqliteTable('users', {
+	id: integer('id').primaryKey(),
+	email: text('email').notNull().unique(),
+	name: text('name').notNull(),
+	active: integer('active', { mode: 'boolean' }).notNull().default(true),
+});
+
+export const posts = sqliteTable('posts', {
+	id: integer('id').primaryKey(),
+	authorId: integer('author_id')
+		.notNull()
+		.references(() => users.id),
+	title: text('title').notNull(),
+	published: integer('published', { mode: 'boolean' })
+		.notNull()
+		.default(false),
+});
+
+export const usersRelations = relations(users, ({ many }) => ({
+	posts: many(posts),
+}));
+
+export const postsRelations = relations(posts, ({ one }) => ({
+	author: one(users, {
+		fields: [posts.authorId],
+		references: [users.id],
+	}),
+}));
+
+export const schema = {
+	users,
+	usersRelations,
+	posts,
+	postsRelations,
+};
+```
+
+<Callout title="Relations power the nice parts">
+	The `include`, `select`, and nested relation filters all come from the
+	relations you define here. Defining `usersRelations` / `postsRelations` is
+	what makes `where: { author: { is: { ... } } }` possible and typed.
+</Callout>
+
+## Create the client
+
+Create a normal Drizzle client first, then wrap it once with `better(...)`:
+
+```ts title="db.ts"
+import Database from 'bun:sqlite';
+import { better } from 'better-drizzle';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { schema } from './schema';
+
+const sqlite = new Database('app.db');
+const db = drizzle(sqlite, { schema });
+
+export const client = better(db, { schema });
+```
+
+The dialect (SQLite, PostgreSQL, MySQL) is detected from your Drizzle instance — the same `client` API works across all three.
+
+## Run your first queries
+
+```ts
+// A list
+const users = await client.users.findMany({
+	orderBy: [{ id: 'asc' }],
+	take: 20,
+});
+
+// A single row by unique field
+const alice = await client.users.findUnique({
+	where: { email: 'alice@example.com' },
+});
+
+// A count and an existence check
+const activeCount = await client.users.count({ where: { active: true } });
+const exists = await client.users.exists({ where: { id: 1 } });
+```
+
+## What `better(...)` gives you
+
+- one delegate per table: `client.users`, `client.posts`
+- a dynamic lookup: `client.repository(name)` ([details](/docs/guides/dynamic-repositories))
+- typed reads: `findMany`, `findFirst`, `findOne`, `findUnique`, `count`, `exists`
+- typed writes: `create`, `createMany`, `update`, `updateMany`, `delete`, `deleteMany`, `upsert`
+- pagination, raw SQL, hooks, transactions, and plugins on the same client
+
+## What stays explicit
+
+better-drizzle does not hide your schema or replace Drizzle. You still:
+
+- define tables and relations in Drizzle
+- choose the database driver yourself
+- decide when to drop to raw SQL
+- decide how much abstraction your service layer wants
+
+## Where to next
+
+<Cards>
+	<Card title="Reads & filters" href="/docs/querying/reads">
+		The read API and the filter model.
+	</Card>
+	<Card title="Relations" href="/docs/querying/relations">
+		`include`, `select`, and nested relation filters.
+	</Card>
+	<Card title="CRUD & mutations" href="/docs/writing/crud">
+		Create, update, delete, and upsert.
+	</Card>
+	<Card title="Transactions" href="/docs/advanced/transactions">
+		Savepoints, retries, and lifecycle callbacks.
+	</Card>
+</Cards>

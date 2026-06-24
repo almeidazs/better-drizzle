@@ -1,0 +1,15 @@
+{
+	"title": "Documentation",
+	"pages": [
+		"index",
+		"getting-started",
+		"comparison",
+		"querying",
+		"writing",
+		"advanced",
+		"plugins",
+		"guides",
+		"performance",
+		"reference"
+	]
+}

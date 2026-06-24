@@ -1,0 +1,121 @@
+---
+title: Client
+description: better() — options, client-level methods, and the values exported from better-drizzle.
+icon: Settings2
+---
+
+```ts
+import { better } from 'better-drizzle';
+
+const client = better(db, options);
+```
+
+`better(db, options)` wraps a Drizzle database instance and returns a fully typed client.
+
+## Options
+
+<TypeTable
+	type={{
+		schema: {
+			description: 'The Drizzle schema object with all table definitions and relations.',
+			type: 'Schema',
+			required: true,
+		},
+		plugins: {
+			description: 'Plugins to extend the client. Run in array order.',
+			type: 'Plugin[]',
+		},
+		hooks: {
+			description: 'Lifecycle hooks for cross-cutting concerns.',
+			type: 'BetterClientHooks',
+		},
+		raw: {
+			description: 'Raw SQL configuration (see below).',
+			type: 'RawClientOptions',
+		},
+		transaction: {
+			description: 'Transaction configuration, e.g. how to handle dialect-unsupported options.',
+			type: '{ unsupportedOptions?: "warn" | "throw" | "ignore" }',
+		},
+	}}
+/>
+
+### `raw` options
+
+<TypeTable
+	type={{
+		enabled: {
+			description: 'Enable the raw SQL methods on the client.',
+			type: 'boolean',
+			default: 'true',
+		},
+		allowUnsafe: {
+			description: 'Allow calling $rawUnsafe().',
+			type: 'boolean',
+			default: 'false',
+		},
+		requireComment: {
+			description: 'Require every raw call to provide options.comment.',
+			type: 'boolean',
+			default: 'false',
+		},
+		timeoutMs: {
+			description: 'Default timeout applied when a raw call omits timeoutMs.',
+			type: 'number',
+		},
+		unsupportedOptions: {
+			description: 'How unsupported raw options behave.',
+			type: '"warn" | "throw" | "ignore"',
+			default: '"warn"',
+		},
+	}}
+/>
+
+## Client methods
+
+Beyond the per-table delegates, the client exposes:
+
+| Method | Description |
+| --- | --- |
+| `client.<table>` | the [model delegate](/docs/reference/model-api) for each table |
+| `repository(name)` | resolve a delegate by schema key or DB table name |
+| `transaction(fn, options?)` | run `fn` in a [transaction](/docs/advanced/transactions) |
+| `$raw(...)` | run a [safe raw](/docs/advanced/raw-sql) read, returns rows |
+| `$executeRaw(...)` | run a safe raw write, returns `{ rowsAffected }` |
+| `$rawUnsafe(...)` | run a raw string query (requires `raw.allowUnsafe`) |
+
+## Exports
+
+```ts
+import {
+	better,
+	definePlugin,
+	PaginationType,
+	OrderType,
+	// error helpers
+	isDatabaseError,
+	getDatabaseErrorInfo,
+	isUniqueViolation,
+	isForeignKeyViolation,
+	isNotNullViolation,
+	isCheckViolation,
+	// transaction error
+	BetterDrizzleTransactionRollbackError,
+} from 'better-drizzle';
+```
+
+### Enums
+
+```ts
+enum PaginationType {
+	Cursor = 1,
+	Offset,
+}
+
+enum OrderType {
+	Asc = 'asc',
+	Desc = 'desc',
+}
+```
+
+The library also exports its full type surface (`BetterDrizzleClient`, `BetterDrizzleModelDelegate`, `QueryArgs`, `WhereInput`, `Plugin`, hook context types, and more) for typing your own helpers.

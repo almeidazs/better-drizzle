@@ -1,0 +1,129 @@
+---
+title: Error handling
+description: Nullable results vs throwing, mapping errors at the boundary, and cross-dialect constraint detection helpers.
+icon: ShieldAlert
+---
+
+better-drizzle keeps nullability and exceptional flow separate, and ships helpers to classify database errors consistently across PostgreSQL, SQLite, and MySQL.
+
+## Nullable at the boundary
+
+Let the type carry the "might not exist" and decide at the edge:
+
+```ts
+const user = await client.users.findUnique({
+	where: { email: 'alice@example.com' },
+});
+
+if (!user) return null;
+return user;
+```
+
+## Throw inside the service
+
+When not-found is exceptional, [`.throw()`](/docs/writing/throwing-results) keeps the happy path linear:
+
+```ts
+const user = await client.users
+	.findUnique({ where: { email: 'alice@example.com' } })
+	.throw(() => new Error('User not found'));
+```
+
+## Map errors at the protocol boundary
+
+Keep HTTP/RPC mapping close to the layer that understands it:
+
+```ts
+app.get('/users/:id', async (req, res) => {
+	try {
+		const user = await client.users
+			.findOne({ where: { id: Number(req.params.id) } })
+			.throw(() => new Error('Not found'));
+
+		res.json(user);
+	} catch (error) {
+		res.status(404).json({ error: String(error) });
+	}
+});
+```
+
+## Classifying database errors
+
+Writes fail in predictable ways — a unique email, a missing foreign key, a `NOT NULL` violation. Each driver reports these differently. better-drizzle normalizes them with exported helpers so your handling is dialect-agnostic:
+
+```ts
+import {
+	isUniqueViolation,
+	isForeignKeyViolation,
+	isNotNullViolation,
+	isCheckViolation,
+	getDatabaseErrorInfo,
+} from 'better-drizzle';
+
+try {
+	await client.users.create({
+		data: { email: 'taken@example.com', name: 'Dup', active: true },
+	});
+} catch (error) {
+	if (isUniqueViolation(error)) {
+		return { status: 409, message: 'Email already in use' };
+	}
+	throw error;
+}
+```
+
+Each predicate accepts an optional constraint (or column) name to match a specific one:
+
+```ts
+if (isUniqueViolation(error, 'users_email_unique')) {
+	// only the email uniqueness constraint
+}
+
+if (isNotNullViolation(error, 'name')) {
+	// only the name column
+}
+```
+
+| Helper | Detects | PG · SQLite · MySQL |
+| --- | --- | --- |
+| `isUniqueViolation` | duplicate unique / primary key | `23505` · `SQLITE_CONSTRAINT_UNIQUE` · `1062` |
+| `isForeignKeyViolation` | missing / referenced FK | `23503` · `SQLITE_CONSTRAINT_FOREIGNKEY` · `1451/1452` |
+| `isNotNullViolation` | `NOT NULL` violated | `23502` · `SQLITE_CONSTRAINT_NOTNULL` · `1048` |
+| `isCheckViolation` | `CHECK` violated | `23514` · `SQLITE_CONSTRAINT_CHECK` · `3819` |
+
+### Inspecting the details
+
+For logging or custom handling, `getDatabaseErrorInfo` returns a normalized object regardless of driver:
+
+```ts
+const info = getDatabaseErrorInfo(error);
+//    ^? { driver, code, errno, constraint, table, column, message }
+
+logger.warn('db error', {
+	driver: info.driver,
+	code: info.code,
+	constraint: info.constraint,
+});
+```
+
+There is also `isDatabaseError(error)` to guard before drilling in.
+
+## Transaction failures
+
+Inside a [transaction](/docs/advanced/transactions), throwing or calling `tx.rollback()` aborts the whole unit:
+
+```ts
+await client.transaction(async (tx) => {
+	if (await tx.users.exists({ where: { email } })) {
+		tx.rollback('duplicate email');
+	}
+
+	await tx.users.create({ data: { email, name: 'Alice', active: true } });
+});
+```
+
+## Rules of thumb
+
+- Keep validation close to request parsing.
+- Keep not-found mapping close to the boundary that understands the protocol.
+- Use the constraint helpers instead of string-matching driver error messages by hand.

@@ -1,0 +1,31 @@
+---
+title: Benchmark parity
+description: The one rule that keeps overhead numbers honest — compare equivalent work, not just equivalent SQL count.
+icon: Scale
+---
+
+The repository has one hard benchmarking rule:
+
+> Compare equivalent **work**, not just equivalent **SQL count**.
+
+A wrapper looks slow if you compare its rich result against a raw query that does less. Parity keeps the comparison honest.
+
+## Good parity comparisons
+
+- `findMany({ include })` against a raw Drizzle query that **also loads those relations**
+- `paginate()` against a manual flow that returns rows **plus** `count`, `hasNext`, and `hasPrevious`
+- the soft-delete plugin against a manual implementation that performs the **same** visibility filtering and delete rewrite
+
+## Bad comparisons
+
+- a nested repository payload against a flat SQL join
+- a paginated helper against a raw query that returns rows only
+- a plugin-enabled mutation against a baseline that skips the same side effects
+
+## Practical interpretation
+
+Sometimes a hand-tuned manual query beats the wrapper. That is expected and fine. The relevant question is: **did the wrapper stay small for the amount of behavior it added?**
+
+## When you change a hot path
+
+If you add a performance-sensitive feature, re-run the suite and verify parity *before* reading headline numbers. Update the examples and wording so the claims still match what the benchmark actually measures.
