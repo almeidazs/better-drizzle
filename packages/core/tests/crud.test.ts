@@ -110,7 +110,7 @@ describe('create', () => {
 		).rejects.toThrow();
 	});
 
-	test('create ignores conflicts when onConflict is ignore', async () => {
+	test('create ignores duplicate conflicts when skipDuplicates is true', async () => {
 		const result = await ctx.better.users.create({
 			data: {
 				id: 205,
@@ -119,13 +119,13 @@ describe('create', () => {
 				age: 44,
 				active: true,
 			},
-			onConflict: 'ignore',
+			skipDuplicates: true,
 		});
 
 		expect(result).toBeNull();
 	});
 
-	test('create inserts normally when onConflict is ignore and no conflict exists', async () => {
+	test('create inserts normally when skipDuplicates is true and no conflict exists', async () => {
 		const result = await ctx.better.users.create({
 			data: {
 				id: 206,
@@ -134,7 +134,7 @@ describe('create', () => {
 				age: 31,
 				active: true,
 			},
-			onConflict: 'ignore',
+			skipDuplicates: true,
 		});
 
 		expect(result).toEqual({
@@ -155,13 +155,13 @@ describe('create', () => {
 				age: 29,
 				active: false,
 			},
-			onConflict: { action: 'ignore', targets: ['email'] },
+			skipDuplicates: ['email'],
 		});
 
 		expect(result).toBeNull();
 	});
 
-	test('create still throws when action is throw with targets', async () => {
+	test('create still throws by default when skipDuplicates is not set', async () => {
 		expect(
 			ctx.better.users.create({
 				data: {
@@ -171,12 +171,11 @@ describe('create', () => {
 					age: 40,
 					active: true,
 				},
-				onConflict: { action: 'throw', targets: ['email'] },
 			}),
 		).rejects.toThrow();
 	});
 
-	test('create rejects invalid conflict targets', async () => {
+	test('create rejects invalid skipDuplicates targets', async () => {
 		await expect(
 			ctx.better.users.create({
 				data: {
@@ -186,10 +185,7 @@ describe('create', () => {
 					age: 26,
 					active: true,
 				},
-				onConflict: {
-					action: 'ignore',
-					targets: ['missing'] as unknown as ['email'],
-				},
+				skipDuplicates: ['missing'] as unknown as ['email'],
 			}),
 		).rejects.toMatchObject({
 			code: BetterDrizzleErrorCode.OperationError,
@@ -268,7 +264,7 @@ describe('createMany', () => {
 					active: false,
 				},
 			],
-			onConflict: 'ignore',
+			skipDuplicates: true,
 		});
 
 		expect(result.count).toBe(1);
@@ -301,7 +297,7 @@ describe('createMany', () => {
 					active: true,
 				},
 			],
-			onConflict: { action: 'ignore', targets: ['email'] },
+			skipDuplicates: ['email'],
 			select: { id: true, name: true },
 		});
 

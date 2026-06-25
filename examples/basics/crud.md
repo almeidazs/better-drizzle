@@ -15,9 +15,9 @@ const user = await client.users.create({
 });
 ```
 
-## `create` with `onConflict`
+## `create` with `skipDuplicates`
 
-Use `onConflict: 'ignore'` or `{ action: 'ignore', targets: [...] }` when the service should skip duplicate inserts without branching first.
+Use `skipDuplicates: true` or `skipDuplicates: ['columnName']` when the service should skip duplicate inserts without branching first.
 
 ```ts
 const maybeUser = await client.users.create({
@@ -27,7 +27,7 @@ const maybeUser = await client.users.create({
 		name: 'Alice Duplicate',
 		active: true,
 	},
-	onConflict: { action: 'ignore', targets: ['email'] },
+	skipDuplicates: ['email'],
 });
 
 if (!maybeUser) {
@@ -49,7 +49,7 @@ console.log(batch.count);
 console.log(batch.data);
 ```
 
-With `onConflict: 'ignore'`, `count` reflects only rows that were actually inserted and `data` contains only those inserted rows.
+With `skipDuplicates`, `count` reflects only rows that were actually inserted and `data` contains only those inserted rows.
 
 ## `update`
 
@@ -154,6 +154,6 @@ const user = await client.users.create({
 ## Practical notes
 
 - `createMany()`, `updateMany()`, and `deleteMany()` return a batch summary.
-- `create()` returns `null` and `createMany()` returns a partial count when `onConflict` is set to ignore and duplicates are skipped.
+- `create()` returns `null` and `createMany()` returns a partial count when `skipDuplicates` is enabled and duplicates are skipped.
 - `update()` and `delete()` are nullable by default because the target row may not exist.
 - `upsert()` is often cleaner than “find, then branch, then write” when the behavior is truly upsert-shaped.

@@ -129,7 +129,7 @@ const maybeCreated = await client.users.create({
 		id: 124,
 		name: 'better-again',
 	},
-	onConflict: { action: 'ignore', targets: ['email'] },
+	skipDuplicates: true,
 });
 
 if (!maybeCreated) {

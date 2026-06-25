@@ -91,68 +91,43 @@ export interface BatchResult<T> {
 }
 
 /**
- * Conflict handling strategy for `create` and `createMany` operations.
- *
- * - `'ignore'` – silently skip the insert when a conflict occurs.
- * - `'throw'` – throw a `BetterDrizzleError` on conflict (default behavior).
- *
- * @example
- * ```ts
- * await db.user.create({
- *   data: { email: 'alice@example.com', name: 'Alice' },
- *   onConflict: 'ignore',
- * });
- * ```
- */
-export type ConflictAction = 'ignore' | 'throw';
-
-/**
- * Column name that can be used as a conflict target for a specific table.
+ * Column name that can be used as a duplicate-skip target for a specific table.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
  */
-export type ConflictTargetColumn<
+export type SkipDuplicatesColumn<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 > = Extract<keyof InsertModelFor<Schema, Name>, string>;
 
 /**
- * Conflict handling option for `create` and `createMany` operations.
+ * Duplicate-skip option for `create` and `createMany` operations.
  *
- * Can be a simple action string (`'ignore'` or `'throw'`) or an object
- * specifying the action and optional conflict target columns.
+ * - `true` ignores duplicate conflicts for any supported unique target.
+ * - `readonly ColumnName[]` ignores duplicates only for the specified columns
+ *   when the dialect supports explicit conflict targets.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
  *
  * @example
  * ```ts
- * // Simple string form
  * await db.user.create({
  *   data: { email: 'alice@example.com', name: 'Alice' },
- *   onConflict: 'ignore',
+ *   skipDuplicates: true,
  * });
  *
- * // Object form with specific targets
  * await db.user.create({
  *   data: { email: 'alice@example.com', name: 'Alice' },
- *   onConflict: {
- *     action: 'ignore',
- *     targets: ['email'],
- *   },
+ *   skipDuplicates: ['email'],
  * });
  * ```
  */
-export type OnConflictOption<
+export type SkipDuplicatesOption<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
-> =
-	| ConflictAction
-	| {
-			action: ConflictAction;
-			targets?: readonly ConflictTargetColumn<Schema, Name>[];
-	  };
+> = boolean | readonly SkipDuplicatesColumn<Schema, Name>[];
 
 /**
  * Arguments for the `create` operation.
@@ -165,7 +140,7 @@ export type OnConflictOption<
  * ```ts
  * const args: CreateArgs<typeof schema, 'user'> = {
  *   data: { name: 'Alice', email: 'alice@example.com' },
- *   onConflict: 'ignore',
+ *   skipDuplicates: true,
  *   select: { id: true, name: true },
  *   meta: { requestId: 'abc-123' },
  * };
@@ -178,8 +153,8 @@ export interface CreateArgs<
 > {
 	/** The row data to insert. */
 	data: InsertModelFor<Schema, Name>;
-	/** Optional conflict handling for unique / primary key violations. */
-	onConflict?: OnConflictOption<Schema, Name>;
+	/** Optional duplicate-skip handling for unique / primary key violations. */
+	skipDuplicates?: SkipDuplicatesOption<Schema, Name>;
 	/** Optional column / relation projection for the returned row. */
 	select?: SelectInput<Schema, Name>;
 	/** Optional relation-only projection for the returned row. */
@@ -235,7 +210,7 @@ export interface UpdateArgs<
  *     { name: 'Alice', email: 'alice@example.com' },
  *     { name: 'Bob', email: 'bob@example.com' },
  *   ],
- *   onConflict: 'ignore',
+ *   skipDuplicates: true,
  * });
  * ```
  */
@@ -246,8 +221,8 @@ export interface CreateManyArgs<
 > {
 	/** Array of row data to insert. */
 	data: InsertModelFor<Schema, Name>[];
-	/** Optional conflict handling for unique / primary key violations. */
-	onConflict?: OnConflictOption<Schema, Name>;
+	/** Optional duplicate-skip handling for unique / primary key violations. */
+	skipDuplicates?: SkipDuplicatesOption<Schema, Name>;
 	/** Optional column / relation projection for returned rows. */
 	select?: SelectInput<Schema, Name>;
 	/** Optional relation-only projection for returned rows. */
@@ -804,13 +779,13 @@ export type BetterDrizzleModelDelegate<
 	/**
 	 * Inserts a single row and returns the created record.
 	 *
-	 * When `onConflict` is `'ignore'`, returns `null` if the insert was
-	 * skipped due to a conflict. When `onConflict` is `'throw'` (default),
-	 * a conflict throws a `BetterDrizzleError`.
+	 * When `skipDuplicates` is enabled, returns `null` if the insert was
+	 * skipped due to a duplicate conflict. By default, duplicate conflicts
+	 * throw.
 	 *
-	 * @param args - The row data and optional conflict/select/include options.
+	 * @param args - The row data and optional duplicate-skip/select/include options.
 	 * @returns A promise resolving to the created row, or `null` when
-	 *   `onConflict: 'ignore'` skips the insert.
+	 *   `skipDuplicates` skips the insert.
 	 *
 	 * @example
 	 * ```ts
@@ -822,13 +797,13 @@ export type BetterDrizzleModelDelegate<
 	 * // Create with conflict handling
 	 * const user = await db.user.create({
 	 *   data: { id: 1, name: 'Alice' },
-	 *   onConflict: 'ignore',
+	 *   skipDuplicates: true,
 	 * });
 	 *
-	 * // Create with specific conflict targets
+	 * // Create with specific duplicate targets
 	 * const user = await db.user.create({
 	 *   data: { email: 'alice@example.com', name: 'Alice' },
-	 *   onConflict: { action: 'ignore', targets: ['email'] },
+	 *   skipDuplicates: ['email'],
 	 * });
 	 *
 	 * // Create with relation inclusion
@@ -849,10 +824,10 @@ export type BetterDrizzleModelDelegate<
 	 * Inserts multiple rows in a single statement.
 	 *
 	 * Returns a `BatchResult` with `count` reflecting the number of rows
-	 * actually inserted. When `onConflict: 'ignore'`, skipped rows are not
+	 * actually inserted. When `skipDuplicates` is enabled, skipped rows are not
 	 * counted.
 	 *
-	 * @param args - The array of row data and optional conflict/select options.
+	 * @param args - The array of row data and optional duplicate-skip/select options.
 	 * @returns A promise resolving to `{ count, data? }`.
 	 *
 	 * @example
@@ -868,7 +843,7 @@ export type BetterDrizzleModelDelegate<
 	 * // With conflict handling
 	 * const result = await db.user.createMany({
 	 *   data: [{ name: 'Alice', email: 'alice@example.com' }],
-	 *   onConflict: 'ignore',
+	 *   skipDuplicates: true,
 	 * });
 	 * ```
 	 */

@@ -10,10 +10,10 @@ import type {
 	CreateManyArgs,
 	DeleteArgs,
 	DeleteManyArgs,
-	OnConflictOption,
 	PaginationArgs,
 	QueryArgs,
 	RuntimeContext,
+	SkipDuplicatesOption,
 	TableRuntime,
 	UpdateArgs,
 	UpdateManyArgs,
@@ -33,24 +33,21 @@ import {
 } from '../query';
 import { getPrimaryKeyWhere, getTableRuntime, isSimpleRecord } from './context';
 
-type ResolvedOnConflict = {
-	action: 'ignore' | 'throw';
+type ResolvedSkipDuplicates = {
+	enabled: boolean;
 	targets?: string[];
 };
 
-const getOnConflictConfig = <Schema extends AnySchema>(
-	onConflict?: OnConflictOption<Schema, BetterTableKey<Schema>>,
-): ResolvedOnConflict => {
-	if (!onConflict) return { action: 'throw' };
-	if (typeof onConflict === 'string') return { action: onConflict };
+const getSkipDuplicatesConfig = <Schema extends AnySchema>(
+	skipDuplicates?: SkipDuplicatesOption<Schema, BetterTableKey<Schema>>,
+): ResolvedSkipDuplicates => {
+	if (!skipDuplicates) return { enabled: false };
+	if (skipDuplicates === true) return { enabled: true };
 
-	return {
-		action: onConflict.action,
-		targets: onConflict.targets ? [...onConflict.targets] : undefined,
-	};
+	return { enabled: true, targets: [...skipDuplicates] };
 };
 
-const getConflictTargetColumns = (
+const getSkipDuplicateTargetColumns = (
 	runtime: TableRuntime,
 	targets: string[] | undefined,
 ) => {
@@ -69,7 +66,7 @@ const getConflictTargetColumns = (
 		throw new BetterDrizzleError({
 			code: BetterDrizzleErrorCode.OperationError,
 			details: { target },
-			message: `Invalid conflict target "${target}" for table "${runtime.dbName}"`,
+			message: `Invalid skipDuplicates target "${target}" for table "${runtime.dbName}"`,
 			operation: 'create',
 			table: runtime.dbName,
 		});
@@ -124,21 +121,24 @@ const applyInsertOnConflict = <Schema extends AnySchema, Meta>(
 	const operation = getCreateOperationName(
 		args as CreateArgs<AnySchema, BetterTableKey<AnySchema>, unknown>,
 	);
-	const onConflict = getOnConflictConfig(args.onConflict);
+	const skipDuplicates = getSkipDuplicatesConfig(args.skipDuplicates);
 	const baseBuilder = context.db.insert(runtime.table);
-	const targetColumns = getConflictTargetColumns(runtime, onConflict.targets);
+	const targetColumns = getSkipDuplicateTargetColumns(
+		runtime,
+		skipDuplicates.targets,
+	);
 
-	if (onConflict.action === 'throw')
+	if (!skipDuplicates.enabled)
 		return {
 			builder: baseBuilder.values(args.data),
-			onConflict,
+			skipDuplicates,
 		};
 
 	if (targetColumns?.length && context.dialect === 'mysql')
 		throw new BetterDrizzleError({
 			code: BetterDrizzleErrorCode.OperationError,
-			details: { targets: onConflict.targets },
-			message: `Conflict targets are not supported for onConflict ignore on ${context.dialect}`,
+			details: { targets: skipDuplicates.targets },
+			message: `skipDuplicates targets are not supported on ${context.dialect}`,
 			operation,
 			table: runtime.dbName,
 		});
@@ -146,7 +146,7 @@ const applyInsertOnConflict = <Schema extends AnySchema, Meta>(
 	if (typeof baseBuilder.ignore === 'function' && !targetColumns?.length)
 		return {
 			builder: baseBuilder.ignore().values(args.data),
-			onConflict,
+			skipDuplicates,
 		};
 
 	const builder = baseBuilder.values(args.data);
@@ -155,13 +155,13 @@ const applyInsertOnConflict = <Schema extends AnySchema, Meta>(
 			builder: builder.onConflictDoNothing({
 				target: getConflictTarget(targetColumns),
 			}),
-			onConflict,
+			skipDuplicates,
 		};
 
 	throw new BetterDrizzleError({
 		code: BetterDrizzleErrorCode.OperationError,
-		details: { action: onConflict.action, targets: onConflict.targets },
-		message: `onConflict ignore is not supported for ${context.dialect}`,
+		details: { targets: skipDuplicates.targets },
+		message: `skipDuplicates is not supported for ${context.dialect}`,
 		operation,
 		table: runtime.dbName,
 	});
@@ -650,7 +650,7 @@ export const createRecord = async <Schema extends AnySchema, Meta>(
 	args: CreateArgs<Schema, BetterTableKey<Schema>, Meta>,
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
-	const { builder, onConflict } = applyInsertOnConflict(
+	const { builder, skipDuplicates } = applyInsertOnConflict(
 		context,
 		runtime,
 		args,
@@ -665,7 +665,7 @@ export const createRecord = async <Schema extends AnySchema, Meta>(
 	}
 
 	const result = await builder;
-	if (onConflict.action === 'ignore' && (getAffectedCount(result) ?? 0) === 0)
+	if (skipDuplicates.enabled && (getAffectedCount(result) ?? 0) === 0)
 		return null;
 
 	return reloadRecord(
@@ -695,7 +695,7 @@ export const createManyRecords = async <Schema extends AnySchema, Meta>(
 	args: CreateManyArgs<Schema, BetterTableKey<Schema>, Meta>,
 ): Promise<BatchResult<Record<string, unknown>>> => {
 	const runtime = getTableRuntime(context, tableName as string);
-	const { builder, onConflict } = applyInsertOnConflict(
+	const { builder, skipDuplicates } = applyInsertOnConflict(
 		context,
 		runtime,
 		args,
@@ -705,7 +705,7 @@ export const createManyRecords = async <Schema extends AnySchema, Meta>(
 		const result = await builder;
 		const count =
 			getAffectedCount(result) ??
-			(onConflict.action === 'throw' ? args.data.length : 0);
+			(skipDuplicates.enabled ? 0 : args.data.length);
 		return { count };
 	}
 
