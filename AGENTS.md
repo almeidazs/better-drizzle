@@ -72,6 +72,12 @@
   - `paginate`
   - `$withState`
   - `$withoutPlugins`
+- **Create conflict handling**:
+  - `create` and `createMany` accept `skipDuplicates`
+  - supported forms: `true` or `readonly ColumnName[]`
+  - `skipDuplicates: true` makes `create` return `null` when the insert is skipped
+  - `createMany.count` reflects only rows actually inserted when conflicts are ignored
+  - explicit column arrays map to schema column names; targeted duplicate-skip is intentionally dialect-sensitive
 - **Client-level lookup**:
   - `repository(name)` resolves by schema key or db table name
 - **Transactions**:

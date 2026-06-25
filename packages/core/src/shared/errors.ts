@@ -1,3 +1,11 @@
+/**
+ * The database driver type detected from error patterns.
+ *
+ * - `'pg'` – PostgreSQL
+ * - `'sqlite'` – SQLite
+ * - `'mysql'` – MySQL / MariaDB
+ * - `'unknown'` – Could not be detected
+ */
 export type DatabaseDriver = 'pg' | 'sqlite' | 'mysql' | 'unknown';
 
 type ErrorWithFields = {
@@ -12,54 +20,135 @@ type ErrorWithFields = {
 	cause?: unknown;
 };
 
+/**
+ * Error codes used by Better Drizzle to classify errors programmatically.
+ *
+ * Each code maps to a default HTTP-like status code and can be used
+ * in `catch` blocks to handle specific error scenarios.
+ *
+ * @example
+ * ```ts
+ * import { BetterDrizzleError, BetterDrizzleErrorCode } from 'better-drizzle';
+ *
+ * try {
+ *   await db.user.findUnique({ where: { id: 1 } }).throw();
+ * } catch (error) {
+ *   if (error instanceof BetterDrizzleError) {
+ *     if (error.code === BetterDrizzleErrorCode.ResultNotFound) {
+ *       console.log('User not found');
+ *     }
+ *   }
+ * }
+ * ```
+ */
 export enum BetterDrizzleErrorCode {
+	/** `afterCommit()` was called outside a transaction. */
 	AfterCommitOutsideTransaction = 'AFTER_COMMIT_OUTSIDE_TRANSACTION',
+	/** `afterRollback()` was called outside a transaction. */
 	AfterRollbackOutsideTransaction = 'AFTER_ROLLBACK_OUTSIDE_TRANSACTION',
+	/** A database-level error occurred (unique violation, NOT NULL, etc.). */
 	DatabaseError = 'DATABASE_ERROR',
+	/** The SQL dialect could not be inferred from the Drizzle client. */
 	DialectInferenceFailed = 'DIALECT_INFERENCE_FAILED',
+	/** A lifecycle hook threw an error. */
 	HookError = 'HOOK_ERROR',
+	/** An operation (CRUD, query, transaction) failed. */
 	OperationError = 'OPERATION_ERROR',
+	/** A plugin does not support the current SQL dialect. */
 	PluginDialectUnsupported = 'PLUGIN_DIALECT_UNSUPPORTED',
+	/** Two plugins share the same `id`. */
 	PluginDuplicateId = 'PLUGIN_DUPLICATE_ID',
+	/** Two plugins try to add the same client extension property. */
 	PluginExtensionConflict = 'PLUGIN_EXTENSION_CONFLICT',
+	/** Two plugins try to add the same operation arg field. */
 	PluginOperationArgConflict = 'PLUGIN_OPERATION_ARG_CONFLICT',
+	/** A required column is missing on a model. */
 	PluginRequiredColumnMissing = 'PLUGIN_REQUIRED_COLUMN_MISSING',
+	/** `options.comment` is required when `raw.requireComment` is enabled. */
 	RawCommentRequired = 'RAW_COMMENT_REQUIRED',
+	/** A raw query was aborted via `AbortSignal`. */
 	RawAborted = 'RAW_ABORTED',
+	/** Raw SQL is disabled for this client. */
 	RawDisabled = 'RAW_DISABLED',
+	/** The raw SQL input is not a valid tagged template or SQL object. */
 	RawInvalidQuery = 'RAW_INVALID_QUERY',
+	/** A raw query timed out. */
 	RawTimeout = 'RAW_TIMEOUT',
+	/** `$rawUnsafe()` is disabled. Set `raw.allowUnsafe: true` to enable. */
 	RawUnsafeDisabled = 'RAW_UNSAFE_DISABLED',
+	/** The `?` placeholder count does not match the parameter count. */
 	RawUnsafePlaceholderMismatch = 'RAW_UNSAFE_PLACEHOLDER_MISMATCH',
+	/** A raw SQL option is not supported by the current dialect. */
 	RawUnsupportedOption = 'RAW_UNSUPPORTED_OPTION',
+	/** No repository matches the given name. */
 	RepositoryNotFound = 'REPOSITORY_NOT_FOUND',
+	/** A `.throw()` call found no matching record. */
 	ResultNotFound = 'RESULT_NOT_FOUND',
+	/** Internal: the table runtime metadata was not found. */
 	TableRuntimeNotFound = 'TABLE_RUNTIME_NOT_FOUND',
+	/** A transaction was aborted via `AbortSignal` or timeout. */
 	TransactionAborted = 'TRANSACTION_ABORTED',
+	/** Internal: transaction lifecycle state is missing. */
 	TransactionLifecycleStateMissing = 'TRANSACTION_LIFECYCLE_STATE_MISSING',
+	/** Internal: transaction runtime was not initialized. */
 	TransactionRuntimeNotInitialized = 'TRANSACTION_RUNTIME_NOT_INITIALIZED',
+	/** The transaction was explicitly rolled back via `rollback()`. */
 	TransactionRollback = 'TRANSACTION_ROLLBACK',
+	/** The Drizzle client does not support transactions. */
 	TransactionsUnsupported = 'TRANSACTIONS_UNSUPPORTED',
+	/** A transaction timed out. */
 	TransactionTimeout = 'TRANSACTION_TIMEOUT',
+	/** A transaction option is not supported by the current dialect. */
 	TransactionUnsupportedOption = 'TRANSACTION_UNSUPPORTED_OPTION',
+	/** An unknown or uncategorised error occurred. */
 	Unknown = 'UNKNOWN',
 }
 
+/**
+ * Configuration options for creating a {@link BetterDrizzleError}.
+ *
+ * @example
+ * ```ts
+ * const error = new BetterDrizzleError({
+ *   code: BetterDrizzleErrorCode.DatabaseError,
+ *   message: 'Unique constraint violated',
+ *   table: 'users',
+ *   constraint: 'users_email_unique',
+ *   driver: 'pg',
+ *   details: { operation: 'create', userId: 42 },
+ * });
+ * ```
+ */
 export interface BetterDrizzleErrorOptions {
+	/** The error code identifying the error category. */
 	code: BetterDrizzleErrorCode;
+	/** A human-readable error message. */
 	message: string;
+	/** Optional HTTP-like status code (derived from `code` when omitted). */
 	status?: number;
+	/** The detected database driver. */
 	driver?: DatabaseDriver;
+	/** The original error that caused this error. */
 	cause?: unknown;
+	/** The column involved in the error. */
 	column?: string;
+	/** The constraint that was violated. */
 	constraint?: string;
+	/** Additional structured error details. */
 	details?: Record<string, unknown>;
+	/** The SQL dialect in use. */
 	dialect?: string;
+	/** Driver-specific errno value. */
 	errno?: number;
+	/** The name of the hook that failed. */
 	hookName?: string;
+	/** The operation that failed. */
 	operation?: string;
+	/** SQLSTATE code from the database. */
 	sqlState?: string;
+	/** The lifecycle stage where the error occurred. */
 	stage?: string;
+	/** The table involved in the error. */
 	table?: string;
 }
 
@@ -107,21 +196,68 @@ export interface DatabaseErrorInfo {
 	message: string;
 }
 
+/**
+ * The primary error class thrown by Better Drizzle operations.
+ *
+ * Extends `Error` with structured metadata including `code`, `status`,
+ * `driver`, `table`, `column`, `constraint`, and more. Use the static
+ * helpers to normalise external errors into this shape.
+ *
+ * @example
+ * ```ts
+ * import { BetterDrizzleError, BetterDrizzleErrorCode } from 'better-drizzle';
+ *
+ * // Throwing a custom error
+ * throw new BetterDrizzleError({
+ *   code: BetterDrizzleErrorCode.DatabaseError,
+ *   message: 'Unique constraint violated',
+ *   table: 'users',
+ *   constraint: 'users_email_unique',
+ * });
+ *
+ * // Normalising an external error
+ * const betterError = BetterDrizzleError.from(originalError);
+ *
+ * // Checking error type
+ * if (BetterDrizzleError.is(error)) {
+ *   console.log(error.code, error.status);
+ * }
+ * ```
+ */
 export class BetterDrizzleError extends Error {
+	/** The error code identifying the error category. */
 	code: BetterDrizzleErrorCode;
+	/** HTTP-like status code derived from the error code. */
 	status: number;
+	/** The detected database driver, if applicable. */
 	driver?: DatabaseDriver;
+	/** The column involved in the error, if detectable. */
 	column?: string;
+	/** The constraint that was violated, if detectable. */
 	constraint?: string;
+	/** Additional structured error details. */
 	details?: Record<string, unknown>;
+	/** The SQL dialect in use, if known. */
 	dialect?: string;
+	/** Driver-specific errno value, if available. */
 	errno?: number;
+	/** The name of the hook that failed, if the error originated from a hook. */
 	hookName?: string;
+	/** The operation that failed (e.g. `'create'`, `'transaction'`). */
 	operation?: string;
+	/** SQLSTATE code from the database, if available. */
 	sqlState?: string;
+	/** The lifecycle stage where the error occurred (e.g. `'beforeHook'`). */
 	stage?: string;
+	/** The table involved in the error, if detectable. */
 	table?: string;
 
+	/**
+	 * Creates a new `BetterDrizzleError`.
+	 *
+	 * @param options - Error configuration including `code`, `message`, and
+	 *   optional metadata fields.
+	 */
 	constructor(options: BetterDrizzleErrorOptions) {
 		super(options.message, options.cause ? { cause: options.cause } : {});
 
@@ -141,10 +277,51 @@ export class BetterDrizzleError extends Error {
 		this.table = options.table;
 	}
 
+	/**
+	 * Type guard that checks whether a value is a `BetterDrizzleError`.
+	 *
+	 * @param error - The value to check.
+	 * @returns `true` when the value is an instance of `BetterDrizzleError`.
+	 *
+	 * @example
+	 * ```ts
+	 * try {
+	 *   await db.user.findUnique({ where: { id: 1 } }).throw();
+	 * } catch (error) {
+	 *   if (BetterDrizzleError.is(error)) {
+	 *     console.log(error.code); // 'RESULT_NOT_FOUND'
+	 *   }
+	 * }
+	 * ```
+	 */
 	static is(error: unknown): error is BetterDrizzleError {
 		return error instanceof BetterDrizzleError;
 	}
 
+	/**
+	 * Normalises any error value into a `BetterDrizzleError`.
+	 *
+	 * If the input is already a `BetterDrizzleError`, clones it with
+	 * optional overrides. Otherwise, inspects the error for database
+	 * driver information and creates a new instance.
+	 *
+	 * @param error - The original error value.
+	 * @param overrides - Optional fields to override on the resulting error.
+	 * @returns A new `BetterDrizzleError` instance.
+	 *
+	 * @example
+	 * ```ts
+	 * try {
+	 *   await db.insert(users).values(data);
+	 * } catch (error) {
+	 *   const betterError = BetterDrizzleError.from(error, {
+	 *     operation: 'create',
+	 *     table: 'users',
+	 *   });
+	 *   throw betterError;
+	 * }
+	 * ```
+	 */
 	static from(
 		error: unknown,
 		overrides: Partial<BetterDrizzleErrorOptions> = {},
@@ -204,6 +381,28 @@ export class BetterDrizzleError extends Error {
 		});
 	}
 
+	/**
+	 * Normalises a database-specific error into a `BetterDrizzleError`.
+	 *
+	 * Inspects the error for PostgreSQL, SQLite, or MySQL patterns and
+	 * extracts the driver, code, constraint, table, column, and message.
+	 *
+	 * @param error - The raw database error.
+	 * @param overrides - Optional fields to override on the resulting error.
+	 * @returns A new `BetterDrizzleError` with `code: DATABASE_ERROR`.
+	 *
+	 * @example
+	 * ```ts
+	 * try {
+	 *   await db.insert(users).values({ email: 'duplicate@example.com' });
+	 * } catch (error) {
+	 *   const dbError = BetterDrizzleError.fromDatabaseError(error);
+	 *   if (isUniqueViolation(error)) {
+	 *     console.log('Duplicate email:', dbError.constraint);
+	 *   }
+	 * }
+	 * ```
+	 */
 	static fromDatabaseError(
 		error: unknown,
 		overrides: Partial<BetterDrizzleErrorOptions> = {},
@@ -229,10 +428,36 @@ export class BetterDrizzleError extends Error {
 		});
 	}
 
+	/**
+	 * Creates a clone of this error with an additional `cause`.
+	 *
+	 * @param cause - The underlying cause to attach.
+	 * @returns A new `BetterDrizzleError` with the updated cause.
+	 *
+	 * @example
+	 * ```ts
+	 * const original = BetterDrizzleError.from(error);
+	 * const wrapped = original.withCause(new Error('retry failed'));
+	 * ```
+	 */
 	withCause(cause: unknown) {
 		return BetterDrizzleError.from(this, { cause });
 	}
 
+	/**
+	 * Creates a clone of this error with merged detail fields.
+	 *
+	 * @param details - Additional details to merge into the existing details.
+	 * @returns A new `BetterDrizzleError` with the merged details.
+	 *
+	 * @example
+	 * ```ts
+	 * const error = BetterDrizzleError.from(original).withDetails({
+	 *   userId: 123,
+	 *   requestId: 'abc-456',
+	 * });
+	 * ```
+	 */
 	withDetails(details: Record<string, unknown>) {
 		return BetterDrizzleError.from(this, {
 			details: {
@@ -242,6 +467,17 @@ export class BetterDrizzleError extends Error {
 		});
 	}
 
+	/**
+	 * Serialises the error to a plain JSON-safe object.
+	 *
+	 * @returns A plain object with all error fields.
+	 *
+	 * @example
+	 * ```ts
+	 * const error = BetterDrizzleError.from(original);
+	 * console.log(JSON.stringify(error.toJSON()));
+	 * ```
+	 */
 	toJSON() {
 		return {
 			name: this.name,

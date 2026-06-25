@@ -32,6 +32,9 @@ export type DrizzleQueryDelegate = {
  */
 export type InsertBuilderLike = {
 	returning?: () => Promise<Record<string, unknown>[]>;
+	onConflictDoNothing?: (config?: {
+		target?: AnyColumn | AnyColumn[];
+	}) => InsertBuilderLike & Promise<unknown>;
 	onConflictDoUpdate?: (config: {
 		set: Record<string, unknown>;
 		target: AnyColumn | AnyColumn[];
@@ -84,6 +87,9 @@ export type DrizzleLikeDatabase = {
 	all?(query: SQL | SQLWrapper | string): Promise<unknown[]> | unknown[];
 	execute?(query: SQL | SQLWrapper | string): Promise<unknown> | unknown;
 	insert(table: Table): {
+		ignore?(): {
+			values(data: unknown): InsertBuilderLike & Promise<unknown>;
+		};
 		values(data: unknown): InsertBuilderLike & Promise<unknown>;
 	};
 	update(table: Table): {

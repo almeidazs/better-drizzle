@@ -52,6 +52,40 @@ type RelationWhereInput<
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
+ *
+ * @example
+ * ```ts
+ * // Simple equality
+ * const users = await db.user.findMany({
+ *   where: { active: true },
+ * });
+ *
+ * // Comparison operators
+ * const users = await db.user.findMany({
+ *   where: { age: { gte: 18, lt: 65 } },
+ * });
+ *
+ * // Logical combinators
+ * const users = await db.user.findMany({
+ *   where: {
+ *     AND: [{ active: true }, { role: 'admin' }],
+ *   },
+ * });
+ *
+ * // Relation filters (one-to-many)
+ * const users = await db.user.findMany({
+ *   where: {
+ *     posts: { some: { title: { contains: 'TypeScript' } } },
+ *   },
+ * });
+ *
+ * // Relation filters (many-to-one)
+ * const posts = await db.post.findMany({
+ *   where: {
+ *     author: { is: { name: 'Alice' } },
+ *   },
+ * });
+ * ```
  */
 export type WhereInput<
 	Schema extends AnySchema,
@@ -77,6 +111,21 @@ export type WhereInput<
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
+ *
+ * @example
+ * ```ts
+ * import { sql } from 'drizzle-orm';
+ *
+ * // Structured where
+ * const users = await db.user.findMany({
+ *   where: { active: true },
+ * });
+ *
+ * // Raw SQL expression
+ * const users = await db.user.findMany({
+ *   where: sql`active = ${true}`,
+ * });
+ * ```
  */
 export type WhereArg<Schema extends AnySchema, Name extends TableKey<Schema>> =
 	| WhereInput<Schema, Name>
@@ -95,6 +144,24 @@ type SelectRelationArg<
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
+ *
+ * @example
+ * ```ts
+ * // Select specific columns
+ * const users = await db.user.findMany({
+ *   select: { id: true, name: true },
+ * });
+ * // Returns: { id: number; name: string }[]
+ *
+ * // Select columns and relations
+ * const users = await db.user.findMany({
+ *   select: {
+ *     id: true,
+ *     name: true,
+ *     posts: { where: { published: true } },
+ *   },
+ * });
+ * ```
  */
 export type SelectInput<
 	Schema extends AnySchema,
@@ -111,6 +178,21 @@ export type SelectInput<
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
+ *
+ * @example
+ * ```ts
+ * // Include all posts
+ * const users = await db.user.findMany({
+ *   include: { posts: true },
+ * });
+ *
+ * // Include with filter
+ * const users = await db.user.findMany({
+ *   include: {
+ *     posts: { where: { published: true }, orderBy: { createdAt: 'desc' } },
+ *   },
+ * });
+ * ```
  */
 export type IncludeInput<
 	Schema extends AnySchema,
@@ -130,6 +212,19 @@ type OrderByField<
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
+ *
+ * @example
+ * ```ts
+ * // Single field
+ * const users = await db.user.findMany({
+ *   orderBy: { name: 'asc' },
+ * });
+ *
+ * // Multiple fields
+ * const users = await db.user.findMany({
+ *   orderBy: [{ role: 'asc' }, { name: 'desc' }],
+ * });
+ * ```
  */
 export type OrderByInput<
 	Schema extends AnySchema,
@@ -139,6 +234,25 @@ export type OrderByInput<
 /**
  * Custom metadata object attached to every operation. Extend this to carry
  * request-scoped context (e.g. user ID, trace ID) through hooks.
+ *
+ * @example
+ * ```ts
+ * // Pass metadata to operations
+ * await db.user.create({
+ *   data: { name: 'Alice' },
+ *   meta: { userId: 1, requestId: 'abc-123' },
+ * });
+ *
+ * // Access in hooks
+ * const db = better(drizzle, {
+ *   schema,
+ *   hooks: {
+ *     beforeCreate(ctx) {
+ *       console.log(ctx.meta); // { userId: 1, requestId: 'abc-123' }
+ *     },
+ *   },
+ * });
+ * ```
  */
 export type BetterMeta = Record<string, unknown>;
 
@@ -148,6 +262,15 @@ export type BetterMeta = Record<string, unknown>;
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
+ *
+ * @example
+ * ```ts
+ * const users = await db.user.findMany({
+ *   orderBy: { createdAt: 'desc' },
+ *   cursor: { createdAt: new Date('2024-01-01') },
+ *   take: 10,
+ * });
+ * ```
  */
 export type CursorInput<
 	Schema extends AnySchema,
@@ -162,6 +285,29 @@ export type CursorInput<
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ *
+ * @example
+ * ```ts
+ * const users = await db.user.findMany({
+ *   where: { active: true },
+ *   select: { id: true, name: true },
+ *   orderBy: { name: 'asc' },
+ *   take: 10,
+ *   skip: 0,
+ * });
+ *
+ * // With relations
+ * const users = await db.user.findMany({
+ *   include: { posts: { where: { published: true } } },
+ * });
+ *
+ * // Cursor-based
+ * const users = await db.user.findMany({
+ *   where: { createdAt: { gt: lastDate } },
+ *   orderBy: { createdAt: 'desc' },
+ *   take: 10,
+ * });
+ * ```
  */
 export interface QueryArgs<
 	Schema extends AnySchema,
@@ -187,11 +333,22 @@ export interface QueryArgs<
 }
 
 /**
- * Arguments for the count operation.
+ * Arguments for the `count` operation.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ *
+ * @example
+ * ```ts
+ * // Count all rows
+ * const total = await db.user.count();
+ *
+ * // Count with filter
+ * const activeCount = await db.user.count({
+ *   where: { active: true },
+ * });
+ * ```
  */
 export type CountArgs<
 	Schema extends AnySchema,
@@ -200,12 +357,19 @@ export type CountArgs<
 > = Pick<QueryArgs<Schema, Name, Meta>, 'where' | 'cursor' | 'meta'>;
 
 /**
- * Arguments for the exists operation.
+ * Arguments for the `exists` operation.
  * Identical in shape to {@link CountArgs}.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ *
+ * @example
+ * ```ts
+ * const hasAdmin = await db.user.exists({
+ *   where: { role: 'admin' },
+ * });
+ * ```
  */
 export type ExistsArgs<
 	Schema extends AnySchema,
@@ -214,12 +378,30 @@ export type ExistsArgs<
 > = CountArgs<Schema, Name, Meta>;
 
 /**
- * Arguments for the paginate operation.
+ * Arguments for the `paginate` operation.
  * Combines {@link QueryArgs} with pagination-specific options.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ *
+ * @example
+ * ```ts
+ * // Offset pagination
+ * const page = await db.user.paginate({
+ *   limit: 10,
+ *   orderBy: { name: 'asc' },
+ *   where: { active: true },
+ * });
+ *
+ * // Cursor pagination
+ * const page = await db.user.paginate({
+ *   type: PaginationType.Cursor,
+ *   limit: 10,
+ *   after: lastCursor,
+ *   orderBy: { createdAt: 'desc' },
+ * });
+ * ```
  */
 export type PaginationArgs<
 	Schema extends AnySchema,

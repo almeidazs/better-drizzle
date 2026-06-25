@@ -42,9 +42,30 @@ export type ThrowFactory = () => unknown;
  * making it convenient for operations that must always return a record.
  *
  * @typeParam T - The non-null result type.
+ *
+ * @example
+ * ```ts
+ * // Resolve to null when not found
+ * const user = await db.user.findFirst({ where: { id: 1 } });
+ * if (user) { /* handle found user *\/ }
+ *
+ * // Throw when not found
+ * const user = await db.user.findFirst({ where: { id: 1 } }).throw();
+ *
+ * // Custom error factory
+ * const user = await db.user.findFirst({ where: { id: 1 } }).throw(
+ *   () => new Error('User not found')
+ * );
+ * ```
  */
 export type ThrowingResult<T> = Promise<T | null> & {
+	/** Throws a `BetterDrizzleError` with code `RESULT_NOT_FOUND` when the result is `null`. */
 	throw(): Promise<import('./utils').NonNullish<T>>;
+	/**
+	 * Throws the error returned by the factory function when the result is `null`.
+	 *
+	 * @param factory - A function that returns the error to throw.
+	 */
 	throw(factory: ThrowFactory): Promise<import('./utils').NonNullish<T>>;
 };
 
@@ -53,6 +74,14 @@ export type ThrowingResult<T> = Promise<T | null> & {
  *
  * @typeParam T - The row type returned by the operation (may be `never` when
  *   the database driver does not support `RETURNING`).
+ *
+ * @example
+ * ```ts
+ * const result = await db.user.createMany({
+ *   data: [{ name: 'A' }, { name: 'B' }],
+ * });
+ * console.log(result.count); // 2
+ * ```
  */
 export interface BatchResult<T> {
 	/** Number of rows affected by the operation. */
@@ -62,11 +91,60 @@ export interface BatchResult<T> {
 }
 
 /**
- * Arguments for the create operation.
+ * Column name that can be used as a duplicate-skip target for a specific table.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ */
+export type SkipDuplicatesColumn<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = Extract<keyof InsertModelFor<Schema, Name>, string>;
+
+/**
+ * Duplicate-skip option for `create` and `createMany` operations.
+ *
+ * - `true` ignores duplicate conflicts for any supported unique target.
+ * - `readonly ColumnName[]` ignores duplicates only for the specified columns
+ *   when the dialect supports explicit conflict targets.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ *
+ * @example
+ * ```ts
+ * await db.user.create({
+ *   data: { email: 'alice@example.com', name: 'Alice' },
+ *   skipDuplicates: true,
+ * });
+ *
+ * await db.user.create({
+ *   data: { email: 'alice@example.com', name: 'Alice' },
+ *   skipDuplicates: ['email'],
+ * });
+ * ```
+ */
+export type SkipDuplicatesOption<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = boolean | readonly SkipDuplicatesColumn<Schema, Name>[];
+
+/**
+ * Arguments for the `create` operation.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ *
+ * @example
+ * ```ts
+ * const args: CreateArgs<typeof schema, 'user'> = {
+ *   data: { name: 'Alice', email: 'alice@example.com' },
+ *   skipDuplicates: true,
+ *   select: { id: true, name: true },
+ *   meta: { requestId: 'abc-123' },
+ * };
+ * ```
  */
 export interface CreateArgs<
 	Schema extends AnySchema,
@@ -75,6 +153,8 @@ export interface CreateArgs<
 > {
 	/** The row data to insert. */
 	data: InsertModelFor<Schema, Name>;
+	/** Optional duplicate-skip handling for unique / primary key violations. */
+	skipDuplicates?: SkipDuplicatesOption<Schema, Name>;
 	/** Optional column / relation projection for the returned row. */
 	select?: SelectInput<Schema, Name>;
 	/** Optional relation-only projection for the returned row. */
@@ -84,11 +164,20 @@ export interface CreateArgs<
 }
 
 /**
- * Arguments for the update operation.
+ * Arguments for the `update` operation.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ *
+ * @example
+ * ```ts
+ * const args: UpdateArgs<typeof schema, 'user'> = {
+ *   where: { id: 1 },
+ *   data: { name: 'Bob' },
+ *   select: { id: true, name: true },
+ * };
+ * ```
  */
 export interface UpdateArgs<
 	Schema extends AnySchema,
@@ -108,11 +197,22 @@ export interface UpdateArgs<
 }
 
 /**
- * Arguments for the createMany operation.
+ * Arguments for the `createMany` operation.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ *
+ * @example
+ * ```ts
+ * const result = await db.user.createMany({
+ *   data: [
+ *     { name: 'Alice', email: 'alice@example.com' },
+ *     { name: 'Bob', email: 'bob@example.com' },
+ *   ],
+ *   skipDuplicates: true,
+ * });
+ * ```
  */
 export interface CreateManyArgs<
 	Schema extends AnySchema,
@@ -121,6 +221,8 @@ export interface CreateManyArgs<
 > {
 	/** Array of row data to insert. */
 	data: InsertModelFor<Schema, Name>[];
+	/** Optional duplicate-skip handling for unique / primary key violations. */
+	skipDuplicates?: SkipDuplicatesOption<Schema, Name>;
 	/** Optional column / relation projection for returned rows. */
 	select?: SelectInput<Schema, Name>;
 	/** Optional relation-only projection for returned rows. */
@@ -130,11 +232,19 @@ export interface CreateManyArgs<
 }
 
 /**
- * Arguments for the updateMany operation.
+ * Arguments for the `updateMany` operation.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ *
+ * @example
+ * ```ts
+ * const result = await db.user.updateMany({
+ *   where: { role: 'guest' },
+ *   data: { active: false },
+ * });
+ * ```
  */
 export interface UpdateManyArgs<
 	Schema extends AnySchema,
@@ -150,11 +260,18 @@ export interface UpdateManyArgs<
 }
 
 /**
- * Arguments for the deleteMany operation.
+ * Arguments for the `deleteMany` operation.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ *
+ * @example
+ * ```ts
+ * const result = await db.user.deleteMany({
+ *   where: { role: 'guest' },
+ * });
+ * ```
  */
 export interface DeleteManyArgs<
 	Schema extends AnySchema,
@@ -168,11 +285,19 @@ export interface DeleteManyArgs<
 }
 
 /**
- * Arguments for the delete operation.
+ * Arguments for the `delete` operation.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ *
+ * @example
+ * ```ts
+ * const deleted = await db.user.delete({
+ *   where: { id: 1 },
+ *   select: { id: true, name: true },
+ * });
+ * ```
  */
 export interface DeleteArgs<
 	Schema extends AnySchema,
@@ -190,13 +315,23 @@ export interface DeleteArgs<
 }
 
 /**
- * Arguments for the upsert operation.
+ * Arguments for the `upsert` operation.
  * Provides both the create and update payloads alongside a where clause
  * that determines whether to insert or update.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ *
+ * @example
+ * ```ts
+ * const user = await db.user.upsert({
+ *   where: { email: 'alice@example.com' },
+ *   create: { name: 'Alice', email: 'alice@example.com' },
+ *   update: { name: 'Alice Updated' },
+ *   select: { id: true, name: true },
+ * });
+ * ```
  */
 export interface UpsertArgs<
 	Schema extends AnySchema,
@@ -233,8 +368,31 @@ type RepositorySourceKey<
  * The fully-typed client returned by {@link better}. Provides a delegate for
  * every table in the schema plus a unified `repository()` accessor.
  *
+ * Each table key (e.g. `db.user`) exposes a {@link BetterDrizzleModelDelegate}
+ * with all CRUD and query methods. The client also provides raw SQL helpers
+ * (`$raw`, `$executeRaw`, `$rawUnsafe`), a `transaction()` method, and a
+ * `repository()` accessor for dynamic table lookups.
+ *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ * @typeParam Plugins - The plugin tuple provided via `options.plugins`.
+ *
+ * @example
+ * ```ts
+ * import { better } from 'better-drizzle';
+ * import { drizzle } from 'drizzle-orm/better-sqlite3';
+ * import * as schema from './schema';
+ *
+ * const raw = drizzle('file:local.db');
+ * const db = better(raw, { schema });
+ *
+ * // Direct table access
+ * const users = await db.user.findMany({ where: { active: true } });
+ *
+ * // Dynamic repository lookup
+ * const repo = db.repository('user');
+ * const user = await repo.findFirst({ where: { id: 1 } });
+ * ```
  */
 export type BetterDrizzleClient<
 	Schema extends AnySchema,
@@ -242,34 +400,141 @@ export type BetterDrizzleClient<
 	Plugins extends readonly AnyPlugin[] = [],
 > = BetterDrizzleClientByTableWithPlugins<Schema, Meta, Plugins> &
 	ClientExtensionsOf<Plugins> & {
-		/** Executes a safe raw SQL query and returns rows. */
+		/**
+		 * Executes a safe raw SQL query and returns rows.
+		 *
+		 * Accepts a tagged template literal or a Drizzle `sql` object.
+		 * Raw queries bypass model transforms and CRUD hooks.
+		 *
+		 * @typeParam Row - The expected row shape.
+		 * @param query - A tagged template or Drizzle SQL object.
+		 * @param params - Interpolated values when using a tagged template.
+		 * @returns A promise resolving to an array of rows.
+		 *
+		 * @example
+		 * ```ts
+		 * // Tagged template
+		 * const rows = await db.$raw`SELECT * FROM users WHERE id = ${1}`;
+		 *
+		 * // Drizzle sql object
+		 * import { sql } from 'drizzle-orm';
+		 * const rows = await db.$raw(sql`SELECT * FROM users WHERE id = ${1}`);
+		 * ```
+		 */
 		$raw<Row = unknown>(
 			query: TemplateStringsArray,
 			...params: unknown[]
 		): Promise<Row[]>;
-		/** Executes a safe raw SQL query and returns rows. */
+		/**
+		 * Executes a safe raw SQL query and returns rows.
+		 *
+		 * @typeParam Row - The expected row shape.
+		 * @param query - A Drizzle SQL object or SQLWrapper.
+		 * @returns A promise resolving to an array of rows.
+		 *
+		 * @example
+		 * ```ts
+		 * import { sql } from 'drizzle-orm';
+		 * const rows = await db.$raw<{ id: number }>(sql`SELECT id FROM users`);
+		 * ```
+		 */
 		$raw<Row = unknown>(query: RawSql): Promise<Row[]>;
-		/** Executes a safe raw SQL query and returns mapped rows. */
+		/**
+		 * Executes a safe raw SQL query and returns mapped rows.
+		 *
+		 * @typeParam Row - The raw row shape from the driver.
+		 * @typeParam Mapped - The output row shape after mapping.
+		 * @param query - A Drizzle SQL object or SQLWrapper.
+		 * @param options - Raw options including a `map` function.
+		 * @returns A promise resolving to an array of mapped rows.
+		 *
+		 * @example
+		 * ```ts
+		 * import { sql } from 'drizzle-orm';
+		 * const users = await db.$raw(
+		 *   sql`SELECT * FROM users`,
+		 *   { map: (row) => ({ ...row, name: row.name.toUpperCase() }) },
+		 * );
+		 * ```
+		 */
 		$raw<Row = unknown, Mapped = Row>(
 			query: RawSql,
 			options: RawOptions<Row, Mapped>,
 		): Promise<Mapped[]>;
-		/** Executes a safe raw SQL statement and returns a normalized result. */
+		/**
+		 * Executes a safe raw SQL statement (INSERT, UPDATE, DELETE) and
+		 * returns a normalized result with `rowsAffected`.
+		 *
+		 * @param query - A tagged template or Drizzle SQL object.
+		 * @param params - Interpolated values when using a tagged template.
+		 * @returns A promise resolving to `{ rowsAffected: number }`.
+		 *
+		 * @example
+		 * ```ts
+		 * const result = await db.$executeRaw`UPDATE users SET active = ${true}`;
+		 * console.log(result.rowsAffected);
+		 * ```
+		 */
 		$executeRaw(
 			query: TemplateStringsArray,
 			...params: unknown[]
 		): Promise<RawExecutionResult>;
-		/** Executes a safe raw SQL statement and returns a normalized result. */
+		/**
+		 * Executes a safe raw SQL statement and returns a normalized result.
+		 *
+		 * @param query - A Drizzle SQL object or SQLWrapper.
+		 * @param options - Optional raw options.
+		 * @returns A promise resolving to `{ rowsAffected: number }`.
+		 *
+		 * @example
+		 * ```ts
+		 * import { sql } from 'drizzle-orm';
+		 * const result = await db.$executeRaw(sql`DELETE FROM users WHERE active = false`);
+		 * ```
+		 */
 		$executeRaw(
 			query: RawSql,
 			options?: RawOptions,
 		): Promise<RawExecutionResult>;
-		/** Executes a raw SQL string, optionally with parameter bindings. */
+		/**
+		 * Executes a raw SQL string with optional parameter bindings.
+		 *
+		 * **Requires** `raw.allowUnsafe: true` in the client options.
+		 * Use `?` placeholders for parameters.
+		 *
+		 * @typeParam Row - The expected row shape.
+		 * @param query - A raw SQL string with `?` placeholders.
+		 * @param params - Parameter values to bind.
+		 * @returns A promise resolving to an array of rows.
+		 *
+		 * @example
+		 * ```ts
+		 * const users = await db.$rawUnsafe('SELECT * FROM users WHERE id = ?', [1]);
+		 * ```
+		 */
 		$rawUnsafe<Row = unknown>(
 			query: string,
 			params?: unknown[],
 		): Promise<Row[]>;
-		/** Executes a raw SQL string, optionally with parameter bindings, and returns mapped rows. */
+		/**
+		 * Executes a raw SQL string and returns mapped rows.
+		 *
+		 * @typeParam Row - The raw row shape from the driver.
+		 * @typeParam Mapped - The output row shape after mapping.
+		 * @param query - A raw SQL string with `?` placeholders.
+		 * @param params - Parameter values to bind.
+		 * @param options - Raw options including a `map` function.
+		 * @returns A promise resolving to an array of mapped rows.
+		 *
+		 * @example
+		 * ```ts
+		 * const users = await db.$rawUnsafe(
+		 *   'SELECT * FROM users WHERE id = ?',
+		 *   [1],
+		 *   { map: (row) => ({ ...row, name: row.name.toUpperCase() }) },
+		 * );
+		 * ```
+		 */
 		$rawUnsafe<Row = unknown, Mapped = Row>(
 			query: string,
 			params: unknown[] | undefined,
@@ -277,6 +542,31 @@ export type BetterDrizzleClient<
 		): Promise<Mapped[]>;
 		/**
 		 * Runs the callback inside a database transaction and returns its result.
+		 *
+		 * The transaction client passed to the callback is a full
+		 * {@link BetterDrizzleTransactionClient} with `transaction()`, `rollback()`,
+		 * `afterCommit()`, and `afterRollback()` methods.
+		 *
+		 * Nested calls create savepoints automatically.
+		 *
+		 * @typeParam T - The return type of the callback.
+		 * @param callback - A function receiving the transaction client.
+		 * @param options - Optional transaction options (isolation, retries, timeout, etc.).
+		 * @returns A promise resolving to the callback's return value.
+		 *
+		 * @example
+		 * ```ts
+		 * const result = await db.transaction(async (tx) => {
+		 *   const user = await tx.user.findFirst({ where: { id: 1 } });
+		 *   await tx.user.update({ where: { id: 1 }, data: { active: false } });
+		 *   return user;
+		 * });
+		 *
+		 * // With options
+		 * await db.transaction(async (tx) => {
+		 *   // ...
+		 * }, { isolationLevel: 'serializable', timeoutMs: 5000 });
+		 * ```
 		 */
 		transaction<T>(
 			callback: (
@@ -285,11 +575,26 @@ export type BetterDrizzleClient<
 			options?: TransactionOptions,
 		): Promise<T>;
 		/**
-		 * Retrieves the model delegate for the given repository name. The name can
-		 * be either the TypeScript table key or the database table name.
+		 * Retrieves the model delegate for the given repository name.
 		 *
+		 * The name can be either the TypeScript table key (e.g. `"user"`)
+		 * or the database table name (e.g. `"users"`). Throws if no
+		 * matching repository is found.
+		 *
+		 * @typeParam Name - The table key or database name to resolve.
 		 * @param name - Table key or database name.
 		 * @returns The model delegate for the specified table.
+		 *
+		 * @example
+		 * ```ts
+		 * // By TypeScript key
+		 * const userRepo = db.repository('user');
+		 * await userRepo.create({ data: { name: 'Alice' } });
+		 *
+		 * // By database name
+		 * const userRepo = db.repository('users');
+		 * await userRepo.findMany();
+		 * ```
 		 */
 		repository<Name extends RepositoryKey<Schema>>(
 			name: Name,
@@ -319,9 +624,45 @@ type BetterDrizzleClientByTableWithPlugins<
  * Each method is fully typed against the table's select/insert models and the
  * provided query arguments.
  *
+ * Access delegates via direct table keys (e.g. `db.user`) or through
+ * {@link BetterDrizzleClient.repository}.
+ *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ * @typeParam Plugins - The plugin tuple.
+ * @typeParam ModelExtension - Extra properties added by plugins via `extendModel`.
+ *
+ * @example
+ * ```ts
+ * const user = db.user;
+ *
+ * // CRUD
+ * await user.create({ data: { name: 'Alice', email: 'alice@example.com' } });
+ * await user.findMany({ where: { active: true } });
+ * await user.update({ where: { id: 1 }, data: { name: 'Bob' } });
+ * await user.delete({ where: { id: 1 } });
+ *
+ * // Batch operations
+ * await user.createMany({ data: [{ name: 'A' }, { name: 'B' }] });
+ * await user.updateMany({ data: { active: false } });
+ * await user.deleteMany({ where: { role: 'guest' } });
+ *
+ * // Queries
+ * await user.findFirst({ where: { email: 'alice@example.com' } });
+ * await user.findUnique({ where: { id: 1 } });
+ * await user.findOne({ where: { id: 1 } });
+ * await user.count({ where: { active: true } });
+ * await user.exists({ where: { email: 'test@example.com' } });
+ * await user.paginate({ limit: 10, orderBy: { name: 'asc' } });
+ *
+ * // Upsert
+ * await user.upsert({
+ *   where: { id: 1 },
+ *   create: { name: 'Alice', email: 'alice@example.com' },
+ *   update: { name: 'Alice Updated' },
+ * });
+ * ```
  */
 export type BetterDrizzleModelDelegate<
 	Schema extends AnySchema,
@@ -330,19 +671,58 @@ export type BetterDrizzleModelDelegate<
 	Plugins extends readonly AnyPlugin[] = [],
 	ModelExtension extends Record<string, unknown> = ModelExtensionsOf<Plugins>,
 > = {
-	/** Internal model metadata useful for plugins. */
+	/**
+	 * Internal model metadata useful for plugins.
+	 *
+	 * @property dbName - The database table name.
+	 * @property name - The TypeScript table key.
+	 * @method hasColumn - Checks whether a column exists on this table.
+	 */
 	$model: {
 		dbName: string;
+		/** Checks whether a column with the given name exists on this table. */
 		hasColumn(column: string): boolean;
 		name: Name;
 	};
-	/** Ephemeral plugin state carried by cloned delegates. */
+	/**
+	 * Ephemeral plugin state carried by cloned delegates.
+	 *
+	 * Use `$withState()` to create a delegate with merged plugin state,
+	 * and `$withoutPlugins()` to bypass plugin hooks and transforms.
+	 */
 	$state: PluginState;
-	/** Returns a cloned delegate with merged plugin state. */
+	/**
+	 * Returns a cloned delegate with merged plugin state.
+	 *
+	 * Useful when plugins need to carry per-request or per-operation state
+	 * through the delegate without mutating the original.
+	 *
+	 * @param state - Plugin state to merge into the cloned delegate.
+	 * @returns A new delegate with the merged state.
+	 *
+	 * @example
+	 * ```ts
+	 * const traced = db.user.$withState({ traceId: 'abc-123' });
+	 * await traced.findMany(); // plugins can read traceId from state
+	 * ```
+	 */
 	$withState(
 		state: PluginState,
 	): BetterDrizzleModelDelegate<Schema, Name, Meta, Plugins, ModelExtension>;
-	/** Returns a cloned delegate that bypasses plugin hooks and transforms. */
+	/**
+	 * Returns a cloned delegate that bypasses plugin hooks and transforms.
+	 *
+	 * Useful when you need to perform a raw operation without triggering
+	 * plugin logic (e.g. soft-delete filters).
+	 *
+	 * @returns A new delegate with all plugin hooks and transforms disabled.
+	 *
+	 * @example
+	 * ```ts
+	 * // Find all users, including soft-deleted ones
+	 * const allUsers = await db.user.$withoutPlugins().findMany();
+	 * ```
+	 */
 	$withoutPlugins(): BetterDrizzleModelDelegate<
 		Schema,
 		Name,
@@ -350,7 +730,23 @@ export type BetterDrizzleModelDelegate<
 		Plugins,
 		ModelExtension
 	>;
-	/** Counts matching rows. */
+	/**
+	 * Counts the number of matching rows.
+	 *
+	 * @param args - Optional filter and cursor arguments.
+	 * @returns A promise resolving to the count of matching rows.
+	 *
+	 * @example
+	 * ```ts
+	 * // Count all rows
+	 * const total = await db.user.count();
+	 *
+	 * // Count with filter
+	 * const activeCount = await db.user.count({
+	 *   where: { active: true },
+	 * });
+	 * ```
+	 */
 	count(
 		args?: OperationArgsWithPlugins<
 			import('./query').CountArgs<Schema, Name, Meta>,
@@ -358,7 +754,21 @@ export type BetterDrizzleModelDelegate<
 			'count'
 		>,
 	): Promise<number>;
-	/** Returns `true` when at least one matching row exists. */
+	/**
+	 * Returns `true` when at least one matching row exists.
+	 *
+	 * More efficient than `count` when you only need to check existence.
+	 *
+	 * @param args - Optional filter and cursor arguments.
+	 * @returns A promise resolving to `true` if a match exists, `false` otherwise.
+	 *
+	 * @example
+	 * ```ts
+	 * const hasAdmin = await db.user.exists({
+	 *   where: { role: 'admin' },
+	 * });
+	 * ```
+	 */
 	exists(
 		args?: OperationArgsWithPlugins<
 			import('./query').ExistsArgs<Schema, Name, Meta>,
@@ -366,7 +776,43 @@ export type BetterDrizzleModelDelegate<
 			'exists'
 		>,
 	): Promise<boolean>;
-	/** Inserts a single row and returns the created record. */
+	/**
+	 * Inserts a single row and returns the created record.
+	 *
+	 * When `skipDuplicates` is enabled, returns `null` if the insert was
+	 * skipped due to a duplicate conflict. By default, duplicate conflicts
+	 * throw.
+	 *
+	 * @param args - The row data and optional duplicate-skip/select/include options.
+	 * @returns A promise resolving to the created row, or `null` when
+	 *   `skipDuplicates` skips the insert.
+	 *
+	 * @example
+	 * ```ts
+	 * // Basic create
+	 * const user = await db.user.create({
+	 *   data: { name: 'Alice', email: 'alice@example.com' },
+	 * });
+	 *
+	 * // Create with conflict handling
+	 * const user = await db.user.create({
+	 *   data: { id: 1, name: 'Alice' },
+	 *   skipDuplicates: true,
+	 * });
+	 *
+	 * // Create with specific duplicate targets
+	 * const user = await db.user.create({
+	 *   data: { email: 'alice@example.com', name: 'Alice' },
+	 *   skipDuplicates: ['email'],
+	 * });
+	 *
+	 * // Create with relation inclusion
+	 * const user = await db.user.create({
+	 *   data: { name: 'Alice', email: 'alice@example.com' },
+	 *   include: { posts: true },
+	 * });
+	 * ```
+	 */
 	create<
 		Args extends OperationArgsWithPlugins<
 			CreateArgs<Schema, Name, Meta>,
@@ -374,7 +820,33 @@ export type BetterDrizzleModelDelegate<
 			'create'
 		>,
 	>(args: Args): Promise<PayloadForArgs<Schema, Name, Args>>;
-	/** Inserts multiple rows in a single statement. */
+	/**
+	 * Inserts multiple rows in a single statement.
+	 *
+	 * Returns a `BatchResult` with `count` reflecting the number of rows
+	 * actually inserted. When `skipDuplicates` is enabled, skipped rows are not
+	 * counted.
+	 *
+	 * @param args - The array of row data and optional duplicate-skip/select options.
+	 * @returns A promise resolving to `{ count, data? }`.
+	 *
+	 * @example
+	 * ```ts
+	 * const result = await db.user.createMany({
+	 *   data: [
+	 *     { name: 'Alice', email: 'alice@example.com' },
+	 *     { name: 'Bob', email: 'bob@example.com' },
+	 *   ],
+	 * });
+	 * console.log(result.count); // 2
+	 *
+	 * // With conflict handling
+	 * const result = await db.user.createMany({
+	 *   data: [{ name: 'Alice', email: 'alice@example.com' }],
+	 *   skipDuplicates: true,
+	 * });
+	 * ```
+	 */
 	createMany<
 		Args extends OperationArgsWithPlugins<
 			CreateManyArgs<Schema, Name, Meta>,
@@ -382,7 +854,33 @@ export type BetterDrizzleModelDelegate<
 			'createMany'
 		>,
 	>(args: Args): Promise<BatchResult<PayloadForArgs<Schema, Name, Args>>>;
-	/** Inserts a row if no match is found, otherwise updates it. */
+	/**
+	 * Inserts a row if no match is found, otherwise updates it.
+	 *
+	 * Uses native conflict resolution when possible (PostgreSQL, SQLite),
+	 * falling back to a read-then-write strategy on other dialects.
+	 *
+	 * @param args - The where filter, create data, update data, and optional
+	 *   select/include options.
+	 * @returns A promise resolving to the inserted or updated row.
+	 *
+	 * @example
+	 * ```ts
+	 * const user = await db.user.upsert({
+	 *   where: { email: 'alice@example.com' },
+	 *   create: { name: 'Alice', email: 'alice@example.com', role: 'user' },
+	 *   update: { name: 'Alice Updated' },
+	 * });
+	 *
+	 * // With select
+	 * const user = await db.user.upsert({
+	 *   where: { email: 'alice@example.com' },
+	 *   create: { name: 'Alice', email: 'alice@example.com' },
+	 *   update: { name: 'Alice Updated' },
+	 *   select: { id: true, name: true },
+	 * });
+	 * ```
+	 */
 	upsert<
 		Args extends OperationArgsWithPlugins<
 			UpsertArgs<Schema, Name, Meta>,
@@ -390,7 +888,41 @@ export type BetterDrizzleModelDelegate<
 			'upsert'
 		>,
 	>(args: Args): Promise<PayloadForArgs<Schema, Name, Args>>;
-	/** Returns all matching rows. */
+	/**
+	 * Returns all matching rows.
+	 *
+	 * @param args - Optional filter, projection, ordering, and pagination arguments.
+	 * @returns A promise resolving to an array of matching rows.
+	 *
+	 * @example
+	 * ```ts
+	 * // All users
+	 * const users = await db.user.findMany();
+	 *
+	 * // With filter
+	 * const activeUsers = await db.user.findMany({
+	 *   where: { active: true },
+	 * });
+	 *
+	 * // With select (column projection)
+	 * const users = await db.user.findMany({
+	 *   select: { id: true, name: true },
+	 * });
+	 *
+	 * // With relations
+	 * const usersWithPosts = await db.user.findMany({
+	 *   include: { posts: true },
+	 * });
+	 *
+	 * // With ordering and pagination
+	 * const users = await db.user.findMany({
+	 *   where: { role: 'user' },
+	 *   orderBy: { name: 'asc' },
+	 *   take: 10,
+	 *   skip: 0,
+	 * });
+	 * ```
+	 */
 	findMany<
 		Args extends OperationArgsWithPlugins<
 			QueryArgs<Schema, Name, Meta>,
@@ -398,7 +930,38 @@ export type BetterDrizzleModelDelegate<
 			'findMany'
 		>,
 	>(args?: Args): Promise<PayloadForArgs<Schema, Name, Args>[]>;
-	/** Updates a single matching row and returns the updated record. */
+	/**
+	 * Updates a single matching row and returns the updated record.
+	 *
+	 * Returns a `ThrowingResult` – if no row matches, calling `.throw()`
+	 * on the result will throw a `BetterDrizzleError`. Without `.throw()`,
+	 * the result resolves to `null` when no row is found.
+	 *
+	 * @param args - The where filter, partial data, and optional select/include.
+	 * @returns A throwing-aware promise resolving to the updated row or `null`.
+	 *
+	 * @example
+	 * ```ts
+	 * // Update and get result (null if not found)
+	 * const updated = await db.user.update({
+	 *   where: { id: 1 },
+	 *   data: { name: 'Bob' },
+	 * });
+	 *
+	 * // Update or throw if not found
+	 * const updated = await db.user.update({
+	 *   where: { id: 1 },
+	 *   data: { name: 'Bob' },
+	 * }).throw();
+	 *
+	 * // Update with select
+	 * const updated = await db.user.update({
+	 *   where: { id: 1 },
+	 *   data: { name: 'Bob' },
+	 *   select: { id: true, name: true },
+	 * });
+	 * ```
+	 */
 	update<
 		Args extends OperationArgsWithPlugins<
 			UpdateArgs<Schema, Name, Meta>,
@@ -406,7 +969,28 @@ export type BetterDrizzleModelDelegate<
 			'update'
 		>,
 	>(args: Args): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
-	/** Updates all matching rows and returns the affected count. */
+	/**
+	 * Updates all matching rows and returns the affected count.
+	 *
+	 * @param args - Optional filter and partial data. When `where` is omitted,
+	 *   all rows are updated.
+	 * @returns A promise resolving to `{ count }` with the number of affected rows.
+	 *
+	 * @example
+	 * ```ts
+	 * // Deactivate all users
+	 * const result = await db.user.updateMany({
+	 *   data: { active: false },
+	 * });
+	 * console.log(result.count);
+	 *
+	 * // Deactivate only guests
+	 * const result = await db.user.updateMany({
+	 *   where: { role: 'guest' },
+	 *   data: { active: false },
+	 * });
+	 * ```
+	 */
 	updateMany(
 		args: OperationArgsWithPlugins<
 			UpdateManyArgs<Schema, Name, Meta>,
@@ -414,7 +998,26 @@ export type BetterDrizzleModelDelegate<
 			'updateMany'
 		>,
 	): Promise<BatchResult<never>>;
-	/** Returns the first matching row (alias for `findFirst`). */
+	/**
+	 * Returns the first matching row (alias for {@link findFirst}).
+	 *
+	 * Returns a `ThrowingResult` – call `.throw()` to throw when no row is found.
+	 *
+	 * @param args - Optional filter, projection, ordering, and cursor arguments.
+	 * @returns A throwing-aware promise resolving to the first matching row or `null`.
+	 *
+	 * @example
+	 * ```ts
+	 * const user = await db.user.findOne({
+	 *   where: { email: 'alice@example.com' },
+	 * });
+	 *
+	 * // Or throw if not found
+	 * const user = await db.user.findOne({
+	 *   where: { email: 'alice@example.com' },
+	 * }).throw();
+	 * ```
+	 */
 	findOne<
 		Args extends OperationArgsWithPlugins<
 			QueryArgs<Schema, Name, Meta>,
@@ -422,7 +1025,27 @@ export type BetterDrizzleModelDelegate<
 			'findOne'
 		>,
 	>(args?: Args): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
-	/** Returns the first matching row. */
+	/**
+	 * Returns the first matching row.
+	 *
+	 * Returns a `ThrowingResult` – call `.throw()` to throw when no row is found.
+	 *
+	 * @param args - Optional filter, projection, ordering, and cursor arguments.
+	 * @returns A throwing-aware promise resolving to the first matching row or `null`.
+	 *
+	 * @example
+	 * ```ts
+	 * const user = await db.user.findFirst({
+	 *   where: { role: 'admin' },
+	 *   orderBy: { createdAt: 'desc' },
+	 * });
+	 *
+	 * // Throw if not found
+	 * const user = await db.user.findFirst({
+	 *   where: { role: 'admin' },
+	 * }).throw();
+	 * ```
+	 */
 	findFirst<
 		Args extends OperationArgsWithPlugins<
 			QueryArgs<Schema, Name, Meta>,
@@ -430,7 +1053,34 @@ export type BetterDrizzleModelDelegate<
 			'findFirst'
 		>,
 	>(args?: Args): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
-	/** Returns exactly one matching row; throws if not found. */
+	/**
+	 * Returns exactly one matching row; throws if not found.
+	 *
+	 * Unlike `findFirst`, this method always expects exactly one result.
+	 * Returns a `ThrowingResult` – call `.throw()` to throw when no row
+	 * is found, or use it directly for a promise that resolves to the row.
+	 *
+	 * @param args - Filter, projection, ordering, and cursor arguments.
+	 * @returns A throwing-aware promise resolving to the matching row.
+	 *
+	 * @example
+	 * ```ts
+	 * const user = await db.user.findUnique({
+	 *   where: { id: 1 },
+	 * });
+	 *
+	 * // Throw if not found
+	 * const user = await db.user.findUnique({
+	 *   where: { id: 1 },
+	 * }).throw();
+	 *
+	 * // With relations
+	 * const user = await db.user.findUnique({
+	 *   where: { id: 1 },
+	 *   include: { posts: true },
+	 * });
+	 * ```
+	 */
 	findUnique<
 		Args extends OperationArgsWithPlugins<
 			QueryArgs<Schema, Name, Meta>,
@@ -438,7 +1088,34 @@ export type BetterDrizzleModelDelegate<
 			'findUnique'
 		>,
 	>(args: Args): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
-	/** Returns a paginated result set. */
+	/**
+	 * Returns a paginated result set with total count and navigation metadata.
+	 *
+	 * Supports both offset-based and cursor-based pagination strategies.
+	 *
+	 * @param args - Pagination options including `limit`, `orderBy`, and
+	 *   optional `after`/`before` cursors.
+	 * @returns A promise resolving to `{ data, pagination }`.
+	 *
+	 * @example
+	 * ```ts
+	 * // Offset pagination
+	 * const page = await db.user.paginate({
+	 *   limit: 10,
+	 *   orderBy: { name: 'asc' },
+	 * });
+	 * console.log(page.data);        // rows
+	 * console.log(page.pagination);  // { count, hasNext, hasPrevious }
+	 *
+	 * // Cursor pagination
+	 * const page = await db.user.paginate({
+	 *   type: PaginationType.Cursor,
+	 *   limit: 10,
+	 *   after: lastCursor,
+	 *   orderBy: { createdAt: 'desc' },
+	 * });
+	 * ```
+	 */
 	paginate<
 		Args extends OperationArgsWithPlugins<
 			PaginationArgs<Schema, Name, Meta>,
@@ -448,7 +1125,33 @@ export type BetterDrizzleModelDelegate<
 	>(
 		args: Args,
 	): Promise<PaginationResult<PayloadForArgs<Schema, Name, Args>>>;
-	/** Deletes a single matching row and returns the deleted record. */
+	/**
+	 * Deletes a single matching row and returns the deleted record.
+	 *
+	 * Returns a `ThrowingResult` – call `.throw()` to throw when no row is found.
+	 *
+	 * @param args - The where filter and optional select/include options.
+	 * @returns A throwing-aware promise resolving to the deleted row or `null`.
+	 *
+	 * @example
+	 * ```ts
+	 * // Delete and get result
+	 * const deleted = await db.user.delete({
+	 *   where: { id: 1 },
+	 * });
+	 *
+	 * // Delete or throw if not found
+	 * const deleted = await db.user.delete({
+	 *   where: { id: 1 },
+	 * }).throw();
+	 *
+	 * // Delete with select
+	 * const deleted = await db.user.delete({
+	 *   where: { id: 1 },
+	 *   select: { id: true, name: true },
+	 * });
+	 * ```
+	 */
 	delete<
 		Args extends OperationArgsWithPlugins<
 			DeleteArgs<Schema, Name, Meta>,
@@ -456,7 +1159,24 @@ export type BetterDrizzleModelDelegate<
 			'delete'
 		>,
 	>(args: Args): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
-	/** Deletes all matching rows and returns the affected count. */
+	/**
+	 * Deletes all matching rows and returns the affected count.
+	 *
+	 * @param args - Optional filter. When `where` is omitted, all rows are deleted.
+	 * @returns A promise resolving to `{ count }` with the number of deleted rows.
+	 *
+	 * @example
+	 * ```ts
+	 * // Delete all guests
+	 * const result = await db.user.deleteMany({
+	 *   where: { role: 'guest' },
+	 * });
+	 * console.log(result.count);
+	 *
+	 * // Delete all rows (use with caution!)
+	 * const result = await db.user.deleteMany({});
+	 * ```
+	 */
 	deleteMany(
 		args: OperationArgsWithPlugins<
 			DeleteManyArgs<Schema, Name, Meta>,
@@ -480,12 +1200,20 @@ export type BetterTableConfig<
 /**
  * Union of all valid table keys in the schema.
  *
+ * Use this to constrain generic parameters that accept a table name.
+ *
  * @typeParam Schema - The Drizzle schema type.
+ *
+ * @example
+ * ```ts
+ * type TableName = BetterTableKey<typeof schema>; // 'user' | 'post' | ...
+ * ```
  */
 export type BetterTableKey<Schema extends AnySchema> = TableKey<Schema>;
 
 /**
- * Singularised alias of each table key (e.g. `"users"` -> `"user"`).
+ * Singularised alias of each table key in the schema. For example,
+ * `"users"` becomes `"user"`.
  *
  * @typeParam Schema - The Drizzle schema type.
  */
@@ -496,6 +1224,11 @@ export type BetterAliasKey<Schema extends AnySchema> =
  * Valid repository keys: either the TypeScript table key or the database name.
  *
  * @typeParam Schema - The Drizzle schema type.
+ *
+ * @example
+ * ```ts
+ * type Keys = BetterRepositoryKey<typeof schema>; // 'user' | 'users' | ...
+ * ```
  */
 export type BetterRepositoryKey<Schema extends AnySchema> =
 	RepositoryKey<Schema>;
@@ -517,10 +1250,17 @@ export type BetterTableRelations<
 export type BetterRelationalConfig = TableRelationalConfig;
 
 /**
- * The select model (row type) for a specific table.
+ * The select model (row type) for a specific table. This is the shape
+ * of a row returned from queries on the given table.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
+ *
+ * @example
+ * ```ts
+ * type UserRow = BetterRecord<typeof schema, 'user'>;
+ * // { id: number; name: string; email: string; ... }
+ * ```
  */
 export type BetterRecord<
 	Schema extends AnySchema,

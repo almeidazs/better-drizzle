@@ -1,5 +1,14 @@
 /**
  * Result returned by update operations that report the number of affected rows.
+ *
+ * @example
+ * ```ts
+ * const result = await db.user.updateMany({
+ *   where: { role: 'guest' },
+ *   data: { active: false },
+ * });
+ * console.log(result.count); // number of updated rows
+ * ```
  */
 export interface UpdateResult {
 	/** Number of rows that were modified. */
@@ -8,6 +17,14 @@ export interface UpdateResult {
 
 /**
  * Result returned by delete operations that report the number of affected rows.
+ *
+ * @example
+ * ```ts
+ * const result = await db.user.deleteMany({
+ *   where: { role: 'guest' },
+ * });
+ * console.log(result.count); // number of deleted rows
+ * ```
  */
 export interface DeleteResult {
 	/** Number of rows that were deleted. */
@@ -18,6 +35,18 @@ export interface DeleteResult {
  * Paginated result wrapping a list of rows alongside navigation metadata.
  *
  * @typeParam Columns - The shape of each row in the result set.
+ *
+ * @example
+ * ```ts
+ * const page = await db.user.paginate({
+ *   limit: 10,
+ *   orderBy: { name: 'asc' },
+ * });
+ *
+ * console.log(page.data);           // User[]
+ * console.log(page.pagination.count); // total matching rows
+ * console.log(page.pagination.hasNext); // true if more pages exist
+ * ```
  */
 export interface PaginationResult<Columns extends Record<string, unknown>> {
 	/** The page of data. */
@@ -35,6 +64,20 @@ export interface PaginationResult<Columns extends Record<string, unknown>> {
 
 /**
  * Strategy used for pagination.
+ *
+ * - `PaginationType.Cursor` – cursor-based pagination using opaque boundary tokens.
+ * - `PaginationType.Offset` – traditional offset-based (skip / limit) pagination.
+ *
+ * @example
+ * ```ts
+ * import { PaginationType } from 'better-drizzle';
+ *
+ * const page = await db.user.paginate({
+ *   type: PaginationType.Cursor,
+ *   limit: 10,
+ *   after: lastCursor,
+ * });
+ * ```
  */
 export enum PaginationType {
 	/** Cursor-based pagination using opaque boundary tokens. */

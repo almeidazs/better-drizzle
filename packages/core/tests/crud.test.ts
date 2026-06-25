@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 
+import { BetterDrizzleErrorCode } from '../src';
 import { createTestContext, type TestContext } from './setup';
 
 let ctx: TestContext;
@@ -108,6 +109,88 @@ describe('create', () => {
 			}),
 		).rejects.toThrow();
 	});
+
+	test('create ignores duplicate conflicts when skipDuplicates is true', async () => {
+		const result = await ctx.better.users.create({
+			data: {
+				id: 205,
+				email: 'alice@example.com',
+				name: 'Ignored',
+				age: 44,
+				active: true,
+			},
+			skipDuplicates: true,
+		});
+
+		expect(result).toBeNull();
+	});
+
+	test('create inserts normally when skipDuplicates is true and no conflict exists', async () => {
+		const result = await ctx.better.users.create({
+			data: {
+				id: 206,
+				email: 'ignore-ok@example.com',
+				name: 'Ignore Ok',
+				age: 31,
+				active: true,
+			},
+			skipDuplicates: true,
+		});
+
+		expect(result).toEqual({
+			id: 206,
+			email: 'ignore-ok@example.com',
+			name: 'Ignore Ok',
+			age: 31,
+			active: true,
+		});
+	});
+
+	test('create ignores conflicts on explicit targets', async () => {
+		const result = await ctx.better.users.create({
+			data: {
+				id: 207,
+				email: 'bob@example.com',
+				name: 'Target Ignore',
+				age: 29,
+				active: false,
+			},
+			skipDuplicates: ['email'],
+		});
+
+		expect(result).toBeNull();
+	});
+
+	test('create still throws by default when skipDuplicates is not set', async () => {
+		expect(
+			ctx.better.users.create({
+				data: {
+					id: 208,
+					email: 'charlie@example.com',
+					name: 'Target Throw',
+					age: 40,
+					active: true,
+				},
+			}),
+		).rejects.toThrow();
+	});
+
+	test('create rejects invalid skipDuplicates targets', async () => {
+		await expect(
+			ctx.better.users.create({
+				data: {
+					id: 209,
+					email: 'invalid-target@example.com',
+					name: 'Invalid Target',
+					age: 26,
+					active: true,
+				},
+				skipDuplicates: ['missing'] as unknown as ['email'],
+			}),
+		).rejects.toMatchObject({
+			code: BetterDrizzleErrorCode.OperationError,
+		});
+	});
 });
 
 describe('createMany', () => {
@@ -161,6 +244,65 @@ describe('createMany', () => {
 		expect(result.data?.length).toBe(2);
 		expect(result.data?.[0]).toEqual({ id: 203, name: 'M3' });
 		expect(result.data?.[1]).toEqual({ id: 204, name: 'M4' });
+	});
+
+	test('createMany counts only inserted rows when conflicts are ignored', async () => {
+		const result = await ctx.better.users.createMany({
+			data: [
+				{
+					id: 210,
+					email: 'diana@example.com',
+					name: 'Ignored Batch',
+					age: 41,
+					active: true,
+				},
+				{
+					id: 211,
+					email: 'batch-inserted@example.com',
+					name: 'Inserted Batch',
+					age: 24,
+					active: false,
+				},
+			],
+			skipDuplicates: true,
+		});
+
+		expect(result.count).toBe(1);
+		expect(result.data).toBeDefined();
+		expect(result.data?.length).toBe(1);
+		expect(result.data?.[0]).toEqual({
+			id: 211,
+			email: 'batch-inserted@example.com',
+			name: 'Inserted Batch',
+			age: 24,
+			active: false,
+		});
+	});
+
+	test('createMany keeps projection for inserted rows when conflicts are ignored', async () => {
+		const result = await ctx.better.users.createMany({
+			data: [
+				{
+					id: 212,
+					email: 'eve@example.com',
+					name: 'Ignored Projected',
+					age: 32,
+					active: false,
+				},
+				{
+					id: 213,
+					email: 'projected-inserted@example.com',
+					name: 'Projected Inserted',
+					age: 27,
+					active: true,
+				},
+			],
+			skipDuplicates: ['email'],
+			select: { id: true, name: true },
+		});
+
+		expect(result.count).toBe(1);
+		expect(result.data).toEqual([{ id: 213, name: 'Projected Inserted' }]);
 	});
 });
 
