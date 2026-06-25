@@ -217,6 +217,13 @@ export type NonNullish<T> = Exclude<T, null | undefined>;
 
 /**
  * Sort direction for ordering results.
+ *
+ * @example
+ * ```ts
+ * const users = await db.user.findMany({
+ *   orderBy: { name: 'asc' },
+ * });
+ * ```
  */
 export type SortOrder = 'asc' | 'desc';
 
@@ -224,6 +231,15 @@ export type SortOrder = 'asc' | 'desc';
  * Query mode controlling case sensitivity for string comparisons.
  * - `'default'` — case-sensitive
  * - `'insensitive'` — case-insensitive
+ *
+ * @example
+ * ```ts
+ * const users = await db.user.findMany({
+ *   where: {
+ *     name: { contains: 'alice', mode: 'insensitive' },
+ *   },
+ * });
+ * ```
  */
 export type QueryMode = 'default' | 'insensitive';
 
@@ -232,15 +248,34 @@ export type QueryMode = 'default' | 'insensitive';
  * pattern matching, and case-insensitive mode.
  *
  * @typeParam T - The string column type.
+ *
+ * @example
+ * ```ts
+ * const users = await db.user.findMany({
+ *   where: {
+ *     name: { contains: 'alice', mode: 'insensitive' },
+ *     email: { endsWith: '@example.com' },
+ *     role: { in: ['admin', 'moderator'] },
+ *   },
+ * });
+ * ```
  */
 export type StringFilter<T> = {
+	/** Exact match. */
 	equals?: T;
+	/** Match any value in the array. */
 	in?: T[];
+	/** Match none of the values in the array. */
 	notIn?: T[];
+	/** Substring match. */
 	contains?: string;
+	/** Prefix match. */
 	startsWith?: string;
+	/** Suffix match. */
 	endsWith?: string;
+	/** Case sensitivity mode. */
 	mode?: QueryMode;
+	/** Negation filter. */
 	not?: T | Omit<StringFilter<T>, 'not'>;
 };
 
@@ -249,15 +284,34 @@ export type StringFilter<T> = {
  * Supports equality, membership, and range comparisons.
  *
  * @typeParam T - The comparable column type.
+ *
+ * @example
+ * ```ts
+ * const users = await db.user.findMany({
+ *   where: {
+ *     age: { gte: 18, lt: 65 },
+ *     score: { gt: 90 },
+ *     createdAt: { gte: new Date('2024-01-01') },
+ *   },
+ * });
+ * ```
  */
 export type ComparableFilter<T> = {
+	/** Exact match. */
 	equals?: T;
+	/** Match any value in the array. */
 	in?: T[];
+	/** Match none of the values in the array. */
 	notIn?: T[];
+	/** Less than. */
 	lt?: T;
+	/** Less than or equal. */
 	lte?: T;
+	/** Greater than. */
 	gt?: T;
+	/** Greater than or equal. */
 	gte?: T;
+	/** Negation filter. */
 	not?: T | Omit<ComparableFilter<T>, 'not'>;
 };
 
@@ -265,9 +319,18 @@ export type ComparableFilter<T> = {
  * Filter operators for boolean columns.
  *
  * @typeParam T - The boolean column type.
+ *
+ * @example
+ * ```ts
+ * const users = await db.user.findMany({
+ *   where: { active: true },
+ * });
+ * ```
  */
 export type BooleanFilter<T> = {
+	/** Exact match. */
 	equals?: T;
+	/** Negation filter. */
 	not?: T | Omit<BooleanFilter<T>, 'not'>;
 };
 
@@ -278,6 +341,18 @@ export type BooleanFilter<T> = {
  * simple equality filter for everything else.
  *
  * @typeParam T - The scalar column type.
+ *
+ * @example
+ * ```ts
+ * // Automatically resolves to the correct filter type
+ * const users = await db.user.findMany({
+ *   where: {
+ *     name: 'Alice',              // StringFilter
+ *     age: { gte: 18 },           // ComparableFilter
+ *     active: true,               // BooleanFilter
+ *   },
+ * });
+ * ```
  */
 export type ScalarFilter<T> =
 	NonNullish<T> extends string
@@ -297,6 +372,17 @@ export type ScalarFilter<T> =
  * column is nullable.
  *
  * @typeParam T - The scalar column type.
+ *
+ * @example
+ * ```ts
+ * const users = await db.user.findMany({
+ *   where: {
+ *     name: 'Alice',                  // raw value (equality)
+ *     age: { gte: 18, lt: 65 },       // filter object
+ *     deletedAt: null,                 // null check
+ *   },
+ * });
+ * ```
  */
 export type ScalarWhereField<T> =
 	| T

@@ -807,6 +807,35 @@ export type RawErrorHookContext<
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ *
+ * @example
+ * ```ts
+ * import { better } from 'better-drizzle';
+ * import { drizzle } from 'drizzle-orm/better-sqlite3';
+ * import * as schema from './schema';
+ *
+ * const raw = drizzle('file:local.db');
+ *
+ * const db = better(raw, {
+ *   schema,
+ *   plugins: [myPlugin],
+ *   hooks: {
+ *     beforeCreate(ctx) {
+ *       console.log('Creating on table:', ctx.table);
+ *     },
+ *     afterQuery(ctx) {
+ *       console.log('Query result:', ctx.result);
+ *     },
+ *   },
+ *   raw: {
+ *     enabled: true,
+ *     allowUnsafe: false,
+ *   },
+ *   transaction: {
+ *     unsupportedOptions: 'warn',
+ *   },
+ * });
+ * ```
  */
 export interface BetterClientOptions<
 	Schema extends AnySchema,
@@ -834,6 +863,31 @@ export interface BetterClientOptions<
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ * @typeParam Plugins - The plugin tuple.
+ *
+ * @example
+ * ```ts
+ * const db = better(drizzle, {
+ *   schema,
+ *   hooks: {
+ *     beforeCreate(ctx) {
+ *       console.log('Creating on:', ctx.table, ctx.args.data);
+ *     },
+ *     afterCreate(ctx) {
+ *       console.log('Created:', ctx.result);
+ *     },
+ *     beforeQuery(ctx) {
+ *       console.log('Querying:', ctx.table, ctx.action);
+ *     },
+ *     afterQuery(ctx) {
+ *       console.log('Query result:', ctx.result);
+ *     },
+ *     onError(ctx) {
+ *       console.error('Error in', ctx.action, ':', ctx.error);
+ *     },
+ *   },
+ * });
+ * ```
  */
 export interface BetterClientHooks<
 	Schema extends AnySchema,

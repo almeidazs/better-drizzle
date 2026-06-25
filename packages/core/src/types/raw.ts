@@ -5,6 +5,19 @@ import type { SQL, SQLWrapper } from 'drizzle-orm';
  *
  * @typeParam Row - Input row shape returned by the driver before mapping.
  * @typeParam Mapped - Output row shape returned after `map()` runs.
+ *
+ * @example
+ * ```ts
+ * const users = await db.$raw(
+ *   sql`SELECT * FROM users WHERE active = ${true}`,
+ *   {
+ *     name: 'active-users',
+ *     comment: 'Fetch active users',
+ *     timeoutMs: 5000,
+ *     map: (row) => ({ ...row, name: row.name.toUpperCase() }),
+ *   },
+ * );
+ * ```
  */
 export type RawOptions<Row = unknown, Mapped = Row> = {
 	/**
@@ -12,7 +25,7 @@ export type RawOptions<Row = unknown, Mapped = Row> = {
 	 */
 	name?: string;
 	/**
-	 * Optional SQL comment metadata.
+	 * Optional SQL comment metadata. Only supported on PostgreSQL.
 	 */
 	comment?: string;
 	/**
@@ -25,12 +38,28 @@ export type RawOptions<Row = unknown, Mapped = Row> = {
 	signal?: AbortSignal;
 	/**
 	 * Optional row mapper applied to each returned row.
+	 *
+	 * @param row - The raw row from the driver.
+	 * @returns The mapped row.
 	 */
 	map?: (row: Row) => Mapped;
 };
 
 /**
- * Global raw SQL configuration.
+ * Global raw SQL configuration. Passed to {@link better} via `options.raw`.
+ *
+ * @example
+ * ```ts
+ * const db = better(drizzle, {
+ *   schema,
+ *   raw: {
+ *     enabled: true,
+ *     allowUnsafe: true,
+ *     requireComment: false,
+ *     timeoutMs: 10000,
+ *   },
+ * });
+ * ```
  */
 export type RawClientOptions = {
 	/** Enables raw SQL methods on the client. Defaults to `true`. */
@@ -49,12 +78,28 @@ export type RawClientOptions = {
 
 /**
  * Normalized result returned by `$executeRaw()`.
+ *
+ * @example
+ * ```ts
+ * const result = await db.$executeRaw`UPDATE users SET active = false`;
+ * console.log(result.rowsAffected); // number of updated rows
+ * ```
  */
 export type RawExecutionResult = {
+	/** The number of rows affected by the statement, when available. */
 	rowsAffected?: number;
 };
 
 /**
  * Safe raw SQL input accepted by `$raw()` and `$executeRaw()`.
+ *
+ * Can be a Drizzle `SQL` instance or any object implementing `getSQL()`.
+ *
+ * @example
+ * ```ts
+ * import { sql } from 'drizzle-orm';
+ * const query = sql`SELECT * FROM users WHERE id = ${1}`;
+ * const rows = await db.$raw(query);
+ * ```
  */
 export type RawSql = SQL | SQLWrapper;
