@@ -122,6 +122,19 @@ const user = await client.users.update({
 	},
 	where: { id: someUser.id },
 });
+
+const maybeCreated = await client.users.create({
+	data: {
+		email: 'better@example.com',
+		id: 124,
+		name: 'better-again',
+	},
+	onConflict: { action: 'ignore', targets: ['email'] },
+});
+
+if (!maybeCreated) {
+	console.log('user already existed');
+}
 ```
 
 <div align="center">

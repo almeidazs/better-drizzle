@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { type AnyColumn, and, eq, isNull, sql } from 'drizzle-orm';
 import { One } from 'drizzle-orm/relations';
 
 import type {
@@ -10,6 +10,7 @@ import type {
 	CreateManyArgs,
 	DeleteArgs,
 	DeleteManyArgs,
+	OnConflictOption,
 	PaginationArgs,
 	QueryArgs,
 	RuntimeContext,
@@ -21,6 +22,7 @@ import type {
 	WhereCompilerContext,
 } from '../../types';
 import { PaginationType } from '../../types';
+import { BetterDrizzleError, BetterDrizzleErrorCode } from '../errors';
 import {
 	buildPaginationQuery,
 	buildQueryConfig,
@@ -30,6 +32,140 @@ import {
 	countRows,
 } from '../query';
 import { getPrimaryKeyWhere, getTableRuntime, isSimpleRecord } from './context';
+
+type ResolvedOnConflict = {
+	action: 'ignore' | 'throw';
+	targets?: string[];
+};
+
+const getOnConflictConfig = <Schema extends AnySchema>(
+	onConflict?: OnConflictOption<Schema, BetterTableKey<Schema>>,
+): ResolvedOnConflict => {
+	if (!onConflict) return { action: 'throw' };
+	if (typeof onConflict === 'string') return { action: onConflict };
+
+	return {
+		action: onConflict.action,
+		targets: onConflict.targets ? [...onConflict.targets] : undefined,
+	};
+};
+
+const getConflictTargetColumns = (
+	runtime: TableRuntime,
+	targets: string[] | undefined,
+) => {
+	if (!targets?.length) return;
+
+	const columns = [];
+
+	for (const target of targets) {
+		const column = runtime.columns[target];
+
+		if (column) {
+			columns.push(column);
+			continue;
+		}
+
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			details: { target },
+			message: `Invalid conflict target "${target}" for table "${runtime.dbName}"`,
+			operation: 'create',
+			table: runtime.dbName,
+		});
+	}
+
+	return columns;
+};
+
+const getConflictTarget = (columns: AnyColumn[] | undefined) => {
+	if (!columns?.length) return;
+	return columns.length === 1 ? columns[0] : columns;
+};
+
+const getAffectedCount = (result: unknown) => {
+	if (typeof result !== 'object' || result === null) return;
+
+	for (const key of ['affectedRows', 'changes', 'rowCount']) {
+		const value = (result as Record<string, unknown>)[key];
+		if (typeof value === 'number' && Number.isFinite(value)) return value;
+	}
+
+	const rowsAffected = (result as Record<string, unknown>).rowsAffected;
+	if (typeof rowsAffected === 'number' && Number.isFinite(rowsAffected))
+		return rowsAffected;
+	if (Array.isArray(rowsAffected)) {
+		let total = 0;
+		let hasValue = false;
+
+		for (const value of rowsAffected) {
+			if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+			total += value;
+			hasValue = true;
+		}
+
+		if (hasValue) return total;
+	}
+};
+
+const getCreateOperationName = (
+	args:
+		| CreateArgs<AnySchema, BetterTableKey<AnySchema>, unknown>
+		| CreateManyArgs<AnySchema, BetterTableKey<AnySchema>, unknown>,
+) => (Array.isArray(args.data) ? 'createMany' : 'create');
+
+const applyInsertOnConflict = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	runtime: TableRuntime,
+	args:
+		| CreateArgs<Schema, BetterTableKey<Schema>, Meta>
+		| CreateManyArgs<Schema, BetterTableKey<Schema>, Meta>,
+) => {
+	const operation = getCreateOperationName(
+		args as CreateArgs<AnySchema, BetterTableKey<AnySchema>, unknown>,
+	);
+	const onConflict = getOnConflictConfig(args.onConflict);
+	const baseBuilder = context.db.insert(runtime.table);
+	const targetColumns = getConflictTargetColumns(runtime, onConflict.targets);
+
+	if (onConflict.action === 'throw')
+		return {
+			builder: baseBuilder.values(args.data),
+			onConflict,
+		};
+
+	if (targetColumns?.length && context.dialect === 'mysql')
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			details: { targets: onConflict.targets },
+			message: `Conflict targets are not supported for onConflict ignore on ${context.dialect}`,
+			operation,
+			table: runtime.dbName,
+		});
+
+	if (typeof baseBuilder.ignore === 'function' && !targetColumns?.length)
+		return {
+			builder: baseBuilder.ignore().values(args.data),
+			onConflict,
+		};
+
+	const builder = baseBuilder.values(args.data);
+	if (typeof builder.onConflictDoNothing === 'function')
+		return {
+			builder: builder.onConflictDoNothing({
+				target: getConflictTarget(targetColumns),
+			}),
+			onConflict,
+		};
+
+	throw new BetterDrizzleError({
+		code: BetterDrizzleErrorCode.OperationError,
+		details: { action: onConflict.action, targets: onConflict.targets },
+		message: `onConflict ignore is not supported for ${context.dialect}`,
+		operation,
+		table: runtime.dbName,
+	});
+};
 
 const hasProjection = (
 	args: { include?: unknown; select?: unknown } | undefined,
@@ -514,7 +650,11 @@ export const createRecord = async <Schema extends AnySchema, Meta>(
 	args: CreateArgs<Schema, BetterTableKey<Schema>, Meta>,
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
-	const builder = context.db.insert(runtime.table).values(args.data);
+	const { builder, onConflict } = applyInsertOnConflict(
+		context,
+		runtime,
+		args,
+	);
 
 	if (typeof builder.returning === 'function') {
 		const rows = await builder.returning();
@@ -524,7 +664,10 @@ export const createRecord = async <Schema extends AnySchema, Meta>(
 		return reloadRecord(context, tableName, created, args);
 	}
 
-	await builder;
+	const result = await builder;
+	if (onConflict.action === 'ignore' && (getAffectedCount(result) ?? 0) === 0)
+		return null;
+
 	return reloadRecord(
 		context,
 		tableName,
@@ -552,19 +695,26 @@ export const createManyRecords = async <Schema extends AnySchema, Meta>(
 	args: CreateManyArgs<Schema, BetterTableKey<Schema>, Meta>,
 ): Promise<BatchResult<Record<string, unknown>>> => {
 	const runtime = getTableRuntime(context, tableName as string);
-	const builder = context.db.insert(runtime.table).values(args.data);
+	const { builder, onConflict } = applyInsertOnConflict(
+		context,
+		runtime,
+		args,
+	);
 
 	if (typeof builder.returning !== 'function') {
-		await builder;
-		return { count: args.data.length };
+		const result = await builder;
+		const count =
+			getAffectedCount(result) ??
+			(onConflict.action === 'throw' ? args.data.length : 0);
+		return { count };
 	}
 
 	const rows = await builder.returning();
-	if (!rows.length) return { count: args.data.length };
-	if (!hasProjection(args)) return { count: args.data.length, data: rows };
+	if (!rows.length) return { count: 0 };
+	if (!hasProjection(args)) return { count: rows.length, data: rows };
 
 	const data = await reloadRecords(context, tableName, rows, args);
-	return { count: args.data.length, data: data.length ? data : undefined };
+	return { count: rows.length, data: data.length ? data : undefined };
 };
 
 /**

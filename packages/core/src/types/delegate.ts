@@ -61,6 +61,23 @@ export interface BatchResult<T> {
 	data?: T[];
 }
 
+export type ConflictAction = 'ignore' | 'throw';
+
+export type ConflictTargetColumn<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = Extract<keyof InsertModelFor<Schema, Name>, string>;
+
+export type OnConflictOption<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> =
+	| ConflictAction
+	| {
+			action: ConflictAction;
+			targets?: readonly ConflictTargetColumn<Schema, Name>[];
+	  };
+
 /**
  * Arguments for the create operation.
  *
@@ -75,6 +92,8 @@ export interface CreateArgs<
 > {
 	/** The row data to insert. */
 	data: InsertModelFor<Schema, Name>;
+	/** Optional conflict handling for unique / primary key violations. */
+	onConflict?: OnConflictOption<Schema, Name>;
 	/** Optional column / relation projection for the returned row. */
 	select?: SelectInput<Schema, Name>;
 	/** Optional relation-only projection for the returned row. */
@@ -121,6 +140,8 @@ export interface CreateManyArgs<
 > {
 	/** Array of row data to insert. */
 	data: InsertModelFor<Schema, Name>[];
+	/** Optional conflict handling for unique / primary key violations. */
+	onConflict?: OnConflictOption<Schema, Name>;
 	/** Optional column / relation projection for returned rows. */
 	select?: SelectInput<Schema, Name>;
 	/** Optional relation-only projection for returned rows. */

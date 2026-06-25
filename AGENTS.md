@@ -72,6 +72,12 @@
   - `paginate`
   - `$withState`
   - `$withoutPlugins`
+- **Create conflict handling**:
+  - `create` and `createMany` accept `onConflict`
+  - supported forms: `'ignore'`, `'throw'`, or `{ action, targets? }`
+  - `onConflict: 'ignore'` makes `create` return `null` when the insert is skipped
+  - `createMany.count` reflects only rows actually inserted when conflicts are ignored
+  - explicit `targets` map to schema column names; targeted ignore is intentionally dialect-sensitive
 - **Client-level lookup**:
   - `repository(name)` resolves by schema key or db table name
 - **Transactions**:
