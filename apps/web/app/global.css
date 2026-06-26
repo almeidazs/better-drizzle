@@ -2,8 +2,8 @@
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
 
-@source '../components/**/*.{ts,tsx}';
-@source '../app/**/*.{ts,tsx}';
+@source "../components/**/*.{ts,tsx}";
+@source "../app/**/*.{ts,tsx}";
 
 /*
  * Brand palette. A single, refined green accent — a nod to Drizzle's green,
@@ -50,7 +50,7 @@
 .shiki,
 .shiki span {
 	color: var(--shiki-light);
-	background-color: transparent !important;
+	background-color: transparent;
 }
 
 .dark .shiki,

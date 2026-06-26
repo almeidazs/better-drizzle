@@ -393,7 +393,6 @@ export default function HomePage() {
 								href="https://x.com/drizzleorm"
 								target="_blank"
 								rel="noreferrer"
-								aria-label="X"
 								className="transition-colors hover:text-fd-foreground"
 							>
 								<svg
@@ -404,6 +403,7 @@ export default function HomePage() {
 								>
 									<path d="M18.901 1.153h3.68l-8.04 9.19L24 22.847h-7.406l-5.8-7.584-6.639 7.584H.474l8.6-9.83L0 1.153h7.594l5.243 6.932 6.064-6.932Zm-1.291 19.492h2.039L6.486 3.24H4.298l13.312 17.405Z" />
 								</svg>
+								<span className="sr-only">X</span>
 							</a>
 						</nav>
 					</div>
