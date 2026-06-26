@@ -12,6 +12,12 @@ setup first, queries second, transactions and hooks after that, plugins when the
 This directory is intentionally documentation-only.
 There are no demo apps here, only copyable examples, patterns, and feature coverage.
 
+For the docs site version of this material, see:
+
+- https://better-drizzle.vercel.app/docs
+- https://better-drizzle.vercel.app/docs/reference/support-matrix
+- https://better-drizzle.vercel.app/docs/guides/migrating-from-drizzle
+
 </div>
 
 ## Reading paths
