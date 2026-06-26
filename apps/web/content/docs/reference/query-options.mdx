@@ -1,0 +1,105 @@
+---
+title: Query options
+description: The full argument surface for reads, projections, ordering, pagination, filter operators, and metadata.
+icon: SlidersHorizontal
+---
+
+This page is the reference for the arguments accepted by reads and (where noted) writes.
+
+## Read arguments
+
+Accepted by `findMany`, `findFirst`, `findOne`, and `findUnique`:
+
+<TypeTable
+	type={{
+		where: {
+			description: 'Filter for which rows qualify. Structured input or a Drizzle SQL fragment.',
+			type: 'WhereInput | SQL',
+		},
+		select: {
+			description: 'Projection: only the listed scalar/relation fields survive. Narrows the result type.',
+			type: 'SelectInput',
+		},
+		include: {
+			description: 'Keep all scalar columns and attach the listed relations.',
+			type: 'IncludeInput',
+		},
+		orderBy: {
+			description: 'Sort order. One field map, or an array for multi-column ordering.',
+			type: '{ [column]: "asc" | "desc" } | [...]',
+		},
+		take: {
+			description: 'Max rows to return. A negative value reverses ordering and takes from the end.',
+			type: 'number',
+		},
+		skip: {
+			description: 'Rows to skip from the start.',
+			type: 'number',
+		},
+		cursor: {
+			description: 'Cursor position (scalar column values) for cursor-style reads.',
+			type: 'CursorInput',
+		},
+		meta: {
+			description: 'Custom metadata forwarded to hooks and plugins.',
+			type: 'Record<string, unknown>',
+		},
+	}}
+/>
+
+`count` and `exists` accept only `where`, `cursor`, and `meta`.
+
+## Filter operators
+
+Operators available inside `where`, by column type. A bare value means `equals`; `null` matches nullable columns.
+
+| Column type | Operators |
+| --- | --- |
+| String | `equals`, `in`, `notIn`, `contains`, `startsWith`, `endsWith`, `mode`, `not` |
+| Number / bigint / Date | `equals`, `in`, `notIn`, `lt`, `lte`, `gt`, `gte`, `not` |
+| Boolean | `equals`, `not` |
+| Logical | `AND`, `OR`, `NOT` |
+| To-one relation | `is`, `isNot` |
+| To-many relation | `some`, `every`, `none` |
+
+`mode` is `'default'` or `'insensitive'` (case-insensitive string matching). See [filters](/docs/querying/filters) and [relations](/docs/querying/relations) for examples.
+
+## Projections
+
+```ts
+// select — narrows, scalars + relations
+{ select: { id: true, author: { select: { name: true } } } }
+
+// include — keeps all scalars, adds relations
+{ include: { author: true } }
+```
+
+A relation value can be `true` or a nested read-args object (with its own `where`, `select`, `orderBy`, `take`). See [selecting fields](/docs/querying/selecting-fields).
+
+## Pagination arguments
+
+`paginate` accepts everything above plus:
+
+<TypeTable
+	type={{
+		type: {
+			description: 'Pagination strategy.',
+			type: 'PaginationType',
+			default: 'PaginationType.Offset',
+		},
+		limit: {
+			description: 'Max rows per page.',
+			type: 'number',
+		},
+		after: {
+			description: 'Cursor token to read rows after (cursor mode).',
+			type: 'CursorInput',
+		},
+		before: {
+			description: 'Cursor token to read rows before (cursor mode).',
+			type: 'CursorInput',
+		},
+	}}
+/>
+
+It returns `{ data, pagination: { count, hasNext, hasPrevious } }`. See [pagination](/docs/querying/pagination).

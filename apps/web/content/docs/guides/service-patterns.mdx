@@ -1,0 +1,64 @@
+---
+title: Service-layer patterns
+description: How to keep services thin and explicit on top of better-drizzle.
+icon: Boxes
+---
+
+better-drizzle works best when the service layer stays thin and explicit. The delegate API already removes the query glue, so services should add *domain meaning*, not re-wrap calls for their own sake.
+
+## A good read
+
+Compose exactly the shape the caller needs, once:
+
+```ts
+export function getUserProfile(userId: number) {
+	return client.users.findUnique({
+		where: { id: userId },
+		include: {
+			posts: {
+				select: { id: true, title: true, published: true },
+			},
+		},
+	});
+}
+```
+
+## A good write
+
+Let `.throw()` carry the not-found decision so the happy path stays linear:
+
+```ts
+export function renameUser(userId: number, name: string) {
+	return client.users
+		.update({ where: { id: userId }, data: { name } })
+		.throw(() => new Error('User not found'));
+}
+```
+
+## A good transactional service
+
+Keep multi-step writes inside a single [transaction](/docs/advanced/transactions):
+
+```ts
+export function createUserAndDraft(input: {
+	email: string;
+	name: string;
+	title: string;
+}) {
+	return client.transaction(async (tx) => {
+		const user = await tx.users.create({
+			data: { email: input.email, name: input.name, active: true },
+		});
+
+		return tx.posts.create({
+			data: { authorId: user.id, title: input.title, published: false },
+		});
+	});
+}
+```
+
+## What to avoid
+
+- wrapping every delegate call in another helper without adding real value
+- hiding query shape so far away that callers cannot see payload cost
+- rebuilding pagination, relation loading, or not-found behavior by hand in every service

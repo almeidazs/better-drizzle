@@ -1,0 +1,103 @@
+---
+title: Pagination
+description: One paginate() API for offset and cursor pagination, returning a consistent data + metadata shape.
+icon: BookOpenText
+---
+
+`paginate()` wraps query execution and navigation metadata in a single call. Every paginated result has the same shape:
+
+```ts
+type PaginationResult<T> = {
+	data: T[];
+	pagination: {
+		count: number;
+		hasNext: boolean;
+		hasPrevious: boolean;
+	};
+};
+```
+
+That consistency is the point: you stop rebuilding `count` / `hasNext` / `hasPrevious` in every service.
+
+## Offset pagination
+
+The default strategy. Use `limit` with `skip` (or `take`):
+
+```ts
+const page = await client.users.paginate({
+	limit: 20,
+	skip: 40,
+	orderBy: [{ id: 'asc' }],
+	where: { active: true },
+});
+
+page.data; // User[]
+page.pagination.count; // total matching rows
+page.pagination.hasNext;
+page.pagination.hasPrevious;
+```
+
+## Cursor pagination
+
+Pass `type: PaginationType.Cursor` and page with `after` / `before`:
+
+```ts
+import { PaginationType } from 'better-drizzle';
+
+const first = await client.users.paginate({
+	type: PaginationType.Cursor,
+	limit: 2,
+	orderBy: [{ id: 'asc' }],
+});
+
+const second = await client.users.paginate({
+	type: PaginationType.Cursor,
+	limit: 2,
+	orderBy: [{ id: 'asc' }],
+	after: { id: first.data.at(-1)?.id },
+});
+```
+
+### Navigating backwards
+
+Flip the order and use `before`:
+
+```ts
+const last = await client.users.paginate({
+	type: PaginationType.Cursor,
+	limit: 2,
+	orderBy: [{ id: 'desc' }],
+});
+
+const previous = await client.users.paginate({
+	type: PaginationType.Cursor,
+	limit: 2,
+	orderBy: [{ id: 'desc' }],
+	before: { id: last.data.at(-1)?.id },
+});
+```
+
+<Callout type="warn" title="Cursor pagination needs a stable order">
+	Always pass a deterministic `orderBy` (typically including a unique column
+	like the primary key) when paginating by cursor, or pages can overlap or skip
+	rows.
+</Callout>
+
+## Pagination with projection
+
+`paginate()` accepts the same `select` / `include` as a normal read:
+
+```ts
+const page = await client.posts.paginate({
+	limit: 10,
+	orderBy: [{ id: 'desc' }],
+	include: { author: true },
+});
+```
+
+## Choosing offset vs cursor
+
+| Strategy | Good for | Trade-off |
+| --- | --- | --- |
+| Offset | admin tables, reporting, simple lists | easy to reason about; weaker on very large, changing datasets |
+| Cursor | feeds, timelines, large mutable datasets | needs stable ordering and cursor discipline |

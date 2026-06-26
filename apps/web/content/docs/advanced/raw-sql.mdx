@@ -1,0 +1,120 @@
+---
+title: Raw SQL
+description: Escape hatches for raw SQL — $raw for reads, $executeRaw for writes, and $rawUnsafe when you opt in.
+icon: Terminal
+---
+
+The delegate API covers routine work; raw SQL covers the rest. better-drizzle keeps the raw surface deliberately explicit and safe by default.
+
+| Method | For | Safety |
+| --- | --- | --- |
+| `$raw` | reads that return rows | parameterized |
+| `$executeRaw` | write statements | parameterized |
+| `$rawUnsafe` | raw string SQL | **off by default** |
+
+## `$raw`
+
+As a tagged template — interpolated values are bound as parameters, not concatenated:
+
+```ts
+const rows = await client.$raw<{ id: number; email: string }>`
+	select id, email
+	from users
+	where active = ${true}
+	order by id asc
+`;
+```
+
+Or with a Drizzle `sql` object:
+
+```ts
+import { sql } from 'drizzle-orm';
+
+const rows = await client.$raw<{ id: number; email: string }>(
+	sql`select id, email from users where email like ${'%@example.com'}`,
+);
+```
+
+## `$executeRaw`
+
+For statements that change data. Returns a normalized result:
+
+```ts
+const result = await client.$executeRaw`
+	update users set active = ${false} where id = ${1}
+`;
+
+result.rowsAffected;
+```
+
+## Row mapping and options
+
+The `sql`-object form of `$raw` accepts options — including a `map` function applied to each row, plus tracing metadata and a timeout:
+
+```ts
+import { sql } from 'drizzle-orm';
+
+const rows = await client.$raw(
+	sql`select id, email from users order by id asc`,
+	{
+		map: (row: { id: number; email: string }) => ({
+			id: row.id,
+			email: row.email.toLowerCase(),
+		}),
+		name: 'users.list.raw',
+		comment: 'raw.users.list',
+		timeoutMs: 5000,
+	},
+);
+```
+
+## `$rawUnsafe`
+
+`$rawUnsafe` runs a raw SQL **string** (with optional bindings). Because it does not enforce parameterization for you, it is blocked unless you explicitly enable it:
+
+```ts
+const client = better(db, {
+	schema,
+	raw: { allowUnsafe: true },
+});
+
+const rows = await client.$rawUnsafe<{ id: number }>(
+	'select id from users where email = ?',
+	['alice@example.com'],
+);
+```
+
+<Callout type="warn" title="Only when you must">
+	Prefer `$raw` / `$executeRaw`. Reach for `$rawUnsafe` only for SQL you cannot
+	express as a tagged template or `sql` object, and never interpolate untrusted
+	input into the string.
+</Callout>
+
+## Requiring comments
+
+For teams that want every raw call tagged for observability, require a `comment` and set defaults globally:
+
+```ts
+const client = better(db, {
+	schema,
+	raw: {
+		requireComment: true,
+		timeoutMs: 3000,
+		unsupportedOptions: 'warn',
+	},
+});
+```
+
+See the [client reference](/docs/reference/client) for every `raw` option.
+
+## When raw is the right call
+
+- database-specific SQL functions, window functions, CTEs
+- reporting queries that read better as SQL
+- one-off statements the delegate API should not try to model
+
+## When to stay on the delegate API
+
+- routine CRUD and relation loading
+- typed filters and pagination
+- anything that would otherwise duplicate projection and payload shaping

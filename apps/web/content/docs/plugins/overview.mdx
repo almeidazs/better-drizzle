@@ -1,0 +1,78 @@
+---
+title: Plugins overview
+description: Package setup logic, query transforms, typed operation args, and reusable client/model extensions — without wrapping better() yourself.
+icon: Blocks
+---
+
+Plugins let you bundle behavior that would otherwise be scattered across services: setup logic, query transforms, lifecycle hooks, extra delegate methods, and even new typed arguments on the built-in operations.
+
+```ts
+import { better } from 'better-drizzle';
+import { timestamps } from '@better-drizzle/timestamps';
+import { softDelete } from '@better-drizzle/soft-delete';
+
+const client = better(db, {
+	schema,
+	plugins: [
+		timestamps({ createdAt: 'createdAt', updatedAt: 'updatedAt' }),
+		softDelete({ column: 'deletedAt' }),
+	],
+});
+
+await client.users.delete({ where: { id: 1 } }); // soft delete
+await client.users.findMany({ deleted: 'only' }); // typed plugin arg
+await client.users.restore({ where: { id: 1 } }); // plugin-added method
+```
+
+## Official plugins
+
+<Cards>
+	<Card title="Timestamps" href="/docs/plugins/timestamps">
+		Manage `createdAt` / `updatedAt` consistently on create, update, and
+		upsert — or stay out of the way when the database owns them.
+	</Card>
+	<Card title="Soft delete" href="/docs/plugins/soft-delete">
+		Turn `delete()` into a recoverable state change, filter deleted rows by
+		default, and add `restore()` helpers.
+	</Card>
+</Cards>
+
+| Plugin | Good fit when | Main behavior |
+| --- | --- | --- |
+| Timestamps | you want managed `createdAt` / `updatedAt` | fills timestamp columns on writes |
+| Soft delete | rows should stay recoverable and hidden by default | rewrites deletes, filters reads, adds restore helpers |
+
+## What a plugin can do
+
+- declare a stable `id`, `name`, `version`, and `description`
+- add **typed operation args** (e.g. `deleted`, `mode`) that flow into transforms and hooks
+- **transform** an operation before it runs (rewrite `where`, inject data, skip it)
+- observe CRUD, query, raw, and transaction **lifecycle hooks**
+- **extend the client** with new top-level methods
+- **extend each delegate** with model-specific helpers
+- carry per-call **state** via `$withState(...)`
+
+See [writing a plugin](/docs/plugins/writing-plugins) for the full API.
+
+## Composition and order
+
+Plugins run in array order. If two plugins transform the same operation, the earlier one runs first:
+
+```ts
+const client = better(db, {
+	schema,
+	plugins: [firstPlugin, secondPlugin],
+});
+```
+
+Order matters when:
+
+- one plugin adds fields another plugin expects
+- one plugin changes a visibility or mode flag
+- a lifecycle hook emits audit events that depend on already-transformed data
+
+<Callout title="Keep plugins narrow">
+	Strong plugins do one thing well — soft delete, timestamps, audit metadata,
+	multitenancy filters, a few model helpers. If a plugin starts replacing most
+	of the repository behavior, it is probably too broad.
+</Callout>

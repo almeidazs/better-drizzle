@@ -1,0 +1,43 @@
+---
+title: Dynamic repositories
+description: Resolve a delegate by name at runtime with repository(), by TypeScript key or database table name.
+icon: Shuffle
+---
+
+When the table is only known at runtime, `client.repository(name)` keeps the call site clean while staying typed.
+
+```ts
+const repo = client.repository('users');
+
+const users = await repo.findMany({
+	where: { active: true },
+});
+```
+
+## Why it exists
+
+It is useful when:
+
+- a generic admin endpoint serves multiple resources
+- a helper receives the model name as a parameter
+- you want to resolve by **TypeScript schema key** *or* by **database table name**
+
+```ts
+async function listByRepository(
+	name: 'users' | 'posts',
+	query: { take?: number },
+) {
+	const repo = client.repository(name);
+	return repo.findMany({ take: query.take ?? 20 });
+}
+```
+
+<Callout title="Both names work">
+	`repository('users')` accepts either the schema key (`users`) or the database
+	table name. The returned delegate is the same one you would get from
+	`client.users`.
+</Callout>
+
+## Rule of thumb
+
+Prefer direct property access (`client.users`) when the table is known statically — it reads better and needs no string. Use `repository()` when dynamic dispatch is the actual requirement.

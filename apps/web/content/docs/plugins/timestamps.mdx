@@ -1,0 +1,116 @@
+---
+title: Timestamps
+description: Automatic createdAt / updatedAt management for better-drizzle, with app-managed and database-managed modes.
+icon: Clock
+---
+
+`@better-drizzle/timestamps` keeps timestamp handling out of your services. It can manage timestamps in application code, or stay out of the way when your database already owns them via defaults, generated columns, or triggers.
+
+## Install
+
+<Tabs items={['npm', 'pnpm', 'yarn', 'bun']}>
+
+<Tab value="npm">
+
+```bash
+npm install @better-drizzle/timestamps
+```
+
+</Tab>
+
+<Tab value="pnpm">
+
+```bash
+pnpm add @better-drizzle/timestamps
+```
+
+</Tab>
+
+<Tab value="yarn">
+
+```bash
+yarn add @better-drizzle/timestamps
+```
+
+</Tab>
+
+<Tab value="bun">
+
+```bash
+bun add @better-drizzle/timestamps
+```
+
+</Tab>
+
+</Tabs>
+
+## Usage
+
+```ts
+import { better } from 'better-drizzle';
+import { timestamps } from '@better-drizzle/timestamps';
+
+const client = better(db, {
+	schema,
+	plugins: [
+		timestamps({
+			createdAt: 'createdAt',
+			updatedAt: 'updatedAt',
+			mode: 'app',
+		}),
+	],
+});
+```
+
+Every option is optional. `timestamps()` with no arguments uses the defaults:
+
+- `createdAt: 'createdAt'`
+- `updatedAt: 'updatedAt'`
+- `mode: 'app'`
+
+## Modes
+
+### `mode: 'app'`
+
+The plugin fills timestamp columns before the database call:
+
+| Operation | Behavior |
+| --- | --- |
+| `create` | sets `createdAt` and `updatedAt` |
+| `createMany` | sets both for each row |
+| `update` | refreshes `updatedAt` |
+| `upsert` | sets both on the create payload, refreshes `updatedAt` on update |
+
+```ts
+const post = await client.posts.create({
+	data: { title: 'Hello' },
+});
+
+post.createdAt; // Date
+post.updatedAt; // Date
+```
+
+### `mode: 'database'`
+
+The plugin becomes a no-op — use it when the database owns timestamps (column defaults like `DEFAULT now()`, `ON UPDATE`, triggers, or generated values):
+
+```ts
+timestamps({ mode: 'database' });
+```
+
+In this mode it adds effectively zero runtime behavior; the database stays the source of truth.
+
+## Custom column names
+
+```ts
+timestamps({
+	createdAt: 'created_at',
+	updatedAt: 'updated_at',
+});
+```
+
+## Behavior details
+
+- Models missing the configured columns are skipped automatically.
+- It only mutates write payloads — reads, filters, and result shapes are untouched.
+- Works the same for single writes, batch writes, and upserts.

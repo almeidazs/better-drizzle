@@ -1,0 +1,136 @@
+---
+title: Hooks
+description: Client lifecycle hooks for auditing, tracing, metrics, and request-scoped logging.
+icon: Webhook
+---
+
+Client hooks are the side-effect layer around Better operations. They are optional — if you do not need them, do not pass them. They are ideal for cross-cutting concerns you do not want duplicated in every call:
+
+- audit trails
+- tracing and metrics
+- authorization checks
+- request-scoped logging
+
+You register hooks when creating the client:
+
+```ts
+const client = better(db, {
+	schema,
+	hooks: {
+		beforeCreate(ctx) {
+			console.log('beforeCreate', ctx.action, ctx.table);
+		},
+		afterCreate(ctx) {
+			console.log('afterCreate', ctx.row);
+		},
+		beforeQuery(ctx) {
+			console.log('beforeQuery', ctx.action, ctx.args.where);
+		},
+		afterQuery(ctx) {
+			console.log('afterQuery', ctx.action, ctx.result);
+		},
+	},
+});
+```
+
+## Available hooks
+
+<Tabs items={['CRUD & query', 'Transaction', 'Raw SQL', 'Errors']}>
+	<Tab value="CRUD & query">
+		- `beforeCreate` / `afterCreate`
+		- `beforeUpdate` / `afterUpdate`
+		- `beforeDelete` / `afterDelete`
+		- `beforeQuery` / `afterQuery`
+
+		Query hooks cover `findMany`, `findFirst`, `findOne`, `findUnique`,
+		`count`, `exists`, and `paginate`. Create/update/delete hooks also fire for
+		the matching half of `upsert`.
+	</Tab>
+	<Tab value="Transaction">
+		- `beforeTransaction`
+		- `afterTransactionCommit`
+		- `afterTransactionRollback`
+		- `onTransactionError`
+	</Tab>
+	<Tab value="Raw SQL">
+		- `beforeRaw`
+		- `afterRaw`
+		- `onRawError`
+	</Tab>
+	<Tab value="Errors">
+		- `onError` — fires when any operation or hook throws, with the `action`,
+		`args`, `error`, and the `stage` it failed in.
+	</Tab>
+</Tabs>
+
+## Request metadata with `meta`
+
+Every operation accepts a `meta` object. Use it to thread request-scoped context into hooks:
+
+```ts
+await client.users.findMany({
+	where: { active: true },
+	meta: { requestId: 'req_123', userId: 'admin_7' },
+});
+```
+
+```ts
+const client = better(db, {
+	schema,
+	hooks: {
+		beforeQuery(ctx) {
+			console.log(ctx.meta?.requestId);
+		},
+	},
+});
+```
+
+## Transaction lifecycle
+
+```ts
+const client = better(db, {
+	schema,
+	hooks: {
+		beforeTransaction(ctx) {
+			console.log('tx start', ctx.name, ctx.depth);
+		},
+		afterTransactionCommit(ctx) {
+			console.log('tx committed', ctx.attempt);
+		},
+		afterTransactionRollback(ctx) {
+			console.log('tx rolled back', ctx.reason);
+		},
+		onTransactionError(ctx) {
+			console.error('tx error', ctx.error);
+		},
+	},
+});
+```
+
+## Raw SQL lifecycle
+
+```ts
+const client = better(db, {
+	schema,
+	hooks: {
+		beforeRaw(ctx) {
+			console.log(ctx.action, ctx.comment, ctx.name);
+		},
+		afterRaw(ctx) {
+			console.log(ctx.result);
+		},
+		onRawError(ctx) {
+			console.error(ctx.query, ctx.error);
+		},
+	},
+});
+```
+
+## Hooks vs plugins
+
+<Callout title="Observe with hooks, change behavior with plugins">
+	Client hooks should **observe and coordinate** — logging, tracing, metrics.
+	If you want to *mutate* an operation (rewrite the `where`, inject fields, add
+	delegate methods, expose typed operation args), that is
+	[plugin](/docs/plugins/writing-plugins) territory.
+</Callout>

@@ -1,0 +1,155 @@
+---
+title: Transactions
+description: Client-level transactions with nested savepoints, explicit rollback, lifecycle callbacks, retries, and options.
+icon: ArrowLeftRight
+---
+
+Transactions live on the **client**, not on individual delegates. The callback receives a full Better client bound to the transaction, so delegates, plugins, hooks, and raw SQL all keep working inside it.
+
+```ts
+const user = await client.transaction(async (tx) => {
+	const created = await tx.users.create({
+		data: { email: 'new@example.com', name: 'New User', active: true },
+	});
+
+	await tx.posts.create({
+		data: { authorId: created.id, title: 'Hello', published: true },
+	});
+
+	return created;
+});
+```
+
+Whatever the callback returns becomes the result of `transaction(...)`. Throwing (or an explicit rollback) aborts and rolls back.
+
+## Nested transactions (savepoints)
+
+A `tx.transaction(...)` inside another opens a **savepoint** that can be rolled back independently of the outer transaction:
+
+```ts
+await client.transaction(async (tx) => {
+	await tx.users.create({
+		data: { id: 1, email: 'a@test.com', name: 'Alice', active: true },
+	});
+
+	try {
+		await tx.transaction(async (nested) => {
+			await nested.users.create({
+				data: { id: 2, email: 'b@test.com', name: 'Bob', active: true },
+			});
+			nested.rollback('nested rollback');
+		});
+	} catch (error) {
+		// only the nested savepoint was rolled back
+	}
+
+	await tx.users.create({
+		data: { id: 3, email: 'c@test.com', name: 'Charlie', active: true },
+	});
+});
+```
+
+## Explicit rollback
+
+Call `tx.rollback(reason)` to abort. It throws, so code after it does not run:
+
+```ts
+await client.transaction(async (tx) => {
+	const exists = await tx.users.exists({
+		where: { email: 'alice@example.com' },
+	});
+
+	if (exists) tx.rollback('email already exists');
+
+	await tx.users.create({
+		data: { email: 'alice@example.com', name: 'Alice', active: true },
+	});
+});
+```
+
+## Lifecycle callbacks
+
+Register side effects that fire after the transaction settles — the right place for "send the email only if the write actually committed":
+
+```ts
+await client.transaction(async (tx) => {
+	tx.afterCommit(() => sendWelcomeEmail());
+	tx.afterRollback(() => cleanupTempFiles());
+
+	await tx.users.create({
+		data: { email: 'x@example.com', name: 'X', active: true },
+	});
+});
+```
+
+## Retries
+
+Automatic retries are opt-in. Configure how many attempts, which failures qualify, and the backoff:
+
+```ts
+await client.transaction(
+	async (tx) => {
+		await tx.users.create({
+			data: { email: 'retry@example.com', name: 'Retry', active: true },
+		});
+	},
+	{
+		retries: {
+			attempts: 3,
+			on: ['deadlock', 'serializationFailure'],
+			delayMs: (attempt) => attempt * 25,
+		},
+	},
+);
+```
+
+`on` accepts `'connectionError'`, `'deadlock'`, and `'serializationFailure'`; it defaults to all three. `delayMs` can be a fixed number or a function of the attempt (1-indexed).
+
+## Options
+
+```ts
+await client.transaction(
+	async (tx) => tx.users.findMany({ take: 10 }),
+	{
+		isolationLevel: 'serializable',
+		readOnly: true,
+		timeoutMs: 1000,
+		name: 'users-list',
+		comment: 'users.list.transaction',
+		context: { requestId: 'req_123' },
+	},
+);
+```
+
+| Option | Purpose |
+| --- | --- |
+| `isolationLevel` | `readUncommitted` · `readCommitted` · `repeatableRead` · `serializable` |
+| `readOnly` | open the transaction read-only |
+| `retries` | automatic retry configuration |
+| `timeoutMs` | abort after a duration |
+| `signal` | an `AbortSignal` that rolls back on abort |
+| `context` | custom context merged into the transaction scope |
+| `name` | name for the transaction / savepoint |
+| `comment` | comment attached to the transaction |
+
+<Callout type="warn" title="SQLite ignores some options">
+	`isolationLevel` and `readOnly` are no-ops on SQLite. You can configure how
+	unsupported options behave (`'warn'` by default, or `'throw'` / `'ignore'`)
+	via the [client's `transaction` config](/docs/reference/client).
+</Callout>
+
+## Raw SQL inside a transaction
+
+Raw methods bind to the transaction-scoped client, so they run inside the same transaction:
+
+```ts
+await client.transaction(async (tx) => {
+	await tx.$executeRaw`update users set active = ${true} where id = ${2}`;
+
+	const rows = await tx.$raw<{ id: number }>`
+		select id from users where active = ${true} order by id asc
+	`;
+});
+```
+
+Plugins and hooks can read `transactionContext` and `isInTransaction` throughout.

@@ -13,6 +13,8 @@
 		"bench": "bun run benchmark/time.ts",
 		"bench:all": "bun run benchmark/time.ts && bun run benchmark/memory.ts",
 		"bench:memory": "bun run benchmark/memory.ts",
+		"docs:dev": "bun run --filter @better-drizzle/web dev",
+		"docs:build": "bun run --filter @better-drizzle/web build",
 		"pack:core": "cd packages/core && npm pack --dry-run",
 		"pack:timestamps": "cd packages/timestamps && npm pack --dry-run",
 		"pack:soft-delete": "cd packages/soft-delete && npm pack --dry-run",

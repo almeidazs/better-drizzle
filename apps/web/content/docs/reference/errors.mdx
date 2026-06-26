@@ -1,0 +1,100 @@
+---
+title: Error helpers
+description: Cross-dialect constraint detection and normalized database error info exported from better-drizzle.
+icon: OctagonAlert
+---
+
+better-drizzle exports helpers that normalize database errors across PostgreSQL, SQLite, and MySQL, so you can classify failures without string-matching driver messages. See [error handling](/docs/advanced/error-handling) for end-to-end usage.
+
+```ts
+import {
+	isDatabaseError,
+	getDatabaseErrorInfo,
+	isUniqueViolation,
+	isForeignKeyViolation,
+	isNotNullViolation,
+	isCheckViolation,
+} from 'better-drizzle';
+```
+
+## Predicates
+
+Each returns a `boolean` and accepts an optional constraint name (or column name, for `isNotNullViolation`) to match a specific one.
+
+| Function | Signature |
+| --- | --- |
+| `isDatabaseError` | `(error: unknown) => boolean` |
+| `isUniqueViolation` | `(error: unknown, constraint?: string) => boolean` |
+| `isForeignKeyViolation` | `(error: unknown, constraint?: string) => boolean` |
+| `isNotNullViolation` | `(error: unknown, column?: string) => boolean` |
+| `isCheckViolation` | `(error: unknown, constraint?: string) => boolean` |
+
+```ts
+try {
+	await client.users.create({ data });
+} catch (error) {
+	if (isUniqueViolation(error, 'users_email_unique')) {
+		// handle duplicate email specifically
+	}
+	throw error;
+}
+```
+
+## `getDatabaseErrorInfo`
+
+Parses any caught error into a normalized object, regardless of driver:
+
+```ts
+const info = getDatabaseErrorInfo(error);
+```
+
+<TypeTable
+	type={{
+		driver: {
+			description: 'Detected driver.',
+			type: '"pg" | "sqlite" | "mysql" | "unknown"',
+		},
+		code: {
+			description: 'Driver-specific error code (e.g. "23505" on PostgreSQL).',
+			type: 'string | undefined',
+		},
+		errno: {
+			description: 'MySQL errno, when present.',
+			type: 'number | undefined',
+		},
+		constraint: {
+			description: 'Constraint name, when detectable.',
+			type: 'string | undefined',
+		},
+		table: {
+			description: 'Table involved, when detectable.',
+			type: 'string | undefined',
+		},
+		column: {
+			description: 'Column involved, when detectable.',
+			type: 'string | undefined',
+		},
+		message: {
+			description: 'The original error message.',
+			type: 'string',
+		},
+	}}
+/>
+
+## `BetterDrizzleTransactionRollbackError`
+
+Thrown when a [transaction](/docs/advanced/transactions) is explicitly rolled back via `tx.rollback(reason)`. The `reason` you pass is available on the error:
+
+```ts
+import { BetterDrizzleTransactionRollbackError } from 'better-drizzle';
+
+try {
+	await client.transaction(async (tx) => {
+		tx.rollback('duplicate email');
+	});
+} catch (error) {
+	if (error instanceof BetterDrizzleTransactionRollbackError) {
+		console.log(error.reason); // 'duplicate email'
+	}
+}
+```

@@ -1,0 +1,186 @@
+---
+title: Framework integration
+description: Where the Better client fits in Bun, Next.js, Express, and Fastify apps.
+icon: Plug
+---
+
+The pattern is the same everywhere: **construct the Drizzle and Better clients once in a shared module, then import that client** into routes and services. Pick your stack:
+
+<Tabs items={['Bun + SQLite', 'Next.js + Postgres', 'Express + Postgres', 'Fastify + Postgres']}>
+
+<Tab value="Bun + SQLite">
+
+The lightest full-stack setup — great for local tools, prototypes, and demos.
+
+```ts title="client.ts"
+import Database from 'bun:sqlite';
+import { better } from 'better-drizzle';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { schema } from './schema';
+
+const sqlite = new Database('app.db');
+const db = drizzle(sqlite, { schema });
+
+export const client = better(db, { schema });
+```
+
+```ts title="server.ts"
+import { client } from './client';
+
+Bun.serve({
+	async fetch(req) {
+		const url = new URL(req.url);
+
+		if (url.pathname === '/users') {
+			const users = await client.users.findMany({
+				orderBy: [{ id: 'desc' }],
+				take: 20,
+			});
+			return Response.json(users);
+		}
+
+		return new Response('Not found', { status: 404 });
+	},
+});
+```
+
+</Tab>
+
+<Tab value="Next.js + Postgres">
+
+Keep client construction in a server-only module and reuse it from route handlers and server actions.
+
+```ts title="lib/db.ts"
+import { better } from 'better-drizzle';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+import { schema } from './schema';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const db = drizzle(pool, { schema });
+
+export const client = better(db, { schema });
+```
+
+```ts title="app/api/posts/route.ts"
+import { client } from '@/lib/db';
+
+export async function GET() {
+	const posts = await client.posts.findMany({
+		include: { author: true },
+		orderBy: [{ id: 'desc' }],
+		take: 10,
+	});
+
+	return Response.json(posts);
+}
+```
+
+```ts title="app/actions.ts"
+'use server';
+
+import { client } from '@/lib/db';
+
+export async function createUserAndPost(input: {
+	email: string;
+	name: string;
+	title: string;
+}) {
+	return client.transaction(async (tx) => {
+		const user = await tx.users.create({
+			data: { email: input.email, name: input.name, active: true },
+		});
+
+		return tx.posts.create({
+			data: { authorId: user.id, title: input.title, published: false },
+		});
+	});
+}
+```
+
+</Tab>
+
+<Tab value="Express + Postgres">
+
+A natural fit when you already have middleware and route modules.
+
+```ts title="client.ts"
+import { better } from 'better-drizzle';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+import { schema } from './schema';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const db = drizzle(pool, { schema });
+
+export const client = better(db, { schema });
+```
+
+```ts title="routes.ts"
+import express from 'express';
+import { client } from './client';
+
+const app = express();
+
+app.get('/users/:id', async (req, res) => {
+	const user = await client.users.findUnique({
+		where: { id: Number(req.params.id) },
+		include: { posts: true },
+		meta: { requestId: req.header('x-request-id') },
+	});
+
+	if (!user) {
+		res.status(404).json({ error: 'User not found' });
+		return;
+	}
+
+	res.json(user);
+});
+```
+
+</Tab>
+
+<Tab value="Fastify + Postgres">
+
+Share the client through a decorator for a plugin-oriented structure.
+
+```ts title="client.ts"
+import { better } from 'better-drizzle';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+import { schema } from './schema';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const db = drizzle(pool, { schema });
+
+export const client = better(db, { schema });
+```
+
+```ts title="db.plugin.ts"
+import fp from 'fastify-plugin';
+import { client } from './client';
+
+export default fp(async (app) => {
+	app.decorate('db', client);
+});
+```
+
+```ts title="routes.ts"
+app.get('/posts', async () => {
+	return app.db.posts.findMany({
+		include: { author: true },
+		orderBy: [{ id: 'desc' }],
+		take: 20,
+	});
+});
+```
+
+</Tab>
+
+</Tabs>
+
+<Callout title="One client, reused">
+	Instantiate the Drizzle and Better clients a single time and import the shared
+	`client` everywhere. That keeps connection pooling sane and gives you one
+	place to add [hooks](/docs/advanced/hooks) and [plugins](/docs/plugins/overview).
+</Callout>

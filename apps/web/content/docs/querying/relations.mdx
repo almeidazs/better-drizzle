@@ -1,0 +1,110 @@
+---
+title: Relations
+description: Load related rows with include and select, and filter by them with some, every, none, is, and isNot.
+icon: Workflow
+---
+
+Relations are where better-drizzle saves the most repetition. Once your Drizzle relations are defined, you can load and filter by related rows with full type inference.
+
+The examples below assume a `users → posts` schema with relations defined (see [getting started](/docs/getting-started)).
+
+## Loading relations
+
+Use [`include`](/docs/querying/selecting-fields) to keep the base row and attach relations:
+
+```ts
+const posts = await client.posts.findMany({
+	include: { author: true },
+	orderBy: [{ id: 'desc' }],
+	take: 10,
+});
+```
+
+Or `select` to also narrow the related fields:
+
+```ts
+const posts = await client.posts.findMany({
+	select: {
+		id: true,
+		title: true,
+		author: { select: { id: true, name: true } },
+	},
+});
+```
+
+## Filtering by related rows
+
+`where` can constrain a row by its relations. The operators depend on the relation's cardinality.
+
+### To-one relations: `is` / `isNot`
+
+For a "belongs to" / "has one" relation, use `is` (and `isNot`) with a nested filter:
+
+```ts
+const posts = await client.posts.findMany({
+	where: {
+		author: {
+			is: { active: true },
+		},
+	},
+	include: { author: true },
+});
+```
+
+### To-many relations: `some` / `every` / `none`
+
+For a "has many" relation, choose the quantifier:
+
+```ts
+// Users who have at least one published post
+const authors = await client.users.findMany({
+	where: {
+		posts: { some: { published: true } },
+	},
+});
+
+// Users with no unpublished posts
+const fullyPublished = await client.users.findMany({
+	where: {
+		posts: { none: { published: false } },
+	},
+});
+```
+
+| Operator | True when… |
+| --- | --- |
+| `some` | at least one related row matches |
+| `every` | all related rows match |
+| `none` | no related row matches |
+| `is` | the single related row matches |
+| `isNot` | the single related row does not match |
+
+## Combining relation and scalar filters
+
+Relation filters compose with scalar filters and logical operators like anything else:
+
+```ts
+const posts = await client.posts.findMany({
+	where: {
+		AND: [
+			{ published: true },
+			{
+				author: {
+					is: { email: { endsWith: '@company.com' } },
+				},
+			},
+		],
+	},
+	select: {
+		id: true,
+		title: true,
+		author: { select: { id: true, email: true } },
+	},
+});
+```
+
+## Rule of thumb
+
+- Use `where` to control **which rows qualify** — including by their relations.
+- Use `select` to control **which fields survive**.
+- Use `include` to **keep the full row and attach** relations.

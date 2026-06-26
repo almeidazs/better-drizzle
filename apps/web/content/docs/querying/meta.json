@@ -1,0 +1,5 @@
+{
+	"title": "Querying",
+	"icon": "Search",
+	"pages": ["reads", "filters", "selecting-fields", "relations", "pagination"]
+}
