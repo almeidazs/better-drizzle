@@ -1,6 +1,6 @@
+import { CopyButton } from '@/components/copy-button';
 import { highlight } from '@/lib/highlight';
 import { cn } from '@/lib/utils';
-import { CopyButton } from '@/components/copy-button';
 
 /**
  * A server-rendered "editor window": traffic-light header with an optional file
@@ -26,7 +26,9 @@ export async function CodeWindow({
 		<div
 			className={cn(
 				'overflow-hidden rounded-xl border bg-fd-card shadow-sm',
-				accent ? 'border-brand/40 ring-1 ring-brand/10' : 'border-fd-border',
+				accent
+					? 'border-brand/40 ring-1 ring-brand/10'
+					: 'border-fd-border',
 				className,
 			)}
 		>

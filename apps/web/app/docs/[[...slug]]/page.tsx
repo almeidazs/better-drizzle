@@ -7,8 +7,8 @@ import {
 import { createRelativeLink } from 'fumadocs-ui/mdx';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { getMDXComponents } from '@/mdx-components';
 import { source } from '@/lib/source';
+import { getMDXComponents } from '@/mdx-components';
 
 type PageParams = { params: Promise<{ slug?: string[] }> };
 

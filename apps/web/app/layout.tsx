@@ -1,7 +1,7 @@
 import './global.css';
 import { RootProvider } from 'fumadocs-ui/provider/next';
-import { Geist, Geist_Mono } from 'next/font/google';
 import type { Metadata } from 'next';
+import { Geist, Geist_Mono } from 'next/font/google';
 import type { ReactNode } from 'react';
 
 const geistSans = Geist({
@@ -35,6 +35,10 @@ export const metadata: Metadata = {
 		siteName: 'better-drizzle',
 		type: 'website',
 		images: [{ url: '/icon.png' }],
+	},
+	twitter: {
+		card: 'summary_large_image',
+		images: ['/icon.png'],
 	},
 };
 

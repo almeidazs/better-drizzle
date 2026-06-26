@@ -113,13 +113,12 @@ const STATS = [
 export default function HomePage() {
 	return (
 		<>
-			{/* Hero */}
 			<section className="relative overflow-hidden border-b border-fd-border">
 				<div className="bd-grid pointer-events-none absolute inset-0" />
 				<div className="relative mx-auto grid max-w-6xl items-center gap-12 px-6 py-20 lg:grid-cols-2 lg:py-28">
 					<div className="bd-rise flex flex-col items-start">
 						<span className="inline-flex items-center gap-2 rounded-full border border-fd-border bg-fd-card/60 px-3 py-1 text-xs font-medium text-fd-muted-foreground backdrop-blur">
-							<Logo className="size-4" />
+							<Logo className="w-10" />
 							Drizzle ORM, but better
 						</span>
 						<h1 className="mt-6 text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
@@ -161,7 +160,6 @@ export default function HomePage() {
 				</div>
 			</section>
 
-			{/* Before / after */}
 			<section className="mx-auto max-w-6xl px-6 py-20">
 				<div className="mx-auto max-w-2xl text-center">
 					<h2 className="text-3xl font-semibold tracking-tight">
@@ -186,7 +184,6 @@ export default function HomePage() {
 				</div>
 			</section>
 
-			{/* Features */}
 			<section className="border-y border-fd-border bg-fd-card/30">
 				<div className="mx-auto max-w-6xl px-6 py-20">
 					<div className="max-w-2xl">
@@ -213,7 +210,6 @@ export default function HomePage() {
 				</div>
 			</section>
 
-			{/* Benchmarks */}
 			<section className="mx-auto max-w-6xl px-6 py-20">
 				<div className="mx-auto max-w-2xl text-center">
 					<h2 className="text-3xl font-semibold tracking-tight">
@@ -250,7 +246,6 @@ export default function HomePage() {
 				</p>
 			</section>
 
-			{/* Database support */}
 			<section className="mx-auto max-w-6xl px-6 py-20">
 				<div className="mx-auto max-w-2xl text-center">
 					<h2 className="text-3xl font-semibold tracking-tight">
@@ -272,11 +267,7 @@ export default function HomePage() {
 						</div>
 					</div>
 					<div className="flex items-center gap-4 bg-fd-background p-6">
-						<svg
-							viewBox="0 0 170 170"
-							className="size-8 shrink-0"
-							aria-hidden="true"
-						>
+						<svg viewBox="0 0 170 170" className="size-8 shrink-0" aria-hidden="true">
 							<path
 								d="m103.096 71.5961c-.057.7219-.091 1.191-.091 1.191s-2.189 14.7578-4.7948 19.1617c-.4122.6981.0449 3.5653 1.1953 7.8121.6725-1.1629 3.5115-6.1371 4.0815-7.7398.642-1.8121.777-2.3313.777-2.3313s-1.557 8.0114-4.112 12.6862c.56 1.89 1.229 3.979 1.986 6.212.968-1.698 3.285-5.809 3.795-7.235.103-.293.19-.542.268-.77.025.137.05.274.075.411-.585 2.482-1.734 6.801-3.307 9.992 3.49 18.165 15.393 42.445 27.596 53.278l-79.6048 0c-5.3352 0-9.7004-4.366-9.7004-9.701l0-87.7892c0-5.3347 4.3652-9.7 9.7004-9.7l52.4298 0c-.378 4.5762-.504 9.6391-.294 14.5223"
 								fill="#0f80cc"
@@ -317,7 +308,6 @@ export default function HomePage() {
 				</div>
 			</section>
 
-			{/* Plugins */}
 			<section className="border-t border-fd-border bg-fd-card/30">
 				<div className="mx-auto grid max-w-6xl items-center gap-12 px-6 py-20 lg:grid-cols-2">
 					<div>
@@ -349,10 +339,9 @@ export default function HomePage() {
 				</div>
 			</section>
 
-			{/* CTA */}
 			<section className="mx-auto max-w-6xl px-6 py-24">
 				<div className="flex flex-col items-center gap-6 rounded-2xl border border-fd-border bg-fd-card/50 px-6 py-16 text-center">
-					<Logo className="size-10" />
+					<Logo className="w-32" />
 					<h2 className="max-w-xl text-balance text-3xl font-semibold tracking-tight">
 						Keep Drizzle. Lose the boilerplate.
 					</h2>
@@ -380,7 +369,6 @@ export default function HomePage() {
 				</div>
 			</section>
 
-			{/* Footer */}
 			<footer className="border-t border-fd-border">
 				<div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-10 text-sm text-fd-muted-foreground sm:flex-row">
 					<div className="flex items-center gap-2">

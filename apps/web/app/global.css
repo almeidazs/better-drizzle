@@ -1,6 +1,6 @@
-@import 'tailwindcss';
-@import 'fumadocs-ui/css/neutral.css';
-@import 'fumadocs-ui/css/preset.css';
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
 
 @source '../components/**/*.{ts,tsx}';
 @source '../app/**/*.{ts,tsx}';
@@ -75,7 +75,11 @@
 		transparent 1px
 	);
 	background-size: 22px 22px;
-	mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 75%);
+	mask-image: radial-gradient(
+		ellipse 80% 60% at 50% 0%,
+		#000 40%,
+		transparent 75%
+	);
 }
 
 @keyframes bd-rise {
@@ -91,6 +95,24 @@
 
 .bd-rise {
 	animation: bd-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.bd-strike {
+	position: relative;
+	display: inline-block;
+}
+
+.bd-strike::after {
+	content: "";
+	position: absolute;
+	left: -0.08em;
+	right: -0.08em;
+	top: 52%;
+	height: 0.16em;
+	border-radius: 999px;
+	background: #dc2626;
+	transform: rotate(-3deg);
+	transform-origin: center;
 }
 
 @media (prefers-reduced-motion: reduce) {

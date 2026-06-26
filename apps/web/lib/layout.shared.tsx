@@ -9,9 +9,8 @@ export function baseOptions(): BaseLayoutProps {
 	return {
 		nav: {
 			title: <Wordmark />,
-			transparentMode: 'top',
+			transparentMode: 'none',
 		},
-		githubUrl: 'https://github.com/almeidazs/better-drizzle',
 		links: [
 			{
 				text: 'Documentation',
