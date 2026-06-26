@@ -7,6 +7,11 @@
 		"apps/*"
 	],
 	"scripts": {
+		"build": "bun run build:packages",
+		"build:packages": "bun run scripts/build.ts",
+		"build:core": "bun run scripts/build.ts core",
+		"build:timestamps": "bun run scripts/build.ts timestamps",
+		"build:soft-delete": "bun run scripts/build.ts soft-delete",
 		"check": "bun run check:types && bun run check:lint && bun run test && bun run pack:core && bun run pack:timestamps && bun run pack:soft-delete",
 		"check:lint": "bunx @biomejs/biome check packages/core packages/timestamps packages/soft-delete benchmark .github",
 		"check:types": "bunx tsc --noEmit",
@@ -15,9 +20,9 @@
 		"bench:memory": "bun run benchmark/memory.ts",
 		"docs:dev": "bun run --filter @better-drizzle/web dev",
 		"docs:build": "bun run --filter @better-drizzle/web build",
-		"pack:core": "cd packages/core && npm pack --dry-run",
-		"pack:timestamps": "cd packages/timestamps && npm pack --dry-run",
-		"pack:soft-delete": "cd packages/soft-delete && npm pack --dry-run",
+		"pack:core": "bun run build:core && cd packages/core && npm pack --dry-run",
+		"pack:timestamps": "bun run build:timestamps && cd packages/timestamps && npm pack --dry-run",
+		"pack:soft-delete": "bun run build:soft-delete && cd packages/soft-delete && npm pack --dry-run",
 		"test": "bun test packages/core/tests packages/timestamps/tests packages/soft-delete/tests"
 	},
 	"devDependencies": {

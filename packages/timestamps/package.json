@@ -3,13 +3,20 @@
 	"version": "0.0.0",
 	"description": "Timestamp plugin for better-drizzle.",
 	"license": "Apache-2.0",
-	"module": "src/index.ts",
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
 	"exports": {
-		".": "./src/index.ts"
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js",
+			"require": "./dist/index.cjs",
+			"default": "./dist/index.js"
+		}
 	},
 	"files": [
 		"LICENSE",
-		"src",
+		"dist",
 		"README.md"
 	],
 	"keywords": [
@@ -33,13 +40,17 @@
 		"provenance": true,
 		"registry": "https://registry.npmjs.org/"
 	},
+	"scripts": {
+		"build": "bun run ../../scripts/build.ts timestamps"
+	},
 	"sideEffects": false,
 	"type": "module",
-	"dependencies": {
-		"better-drizzle": "workspace:*"
-	},
 	"peerDependencies": {
+		"better-drizzle": "^0.0.0",
 		"drizzle-orm": "^0.45.2",
 		"typescript": "^5"
+	},
+	"devDependencies": {
+		"better-drizzle": "workspace:*"
 	}
 }

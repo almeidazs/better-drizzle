@@ -6,7 +6,6 @@ import type {
 	WhereArg,
 } from 'better-drizzle';
 import { definePlugin } from 'better-drizzle';
-import { version } from '../package.json';
 
 import {
 	DEFAULT_COLUMN,
@@ -19,6 +18,7 @@ import {
 	type SoftDeleteOptions,
 	type SoftDeleteVisibility,
 } from './types';
+import { version } from './version';
 
 const isRecord = (value: unknown): value is MutableRecord =>
 	typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -51,9 +51,8 @@ const createRestoreExtension = <
 ): RestoreModelExtension => {
 	const data = {
 		[column]: null,
-	} as UpdateArgs<Schema, Name, Meta>['data'];
+	} as MutableRecord;
 
-	// @ts-expect-error
 	if (deletedByColumn) data[deletedByColumn] = null;
 
 	return {
@@ -210,3 +209,5 @@ export type {
 	SoftDeleteOptions,
 	SoftDeleteVisibility,
 } from './types';
+
+export { version };

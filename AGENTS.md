@@ -12,6 +12,11 @@
   - `README.md`: project-level documentation
   - `packages/core/README.md`: package-level documentation, currently intentionally kept in sync with the root README
 - **Package manager and runtime**: Bun is the primary runtime for local commands and benchmarks. The workspace is configured as a TypeScript ESM monorepo.
+- **Package publishing/build**:
+  - all published workspace libraries now build to `dist/`
+  - each package emits `dist/index.js` (ESM), `dist/index.cjs` (CommonJS), and `dist/index.d.ts`
+  - root build entrypoint is `scripts/build.ts`, powered by `Bun.build` plus `tsc` declaration emit
+  - package manifests publish only `dist`, `README.md`, and `LICENSE`
 - **Top-level scripts**:
   - `bun run bench`: run the time benchmark suite
   - `bun run bench:memory`: run the memory/overhead benchmark suite

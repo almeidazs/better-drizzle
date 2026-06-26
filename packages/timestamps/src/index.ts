@@ -1,5 +1,6 @@
 import { definePlugin } from 'better-drizzle';
 import type { TimestampsOptions } from './types';
+import { version } from './version';
 
 type MutableRecord = Record<string, unknown>;
 
@@ -295,10 +296,11 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 							);
 						},
 					},
-		version: '1.0.0',
+		version,
 	});
 };
 
 export default timestamps;
 
 export type { TimestampsOptions } from './types';
+export { version };

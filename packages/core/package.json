@@ -3,13 +3,20 @@
 	"version": "0.0.0",
 	"description": "Minimal, type-safe repository helpers for Drizzle ORM.",
 	"license": "Apache-2.0",
-	"module": "src/index.ts",
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
 	"exports": {
-		".": "./src/index.ts"
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js",
+			"require": "./dist/index.cjs",
+			"default": "./dist/index.js"
+		}
 	},
 	"files": [
 		"LICENSE",
-		"src",
+		"dist",
 		"README.md"
 	],
 	"keywords": [
@@ -35,6 +42,9 @@
 		"access": "public",
 		"provenance": true,
 		"registry": "https://registry.npmjs.org/"
+	},
+	"scripts": {
+		"build": "bun run ../../scripts/build.ts core"
 	},
 	"sideEffects": false,
 	"type": "module",

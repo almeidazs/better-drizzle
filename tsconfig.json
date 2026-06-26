@@ -3,6 +3,14 @@
 		"target": "ES2022",
 		"module": "ES2022",
 		"moduleResolution": "bundler",
+		"baseUrl": ".",
+		"paths": {
+			"better-drizzle": ["packages/core/src/index.ts"],
+			"@better-drizzle/soft-delete": [
+				"packages/soft-delete/src/index.ts"
+			],
+			"@better-drizzle/timestamps": ["packages/timestamps/src/index.ts"]
+		},
 		"resolveJsonModule": true,
 		"esModuleInterop": true,
 		"forceConsistentCasingInFileNames": true,
