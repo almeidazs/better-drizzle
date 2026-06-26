@@ -1,0 +1,87 @@
+---
+title: Migrating from raw Drizzle
+description: A practical path from hand-written Drizzle query glue to better-drizzle delegates.
+icon: ArrowRightLeft
+---
+
+The easiest migration is incremental.
+
+## 1. Keep your existing schema
+
+Do not rewrite tables or relations. better-drizzle reads the Drizzle schema you already have.
+
+## 2. Wrap the existing Drizzle client once
+
+```ts
+import { better } from 'better-drizzle';
+
+const db = drizzle(connection, { schema });
+export const client = better(db, { schema });
+```
+
+## 3. Move repetitive read paths first
+
+Good first candidates:
+
+- point lookups
+- list pages with `include`
+- counts and existence checks
+- pagination endpoints
+- nested relation filters
+
+These usually deliver the highest reduction in repeated service-layer code.
+
+## 4. Replace branchy write glue with direct writes
+
+```ts
+const maybeCreated = await client.users.create({
+	data: {
+		email: 'alice@example.com',
+		name: 'Alice',
+	},
+	skipDuplicates: ['email'],
+});
+```
+
+And for bulk sync paths:
+
+```ts
+await client.users.upsertMany({
+	data,
+	target: ['email'],
+	update: ['name', 'active'],
+});
+```
+
+## 5. Move cross-cutting behavior into plugins or hooks
+
+If you currently repeat logic like:
+
+- timestamps
+- soft delete visibility
+- audit metadata
+- trace IDs
+- authorization checks
+
+those are usually better expressed once through plugins or hooks.
+
+## Raw Drizzle vs better-drizzle
+
+Keep raw Drizzle when:
+
+- the query is truly custom SQL
+- you need a database-specific function or reporting query
+- the delegate shape would be more awkward than the SQL
+
+Use better-drizzle when:
+
+- you're rebuilding CRUD and query glue by hand
+- you want predictable return shapes
+- you want typed relation filters and includes without repeating join code
+
+## Migration strategy that works well
+
+1. wrap the client
+2. migrate one service or endpoint at a time
+3. keep raw SQL where it is the clearest tool
+4. introduce plugins only after the base delegate API is in use

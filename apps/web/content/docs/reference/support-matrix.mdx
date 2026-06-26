@@ -1,0 +1,82 @@
+---
+title: Support matrix
+description: Dialect support for reads, writes, upsertMany, raw SQL, transactions, and package compatibility.
+icon: TableProperties
+---
+
+This page is the practical compatibility matrix for `better-drizzle@0.1.x`.
+
+## Package compatibility
+
+| Package | Version line |
+| --- | --- |
+| `better-drizzle` | `0.1.x` |
+| `@better-drizzle/soft-delete` | `0.1.x` |
+| `@better-drizzle/timestamps` | `0.1.x` |
+| `drizzle-orm` peer | `^0.45.2` |
+| `typescript` peer | `^5` |
+
+## Core delegate API
+
+| Capability | PostgreSQL | SQLite | MySQL |
+| --- | --- | --- | --- |
+| `findMany`, `findFirst`, `findOne`, `findUnique` | Yes | Yes | Yes |
+| `count`, `exists`, `paginate` | Yes | Yes | Yes |
+| `create`, `update`, `delete`, `upsert` | Yes | Yes | Yes |
+| `createMany`, `updateMany`, `deleteMany` | Yes | Yes | Yes |
+| `repository(name)` | Yes | Yes | Yes |
+| hooks and plugins | Yes | Yes | Yes |
+
+## Conflict-handling features
+
+| Capability | PostgreSQL | SQLite | MySQL |
+| --- | --- | --- | --- |
+| `create({ skipDuplicates: true })` | Yes | Yes | dialect-dependent |
+| `createMany({ skipDuplicates: true })` | Yes | Yes | dialect-dependent |
+| `skipDuplicates: ['column']` explicit targets | Yes | Yes | No |
+| `upsertMany` | Yes | Yes | No |
+
+`upsertMany` is intentionally native-first and currently supported only on PostgreSQL and SQLite.
+
+## Result projection support
+
+| Capability | PostgreSQL | SQLite | MySQL |
+| --- | --- | --- | --- |
+| `select` on reads | Yes | Yes | Yes |
+| `include` on reads | Yes | Yes | Yes |
+| `select` / `include` on single-row writes | Yes | Yes | Yes |
+| `select` on `upsertMany` | Yes | Yes | No support because `upsertMany` itself is unsupported |
+| relation `include` on `upsertMany` | No | No | No |
+
+## Raw SQL options
+
+| Capability | PostgreSQL | SQLite | MySQL |
+| --- | --- | --- | --- |
+| `$raw` / `$executeRaw` | Yes | Yes | Yes |
+| `$rawUnsafe` with `allowUnsafe` | Yes | Yes | Yes |
+| `comment` support | Best support | limited | limited |
+| `timeoutMs` | driver-dependent | driver-dependent | driver-dependent |
+| raw hooks | Yes | Yes | Yes |
+
+## Transactions
+
+| Capability | PostgreSQL | SQLite | MySQL |
+| --- | --- | --- | --- |
+| `transaction()` | Yes | Yes | Yes |
+| nested transactions / savepoints | Yes | Yes | Yes |
+| `afterCommit` / `afterRollback` | Yes | Yes | Yes |
+| retry options | Yes | Yes | Yes |
+| `isolationLevel` | Yes | ignored | driver-dependent |
+| `readOnly` | Yes | ignored | driver-dependent |
+| transaction `comment` | PostgreSQL-oriented | ignored | driver-dependent |
+
+## Official plugins
+
+| Plugin | PostgreSQL | SQLite | MySQL |
+| --- | --- | --- | --- |
+| `@better-drizzle/timestamps` | Yes | Yes | Yes |
+| `@better-drizzle/soft-delete` | Yes | Yes | Yes |
+
+## Policy
+
+When a feature is not safely supported by the current dialect, better-drizzle prefers to fail fast with a structured error instead of silently degrading to a slower or weaker implementation.

@@ -1,0 +1,59 @@
+---
+title: Limitations & tradeoffs
+description: Where better-drizzle deliberately stays small, native-first, or explicit instead of adding silent abstractions.
+icon: TriangleAlert
+---
+
+better-drizzle is intentionally opinionated about a few tradeoffs.
+
+## `upsertMany` is native-first
+
+- supported on PostgreSQL and SQLite
+- currently unsupported on MySQL
+- fails fast on unsupported dialects instead of looping through many `upsert()` calls
+
+That is deliberate. A slow hidden fallback would make throughput and behavior harder to reason about.
+
+## `upsertMany` is not a relation loader
+
+- supports `select`
+- does **not** support relation `include`
+- does **not** support relation selects
+
+Batch upsert is treated as a write primitive, not a nested graph loader.
+
+## Some transaction options are dialect-specific
+
+Options like `isolationLevel`, `readOnly`, and transaction comments depend on the underlying dialect and driver. SQLite especially ignores some of them.
+
+You can control unsupported-option behavior through client config instead of discovering it by accident.
+
+## Raw SQL is explicit by design
+
+- `$raw` and `$executeRaw` are safe-by-default
+- `$rawUnsafe` is off by default
+- raw methods bypass model transforms and CRUD hooks
+- dedicated raw hooks still exist for observability and policy
+
+## Plugins are the mutation layer
+
+Client hooks are side-effect oriented. Plugins are the place for behavior that rewrites operations or extends APIs.
+
+That separation is intentional so application code and plugin code do not collapse into one giant interception layer.
+
+## No codegen layer
+
+The project reads your Drizzle schema directly. That keeps setup small, but it also means:
+
+- your schema remains the source of truth
+- relation quality depends on the relations you define in Drizzle
+- better-drizzle is not trying to invent a second modeling system
+
+## Performance claims are parity-shaped
+
+The benchmark suite distinguishes between:
+
+- fair API-parity comparisons
+- lower-level manual Drizzle reference queries
+
+The project avoids claiming wrapper-overhead numbers using non-equivalent queries.

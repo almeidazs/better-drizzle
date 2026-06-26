@@ -4,6 +4,8 @@
 	"pages": [
 		"service-patterns",
 		"dynamic-repositories",
+		"migrating-from-drizzle",
+		"limitations",
 		"multi-tenancy",
 		"frameworks"
 	]

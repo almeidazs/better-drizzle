@@ -1,0 +1,50 @@
+---
+title: Stability & semver
+description: What better-drizzle considers stable in the 0.1.x line, and how changes are versioned.
+icon: ShieldCheck
+---
+
+`0.1.x` is the first public release line of better-drizzle.
+
+## What is considered stable in `0.1.x`
+
+- package entrypoints and `exports`
+- documented delegate methods
+- documented client methods
+- documented plugin entrypoints and official plugin package names
+- documented option names and result shapes
+- the published support matrix for PostgreSQL, SQLite, and MySQL
+
+## Semver policy
+
+better-drizzle follows semver intent, with extra conservatism around types:
+
+- patch: bug fixes, doc fixes, test additions, internal optimizations, support-matrix clarifications
+- minor: additive APIs, new plugin hooks, new documented options, new examples
+- major: behavior changes, removed exports, renamed options, changed result shapes, or stricter semantics that can break existing code
+
+## Type-level compatibility
+
+TypeScript users depend on inference as part of the product. Because of that:
+
+- changes that break valid user code through types are treated as breaking changes
+- documented generic types and exported helper types are part of the public surface
+- public API snapshots are generated in the repository to make surface drift easier to review
+
+## Dialect policy
+
+When a dialect cannot support a feature safely or honestly, the project prefers:
+
+1. explicit support
+2. explicit unsupported behavior with a structured error
+
+It does **not** prefer hidden userland fallbacks that materially change performance or semantics without saying so.
+
+## Release notes
+
+Every published version should have:
+
+- a changelog entry
+- aligned package versions
+- updated docs when user-facing behavior changes
+- passing smoke-consume checks

@@ -1,5 +1,12 @@
 {
 	"title": "Reference",
 	"icon": "BookMarked",
-	"pages": ["client", "model-api", "query-options", "errors"]
+	"pages": [
+		"client",
+		"model-api",
+		"query-options",
+		"support-matrix",
+		"stability",
+		"errors"
+	]
 }
