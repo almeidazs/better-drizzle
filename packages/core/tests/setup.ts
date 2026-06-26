@@ -36,6 +36,15 @@ const comments = sqliteTable('test_comments', {
 	likes: integer('likes').notNull(),
 });
 
+const memberships = sqliteTable('test_memberships', {
+	id: integer('id').primaryKey(),
+	userId: integer('user_id')
+		.notNull()
+		.references(() => users.id),
+	label: text('label').notNull(),
+	note: text('note').notNull(),
+});
+
 const usersRelations = relations(users, ({ many }) => ({
 	posts: many(posts),
 	comments: many(comments),
@@ -63,6 +72,7 @@ const commentsRelations = relations(comments, ({ one }) => ({
 const schema = {
 	comments,
 	commentsRelations,
+	memberships,
 	posts,
 	postsRelations,
 	users,
@@ -93,6 +103,14 @@ CREATE TABLE IF NOT EXISTS test_comments (
 	author_id INTEGER NOT NULL REFERENCES test_users(id),
 	body TEXT NOT NULL,
 	likes INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS test_memberships (
+	id INTEGER PRIMARY KEY NOT NULL,
+	user_id INTEGER NOT NULL REFERENCES test_users(id),
+	label TEXT NOT NULL,
+	note TEXT NOT NULL,
+	UNIQUE(user_id, label)
 );
 `;
 
@@ -169,6 +187,11 @@ const SEED_COMMENTS = [
 	{ id: 5, postId: 6, authorId: 1, body: 'Well done', likes: 3 },
 ];
 
+const SEED_MEMBERSHIPS = [
+	{ id: 1, userId: 1, label: 'owner', note: 'Initial owner' },
+	{ id: 2, userId: 2, label: 'editor', note: 'Initial editor' },
+];
+
 export type TestSchema = typeof schema;
 
 export const createTestContext = () => {
@@ -191,6 +214,9 @@ ${createTablesSql}
 	const insertComment = sqlite.prepare(
 		'INSERT INTO test_comments (id, post_id, author_id, body, likes) VALUES (?, ?, ?, ?, ?)',
 	);
+	const insertMembership = sqlite.prepare(
+		'INSERT INTO test_memberships (id, user_id, label, note) VALUES (?, ?, ?, ?)',
+	);
 
 	const seed = sqlite.transaction(() => {
 		for (const u of SEED_USERS)
@@ -206,6 +232,13 @@ ${createTablesSql}
 			);
 		for (const c of SEED_COMMENTS)
 			insertComment.run(c.id, c.postId, c.authorId, c.body, c.likes);
+		for (const membership of SEED_MEMBERSHIPS)
+			insertMembership.run(
+				membership.id,
+				membership.userId,
+				membership.label,
+				membership.note,
+			);
 	});
 
 	seed();
@@ -222,11 +255,13 @@ ${createTablesSql}
 			comments: SEED_COMMENTS,
 			posts: SEED_POSTS,
 			users: SEED_USERS,
+			memberships: SEED_MEMBERSHIPS,
 		},
 		close() {
 			sqlite.close();
 		},
 		reset() {
+			sqlite.exec('DELETE FROM test_memberships');
 			sqlite.exec('DELETE FROM test_comments');
 			sqlite.exec('DELETE FROM test_posts');
 			sqlite.exec('DELETE FROM test_users');

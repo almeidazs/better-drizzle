@@ -30,6 +30,7 @@ import type {
 	UpdateArgs,
 	UpdateManyArgs,
 	UpsertArgs,
+	UpsertManyArgs,
 } from '../../types';
 import { BetterDrizzleError, BetterDrizzleErrorCode } from '../errors';
 import { getMeta, isSimpleRecord } from './context';
@@ -55,6 +56,11 @@ type AnyArgs<
 			CreateManyArgs<Schema, BetterTableKey<Schema>, Meta>,
 			Plugins,
 			'createMany'
+	  >
+	| OperationArgsWithPlugins<
+			UpsertManyArgs<Schema, BetterTableKey<Schema>, Meta>,
+			Plugins,
+			'upsertMany'
 	  >
 	| OperationArgsWithPlugins<
 			DeleteArgs<Schema, BetterTableKey<Schema>, Meta>,
@@ -129,7 +135,7 @@ type BeforeHookResult<Args> = {
 };
 
 const PLUGIN_HOOK_KINDS = {
-	afterCreate: ['create', 'createMany', 'upsert'],
+	afterCreate: ['create', 'createMany', 'upsert', 'upsertMany'],
 	afterDelete: ['delete', 'deleteMany'],
 	afterQuery: [
 		'count',
@@ -141,7 +147,7 @@ const PLUGIN_HOOK_KINDS = {
 		'paginate',
 	],
 	afterUpdate: ['update', 'updateMany'],
-	beforeCreate: ['create', 'createMany', 'upsert'],
+	beforeCreate: ['create', 'createMany', 'upsert', 'upsertMany'],
 	beforeDelete: ['delete', 'deleteMany'],
 	beforeQuery: [
 		'count',
@@ -182,7 +188,12 @@ const getBeforeHookName = (
 	HookName,
 	'beforeCreate' | 'beforeDelete' | 'beforeQuery' | 'beforeUpdate'
 > => {
-	if (kind === 'create' || kind === 'createMany' || kind === 'upsert')
+	if (
+		kind === 'create' ||
+		kind === 'createMany' ||
+		kind === 'upsert' ||
+		kind === 'upsertMany'
+	)
 		return 'beforeCreate';
 	if (kind === 'delete' || kind === 'deleteMany') return 'beforeDelete';
 	if (kind === 'update' || kind === 'updateMany') return 'beforeUpdate';
@@ -455,6 +466,7 @@ const assignOperationArgs = <
 	if (
 		kind === 'create' ||
 		kind === 'createMany' ||
+		kind === 'upsertMany' ||
 		kind === 'update' ||
 		kind === 'updateMany'
 	)

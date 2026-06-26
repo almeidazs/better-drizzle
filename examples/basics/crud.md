@@ -132,6 +132,40 @@ const user = await client.users.upsert({
 });
 ```
 
+## `upsertMany`
+
+`upsertMany()` is the batch version for native conflict-update writes. It is designed for high-throughput paths where one statement should do the work of many `upsert()` calls.
+
+```ts
+const batch = await client.users.upsertMany({
+	data: [
+		{
+			id: 1,
+			email: 'alice@example.com',
+			name: 'Alice Updated',
+			active: true,
+		},
+		{
+			id: 9,
+			email: 'new@example.com',
+			name: 'New User',
+			active: false,
+		},
+	],
+	target: 'email',
+	update: ['name', 'active'],
+	select: {
+		id: true,
+		name: true,
+	},
+});
+
+console.log(batch.count);
+console.log(batch.data);
+```
+
+`target` defines the conflict columns. `update` can be `'all'`, a column list, a partial object, or a callback that builds SQL-aware updates from `excluded`, `table`, and Drizzle `sql`.
+
 ## Add `select` or `include` to writes too
 
 The returned payload can still be narrowed or expanded.
@@ -155,5 +189,6 @@ const user = await client.users.create({
 
 - `createMany()`, `updateMany()`, and `deleteMany()` return a batch summary.
 - `create()` returns `null` and `createMany()` returns a partial count when `skipDuplicates` is enabled and duplicates are skipped.
+- `upsertMany()` is native-first and optimized for throughput. It supports `select`, but not relation `include`.
 - `update()` and `delete()` are nullable by default because the target row may not exist.
 - `upsert()` is often cleaner than “find, then branch, then write” when the behavior is truly upsert-shaped.

@@ -31,13 +31,21 @@ export type DrizzleQueryDelegate = {
  * Drizzle's internal types.
  */
 export type InsertBuilderLike = {
-	returning?: () => Promise<Record<string, unknown>[]>;
+	returning?: (
+		fields?: Record<string, unknown>,
+	) => Promise<Record<string, unknown>[]>;
 	onConflictDoNothing?: (config?: {
 		target?: AnyColumn | AnyColumn[];
 	}) => InsertBuilderLike & Promise<unknown>;
 	onConflictDoUpdate?: (config: {
 		set: Record<string, unknown>;
 		target: AnyColumn | AnyColumn[];
+		setWhere?: SQL;
+		targetWhere?: SQL;
+		where?: SQL;
+	}) => InsertBuilderLike & Promise<unknown>;
+	onDuplicateKeyUpdate?: (config: {
+		set: Record<string, unknown>;
 	}) => InsertBuilderLike & Promise<unknown>;
 };
 

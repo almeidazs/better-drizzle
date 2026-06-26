@@ -13,7 +13,7 @@ If someone understands this folder, they can already use most of `better-drizzle
 | --- | --- |
 | [`getting-started.md`](./getting-started.md) | Minimal setup, schema wiring, first repository calls |
 | [`reads-and-filters.md`](./reads-and-filters.md) | `find*`, `count`, `exists`, scalar filters, logical operators |
-| [`crud.md`](./crud.md) | Create, update, delete, batch operations, upsert |
+| [`crud.md`](./crud.md) | Create, update, delete, batch operations, upsert, upsertMany |
 | [`relations.md`](./relations.md) | `select`, `include`, relation filters, payload shaping |
 | [`pagination.md`](./pagination.md) | Offset and cursor pagination with metadata |
 | [`transactions.md`](./transactions.md) | Nested transactions, retries, rollback, callbacks |

@@ -67,6 +67,7 @@
   - `delete`
   - `deleteMany`
   - `upsert`
+  - `upsertMany`
   - `count`
   - `exists`
   - `paginate`
@@ -101,6 +102,12 @@
   - `config.requires.columns` fails fast during bootstrap if any model is incompatible
   - client hooks remain side-effect-only
   - plugin hooks/transforms are the mutation layer
+  - `upsertMany` is a create-oriented hook/transform kind, matching `upsert` rather than `updateMany`
+- **Batch upsert API**:
+  - `upsertMany` is native-first and performance-sensitive
+  - it accepts `data`, explicit `target`, `update`, optional `select`, optional `batchSize`, and optional SQL `where`
+  - it intentionally supports `select` but not relation `include`
+  - unsupported dialect/feature combinations should fail fast instead of degrading to slow userland loops
 - **Error model**:
   - runtime-thrown library errors should use `BetterDrizzleError` from `packages/core/src/shared/errors.ts`
   - `BetterDrizzleError` carries `message`, `status`, `code`, `driver`, and structured metadata such as `table`, `column`, `constraint`, `operation`, and `details`
