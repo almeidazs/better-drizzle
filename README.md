@@ -12,6 +12,8 @@ Minimal, type-safe repository helpers for [Drizzle ORM](https://orm.drizzle.team
 
 [better-drizzle](https://npmjs.com/package/better-drizzle) wraps an existing Drizzle client and gives each table a small, consistent API for reads, writes, pagination, nested filters, relation loading, and optional hooks. The goal is simple: keep Drizzle's type-safety, remove repetitive query glue, and stay close enough to the metal that performance still matters.
 
+Website: https://better-drizzle.vercel.app/
+
 </div>
 
 ```bash

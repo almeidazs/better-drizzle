@@ -12,6 +12,8 @@ Soft delete behavior for [better-drizzle](https://npmjs.com/package/better-drizz
 
 [`@better-drizzle/soft-delete`](https://npmjs.com/package/@better-drizzle/soft-delete) extends Better Drizzle's built-in methods with typed soft delete controls, default visibility filtering, and restore helpers.
 
+Website: https://better-drizzle.vercel.app/
+
 </div>
 
 ```bash
