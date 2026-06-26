@@ -123,6 +123,33 @@ describe('@better-drizzle/timestamps', () => {
 		ctx.close();
 	});
 
+	test('stamps insert rows and conflict updates on upsertMany in app mode', async () => {
+		const ctx = createContext();
+		const client = better(ctx.db, {
+			plugins: [timestamps()],
+			schema,
+		});
+
+		const result = await client.records.upsertMany({
+			data: [
+				{ id: 1, name: 'Alice Updated' },
+				{ id: 2, name: 'Bob' },
+			],
+			target: 'id',
+			update: 'all',
+		});
+
+		const updated = await client.records.findFirst({ where: { id: 1 } });
+		const created = await client.records.findFirst({ where: { id: 2 } });
+
+		expect(result.count).toBe(2);
+		expect(updated?.updatedAt).toBeInstanceOf(Date);
+		expect(updated?.createdAt ?? null).toBeNull();
+		expect(created?.createdAt).toBeInstanceOf(Date);
+		expect(created?.updatedAt).toBeInstanceOf(Date);
+		ctx.close();
+	});
+
 	test('does nothing in database mode', async () => {
 		const ctx = createContext();
 		const client = better(ctx.db, {

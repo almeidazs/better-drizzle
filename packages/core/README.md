@@ -51,7 +51,7 @@ It gets repetitive when every service ends up re-writing the same patterns:
 - Optional lifecycle hooks for cross-cutting behavior
 - First-class plugins with setup, transforms, and client/model extensions
 - Fast paths for simple reads and writes to reduce wrapper overhead
-- Consistent table delegates: `findMany`, `findFirst`, `create`, `update`, `delete`, `paginate`, `count`, `exists`, `upsert`
+- Consistent table delegates: `findMany`, `findFirst`, `create`, `update`, `delete`, `paginate`, `count`, `exists`, `upsert`, `upsertMany`
 
 <h2 align="center">Querying your database with Better client</h2>
 
@@ -135,6 +135,19 @@ const maybeCreated = await client.users.create({
 if (!maybeCreated) {
 	console.log('user already existed');
 }
+
+const batch = await client.users.upsertMany({
+	data: [
+		{ id: 123, name: 'better', email: 'better@example.com', active: true },
+		{ id: 124, name: 'batch', email: 'batch@example.com', active: false },
+	],
+	target: 'email',
+	update: ['name', 'active'],
+	select: {
+		id: true,
+		name: true,
+	},
+});
 ```
 
 <div align="center">

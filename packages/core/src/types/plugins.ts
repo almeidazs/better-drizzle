@@ -19,6 +19,7 @@ import type {
 	UpdateArgs,
 	UpdateManyArgs,
 	UpsertArgs,
+	UpsertManyArgs,
 } from './delegate';
 import type { CountArgs, ExistsArgs, PaginationArgs, QueryArgs } from './query';
 import type { RawExecutionResult, RawOptions } from './raw';
@@ -147,7 +148,8 @@ export type PluginHookKind =
 	| 'paginate'
 	| 'update'
 	| 'updateMany'
-	| 'upsert';
+	| 'upsert'
+	| 'upsertMany';
 
 /**
  * Maps each {@link PluginHookKind} to a record of extra operation-argument
@@ -202,6 +204,8 @@ type PluginOperationArgsMap<
 		OperationArgsForKind<OperationArgs, 'updateMany'>;
 	upsert: UpsertArgs<Schema, Name, Meta> &
 		OperationArgsForKind<OperationArgs, 'upsert'>;
+	upsertMany: UpsertManyArgs<Schema, Name, Meta> &
+		OperationArgsForKind<OperationArgs, 'upsertMany'>;
 };
 
 type PluginOperationResultMap<
@@ -223,6 +227,7 @@ type PluginOperationResultMap<
 	update: unknown;
 	updateMany: BatchResult<never>;
 	upsert: unknown;
+	upsertMany: BatchResult<unknown>;
 };
 
 /**
@@ -255,14 +260,16 @@ type PluginOperationInputBase<
 		? InsertModelFor<Schema, Name>
 		: Kind extends 'createMany'
 			? InsertModelFor<Schema, Name>[]
-			: Kind extends 'update' | 'updateMany'
-				? Partial<InsertModelFor<Schema, Name>>
-				: Kind extends 'upsert'
-					? {
-							create: InsertModelFor<Schema, Name>;
-							update: Partial<InsertModelFor<Schema, Name>>;
-						}
-					: never;
+			: Kind extends 'upsertMany'
+				? InsertModelFor<Schema, Name>[]
+				: Kind extends 'update' | 'updateMany'
+					? Partial<InsertModelFor<Schema, Name>>
+					: Kind extends 'upsert'
+						? {
+								create: InsertModelFor<Schema, Name>;
+								update: Partial<InsertModelFor<Schema, Name>>;
+							}
+						: never;
 	db: unknown;
 	dialect: PluginDialect;
 	isInTransaction: boolean;
@@ -499,7 +506,7 @@ export type PluginHooks<
 			Meta,
 			State,
 			OperationArgs,
-			'create' | 'createMany' | 'upsert'
+			'create' | 'createMany' | 'upsert' | 'upsertMany'
 		>,
 	): unknown;
 	afterDelete?(
@@ -576,7 +583,7 @@ export type PluginHooks<
 			Meta,
 			State,
 			OperationArgs,
-			'create' | 'createMany' | 'upsert'
+			'create' | 'createMany' | 'upsert' | 'upsertMany'
 		>,
 	):
 		| PluginBeforeHookContext<
@@ -585,7 +592,7 @@ export type PluginHooks<
 				Meta,
 				State,
 				OperationArgs,
-				'create' | 'createMany' | 'upsert'
+				'create' | 'createMany' | 'upsert' | 'upsertMany'
 		  >['data']
 		| undefined;
 	beforeDelete?(

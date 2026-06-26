@@ -541,3 +541,283 @@ describe('upsert', () => {
 		expect(typed.author).toBeDefined();
 	});
 });
+
+describe('upsertMany', () => {
+	test('upsertMany inserts and updates rows in one batch', async () => {
+		const result = await ctx.better.users.upsertMany({
+			data: [
+				{
+					id: 1,
+					email: 'alice@example.com',
+					name: 'Alice Batch',
+					age: 26,
+					active: false,
+				},
+				{
+					id: 300,
+					email: 'batch-new@example.com',
+					name: 'Batch New',
+					age: 22,
+					active: true,
+				},
+			],
+			target: 'email',
+			update: 'all',
+		});
+
+		expect(result.count).toBe(2);
+		expect(result.data?.length).toBe(2);
+
+		const updated = await ctx.better.users.findFirst({
+			where: { email: 'alice@example.com' },
+		});
+		const created = await ctx.better.users.findFirst({
+			where: { email: 'batch-new@example.com' },
+		});
+
+		expect(updated).toMatchObject({
+			id: 1,
+			name: 'Alice Batch',
+			age: 26,
+			active: false,
+		});
+		expect(created).toMatchObject({
+			id: 300,
+			name: 'Batch New',
+			age: 22,
+			active: true,
+		});
+	});
+
+	test('upsertMany supports select projection', async () => {
+		const result = await ctx.better.users.upsertMany({
+			data: [
+				{
+					id: 2,
+					email: 'bob@example.com',
+					name: 'Bob Projected',
+					age: 30,
+					active: true,
+				},
+			],
+			target: 'email',
+			update: ['name'],
+			select: { id: true, name: true },
+		});
+
+		expect(result).toEqual({
+			count: 1,
+			data: [{ id: 2, name: 'Bob Projected' }],
+		});
+	});
+
+	test('upsertMany updates only requested columns for column-array strategy', async () => {
+		await ctx.better.users.upsertMany({
+			data: [
+				{
+					id: 3,
+					email: 'charlie@example.com',
+					name: 'Charlie Renamed',
+					age: 99,
+					active: true,
+				},
+			],
+			target: 'email',
+			update: ['name'],
+		});
+
+		const row = await ctx.better.users.findFirst({
+			where: { email: 'charlie@example.com' },
+		});
+		expect(row).toMatchObject({
+			id: 3,
+			name: 'Charlie Renamed',
+			age: 35,
+			active: false,
+		});
+	});
+
+	test('upsertMany supports callback update strategy', async () => {
+		await ctx.better.users.upsertMany({
+			data: [
+				{
+					id: 4,
+					email: 'diana@example.com',
+					name: 'Diana Callback',
+					age: 28,
+					active: true,
+				},
+			],
+			target: 'email',
+			update: ({ excluded }) => ({
+				age: sql`length(${excluded.name})`,
+				name: excluded.name,
+			}),
+		});
+
+		const row = await ctx.better.users.findFirst({
+			where: { email: 'diana@example.com' },
+		});
+		expect(row).toMatchObject({
+			id: 4,
+			name: 'Diana Callback',
+			age: 'Diana Callback'.length,
+		});
+	});
+
+	test('upsertMany applies where only to the conflict update side', async () => {
+		const result = await ctx.better.users.upsertMany({
+			data: [
+				{
+					id: 5,
+					email: 'eve@example.com',
+					name: 'Eve Skipped',
+					age: 99,
+					active: true,
+				},
+				{
+					id: 301,
+					email: 'where-new@example.com',
+					name: 'Where New',
+					age: 19,
+					active: true,
+				},
+			],
+			target: 'email',
+			update: 'all',
+			where: sql`${ctx.schema.users.active} = 1`,
+		});
+
+		expect(result.count).toBe(1);
+
+		const skipped = await ctx.better.users.findFirst({
+			where: { email: 'eve@example.com' },
+		});
+		const created = await ctx.better.users.findFirst({
+			where: { email: 'where-new@example.com' },
+		});
+
+		expect(skipped).toMatchObject({
+			id: 5,
+			name: 'Eve',
+			age: 22,
+			active: false,
+		});
+		expect(created).toMatchObject({
+			id: 301,
+			name: 'Where New',
+		});
+	});
+
+	test('upsertMany supports chunking with batchSize', async () => {
+		const result = await ctx.better.users.upsertMany({
+			data: [
+				{
+					id: 1,
+					email: 'alice@example.com',
+					name: 'Alice Chunk 1',
+					age: 26,
+					active: true,
+				},
+				{
+					id: 2,
+					email: 'bob@example.com',
+					name: 'Bob Chunk 2',
+					age: 31,
+					active: false,
+				},
+				{
+					id: 302,
+					email: 'chunk-new@example.com',
+					name: 'Chunk New',
+					age: 18,
+					active: true,
+				},
+			],
+			target: 'email',
+			update: ['name', 'age', 'active'],
+			batchSize: 2,
+		});
+
+		expect(result.count).toBe(3);
+		expect(result.data?.length).toBe(3);
+	});
+
+	test('upsertMany supports composite targets', async () => {
+		const result = await ctx.better.memberships.upsertMany({
+			data: [
+				{
+					id: 1,
+					userId: 1,
+					label: 'owner',
+					note: 'Updated owner',
+				},
+				{
+					id: 3,
+					userId: 1,
+					label: 'viewer',
+					note: 'Inserted viewer',
+				},
+			],
+			target: ['userId', 'label'],
+			update: ['note'],
+			select: { id: true, note: true },
+		});
+
+		expect(result.count).toBe(2);
+		expect(result.data).toEqual([
+			{ id: 1, note: 'Updated owner' },
+			{ id: 3, note: 'Inserted viewer' },
+		]);
+	});
+
+	test('upsertMany returns count 0 for empty input', async () => {
+		const result = await ctx.better.users.upsertMany({
+			data: [],
+			target: 'email',
+			update: 'all',
+		});
+
+		expect(result).toEqual({ count: 0 });
+	});
+
+	test('upsertMany rejects invalid target columns', async () => {
+		await expect(
+			ctx.better.users.upsertMany({
+				data: [
+					{
+						id: 400,
+						email: 'invalid-target-upsert@example.com',
+						name: 'Invalid Target',
+						age: 20,
+						active: true,
+					},
+				],
+				target: 'missing' as never,
+				update: 'all',
+			}),
+		).rejects.toMatchObject({
+			code: BetterDrizzleErrorCode.OperationError,
+		});
+	});
+
+	test('upsertMany rejects invalid update columns', async () => {
+		await expect(
+			ctx.better.users.upsertMany({
+				data: [
+					{
+						id: 401,
+						email: 'invalid-update-upsert@example.com',
+						name: 'Invalid Update',
+						age: 20,
+						active: true,
+					},
+				],
+				target: 'email',
+				update: ['missing'] as never,
+			}),
+		).rejects.toMatchObject({
+			code: BetterDrizzleErrorCode.OperationError,
+		});
+	});
+});

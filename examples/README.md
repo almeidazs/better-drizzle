@@ -53,7 +53,7 @@ There are no demo apps here, only copyable examples, patterns, and feature cover
 | --- | --- |
 | `better(db, { schema })` bootstrap | [`basics/getting-started.md`](./basics/getting-started.md) |
 | `findMany`, `findFirst`, `findOne`, `findUnique` | [`basics/reads-and-filters.md`](./basics/reads-and-filters.md) |
-| `create`, `createMany`, `update`, `updateMany`, `delete`, `deleteMany`, `upsert` | [`basics/crud.md`](./basics/crud.md) |
+| `create`, `createMany`, `update`, `updateMany`, `delete`, `deleteMany`, `upsert`, `upsertMany` | [`basics/crud.md`](./basics/crud.md) |
 | `select`, `include`, nested relation filters | [`basics/relations.md`](./basics/relations.md) |
 | `paginate`, offset, cursor, backwards navigation | [`basics/pagination.md`](./basics/pagination.md) |
 | `transaction`, nested savepoints, retries, rollback hooks | [`basics/transactions.md`](./basics/transactions.md) |

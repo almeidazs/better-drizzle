@@ -24,6 +24,7 @@ import type {
 	UpdateArgs,
 	UpdateManyArgs,
 	UpsertArgs,
+	UpsertManyArgs,
 } from '../../types';
 import { BetterDrizzleError, BetterDrizzleErrorCode } from '../errors';
 import { countRows } from '../query';
@@ -40,6 +41,7 @@ import {
 	paginateRecords,
 	updateManyRecords,
 	updateRecord,
+	upsertManyRecords,
 	upsertRecord,
 } from './operations';
 import {
@@ -164,7 +166,8 @@ export const createModelDelegate = <
 			| 'paginate'
 			| 'update'
 			| 'updateMany'
-			| 'upsert';
+			| 'upsert'
+			| 'upsertMany';
 		operation: (operationArgs: Args) => Promise<Result>;
 	}): Promise<Result> => {
 		assertTransactionNotAborted();
@@ -703,6 +706,32 @@ export const createModelDelegate = <
 				kind: 'upsert',
 				operation: (resolvedArgs) =>
 					upsertRecord(context, tableName, resolvedArgs),
+			}),
+		upsertMany: (
+			args: OperationArgsWithPlugins<
+				UpsertManyArgs<Schema, BetterTableKey<Schema>, Meta>,
+				Plugins,
+				'upsertMany'
+			>,
+		) =>
+			runOperation({
+				action: 'upsertMany',
+				args,
+				afterHookName: 'afterCreate',
+				afterPayload: (result, resolvedArgs) =>
+					({
+						...hookContext('upsertMany', resolvedArgs),
+						result,
+					}) as AfterCreateHookContext<Schema, Meta, Plugins>,
+				beforeHookName: 'beforeCreate',
+				beforePayload: (resolvedArgs) =>
+					hookContext(
+						'upsertMany',
+						resolvedArgs,
+					) as BeforeCreateHookContext<Schema, Meta, Plugins>,
+				kind: 'upsertMany',
+				operation: (resolvedArgs) =>
+					upsertManyRecords(context, tableName, resolvedArgs),
 			}),
 		paginate: (
 			args: OperationArgsWithPlugins<

@@ -27,6 +27,7 @@ describe('repository()', () => {
 		expect(typeof repo.delete).toBe('function');
 		expect(typeof repo.deleteMany).toBe('function');
 		expect(typeof repo.upsert).toBe('function');
+		expect(typeof repo.upsertMany).toBe('function');
 		expect(typeof repo.count).toBe('function');
 		expect(typeof repo.exists).toBe('function');
 		expect(typeof repo.paginate).toBe('function');
@@ -143,6 +144,7 @@ describe('client - table delegates', () => {
 			'update',
 			'updateMany',
 			'upsert',
+			'upsertMany',
 		];
 
 		for (const method of methods) {

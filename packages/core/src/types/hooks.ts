@@ -8,6 +8,7 @@ import type {
 	DeleteManyArgs,
 	UpdateArgs,
 	UpdateManyArgs,
+	UpsertManyArgs,
 } from './delegate';
 import type { AnyPlugin, OperationArgsWithPlugins } from './plugins';
 import type {
@@ -37,7 +38,11 @@ export type QueryHookAction =
 	| 'paginate';
 
 /** Action names for create operations. */
-export type CreateHookAction = 'create' | 'createMany' | 'upsert';
+export type CreateHookAction =
+	| 'create'
+	| 'createMany'
+	| 'upsert'
+	| 'upsertMany';
 /** Action names for update operations. */
 export type UpdateHookAction = 'update' | 'updateMany' | 'upsert';
 /** Action names for delete operations. */
@@ -140,7 +145,17 @@ type CreateHookArgsForAction<
 			Plugins,
 			'createMany'
 		>
-	: OperationArgsWithPlugins<CreateArgs<Schema, Name, Meta>, Plugins, Action>;
+	: Action extends 'upsertMany'
+		? OperationArgsWithPlugins<
+				UpsertManyArgs<Schema, Name, Meta>,
+				Plugins,
+				'upsertMany'
+			>
+		: OperationArgsWithPlugins<
+				CreateArgs<Schema, Name, Meta>,
+				Plugins,
+				Action
+			>;
 
 type CreateHookResultForAction<
 	Schema extends AnySchema,
@@ -148,7 +163,7 @@ type CreateHookResultForAction<
 	Meta,
 	Plugins extends readonly AnyPlugin[],
 	Action extends CreateHookAction,
-> = Action extends 'createMany'
+> = Action extends 'createMany' | 'upsertMany'
 	? BatchResult<
 			PayloadForArgs<
 				Schema,
@@ -309,7 +324,7 @@ type CreateHookContext<
 		Action
 	> & {
 		result: CreateHookResultForAction<Schema, Name, Meta, Plugins, Action>;
-		row?: Action extends 'createMany'
+		row?: Action extends 'createMany' | 'upsertMany'
 			? never
 			: CreateHookResultForAction<Schema, Name, Meta, Plugins, Action>;
 	};
@@ -382,7 +397,7 @@ type QueryHookContext<
 }[TableKey<Schema>];
 
 /**
- * Context available in the `beforeCreate` and `beforeCreateMany` hooks.
+ * Context available in create-oriented hooks.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
@@ -419,6 +434,20 @@ export type BeforeCreateHookContext<
 				>,
 				'createMany'
 			>;
+	  }[TableKey<Schema>]
+	| {
+			[Name in TableKey<Schema>]: HookBaseContext<
+				Schema,
+				Name,
+				Meta,
+				Plugins,
+				OperationArgsWithPlugins<
+					UpsertManyArgs<Schema, Name, Meta>,
+					Plugins,
+					'upsertMany'
+				>,
+				'upsertMany'
+			>;
 	  }[TableKey<Schema>];
 
 /**
@@ -435,7 +464,8 @@ export type AfterCreateHookContext<
 > =
 	| CreateHookContext<Schema, Meta, Plugins, 'create'>
 	| CreateHookContext<Schema, Meta, Plugins, 'createMany'>
-	| CreateHookContext<Schema, Meta, Plugins, 'upsert'>;
+	| CreateHookContext<Schema, Meta, Plugins, 'upsert'>
+	| CreateHookContext<Schema, Meta, Plugins, 'upsertMany'>;
 
 /**
  * Context available in the `beforeUpdate` and `beforeUpdateMany` hooks.

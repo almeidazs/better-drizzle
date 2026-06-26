@@ -183,6 +183,38 @@ describe('hooks - create', () => {
 		]);
 		sqlite.close();
 	});
+
+	test('beforeCreate and afterCreate fire on upsertMany', async () => {
+		const events: HookEvent[] = [];
+		const { client, sqlite } = createHookContext(events);
+
+		await client.users.upsertMany({
+			data: [
+				{
+					id: 1,
+					email: 'a@test.com',
+					name: 'A Updated',
+					age: 20,
+					active: true,
+				},
+				{
+					id: 5,
+					email: 'e@test.com',
+					name: 'E',
+					age: 18,
+					active: false,
+				},
+			],
+			target: 'email',
+			update: 'all',
+		});
+
+		expect(events).toEqual([
+			{ hook: 'beforeCreate', action: 'upsertMany', table: 'users' },
+			{ hook: 'afterCreate', action: 'upsertMany', table: 'users' },
+		]);
+		sqlite.close();
+	});
 });
 
 describe('hooks - update', () => {

@@ -1,4 +1,4 @@
-import type { TableRelationalConfig } from 'drizzle-orm';
+import type { AnyColumn, SQL, TableRelationalConfig } from 'drizzle-orm';
 
 import type { PaginationResult } from './database';
 import type {
@@ -348,6 +348,112 @@ export interface UpsertArgs<
 	select?: SelectInput<Schema, Name>;
 	/** Optional relation-only projection for the returned row. */
 	include?: IncludeInput<Schema, Name>;
+	/** Custom metadata forwarded to hooks. */
+	meta?: Meta;
+}
+
+export type UpsertManyTargetColumn<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = Extract<keyof InsertModelFor<Schema, Name>, string>;
+
+export type UpsertManyTarget<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> =
+	| UpsertManyTargetColumn<Schema, Name>
+	| readonly UpsertManyTargetColumn<Schema, Name>[];
+
+export type UpsertManyUpdateValue<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = Partial<{
+	[K in UpsertManyTargetColumn<Schema, Name>]:
+		| InsertModelFor<Schema, Name>[K]
+		| SQL;
+}>;
+
+export type UpsertManyExcluded<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = {
+	[K in UpsertManyTargetColumn<Schema, Name>]: SQL;
+};
+
+export type UpsertManyTableColumns<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = {
+	[K in UpsertManyTargetColumn<Schema, Name>]: AnyColumn;
+};
+
+export type UpsertManyUpdateContext<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = {
+	excluded: UpsertManyExcluded<Schema, Name>;
+	sql: typeof import('drizzle-orm').sql;
+	table: UpsertManyTableColumns<Schema, Name>;
+};
+
+export type UpsertManyUpdateStrategy<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> =
+	| 'all'
+	| readonly UpsertManyTargetColumn<Schema, Name>[]
+	| UpsertManyUpdateValue<Schema, Name>
+	| ((
+			context: UpsertManyUpdateContext<Schema, Name>,
+	  ) => UpsertManyUpdateValue<Schema, Name>);
+
+/**
+ * Arguments for the `upsertMany` operation.
+ *
+ * Performs a native batch upsert using an explicit conflict target.
+ * Designed for high-throughput write paths where a single statement is
+ * preferred over repeated `upsert()` calls.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ *
+ * @example
+ * ```ts
+ * const result = await db.user.upsertMany({
+ *   data: [
+ *     { id: 1, email: 'alice@example.com', name: 'Alice' },
+ *     { id: 2, email: 'bob@example.com', name: 'Bob' },
+ *   ],
+ *   target: 'id',
+ *   update: 'all',
+ * });
+ *
+ * const projected = await db.user.upsertMany({
+ *   data: [{ id: 1, email: 'alice@example.com', name: 'Alice Updated' }],
+ *   target: ['email'],
+ *   update: ['name'],
+ *   select: { id: true, name: true },
+ * });
+ * ```
+ */
+export interface UpsertManyArgs<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta = import('./query').BetterMeta,
+> {
+	/** Rows to insert or update. */
+	data: InsertModelFor<Schema, Name>[];
+	/** Column or columns that define the conflict target. */
+	target: UpsertManyTarget<Schema, Name>;
+	/** Strategy used to build the update payload on conflict. */
+	update: UpsertManyUpdateStrategy<Schema, Name>;
+	/** Optional scalar projection for returned rows. */
+	select?: SelectInput<Schema, Name>;
+	/** Optional batch size for chunked native execution. */
+	batchSize?: number;
+	/** Optional SQL condition applied to the update side of the conflict path. */
+	where?: SQL;
 	/** Custom metadata forwarded to hooks. */
 	meta?: Meta;
 }
@@ -888,6 +994,43 @@ export type BetterDrizzleModelDelegate<
 			'upsert'
 		>,
 	>(args: Args): Promise<PayloadForArgs<Schema, Name, Args>>;
+	/**
+	 * Performs a native batch upsert against an explicit conflict target.
+	 *
+	 * Returns a `BatchResult` with `count` reflecting the number of rows
+	 * inserted or updated by the statement. Supports `select`, but not
+	 * relation `include`, to keep the hot path as direct as possible.
+	 *
+	 * @param args - Batch upsert rows, conflict target, update strategy, and
+	 *   optional `select` / `batchSize` / `where` options.
+	 * @returns A promise resolving to `{ count, data? }`.
+	 *
+	 * @example
+	 * ```ts
+	 * const result = await db.user.upsertMany({
+	 *   data: [
+	 *     { id: 1, email: 'alice@example.com', name: 'Alice' },
+	 *     { id: 2, email: 'bob@example.com', name: 'Bob' },
+	 *   ],
+	 *   target: 'id',
+	 *   update: 'all',
+	 * });
+	 *
+	 * const projected = await db.user.upsertMany({
+	 *   data: [{ id: 1, email: 'alice@example.com', name: 'Alice Updated' }],
+	 *   target: ['email'],
+	 *   update: ['name'],
+	 *   select: { id: true, name: true },
+	 * });
+	 * ```
+	 */
+	upsertMany<
+		Args extends OperationArgsWithPlugins<
+			UpsertManyArgs<Schema, Name, Meta>,
+			Plugins,
+			'upsertMany'
+		>,
+	>(args: Args): Promise<BatchResult<PayloadForArgs<Schema, Name, Args>>>;
 	/**
 	 * Returns all matching rows.
 	 *

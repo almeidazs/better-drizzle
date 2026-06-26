@@ -63,6 +63,7 @@ const createPluginBuckets = () => {
 		update: createBucket(),
 		updateMany: createBucket(),
 		upsert: createBucket(),
+		upsertMany: createBucket(),
 	} satisfies Record<PluginHookKind, PluginRuntimeBucket>;
 };
 

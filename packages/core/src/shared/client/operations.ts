@@ -1,4 +1,4 @@
-import { type AnyColumn, and, eq, isNull, sql } from 'drizzle-orm';
+import { type AnyColumn, and, eq, isNull, type SQL, sql } from 'drizzle-orm';
 import { One } from 'drizzle-orm/relations';
 
 import type {
@@ -18,6 +18,8 @@ import type {
 	UpdateArgs,
 	UpdateManyArgs,
 	UpsertArgs,
+	UpsertManyArgs,
+	UpsertManyUpdateValue,
 	WhereArg,
 	WhereCompilerContext,
 } from '../../types';
@@ -78,6 +80,194 @@ const getSkipDuplicateTargetColumns = (
 const getConflictTarget = (columns: AnyColumn[] | undefined) => {
 	if (!columns?.length) return;
 	return columns.length === 1 ? columns[0] : columns;
+};
+
+const getBatchSize = (batchSize: number | undefined) => {
+	if (batchSize === undefined) return;
+	if (!Number.isInteger(batchSize) || batchSize <= 0)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			details: { batchSize },
+			message: 'batchSize must be a positive integer.',
+			operation: 'upsertMany',
+		});
+
+	return batchSize;
+};
+
+const getTargetColumns = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	runtime: TableRuntime,
+	target: UpsertManyArgs<Schema, BetterTableKey<Schema>, Meta>['target'],
+) => {
+	const targets = Array.isArray(target) ? [...target] : [target];
+	if (!targets.length)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			message: 'upsertMany requires at least one target column.',
+			operation: 'upsertMany',
+			table: runtime.dbName,
+		});
+
+	const columns = [];
+
+	for (const targetName of targets) {
+		const column = runtime.columns[targetName];
+		if (column) {
+			columns.push(column);
+			continue;
+		}
+
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			details: { target: targetName },
+			message: `Invalid upsertMany target "${targetName}" for table "${runtime.dbName}"`,
+			operation: 'upsertMany',
+			table: runtime.dbName,
+		});
+	}
+
+	if (context.dialect === 'mysql')
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			details: { target: targets },
+			message: 'upsertMany is only supported on PostgreSQL and SQLite.',
+			operation: 'upsertMany',
+			table: runtime.dbName,
+		});
+
+	return columns;
+};
+
+const getExcludedReference = (column: AnyColumn) =>
+	sql`${sql.identifier('excluded')}.${sql.identifier(column.name)}`;
+
+const getUpsertManyUpdateContext = <Schema extends AnySchema>(
+	runtime: TableRuntime,
+) => {
+	const excluded = Object.create(null) as Record<string, SQL>;
+	const table = Object.create(null) as Record<string, AnyColumn>;
+
+	for (const key in runtime.columns) {
+		const column = runtime.columns[key];
+		if (!column) continue;
+
+		excluded[key] = getExcludedReference(column);
+		table[key] = column;
+	}
+
+	return {
+		excluded,
+		sql,
+		table,
+	} as unknown as import('../../types').UpsertManyUpdateContext<
+		Schema,
+		BetterTableKey<Schema>
+	>;
+};
+
+const isPlainUpdateObject = (value: unknown) =>
+	typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const validateUpsertManyUpdateObject = (
+	runtime: TableRuntime,
+	update: unknown,
+) => {
+	if (!isPlainUpdateObject(update))
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			message: 'upsertMany update must resolve to an object.',
+			operation: 'upsertMany',
+			table: runtime.dbName,
+		});
+
+	const source = update as Record<string, unknown>;
+	const result = Object.create(null) as Record<string, unknown>;
+
+	for (const key in source) {
+		const column = runtime.columns[key];
+		if (!column)
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.OperationError,
+				details: { column: key },
+				message: `Invalid upsertMany update column "${key}" for table "${runtime.dbName}"`,
+				operation: 'upsertMany',
+				table: runtime.dbName,
+			});
+
+		const value = source[key];
+		if (value !== undefined) result[key] = value;
+	}
+
+	return result;
+};
+
+const buildUpsertManySet = <Schema extends AnySchema, Meta>(
+	runtime: TableRuntime,
+	args: UpsertManyArgs<Schema, BetterTableKey<Schema>, Meta>,
+	targetColumns: AnyColumn[],
+) => {
+	const targetNames = new Set(targetColumns.map((column) => column.name));
+
+	if (args.update === 'all') {
+		const result = Object.create(null) as Record<string, unknown>;
+
+		for (const key in runtime.columns) {
+			const column = runtime.columns[key];
+			if (!column || targetNames.has(column.name)) continue;
+
+			result[key] = getExcludedReference(column);
+		}
+
+		return result;
+	}
+
+	if (Array.isArray(args.update)) {
+		const result = Object.create(null) as Record<string, unknown>;
+
+		for (const key of args.update) {
+			const column = runtime.columns[key];
+			if (!column)
+				throw new BetterDrizzleError({
+					code: BetterDrizzleErrorCode.OperationError,
+					details: { column: key },
+					message: `Invalid upsertMany update column "${key}" for table "${runtime.dbName}"`,
+					operation: 'upsertMany',
+					table: runtime.dbName,
+				});
+
+			result[key] = getExcludedReference(column);
+		}
+
+		return result;
+	}
+
+	if (typeof args.update === 'function')
+		return validateUpsertManyUpdateObject(
+			runtime,
+			args.update(getUpsertManyUpdateContext<Schema>(runtime)),
+		);
+
+	return validateUpsertManyUpdateObject(
+		runtime,
+		args.update as UpsertManyUpdateValue<Schema, BetterTableKey<Schema>>,
+	);
+};
+
+const getReturningSelection = (
+	runtime: TableRuntime,
+	select?: Record<string, unknown>,
+) => {
+	if (!select) return;
+	if (hasRelationSelection(runtime, select))
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			message: 'upsertMany does not support relation selects.',
+			operation: 'upsertMany',
+			table: runtime.dbName,
+		});
+
+	return getDirectSelection(runtime, select);
 };
 
 const getAffectedCount = (result: unknown) => {
@@ -715,6 +905,102 @@ export const createManyRecords = async <Schema extends AnySchema, Meta>(
 
 	const data = await reloadRecords(context, tableName, rows, args);
 	return { count: rows.length, data: data.length ? data : undefined };
+};
+
+const upsertManyChunk = async <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	args: UpsertManyArgs<Schema, BetterTableKey<Schema>, Meta>,
+): Promise<BatchResult<Record<string, unknown>>> => {
+	const runtime = getTableRuntime(context, tableName as string);
+	const targetColumns = getTargetColumns(context, runtime, args.target);
+	const selection = getReturningSelection(
+		runtime,
+		args.select as Record<string, unknown> | undefined,
+	);
+	const set = buildUpsertManySet(runtime, args, targetColumns);
+
+	if (!Object.keys(set).length)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			details: { target: args.target, update: args.update },
+			message: 'upsertMany update must affect at least one column.',
+			operation: 'upsertMany',
+			table: runtime.dbName,
+		});
+
+	const builder = context.db.insert(runtime.table).values(args.data);
+	if (typeof builder.onConflictDoUpdate !== 'function')
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			message: `upsertMany is not supported for ${context.dialect}.`,
+			operation: 'upsertMany',
+			table: runtime.dbName,
+		});
+
+	const query = builder.onConflictDoUpdate({
+		set,
+		setWhere: args.where,
+		target: getConflictTarget(targetColumns) ?? targetColumns,
+	});
+
+	if (typeof query.returning === 'function') {
+		const rows = await query.returning(selection);
+		return {
+			count: rows.length,
+			data: rows.length ? rows : undefined,
+		};
+	}
+
+	const result = await query;
+	return {
+		count: getAffectedCount(result) ?? args.data.length,
+	};
+};
+
+/**
+ * Upserts multiple records in a native batch statement using an explicit
+ * conflict target. Designed for the fastest supported path and intentionally
+ * fails early when the request cannot be expressed efficiently.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type.
+ * @param context   - The runtime context.
+ * @param tableName - The table to upsert into.
+ * @param args      - Batch upsert arguments including `data`, `target`,
+ *   `update`, and optional `select`, `batchSize`, and `where`.
+ * @returns A promise resolving to a `BatchResult` with affected count and
+ *   optional returned rows.
+ */
+export const upsertManyRecords = async <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	args: UpsertManyArgs<Schema, BetterTableKey<Schema>, Meta>,
+): Promise<BatchResult<Record<string, unknown>>> => {
+	if (!args.data.length) return { count: 0 };
+
+	const batchSize = getBatchSize(args.batchSize);
+	if (!batchSize || args.data.length <= batchSize)
+		return upsertManyChunk(context, tableName, args);
+
+	let count = 0;
+	let data: Record<string, unknown>[] | undefined;
+
+	for (let start = 0; start < args.data.length; start += batchSize) {
+		const chunk = await upsertManyChunk(context, tableName, {
+			...args,
+			batchSize: undefined,
+			data: args.data.slice(start, start + batchSize),
+		});
+
+		count += chunk.count;
+		if (chunk.data?.length) {
+			if (!data) data = [];
+			data.push(...chunk.data);
+		}
+	}
+
+	return { count, data };
 };
 
 /**

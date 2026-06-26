@@ -68,7 +68,7 @@ export const client = better(db, { schema });
 - one delegate per table: `client.users`, `client.posts`
 - a dynamic lookup API: `client.repository(name)`
 - typed read helpers like `findMany`, `findFirst`, `findUnique`, `count`, `exists`
-- typed write helpers like `create`, `update`, `delete`, `upsert`
+- typed write helpers like `create`, `update`, `delete`, `upsert`, `upsertMany`
 - pagination, raw SQL, hooks, and plugin composition on the same client
 
 ## First queries

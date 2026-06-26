@@ -32,6 +32,7 @@ const client = better(db, {
 - `createMany()` applies the same rule row by row
 - `update()` refreshes `updatedAt`
 - `upsert()` sets timestamps for the create payload and refreshes `updatedAt` for the update payload
+- `upsertMany()` stamps insert rows and keeps `updatedAt` fresh on conflict updates
 
 ## Example behavior
 
