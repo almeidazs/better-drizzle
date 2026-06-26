@@ -29,6 +29,13 @@ const withTimestamp = (
 const isRecord = (value: unknown): value is MutableRecord =>
 	typeof value === 'object' && value !== null && !Array.isArray(value);
 
+const appendColumn = (columns: string[], column: string, enabled: boolean) => {
+	if (!enabled || columns.includes(column)) return columns;
+
+	columns.push(column);
+	return columns;
+};
+
 /**
  * Adds automatic `createdAt` / `updatedAt` handling to Better Drizzle models.
  *
@@ -36,6 +43,7 @@ const isRecord = (value: unknown): value is MutableRecord =>
  * - `create` / `createMany`: sets both `createdAt` and `updatedAt`
  * - `update`: sets `updatedAt`
  * - `upsert`: sets both on the create payload and `updatedAt` on the update payload
+ * - `upsertMany`: stamps insert rows and keeps only `updatedAt` on conflict updates
  *
  * In `database` mode the plugin does nothing, which is useful when the schema
  * already relies on DB defaults or triggers.
@@ -113,6 +121,127 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 										now,
 										hasUpdatedAt,
 									);
+								}
+
+								return result;
+							}
+
+							if (operation.kind === 'upsertMany') {
+								if (!Array.isArray(operation.data))
+									return operation.data;
+
+								const result = new Array(operation.data.length);
+
+								for (
+									let index = 0;
+									index < operation.data.length;
+									index += 1
+								) {
+									const row = operation.data[index];
+									if (!isRecord(row)) {
+										result[index] = row;
+										continue;
+									}
+
+									result[index] = withTimestamp(
+										withTimestamp(
+											{ ...row },
+											createdAt,
+											now,
+											hasCreatedAt,
+										),
+										updatedAt,
+										now,
+										hasUpdatedAt,
+									);
+								}
+
+								const args = operation.args as {
+									update?: unknown;
+								};
+								const update = args.update;
+
+								if (update === 'all') {
+									const columns = Object.keys(
+										operation.model.columns,
+									);
+
+									if (hasCreatedAt) {
+										const index =
+											columns.indexOf(createdAt);
+										if (index >= 0)
+											columns.splice(index, 1);
+									}
+
+									args.update = appendColumn(
+										columns,
+										updatedAt,
+										hasUpdatedAt,
+									);
+									return result;
+								}
+
+								if (Array.isArray(update)) {
+									const columns = update.filter(
+										(column) => column !== createdAt,
+									);
+
+									args.update = appendColumn(
+										columns,
+										updatedAt,
+										hasUpdatedAt,
+									);
+									return result;
+								}
+
+								if (isRecord(update)) {
+									args.update = withTimestamp(
+										hasCreatedAt
+											? Object.fromEntries(
+													Object.entries(
+														update,
+													).filter(
+														([column]) =>
+															column !==
+															createdAt,
+													),
+												)
+											: { ...update },
+										updatedAt,
+										now,
+										hasUpdatedAt,
+									);
+									return result;
+								}
+
+								if (typeof update === 'function') {
+									args.update = (context: {
+										excluded: Record<string, unknown>;
+										sql: unknown;
+										table: Record<string, unknown>;
+									}) => {
+										const resolved = update(context);
+										const base = isRecord(resolved)
+											? hasCreatedAt
+												? Object.fromEntries(
+														Object.entries(
+															resolved,
+														).filter(
+															([column]) =>
+																column !==
+																createdAt,
+														),
+													)
+												: { ...resolved }
+											: {};
+
+										return withTimestamp(
+											base,
+											updatedAt,
+											now,
+											hasUpdatedAt,
+										);
+									};
 								}
 
 								return result;

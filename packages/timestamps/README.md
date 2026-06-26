@@ -90,6 +90,7 @@ The plugin updates payloads before the database call:
 - `createMany`: sets `createdAt` and `updatedAt` for each row
 - `update`: sets `updatedAt`
 - `upsert`: sets both fields on the create payload and `updatedAt` on the update payload
+- `upsertMany`: stamps insert rows and keeps `updatedAt` fresh on conflict updates
 
 ```ts
 const client = better(db, {
@@ -140,7 +141,7 @@ const client = better(db, {
 
 - Models missing the configured timestamp columns are skipped automatically.
 - `mode: 'database'` adds effectively zero runtime behavior beyond plugin initialization.
-- The plugin works with single writes, batch writes, and upserts.
+- The plugin works with single writes, batch writes, and both single/batch upserts.
 - The plugin only mutates write payloads. It does not change reads, filters, or result shapes.
 
 <div align="center">
