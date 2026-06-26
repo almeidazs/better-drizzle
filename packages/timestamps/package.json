@@ -1,6 +1,6 @@
 {
 	"name": "@better-drizzle/timestamps",
-	"version": "0.0.0",
+	"version": "0.1.0",
 	"description": "Timestamp plugin for better-drizzle.",
 	"license": "Apache-2.0",
 	"main": "./dist/index.cjs",
@@ -26,7 +26,7 @@
 		"plugin",
 		"timestamps"
 	],
-	"homepage": "https://github.com/almeidazs/better-drizzle#readme",
+	"homepage": "https://better-drizzle.vercel.app/",
 	"bugs": {
 		"url": "https://github.com/almeidazs/better-drizzle/issues"
 	},
@@ -37,7 +37,6 @@
 	},
 	"publishConfig": {
 		"access": "public",
-		"provenance": true,
 		"registry": "https://registry.npmjs.org/"
 	},
 	"scripts": {
@@ -46,7 +45,7 @@
 	"sideEffects": false,
 	"type": "module",
 	"peerDependencies": {
-		"better-drizzle": "^0.0.0",
+		"better-drizzle": "^0.1.0",
 		"drizzle-orm": "^0.45.2",
 		"typescript": "^5"
 	},
