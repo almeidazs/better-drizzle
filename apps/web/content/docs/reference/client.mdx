@@ -83,6 +83,17 @@ Beyond the per-table delegates, the client exposes:
 | `$raw(...)` | run a [safe raw](/docs/advanced/raw-sql) read, returns rows |
 | `$executeRaw(...)` | run a safe raw write, returns `{ rowsAffected }` |
 | `$rawUnsafe(...)` | run a raw string query (requires `raw.allowUnsafe`) |
+| `afterCommit(cb)` | register a callback for the current transaction scope |
+| `afterRollback(cb)` | register a callback for the current transaction scope |
+
+`repository(name)` accepts either the TypeScript schema key or the underlying database table name:
+
+```ts
+const usersByKey = client.repository('users');
+const usersByDbName = client.repository('app_users');
+```
+
+`afterCommit()` and `afterRollback()` are useful when you're already holding a transaction-bound client deeper in your call stack and don't want to thread the callback registration through another abstraction.
 
 ## Exports
 
@@ -92,6 +103,7 @@ import {
 	definePlugin,
 	PaginationType,
 	OrderType,
+	version,
 	// error helpers
 	isDatabaseError,
 	getDatabaseErrorInfo,
@@ -119,3 +131,10 @@ enum OrderType {
 ```
 
 The library also exports its full type surface (`BetterDrizzleClient`, `BetterDrizzleModelDelegate`, `QueryArgs`, `WhereInput`, `Plugin`, hook context types, and more) for typing your own helpers.
+
+Each package also exports its own `version` constant:
+
+```ts
+import { version } from 'better-drizzle';
+import { version as softDeleteVersion } from '@better-drizzle/soft-delete';
+```

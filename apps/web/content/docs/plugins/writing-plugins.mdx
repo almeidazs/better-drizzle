@@ -133,9 +133,18 @@ operationArgs: {
 },
 ```
 
+Supported operation keys cover the full delegate/client surface, including:
+
+- reads: `findMany`, `findFirst`, `findOne`, `findUnique`, `count`, `exists`, `paginate`
+- writes: `create`, `createMany`, `update`, `updateMany`, `delete`, `deleteMany`, `upsert`, `upsertMany`
+
+That matters for plugins like timestamps, soft delete, or custom bulk-write policies that need to extend `upsertMany` as well as the simpler CRUD methods.
+
 ## Transforms
 
 A `transform` receives the operation and returns a (possibly modified) operation — or `undefined` to skip it. Common uses: rewriting `where` for visibility, injecting `data`, or enforcing a tenant filter. Read `operation.kind`, `operation.where`, `operation.data`, `operation.state`, and `operation.model` to decide.
+
+For create-shaped operations, that includes `upsert` and `upsertMany`, which lets plugins modify batch upsert payloads and conflict-update strategies in a typed way.
 
 ## Setup and fail-fast requirements
 

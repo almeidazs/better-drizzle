@@ -15,12 +15,25 @@ import { drizzle } from 'drizzle-orm/bun-sqlite';
 const db = drizzle(sqlite, { schema });
 const client = better(db, { schema });
 
+await client.users.upsertMany({
+	data: [
+		{ email: 'alice@example.com', name: 'Alice', active: true },
+		{ email: 'bob@example.com', name: 'Bob', active: false },
+	],
+	target: ['email'],
+	update: ['name', 'active'],
+});
+
 const posts = await client.posts.findMany({
 	where: {
 		published: true,
 		author: { is: { active: true } },
 	},
-	include: { author: true },
+	select: {
+		id: true,
+		title: true,
+		author: { select: { id: true, name: true } },
+	},
 	orderBy: [{ id: 'desc' }],
 	take: 20,
 });
@@ -50,7 +63,8 @@ better-drizzle packages those patterns into a repository-style API — without r
 <Cards>
 	<Card title="A delegate per table" href="/docs/getting-started">
 		`client.users`, `client.posts`, … each with `findMany`, `findFirst`,
-		`create`, `update`, `delete`, `paginate`, `count`, `exists`, and `upsert`.
+		`create`, `update`, `delete`, `paginate`, `count`, `exists`, `upsert`,
+		and `upsertMany`.
 	</Card>
 	<Card title="Typed nested filters" href="/docs/querying/relations">
 		Filter by related rows with `some` / `every` / `none` / `is`, fully typed

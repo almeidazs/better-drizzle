@@ -24,15 +24,80 @@ A model delegate is what you get from `client.users`, `client.posts`, or `client
 
 | Method | Signature | Returns |
 | --- | --- | --- |
-| `create` | `(args: { data, select?, include?, meta? })` | `Row` |
-| `createMany` | `(args: { data: Row[], select?, include?, meta? })` | `BatchResult<Row>` |
+| `create` | `(args: { data, skipDuplicates?, select?, include?, meta? })` | `Row \| null` when `skipDuplicates` skips |
+| `createMany` | `(args: { data: Row[], skipDuplicates?, select?, include?, meta? })` | `BatchResult<Row>` |
 | `update` | `(args: { where, data, select?, include?, meta? })` | `ThrowingResult<Row>` |
 | `updateMany` | `(args: { where?, data, meta? })` | `BatchResult<never>` |
 | `upsert` | `(args: { where, create, update, select?, include?, meta? })` | `Row` |
+| `upsertMany` | `(args: { data, target, update, select?, batchSize?, where?, meta? })` | `BatchResult<Row>` |
 | `delete` | `(args: { where, select?, include?, meta? })` | `ThrowingResult<Row>` |
 | `deleteMany` | `(args: { where?, meta? })` | `BatchResult<never>` |
 
 `BatchResult<T>` is `{ count: number; data?: T[] }` — `data` is populated when the driver supports `RETURNING`.
+
+## Less obvious write options
+
+### `skipDuplicates`
+
+`create` and `createMany` accept `skipDuplicates`.
+
+- `true` ignores duplicate conflicts using the dialect's supported default conflict handling
+- `['email']` or another explicit column list targets specific unique columns when the dialect supports it
+
+```ts
+const maybeUser = await client.users.create({
+	data: {
+		email: 'alice@example.com',
+		name: 'Alice',
+	},
+	skipDuplicates: true,
+});
+
+if (!maybeUser) {
+	// insert was skipped
+}
+```
+
+When a single-row `create` is skipped, it returns `null`. For `createMany`, `count` reflects only rows that were actually inserted.
+
+### `upsertMany`
+
+`upsertMany` is the native batch upsert path for high-volume writes. It requires an explicit conflict target and supports multiple update strategies:
+
+- `'all'` updates every mutable column on conflict
+- `['name', 'active']` updates only the listed columns
+- `{ name: 'Alice', updatedAt: sql\`now()\` }` provides an explicit update object
+- `(ctx) => ({ name: ctx.excluded.name })` builds the update object from `excluded`, `sql`, and table columns
+
+```ts
+import { sql } from 'drizzle-orm';
+
+const result = await client.users.upsertMany({
+	data: [
+		{ email: 'a@example.com', name: 'A', active: true },
+		{ email: 'b@example.com', name: 'B', active: false },
+	],
+	target: ['email'],
+	update: (ctx) => ({
+		name: ctx.excluded.name,
+		active: ctx.excluded.active,
+		updatedAt: sql`now()`,
+	}),
+	batchSize: 500,
+	select: {
+		id: true,
+		email: true,
+		name: true,
+	},
+});
+```
+
+Constraints worth knowing:
+
+- `upsertMany` is native-only and intentionally fails fast on unsupported dialects/features
+- `where` is SQL-only and applies to the update side of the conflict path
+- `select` is supported, but relation selects are not
+- `include` is intentionally not supported
 
 ## Plugin helpers
 
@@ -46,6 +111,8 @@ These exist on every delegate and are mostly used by [plugins](/docs/plugins/wri
 | `$withoutPlugins()` | clone the delegate with all plugin transforms/hooks bypassed |
 
 Plugins can also **add** methods here — for example the soft-delete plugin adds `restore()` and `restoreById()` to compatible models.
+
+`$withState()` and `$withoutPlugins()` are not just for plugin authors. They are also useful in application code when you need a one-off state flag or an intentional bypass for repair/admin flows.
 
 <Callout title="Args are extensible">
 	Plugins that declare `operationArgs` add typed fields to these method

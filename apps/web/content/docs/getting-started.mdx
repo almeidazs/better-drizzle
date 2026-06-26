@@ -123,15 +123,46 @@ The dialect (SQLite, PostgreSQL, MySQL) is detected from your Drizzle instance â
 ## Run your first queries
 
 ```ts
-// A list
+// A relation-aware list
 const users = await client.users.findMany({
-	orderBy: [{ id: 'asc' }],
+	where: {
+		active: true,
+	},
+	include: {
+		posts: {
+			where: { published: true },
+			select: { id: true, title: true },
+			orderBy: [{ id: 'desc' }],
+			take: 3,
+		},
+	},
+	orderBy: [{ id: 'desc' }],
 	take: 20,
 });
 
 // A single row by unique field
 const alice = await client.users.findUnique({
 	where: { email: 'alice@example.com' },
+});
+
+// Insert once, skip duplicates if the email already exists
+const maybeCreated = await client.users.create({
+	data: {
+		email: 'alice@example.com',
+		name: 'Alice',
+		active: true,
+	},
+	skipDuplicates: ['email'],
+});
+
+// Bulk sync users with a native batch upsert
+await client.users.upsertMany({
+	data: [
+		{ email: 'alice@example.com', name: 'Alice', active: true },
+		{ email: 'bob@example.com', name: 'Bob', active: false },
+	],
+	target: ['email'],
+	update: ['name', 'active'],
 });
 
 // A count and an existence check
@@ -144,8 +175,30 @@ const exists = await client.users.exists({ where: { id: 1 } });
 - one delegate per table: `client.users`, `client.posts`
 - a dynamic lookup: `client.repository(name)` ([details](/docs/guides/dynamic-repositories))
 - typed reads: `findMany`, `findFirst`, `findOne`, `findUnique`, `count`, `exists`
-- typed writes: `create`, `createMany`, `update`, `updateMany`, `delete`, `deleteMany`, `upsert`
+- typed writes: `create`, `createMany`, `update`, `updateMany`, `delete`, `deleteMany`, `upsert`, `upsertMany`
 - pagination, raw SQL, hooks, transactions, and plugins on the same client
+
+## A first transaction
+
+Transactions use the same delegates and can register lifecycle callbacks:
+
+```ts
+await client.transaction(async (tx) => {
+	const user = await tx.users.create({
+		data: {
+			email: 'new@example.com',
+			name: 'New User',
+			active: true,
+		},
+	});
+
+	tx.afterCommit(() => {
+		console.log('Committed user', user.email);
+	});
+
+	return user;
+});
+```
 
 ## What stays explicit
 

@@ -25,7 +25,7 @@ const posts = await client.posts.findMany({
   },
   include: { author: true },
   orderBy: [{ id: 'desc' }],
-  take: 20,
+  take: 3,
 });`;
 
 const RAW_CODE = `import { and, desc, eq } from 'drizzle-orm';
@@ -62,11 +62,21 @@ import { softDelete } from '@better-drizzle/soft-delete';
 
 const client = better(db, {
   schema,
-  plugins: [timestamps(), softDelete({ column: 'deletedAt' })],
+  plugins: [
+    timestamps(),
+    softDelete({
+      column: 'deletedAt',
+      defaults: { visibility: 'without' },
+    }),
+  ],
 });
 
-await client.users.delete({ where: { id: 1 } }); // soft delete
-await client.users.findMany({ deleted: 'only' }); // typed arg
+await client.users.delete({
+  where: { id: 1 },
+  mode: 'soft',
+}); // typed plugin arg
+
+await client.users.findMany({ deleted: 'only' }); // typed filter
 await client.users.restore({ where: { id: 1 } }); // plugin method`;
 
 const FEATURES = [
@@ -83,7 +93,7 @@ const FEATURES = [
 	{
 		icon: Layers,
 		title: 'Transactions & savepoints',
-		body: 'Nested transactions, opt-in retries, and afterCommit / afterRollback callbacks — all on one client.',
+		body: 'Nested transactions, opt-in retries, explicit rollback, and afterCommit / afterRollback callbacks — all on one client.',
 	},
 	{
 		icon: Blocks,
@@ -98,7 +108,7 @@ const FEATURES = [
 	{
 		icon: Terminal,
 		title: 'Raw SQL, when you want it',
-		body: '$raw and $executeRaw are first-class. Drop to SQL for the queries that read better that way.',
+		body: '$raw, $executeRaw, and guarded $rawUnsafe are first-class. Drop to SQL only when it genuinely reads better.',
 	},
 ];
 

@@ -1,6 +1,6 @@
 ---
 title: Create, update & delete
-description: The write surface — create, createMany, update, updateMany, delete, deleteMany, and upsert.
+description: The write surface — create, createMany, update, updateMany, delete, deleteMany, upsert, and upsertMany.
 icon: SquarePen
 ---
 
@@ -35,6 +35,21 @@ const batch = await client.users.createMany({
 batch.count; // number inserted
 batch.data; // inserted rows, when the driver supports RETURNING
 ```
+
+`create` and `createMany` both support `skipDuplicates`:
+
+```ts
+const maybeCreated = await client.users.create({
+	data: {
+		email: 'alice@example.com',
+		name: 'Alice',
+		active: true,
+	},
+	skipDuplicates: ['email'],
+});
+```
+
+With single-row `create`, a skipped insert returns `null`. With `createMany`, `count` only includes rows that were actually inserted.
 
 ## `update`
 
@@ -106,9 +121,44 @@ const user = await client.users.upsert({
 
 `upsert` is usually cleaner than "find, then branch, then write" when the behavior is genuinely upsert-shaped.
 
+## `upsertMany`
+
+For bulk create-or-update flows, use `upsertMany` instead of looping over `upsert()`:
+
+```ts
+import { sql } from 'drizzle-orm';
+
+const result = await client.users.upsertMany({
+	data: [
+		{ email: 'alice@example.com', name: 'Alice', active: true },
+		{ email: 'bob@example.com', name: 'Bob', active: false },
+	],
+	target: ['email'],
+	update: (ctx) => ({
+		name: ctx.excluded.name,
+		active: ctx.excluded.active,
+		updatedAt: sql`now()`,
+	}),
+	batchSize: 500,
+	select: {
+		id: true,
+		email: true,
+		name: true,
+	},
+});
+```
+
+`upsertMany` is designed around native conflict handling, not userland loops.
+
+- `target` is required
+- `update` can be `'all'`, a column list, an object, or a function
+- `batchSize` chunks large inserts without changing the API
+- `where` is available for SQL-only conflict-update predicates
+- relation `include` is intentionally not supported
+
 ## Projecting write results
 
-`create`, `update`, `delete`, and `upsert` accept `select` and `include`, so you can narrow or expand the returned row:
+`create`, `update`, `delete`, `upsert`, `createMany`, and `upsertMany` can project results. `upsertMany` supports `select`; the others support `select` and `include`:
 
 ```ts
 const user = await client.users.create({
@@ -121,6 +171,8 @@ const user = await client.users.create({
 ## Notes
 
 - `createMany`, `updateMany`, and `deleteMany` return a `{ count, data? }` summary, not individual rows.
+- `upsertMany` also returns `{ count, data? }`.
 - `update` and `delete` are nullable by default because the target row may not exist — handle `null`, or call `.throw()`.
 - Returning affected rows (`data`) depends on the driver supporting `RETURNING`.
+- `upsertMany` is intentionally native-first and currently fails fast on unsupported dialects instead of degrading to slow per-row loops.
 - Need lifecycle behavior on writes — timestamps, soft delete, audit trails? That belongs in [plugins](/docs/plugins/overview) or [hooks](/docs/advanced/hooks), not duplicated per call.

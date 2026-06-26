@@ -49,6 +49,8 @@ Accepted by `findMany`, `findFirst`, `findOne`, and `findUnique`:
 
 `count` and `exists` accept only `where`, `cursor`, and `meta`.
 
+`findUnique` is the strictest of the read helpers semantically, but it still accepts the same query-argument shape as the other reads. The main difference is intent: use it when the `where` clause targets a unique lookup.
+
 ## Filter operators
 
 Operators available inside `where`, by column type. A bare value means `equals`; `null` matches nullable columns.
@@ -103,3 +105,55 @@ A relation value can be `true` or a nested read-args object (with its own `where
 />
 
 It returns `{ data, pagination: { count, hasNext, hasPrevious } }`. See [pagination](/docs/querying/pagination).
+
+## Write-specific arguments
+
+Read args are only part of the API surface. The write methods add a few important options that deserve their own reference.
+
+### Single-row writes
+
+| Method | Extra args |
+| --- | --- |
+| `create` | `data`, `skipDuplicates?`, `select?`, `include?`, `meta?` |
+| `update` | `where`, `data`, `select?`, `include?`, `meta?` |
+| `delete` | `where`, `select?`, `include?`, `meta?` |
+| `upsert` | `where`, `create`, `update`, `select?`, `include?`, `meta?` |
+
+### Batch writes
+
+| Method | Extra args |
+| --- | --- |
+| `createMany` | `data[]`, `skipDuplicates?`, `select?`, `include?`, `meta?` |
+| `updateMany` | `where?`, `data`, `meta?` |
+| `deleteMany` | `where?`, `meta?` |
+| `upsertMany` | `data[]`, `target`, `update`, `select?`, `batchSize?`, `where?`, `meta?` |
+
+### `upsertMany` details
+
+```ts
+import { sql } from 'drizzle-orm';
+
+await client.users.upsertMany({
+	data: [
+		{ email: 'a@example.com', name: 'A', active: true },
+		{ email: 'b@example.com', name: 'B', active: false },
+	],
+	target: ['email'],
+	update: (ctx) => ({
+		name: ctx.excluded.name,
+		active: ctx.excluded.active,
+		updatedAt: sql`now()`,
+	}),
+	batchSize: 1000,
+	where: sql`users.disabled = false`,
+});
+```
+
+`update` accepts four shapes:
+
+- `'all'`
+- an explicit column list
+- an explicit update object
+- a function receiving `{ excluded, sql, table }`
+
+`where` must be a Drizzle `SQL` fragment. It is not the same as the normal structured `where` filter used by reads and single-row writes.

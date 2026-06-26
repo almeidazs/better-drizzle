@@ -68,6 +68,16 @@ const rows = await client.$raw(
 );
 ```
 
+Supported per-call options on raw methods:
+
+| Option | Purpose |
+| --- | --- |
+| `name` | human-readable label for logs/tracing |
+| `comment` | SQL comment metadata (PostgreSQL-oriented) |
+| `timeoutMs` | abort after a duration |
+| `signal` | cancel via `AbortSignal` |
+| `map` | transform each returned row |
+
 ## `$rawUnsafe`
 
 `$rawUnsafe` runs a raw SQL **string** (with optional bindings). Because it does not enforce parameterization for you, it is blocked unless you explicitly enable it:
@@ -106,6 +116,16 @@ const client = better(db, {
 ```
 
 See the [client reference](/docs/reference/client) for every `raw` option.
+
+## Raw hooks
+
+Raw methods intentionally bypass model transforms and CRUD hooks, but they still participate in dedicated raw lifecycle hooks:
+
+- `beforeRaw`
+- `afterRaw`
+- `onRawError`
+
+That makes raw SQL usable in systems that still need observability, tracing, metrics, or policy checks around escape-hatch queries.
 
 ## When raw is the right call
 
