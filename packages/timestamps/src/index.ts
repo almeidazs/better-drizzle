@@ -42,7 +42,7 @@ const appendColumn = (columns: string[], column: string, enabled: boolean) => {
  *
  * In `app` mode the plugin updates the payload before the database call:
  * - `create` / `createMany`: sets both `createdAt` and `updatedAt`
- * - `update`: sets `updatedAt`
+ * - `update` / `updateEach`: sets `updatedAt`
  * - `upsert`: sets both on the create payload and `updatedAt` on the update payload
  * - `upsertMany`: stamps insert rows and keeps only `updatedAt` on conflict updates
  *
@@ -282,16 +282,30 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 							};
 						},
 						beforeUpdate(operation) {
-							if (
-								!operation.model.hasColumn(updatedAt) ||
-								!isRecord(operation.data)
-							)
+							if (!operation.model.hasColumn(updatedAt))
+								return operation.data;
+
+							const now = new Date();
+
+							if (operation.kind === 'updateEach') {
+								const args = operation.args as {
+									update?: Record<string, unknown>;
+								};
+
+								args.update = {
+									...(args.update ?? {}),
+									[updatedAt]: () => now,
+								};
+								return operation.data;
+							}
+
+							if (!isRecord(operation.data))
 								return operation.data;
 
 							return withTimestamp(
 								{ ...operation.data },
 								updatedAt,
-								new Date(),
+								now,
 								true,
 							);
 						},

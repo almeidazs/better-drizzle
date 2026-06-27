@@ -22,6 +22,7 @@ import type {
 	QueryArgs,
 	RuntimeContext,
 	UpdateArgs,
+	UpdateEachArgs,
 	UpdateManyArgs,
 	UpsertArgs,
 	UpsertManyArgs,
@@ -39,6 +40,7 @@ import {
 	findFirstRecord,
 	findManyRecords,
 	paginateRecords,
+	updateEachRecords,
 	updateManyRecords,
 	updateRecord,
 	upsertManyRecords,
@@ -165,6 +167,7 @@ export const createModelDelegate = <
 			| 'findUnique'
 			| 'paginate'
 			| 'update'
+			| 'updateEach'
 			| 'updateMany'
 			| 'upsert'
 			| 'upsertMany';
@@ -611,6 +614,32 @@ export const createModelDelegate = <
 				kind: 'updateMany',
 				operation: (resolvedArgs) =>
 					updateManyRecords(context, tableName, resolvedArgs),
+			}),
+		updateEach: (
+			args: OperationArgsWithPlugins<
+				UpdateEachArgs<Schema, BetterTableKey<Schema>, Meta>,
+				Plugins,
+				'updateEach'
+			>,
+		) =>
+			runOperation({
+				action: 'updateEach',
+				args,
+				afterHookName: 'afterUpdate',
+				afterPayload: (result, resolvedArgs) =>
+					({
+						...hookContext('updateEach', resolvedArgs),
+						result,
+					}) as AfterUpdateHookContext<Schema, Meta, Plugins>,
+				beforeHookName: 'beforeUpdate',
+				beforePayload: (resolvedArgs) =>
+					hookContext(
+						'updateEach',
+						resolvedArgs,
+					) as BeforeUpdateHookContext<Schema, Meta, Plugins>,
+				kind: 'updateEach',
+				operation: (resolvedArgs) =>
+					updateEachRecords(context, tableName, resolvedArgs),
 			}),
 		delete: (
 			args: OperationArgsWithPlugins<

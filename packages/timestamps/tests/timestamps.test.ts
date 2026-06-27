@@ -79,6 +79,27 @@ describe('@better-drizzle/timestamps', () => {
 		ctx.close();
 	});
 
+	test('sets updatedAt on updateEach in app mode', async () => {
+		const ctx = createContext();
+		const client = better(ctx.db, {
+			plugins: [timestamps()],
+			schema,
+		});
+
+		const result = await client.records.updateEach({
+			by: schema.records.id,
+			data: [{ id: 1, name: 'Alice Updated' }],
+			select: { id: true, updatedAt: true },
+			update: {
+				name: (row) => row.name,
+			},
+		});
+
+		expect(result.count).toBe(1);
+		expect(result.data?.[0]?.updatedAt).toBeInstanceOf(Date);
+		ctx.close();
+	});
+
 	test('sets timestamps for createMany in app mode', async () => {
 		const ctx = createContext();
 		const client = better(ctx.db, {

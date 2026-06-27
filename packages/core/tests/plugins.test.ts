@@ -510,6 +510,9 @@ describe('plugins', () => {
 						| 'only'
 						| undefined,
 				},
+				updateEach: {
+					reason: undefined as 'sync' | 'manual' | undefined,
+				},
 			},
 			transform(operation) {
 				if (operation.kind === 'delete') {
@@ -532,6 +535,16 @@ describe('plugins', () => {
 					const check: _DeletedFilter = true;
 					void check;
 				}
+				if (operation.kind === 'updateEach') {
+					type _Reason = Expect<
+						Equal<
+							typeof operation.args.reason,
+							'sync' | 'manual' | undefined
+						>
+					>;
+					const check: _Reason = true;
+					void check;
+				}
 				return operation;
 			},
 		});
@@ -550,6 +563,18 @@ describe('plugins', () => {
 					const check: _Mode = true;
 					void check;
 				},
+				beforeUpdate(context) {
+					if (context.action !== 'updateEach') return;
+
+					type _Reason = Expect<
+						Equal<
+							typeof context.args.reason,
+							'sync' | 'manual' | undefined
+						>
+					>;
+					const check: _Reason = true;
+					void check;
+				},
 			},
 			plugins: [softDelete],
 			schema,
@@ -565,6 +590,17 @@ describe('plugins', () => {
 		>;
 		const check: _FindManyDeleted = true;
 		void check;
+
+		type _UpdateEachReason = Expect<
+			Equal<
+				NonNullable<
+					Parameters<typeof client.users.updateEach>[0]
+				>['reason'],
+				'sync' | 'manual' | undefined
+			>
+		>;
+		const updateEachCheck: _UpdateEachReason = true;
+		void updateEachCheck;
 		close();
 	});
 });

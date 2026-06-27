@@ -17,6 +17,7 @@ import type {
 	DeleteArgs,
 	DeleteManyArgs,
 	UpdateArgs,
+	UpdateEachArgs,
 	UpdateManyArgs,
 	UpsertArgs,
 	UpsertManyArgs,
@@ -147,6 +148,7 @@ export type PluginHookKind =
 	| 'findUnique'
 	| 'paginate'
 	| 'update'
+	| 'updateEach'
 	| 'updateMany'
 	| 'upsert'
 	| 'upsertMany';
@@ -200,6 +202,8 @@ type PluginOperationArgsMap<
 		OperationArgsForKind<OperationArgs, 'paginate'>;
 	update: UpdateArgs<Schema, Name, Meta> &
 		OperationArgsForKind<OperationArgs, 'update'>;
+	updateEach: UpdateEachArgs<Schema, Name, Meta> &
+		OperationArgsForKind<OperationArgs, 'updateEach'>;
 	updateMany: UpdateManyArgs<Schema, Name, Meta> &
 		OperationArgsForKind<OperationArgs, 'updateMany'>;
 	upsert: UpsertArgs<Schema, Name, Meta> &
@@ -225,6 +229,7 @@ type PluginOperationResultMap<
 	findUnique: unknown;
 	paginate: unknown;
 	update: unknown;
+	updateEach: BatchResult<unknown>;
 	updateMany: BatchResult<never>;
 	upsert: unknown;
 	upsertMany: BatchResult<unknown>;
@@ -262,14 +267,18 @@ type PluginOperationInputBase<
 			? InsertModelFor<Schema, Name>[]
 			: Kind extends 'upsertMany'
 				? InsertModelFor<Schema, Name>[]
-				: Kind extends 'update' | 'updateMany'
-					? Partial<InsertModelFor<Schema, Name>>
-					: Kind extends 'upsert'
-						? {
-								create: InsertModelFor<Schema, Name>;
-								update: Partial<InsertModelFor<Schema, Name>>;
-							}
-						: never;
+				: Kind extends 'updateEach'
+					? UpdateEachArgs<Schema, Name, Meta>['data']
+					: Kind extends 'update' | 'updateMany'
+						? Partial<InsertModelFor<Schema, Name>>
+						: Kind extends 'upsert'
+							? {
+									create: InsertModelFor<Schema, Name>;
+									update: Partial<
+										InsertModelFor<Schema, Name>
+									>;
+								}
+							: never;
 	db: unknown;
 	dialect: PluginDialect;
 	isInTransaction: boolean;
@@ -358,6 +367,18 @@ type PluginOperationInputBase<
 		: never;
 };
 
+/**
+ * Full operation input passed to plugin hooks and transforms. Wraps the
+ * internal base type with a discriminated kind to provide type-safe
+ * access to operation-specific fields.
+ *
+ * @typeParam Schema      - The Drizzle schema type.
+ * @typeParam Name        - The table key within the schema.
+ * @typeParam Meta        - Custom metadata type. Defaults to {@link BetterMeta}.
+ * @typeParam State       - Plugin state type. Defaults to {@link PluginState}.
+ * @typeParam OperationArgs - Plugin-provided operation arg extensions.
+ * @typeParam Kind        - The specific operation kind being performed.
+ */
 export type PluginOperationInput<
 	Schema extends AnySchema = AnySchema,
 	Name extends TableKey<Schema> = TableKey<Schema>,
@@ -394,45 +415,97 @@ type PluginAfterHookContext<
 	result: PluginOperationResultMap<Schema, Name, Meta>[Kind];
 };
 
+/**
+ * Context object provided to plugin transaction lifecycle hooks
+ * (`beforeTransaction`, `afterTransactionCommit`, `afterTransactionRollback`).
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type. Defaults to {@link BetterMeta}.
+ * @typeParam Plugins - The plugin tuple.
+ */
 export type PluginTransactionHookContext<
 	Schema extends AnySchema = AnySchema,
 	Meta = BetterMeta,
 	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
 > = {
+	/** Register a callback to run after the transaction commits. */
 	afterCommit(callback: () => unknown | Promise<unknown>): void;
+	/** Register a callback to run after the transaction rolls back. */
 	afterRollback(callback: () => unknown | Promise<unknown>): void;
+	/** The current attempt number (1-indexed) when retries are enabled. */
 	attempt: number;
+	/** The transaction-scoped Better Drizzle client. */
 	client: BetterDrizzleTransactionClient<Schema, Meta, Plugins>;
+	/** Optional comment attached to the transaction. */
 	comment?: string;
+	/** The underlying Drizzle database instance. */
 	db: unknown;
+	/** The detected SQL dialect. */
 	dialect: PluginDialect;
+	/** Nesting depth (0 for top-level, 1 for first savepoint, etc.). */
 	depth: number;
+	/** Always `true` inside a transaction hook. */
 	isInTransaction: true;
+	/** Merged metadata from scoped context and transaction options. */
 	meta: Meta | undefined;
+	/** Per-model registry exposing columns, relations, and helper methods. */
 	models: ModelRegistry<Schema>;
+	/** Optional transaction name for savepoint identification. */
 	name?: string;
+	/** The original client options passed to `better()`. */
 	options: BetterClientOptions<Schema, Meta, Plugins>;
+	/** The full Drizzle schema object. */
 	schema: Schema;
+	/** Custom context object passed via `transaction({ context })`. */
 	transactionContext: Record<string, unknown> | undefined;
+	/** The full transaction options including meta overrides. */
 	transactionOptions: TransactionOptions & { meta?: Meta };
 };
 
+/**
+ * Context object provided to the `onTransactionError` plugin hook.
+ * Extends {@link PluginTransactionHookContext} with the caught error.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type. Defaults to {@link BetterMeta}.
+ * @typeParam Plugins - The plugin tuple.
+ */
 export type PluginTransactionErrorHookContext<
 	Schema extends AnySchema = AnySchema,
 	Meta = BetterMeta,
 	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
 > = PluginTransactionHookContext<Schema, Meta, Plugins> & {
+	/** The error that caused the transaction to fail. */
 	error: unknown;
 };
 
+/**
+ * Context object provided to the `afterTransactionRollback` plugin hook.
+ * Extends {@link PluginTransactionHookContext} with an optional rollback reason.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type. Defaults to {@link BetterMeta}.
+ * @typeParam Plugins - The plugin tuple.
+ */
 export type PluginTransactionRollbackHookContext<
 	Schema extends AnySchema = AnySchema,
 	Meta = BetterMeta,
 	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
 > = PluginTransactionHookContext<Schema, Meta, Plugins> & {
+	/** The reason for the rollback (e.g., explicit `rollback()`, timeout, or abort). */
 	reason?: unknown;
 };
 
+/**
+ * Context object provided to plugin raw SQL hooks (`beforeRaw`, `afterRaw`).
+ * Contains the raw query, execution options, and transaction context.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type. Defaults to {@link BetterMeta}.
+ * @typeParam Plugins - The plugin tuple.
+ * @typeParam Action - The raw operation type (`'raw'`, `'executeRaw'`, or `'rawUnsafe'`).
+ * @typeParam Result - The result type of the raw query.
+ */
 export type PluginRawHookContext<
 	Schema extends AnySchema = AnySchema,
 	Meta = BetterMeta,
@@ -443,32 +516,60 @@ export type PluginRawHookContext<
 		| 'rawUnsafe',
 	Result = unknown,
 > = {
+	/** The raw operation type being performed. */
 	action: Action;
+	/** Register a callback to run after the transaction commits. */
 	afterCommit(callback: () => unknown | Promise<unknown>): void;
+	/** Register a callback to run after the transaction rolls back. */
 	afterRollback(callback: () => unknown | Promise<unknown>): void;
+	/** Optional comment attached to the raw query. */
 	comment?: string;
+	/** The underlying Drizzle database instance. */
 	db: unknown;
+	/** The detected SQL dialect. */
 	dialect: PluginDialect;
+	/** Whether the query is executing inside a transaction. */
 	isInTransaction: boolean;
+	/** Optional row mapper that was passed to the raw call. */
 	map?: RawOptions<unknown, unknown, Meta>['map'];
+	/** Merged metadata from scoped context and per-call options. */
 	meta: Meta | undefined;
+	/** Optional query name for logging/debugging. */
 	name?: string;
+	/** The original client options passed to `better()`. */
 	options: BetterClientOptions<Schema, Meta, Plugins>;
+	/** The rendered SQL string sent to the driver. */
 	query: string;
+	/** The full raw options object passed to the raw call. */
 	rawOptions: RawOptions<unknown, unknown, Meta>;
+	/** The result returned by the raw query. */
 	result: Result;
+	/** The full Drizzle schema object. */
 	schema: Schema;
+	/** Optional AbortSignal for query cancellation. */
 	signal?: AbortSignal;
+	/** The Drizzle SQL object (before rendering to string). */
 	sql?: unknown;
+	/** The timeout in milliseconds, if specified. */
 	timeoutMs?: number;
+	/** The transaction-scoped client, or `null` if outside a transaction. */
 	transaction: BetterDrizzleTransactionClient<
 		Schema,
 		Meta,
 		readonly AnyPlugin[]
 	> | null;
+	/** Custom context object passed via `transaction({ context })`. */
 	transactionContext: Record<string, unknown> | undefined;
 };
 
+/**
+ * Context object provided to the `onRawError` plugin hook.
+ * Extends {@link PluginRawHookContext} with the caught error.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Meta   - Custom metadata type. Defaults to {@link BetterMeta}.
+ * @typeParam Plugins - The plugin tuple.
+ */
 export type PluginRawErrorHookContext<
 	Schema extends AnySchema = AnySchema,
 	Meta = BetterMeta,
@@ -480,6 +581,7 @@ export type PluginRawErrorHookContext<
 	'raw' | 'executeRaw' | 'rawUnsafe',
 	unknown
 > & {
+	/** The error that caused the raw query to fail. */
 	error: unknown;
 };
 
@@ -575,7 +677,7 @@ export type PluginHooks<
 			Meta,
 			State,
 			OperationArgs,
-			'update' | 'updateMany'
+			'update' | 'updateEach' | 'updateMany'
 		>,
 	): unknown;
 	beforeCreate?(
@@ -659,7 +761,7 @@ export type PluginHooks<
 			Meta,
 			State,
 			OperationArgs,
-			'update' | 'updateMany'
+			'update' | 'updateEach' | 'updateMany'
 		>,
 	):
 		| PluginBeforeHookContext<
@@ -668,7 +770,7 @@ export type PluginHooks<
 				Meta,
 				State,
 				OperationArgs,
-				'update' | 'updateMany'
+				'update' | 'updateEach' | 'updateMany'
 		  >['data']
 		| undefined;
 	onTransactionError?(
@@ -809,7 +911,9 @@ export interface Plugin<
 		never
 	>,
 > extends PluginMeta<Options> {
+	/** Static configuration controlling dialect support and model requirements. */
 	config?: PluginConfig;
+	/** Extends the client with additional methods and properties. */
 	extendClient?<
 		Schema extends AnySchema,
 		Meta,
@@ -817,11 +921,15 @@ export interface Plugin<
 	>(
 		context: PluginClientExtensionContext<Schema, Meta, Plugins>,
 	): ClientExtension | undefined;
+	/** Extends each model delegate with additional methods and properties. */
 	extendModel?<Schema extends AnySchema, Meta>(
 		context: PluginModelExtensionContext<Schema, Meta>,
 	): ModelExtension | undefined;
+	/** Lifecycle hooks for intercepting CRUD, query, transaction, and raw operations. */
 	hooks?: PluginHooks<AnySchema, BetterMeta, State, NoInfer<OperationArgs>>;
+	/** Custom operation args fields added to every delegate method call. */
 	operationArgs?: OperationArgs;
+	/** Runs once during client initialization. Used to register hooks and transforms. */
 	setup?<Schema extends AnySchema, Meta>(
 		context: PluginSetupContext<
 			Schema,
@@ -830,6 +938,7 @@ export interface Plugin<
 			NoInfer<OperationArgs>
 		>,
 	): void;
+	/** Transforms every operation before it reaches Drizzle. */
 	transform?: PluginTransform<
 		AnySchema,
 		BetterMeta,

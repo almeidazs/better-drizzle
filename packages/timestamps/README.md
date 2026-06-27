@@ -90,7 +90,7 @@ The plugin updates payloads before the database call:
 
 - `create`: sets `createdAt` and `updatedAt`
 - `createMany`: sets `createdAt` and `updatedAt` for each row
-- `update`: sets `updatedAt`
+- `update` / `updateEach`: sets `updatedAt`
 - `upsert`: sets both fields on the create payload and `updatedAt` on the update payload
 - `upsertMany`: stamps insert rows and keeps `updatedAt` fresh on conflict updates
 

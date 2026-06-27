@@ -54,7 +54,9 @@ export type InsertBuilderLike = {
  * resolves to a Promise-like that also exposes an optional `returning()`.
  */
 export type UpdateBuilderLike = Promise<unknown> & {
-	returning?: () => Promise<Record<string, unknown>[]>;
+	returning?: (
+		fields?: Record<string, unknown>,
+	) => Promise<Record<string, unknown>[]>;
 };
 
 /**
@@ -344,8 +346,11 @@ export type WhereCompilerContext<
 	Schema extends AnySchema,
 	Meta = BetterMeta,
 > = RuntimeContext<Schema, Meta> & {
+	/** The root query arguments passed by the caller (if any). */
 	rootArgs?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>;
+	/** Runtime metadata for the table being queried. */
 	runtime: TableRuntime;
+	/** The database table name. */
 	tableName: string;
 };
 

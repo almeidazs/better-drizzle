@@ -9,6 +9,7 @@
   - `packages/timestamps`: official timestamps plugin
   - `benchmark`: Bun + SQLite benchmark suite
   - `examples`: Markdown-only example catalog and usage guides
+  - `apps/web`: Next.js + Fumadocs documentation/marketing site
   - `README.md`: project-level documentation
   - `packages/core/README.md`: package-level documentation, currently intentionally kept in sync with the root README
 - **Package manager and runtime**: Bun is the primary runtime for local commands and benchmarks. The workspace is configured as a TypeScript ESM monorepo.
@@ -70,6 +71,7 @@
   - `create`
   - `createMany`
   - `update`
+  - `updateEach`
   - `updateMany`
   - `delete`
   - `deleteMany`
@@ -115,6 +117,12 @@
   - client hooks remain side-effect-only
   - plugin hooks/transforms are the mutation layer
   - `upsertMany` is a create-oriented hook/transform kind, matching `upsert` rather than `updateMany`
+  - `updateEach` is an update-oriented batch operation with its own plugin kind, but it still flows through `beforeUpdate` / `afterUpdate`
+- **Batch updateEach API**:
+  - `updateEach` is native-first and performance-sensitive
+  - it accepts `by`, `data`, `update`, optional `where`, optional scalar `select`, and `onEmpty`
+  - it uses a single `UPDATE ... SET column = CASE ... END` style statement instead of userland loops
+  - it rejects duplicate `by` values and relation selects should fail fast
 - **Batch upsert API**:
   - `upsertMany` is native-first and performance-sensitive
   - it accepts `data`, explicit `target`, `update`, optional `select`, optional `batchSize`, and optional SQL `where`
@@ -169,6 +177,7 @@
 
 - **Typecheck**:
   - `bunx tsc --noEmit`
+  - web app: `cd apps/web && bun run typecheck`
 - **Format and lint**:
   - `bunx @biomejs/biome check packages/core/src benchmark --write`
 - **Recent style/tooling facts**:
@@ -214,6 +223,12 @@
 - **Performance claims**: tie claims to benchmark shape and avoid vague “faster” language without context.
 - **Examples**: prefer real API examples that match the current exported API and benchmarked usage patterns.
 - **Examples catalog**: `examples/` is a Markdown-first reference library. Prefer adding focused topic pages under `basics`, `frameworks`, `plugins`, `performance`, and `cookbook` instead of growing one giant examples file.
+
+## Web app notes
+
+- The docs site under `apps/web` uses `fumadocs-ui` layouts with custom header slots.
+- If a custom docs header replaces Fumadocs' default `Header`, it must participate in the docs grid with `[grid-area:header]` and the docs shell should keep `--fd-header-height` in sync, otherwise mobile/tablet layouts can collapse the main content into a narrow column.
+- For narrow screens, `#nd-docs-layout` may need an explicit single-column grid override because Fumadocs' default docs grid keeps sidebar/toc tracks in the template even when those panes are visually hidden.
 
 ## Change checklist
 

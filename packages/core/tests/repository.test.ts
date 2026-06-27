@@ -23,6 +23,7 @@ describe('repository()', () => {
 		expect(typeof repo.create).toBe('function');
 		expect(typeof repo.createMany).toBe('function');
 		expect(typeof repo.update).toBe('function');
+		expect(typeof repo.updateEach).toBe('function');
 		expect(typeof repo.updateMany).toBe('function');
 		expect(typeof repo.delete).toBe('function');
 		expect(typeof repo.deleteMany).toBe('function');
@@ -152,6 +153,7 @@ describe('client - table delegates', () => {
 			'findUnique',
 			'paginate',
 			'update',
+			'updateEach',
 			'updateMany',
 			'upsert',
 			'upsertMany',

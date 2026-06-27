@@ -1,5 +1,6 @@
 import { type AnyColumn, and, eq, isNull, type SQL, sql } from 'drizzle-orm';
 import { One } from 'drizzle-orm/relations';
+import { isSQLWrapper } from 'drizzle-orm/sql';
 
 import type {
 	AnySchema,
@@ -16,6 +17,7 @@ import type {
 	SkipDuplicatesOption,
 	TableRuntime,
 	UpdateArgs,
+	UpdateEachArgs,
 	UpdateManyArgs,
 	UpsertArgs,
 	UpsertManyArgs,
@@ -257,17 +259,177 @@ const buildUpsertManySet = <Schema extends AnySchema, Meta>(
 const getReturningSelection = (
 	runtime: TableRuntime,
 	select?: Record<string, unknown>,
+	operation = 'upsertMany',
 ) => {
 	if (!select) return;
 	if (hasRelationSelection(runtime, select))
 		throw new BetterDrizzleError({
 			code: BetterDrizzleErrorCode.OperationError,
-			message: 'upsertMany does not support relation selects.',
-			operation: 'upsertMany',
+			message: `${operation} does not support relation selects.`,
+			operation,
 			table: runtime.dbName,
 		});
 
 	return getDirectSelection(runtime, select);
+};
+
+const getColumnKeyByInstance = (
+	runtime: TableRuntime,
+	column: AnyColumn,
+	operation: string,
+) => {
+	for (const key in runtime.columns)
+		if (runtime.columns[key] === column) return key;
+
+	for (const key in runtime.columns)
+		if (runtime.columns[key]?.name === column.name) return key;
+
+	throw new BetterDrizzleError({
+		code: BetterDrizzleErrorCode.OperationError,
+		details: { column: column.name },
+		message: `Invalid ${operation} "by" column for table "${runtime.dbName}"`,
+		operation,
+		table: runtime.dbName,
+	});
+};
+
+const getUpdateEachWhere = <Schema extends AnySchema>(
+	byKey: string,
+	values: unknown[],
+	where?: WhereArg<Schema, BetterTableKey<Schema>>,
+) =>
+	(where
+		? {
+				AND: [
+					where,
+					{
+						[byKey]: {
+							in: values,
+						},
+					},
+				],
+			}
+		: {
+				[byKey]: {
+					in: values,
+				},
+			}) as WhereArg<Schema, BetterTableKey<Schema>>;
+
+const getUpdateEachRows = <Schema extends AnySchema, Meta>(
+	runtime: TableRuntime,
+	args: UpdateEachArgs<Schema, BetterTableKey<Schema>, Meta>,
+) => {
+	if (!args.data.length) {
+		if (args.onEmpty === 'throw')
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.OperationError,
+				message: 'updateEach requires at least one input row.',
+				operation: 'updateEach',
+				table: runtime.dbName,
+			});
+
+		return;
+	}
+
+	const byKey = getColumnKeyByInstance(runtime, args.by, 'updateEach');
+	const values = new Array(args.data.length);
+	const seen = new Set<unknown>();
+
+	for (let index = 0; index < args.data.length; index += 1) {
+		const row = args.data[index] as Record<string, unknown>;
+		const byValue = row[byKey];
+
+		if (byValue === undefined)
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.OperationError,
+				details: { by: byKey, index },
+				message: `updateEach row at index ${index} is missing "${byKey}".`,
+				operation: 'updateEach',
+				table: runtime.dbName,
+			});
+
+		if (seen.has(byValue))
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.OperationError,
+				details: { by: byKey, value: byValue },
+				message: `updateEach received duplicate "${byKey}" values.`,
+				operation: 'updateEach',
+				table: runtime.dbName,
+			});
+
+		seen.add(byValue);
+		values[index] = byValue;
+	}
+
+	return { byKey, values };
+};
+
+const buildUpdateEachSet = <Schema extends AnySchema, Meta>(
+	runtime: TableRuntime,
+	byKey: string,
+	args: UpdateEachArgs<Schema, BetterTableKey<Schema>, Meta>,
+) => {
+	const byColumn = runtime.columns[byKey];
+	const updates = args.update as Record<string, unknown>;
+	const set = Object.create(null) as Record<string, unknown>;
+	let hasColumns = false;
+
+	for (const key in updates) {
+		const resolve = updates[key];
+		if (typeof resolve !== 'function') continue;
+
+		const column = runtime.columns[key];
+		if (!column)
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.OperationError,
+				details: { column: key },
+				message: `Invalid updateEach update column "${key}" for table "${runtime.dbName}"`,
+				operation: 'updateEach',
+				table: runtime.dbName,
+			});
+
+		const branches = new Array<SQL>(args.data.length);
+		for (let index = 0; index < args.data.length; index += 1) {
+			const row = args.data[index] as Record<string, unknown>;
+			const nextValue = resolve(row as never);
+			if (nextValue === undefined)
+				throw new BetterDrizzleError({
+					code: BetterDrizzleErrorCode.OperationError,
+					details: { column: key, index },
+					message: `updateEach "${key}" resolver returned undefined at row ${index}.`,
+					operation: 'updateEach',
+					table: runtime.dbName,
+				});
+
+			branches[index] = sql`when ${byColumn} = ${row[byKey]} then ${
+				isSQLWrapper(nextValue)
+					? nextValue
+					: sql.param(nextValue, column)
+			}`;
+		}
+
+		set[key] = sql.join(
+			[
+				sql.raw('case'),
+				sql.join(branches, sql.raw(' ')),
+				sql.raw('else'),
+				sql`${column}`,
+				sql.raw('end'),
+			],
+			sql.raw(' '),
+		);
+		hasColumns = true;
+	}
+
+	if (!hasColumns)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			message: 'updateEach update must affect at least one column.',
+			operation: 'updateEach',
+			table: runtime.dbName,
+		});
+
+	return set;
 };
 
 const getAffectedCount = (result: unknown) => {
@@ -1112,6 +1274,53 @@ export const updateManyRecords = async <Schema extends AnySchema, Meta>(
 		await context.db.update(runtime.table).set(args.data).where(predicate);
 
 	return { count: affectedCount };
+};
+
+export const updateEachRecords = async <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	args: UpdateEachArgs<Schema, BetterTableKey<Schema>, Meta>,
+): Promise<BatchResult<Record<string, unknown>>> => {
+	const runtime = getTableRuntime(context, tableName as string);
+	const rows = getUpdateEachRows(runtime, args);
+	if (!rows) return { count: 0 };
+
+	const where = getUpdateEachWhere<Schema>(
+		rows.byKey,
+		rows.values,
+		args.where,
+	);
+	const predicate = getPredicate(context, runtime, tableName, where);
+	if (!predicate) return { count: 0 };
+
+	const affectedCount = await countRows(context, tableName, where);
+	if (affectedCount === 0) return { count: 0 };
+
+	const set = buildUpdateEachSet(runtime, rows.byKey, args);
+	const selection = getReturningSelection(
+		runtime,
+		args.select as Record<string, unknown> | undefined,
+		'updateEach',
+	);
+	const builder = context.db.update(runtime.table).set(set).where(predicate);
+
+	if (selection && typeof builder.returning === 'function') {
+		const data = await builder.returning(selection);
+		return { count: affectedCount, data };
+	}
+
+	await builder;
+	if (!args.select) return { count: affectedCount };
+
+	const data = await findManyRecords(context, tableName, {
+		select: args.select,
+		where,
+	});
+
+	return {
+		count: affectedCount,
+		data: data.length ? (data as Record<string, unknown>[]) : undefined,
+	};
 };
 
 /**
