@@ -403,6 +403,91 @@ describe('updateMany', () => {
 	});
 });
 
+describe('updateEach', () => {
+	test('updates multiple rows with different values', async () => {
+		const result = await ctx.better.users.updateEach({
+			by: ctx.schema.users.id,
+			data: [
+				{ id: 1, name: 'Alice One', age: 26 },
+				{ id: 2, name: 'Bob Two', age: 31 },
+			],
+			update: {
+				age: (row) => row.age,
+				name: (row) => row.name,
+			},
+		});
+
+		expect(result.count).toBe(2);
+
+		const rows = await ctx.better.users.findMany({
+			orderBy: { id: 'asc' },
+			where: { id: { in: [1, 2] } },
+		});
+		expect(rows[0]?.name).toBe('Alice One');
+		expect(rows[0]?.age).toBe(26);
+		expect(rows[1]?.name).toBe('Bob Two');
+		expect(rows[1]?.age).toBe(31);
+	});
+
+	test('supports select projection and extra where filter', async () => {
+		const result = await ctx.better.users.updateEach({
+			by: ctx.schema.users.id,
+			data: [
+				{ id: 1, active: false },
+				{ id: 3, active: true },
+			],
+			select: { id: true, active: true },
+			update: {
+				active: (row) => row.active,
+			},
+			where: { active: true },
+		});
+
+		expect(result.count).toBe(1);
+		expect(result.data).toEqual([{ id: 1, active: false }]);
+	});
+
+	test('returns count 0 on empty input by default', async () => {
+		const result = await ctx.better.users.updateEach({
+			by: ctx.schema.users.id,
+			data: [],
+			update: {
+				name: () => 'ignored',
+			},
+		});
+
+		expect(result.count).toBe(0);
+	});
+
+	test('throws on empty input when configured', async () => {
+		await expect(
+			ctx.better.users.updateEach({
+				by: ctx.schema.users.id,
+				data: [],
+				onEmpty: 'throw',
+				update: {
+					name: () => 'ignored',
+				},
+			}),
+		).rejects.toThrow('updateEach requires at least one input row.');
+	});
+
+	test('rejects duplicate match values', async () => {
+		await expect(
+			ctx.better.users.updateEach({
+				by: ctx.schema.users.id,
+				data: [
+					{ id: 1, name: 'A' },
+					{ id: 1, name: 'B' },
+				],
+				update: {
+					name: (row) => row.name,
+				},
+			}),
+		).rejects.toThrow('updateEach received duplicate "id" values.');
+	});
+});
+
 describe('delete', () => {
 	test('deletes a record and returns it', async () => {
 		const result = await ctx.better.users.delete({

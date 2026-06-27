@@ -91,6 +91,34 @@ const batch = await client.users.updateMany({
 console.log(batch.count);
 ```
 
+## `updateEach`
+
+`updateEach()` updates many rows with different values in one statement by generating a `CASE` expression per updated column.
+
+```ts
+const batch = await client.users.updateEach({
+	by: users.id,
+	data: [
+		{ id: 1, city: 'New York', name: 'Alice' },
+		{ id: 2, city: 'Chicago', name: 'Bob' },
+	],
+	update: {
+		city: (row) => row.city,
+		name: (row) => row.name,
+	},
+	select: {
+		id: true,
+		name: true,
+		city: true,
+	},
+});
+
+console.log(batch.count);
+console.log(batch.data);
+```
+
+`by` must be a column from the target table. `select` is supported for scalar columns, but relation `include` is intentionally not part of this path.
+
 ## `delete`
 
 ```ts
@@ -187,8 +215,9 @@ const user = await client.users.create({
 
 ## Practical notes
 
-- `createMany()`, `updateMany()`, and `deleteMany()` return a batch summary.
+- `createMany()`, `updateMany()`, `updateEach()`, and `deleteMany()` return a batch summary.
 - `create()` returns `null` and `createMany()` returns a partial count when `skipDuplicates` is enabled and duplicates are skipped.
+- `updateEach()` rejects duplicate `by` values and supports `onEmpty: 'return' | 'throw'`.
 - `upsertMany()` is native-first and optimized for throughput. It supports `select`, but not relation `include`.
 - `update()` and `delete()` are nullable by default because the target row may not exist.
 - `upsert()` is often cleaner than “find, then branch, then write” when the behavior is truly upsert-shaped.

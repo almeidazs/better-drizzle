@@ -54,7 +54,9 @@ export type InsertBuilderLike = {
  * resolves to a Promise-like that also exposes an optional `returning()`.
  */
 export type UpdateBuilderLike = Promise<unknown> & {
-	returning?: () => Promise<Record<string, unknown>[]>;
+	returning?: (
+		fields?: Record<string, unknown>,
+	) => Promise<Record<string, unknown>[]>;
 };
 
 /**

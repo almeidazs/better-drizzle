@@ -30,7 +30,7 @@ const client = better(db, {
 
 - `create()` sets `createdAt` and `updatedAt` when those columns exist
 - `createMany()` applies the same rule row by row
-- `update()` refreshes `updatedAt`
+- `update()` and `updateEach()` refresh `updatedAt`
 - `upsert()` sets timestamps for the create payload and refreshes `updatedAt` for the update payload
 - `upsertMany()` stamps insert rows and keeps `updatedAt` fresh on conflict updates
 

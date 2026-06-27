@@ -25,8 +25,11 @@ import type {
 	AnySchema,
 	DbNameKey,
 	InsertModelFor,
+	ScalarKeysFor,
+	SelectModelFor,
 	SourceKeyFromDbName,
 	TableConfigFor,
+	TableFor,
 	TableKey,
 } from './utils';
 
@@ -255,6 +258,72 @@ export interface UpdateManyArgs<
 	where?: WhereArg<Schema, Name>;
 	/** Partial column values to apply to every matched row. */
 	data: Partial<InsertModelFor<Schema, Name>>;
+	/** Custom metadata forwarded to hooks. */
+	meta?: Meta;
+}
+
+export type TableColumnFor<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Key extends ScalarKeysFor<Schema, Name> = ScalarKeysFor<Schema, Name>,
+> = Extract<TableFor<Schema, Name>['_']['columns'][Key], AnyColumn>;
+
+export type UpdateEachRow<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = Partial<SelectModelFor<Schema, Name>> & Record<string, unknown>;
+
+export type UpdateEachUpdateMap<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Row extends UpdateEachRow<Schema, Name>,
+> = Partial<{
+	[K in ScalarKeysFor<Schema, Name>]: (
+		row: Row,
+	) => SelectModelFor<Schema, Name>[K] | SQL;
+}>;
+
+/**
+ * Arguments for the `updateEach` operation.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ * @typeParam Row - Source row type inferred from `data`.
+ *
+ * @example
+ * ```ts
+ * const result = await db.user.updateEach({
+ *   by: schema.user.id,
+ *   data: [
+ *     { id: 1, name: 'Alice Updated' },
+ *     { id: 2, name: 'Bob Updated' },
+ *   ],
+ *   update: {
+ *     name: (row) => row.name,
+ *   },
+ *   select: { id: true, name: true },
+ * });
+ * ```
+ */
+export interface UpdateEachArgs<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta = import('./query').BetterMeta,
+	Row extends UpdateEachRow<Schema, Name> = UpdateEachRow<Schema, Name>,
+> {
+	/** Column used to match each source row against existing records. */
+	by: TableColumnFor<Schema, Name>;
+	/** Source rows that drive the per-row updates. */
+	data: Row[];
+	/** Per-column callbacks that resolve the new value for each source row. */
+	update: UpdateEachUpdateMap<Schema, Name, Row>;
+	/** Optional extra filter combined with the generated `by in (...)` predicate. */
+	where?: WhereArg<Schema, Name>;
+	/** Optional scalar projection for returned rows. */
+	select?: SelectInput<Schema, Name>;
+	/** Empty-input handling. Defaults to `'return'`. */
+	onEmpty?: 'return' | 'throw';
 	/** Custom metadata forwarded to hooks. */
 	meta?: Meta;
 }
@@ -818,6 +887,11 @@ type BetterDrizzleClientByTableWithPlugins<
  *
  * // Batch operations
  * await user.createMany({ data: [{ name: 'A' }, { name: 'B' }] });
+ * await user.updateEach({
+ *   by: schema.users.id,
+ *   data: [{ id: 1, active: false }],
+ *   update: { active: (row) => row.active },
+ * });
  * await user.updateMany({ data: { active: false } });
  * await user.deleteMany({ where: { role: 'guest' } });
  *
@@ -1208,6 +1282,24 @@ export type BetterDrizzleModelDelegate<
 			'updateMany'
 		>,
 	): Promise<BatchResult<never>>;
+	/**
+	 * Updates multiple rows with different values in one statement.
+	 *
+	 * Uses the provided `by` column to build `CASE` expressions per updated
+	 * column. Supports scalar `select`, but not relation `include`.
+	 *
+	 * @param args - Match column, source rows, update callbacks, and optional
+	 *   `where` / `select` / `onEmpty` options.
+	 * @returns A promise resolving to `{ count, data? }`.
+	 */
+	updateEach<
+		Row extends UpdateEachRow<Schema, Name>,
+		Args extends OperationArgsWithPlugins<
+			UpdateEachArgs<Schema, Name, Meta, Row>,
+			Plugins,
+			'updateEach'
+		>,
+	>(args: Args): Promise<BatchResult<PayloadForArgs<Schema, Name, Args>>>;
 	/**
 	 * Returns the first matching row (alias for {@link findFirst}).
 	 *

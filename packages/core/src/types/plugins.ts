@@ -17,6 +17,7 @@ import type {
 	DeleteArgs,
 	DeleteManyArgs,
 	UpdateArgs,
+	UpdateEachArgs,
 	UpdateManyArgs,
 	UpsertArgs,
 	UpsertManyArgs,
@@ -147,6 +148,7 @@ export type PluginHookKind =
 	| 'findUnique'
 	| 'paginate'
 	| 'update'
+	| 'updateEach'
 	| 'updateMany'
 	| 'upsert'
 	| 'upsertMany';
@@ -200,6 +202,8 @@ type PluginOperationArgsMap<
 		OperationArgsForKind<OperationArgs, 'paginate'>;
 	update: UpdateArgs<Schema, Name, Meta> &
 		OperationArgsForKind<OperationArgs, 'update'>;
+	updateEach: UpdateEachArgs<Schema, Name, Meta> &
+		OperationArgsForKind<OperationArgs, 'updateEach'>;
 	updateMany: UpdateManyArgs<Schema, Name, Meta> &
 		OperationArgsForKind<OperationArgs, 'updateMany'>;
 	upsert: UpsertArgs<Schema, Name, Meta> &
@@ -225,6 +229,7 @@ type PluginOperationResultMap<
 	findUnique: unknown;
 	paginate: unknown;
 	update: unknown;
+	updateEach: BatchResult<unknown>;
 	updateMany: BatchResult<never>;
 	upsert: unknown;
 	upsertMany: BatchResult<unknown>;
@@ -262,14 +267,18 @@ type PluginOperationInputBase<
 			? InsertModelFor<Schema, Name>[]
 			: Kind extends 'upsertMany'
 				? InsertModelFor<Schema, Name>[]
-				: Kind extends 'update' | 'updateMany'
-					? Partial<InsertModelFor<Schema, Name>>
-					: Kind extends 'upsert'
-						? {
-								create: InsertModelFor<Schema, Name>;
-								update: Partial<InsertModelFor<Schema, Name>>;
-							}
-						: never;
+				: Kind extends 'updateEach'
+					? UpdateEachArgs<Schema, Name, Meta>['data']
+					: Kind extends 'update' | 'updateMany'
+						? Partial<InsertModelFor<Schema, Name>>
+						: Kind extends 'upsert'
+							? {
+									create: InsertModelFor<Schema, Name>;
+									update: Partial<
+										InsertModelFor<Schema, Name>
+									>;
+								}
+							: never;
 	db: unknown;
 	dialect: PluginDialect;
 	isInTransaction: boolean;
@@ -575,7 +584,7 @@ export type PluginHooks<
 			Meta,
 			State,
 			OperationArgs,
-			'update' | 'updateMany'
+			'update' | 'updateEach' | 'updateMany'
 		>,
 	): unknown;
 	beforeCreate?(
@@ -659,7 +668,7 @@ export type PluginHooks<
 			Meta,
 			State,
 			OperationArgs,
-			'update' | 'updateMany'
+			'update' | 'updateEach' | 'updateMany'
 		>,
 	):
 		| PluginBeforeHookContext<
@@ -668,7 +677,7 @@ export type PluginHooks<
 				Meta,
 				State,
 				OperationArgs,
-				'update' | 'updateMany'
+				'update' | 'updateEach' | 'updateMany'
 		  >['data']
 		| undefined;
 	onTransactionError?(

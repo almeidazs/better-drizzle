@@ -28,6 +28,7 @@ import type {
 	RuntimeContext,
 	TableRuntime,
 	UpdateArgs,
+	UpdateEachArgs,
 	UpdateManyArgs,
 	UpsertArgs,
 	UpsertManyArgs,
@@ -108,6 +109,11 @@ type AnyArgs<
 			'update'
 	  >
 	| OperationArgsWithPlugins<
+			UpdateEachArgs<Schema, BetterTableKey<Schema>, Meta>,
+			Plugins,
+			'updateEach'
+	  >
+	| OperationArgsWithPlugins<
 			UpdateManyArgs<Schema, BetterTableKey<Schema>, Meta>,
 			Plugins,
 			'updateMany'
@@ -146,7 +152,7 @@ const PLUGIN_HOOK_KINDS = {
 		'findUnique',
 		'paginate',
 	],
-	afterUpdate: ['update', 'updateMany'],
+	afterUpdate: ['update', 'updateEach', 'updateMany'],
 	beforeCreate: ['create', 'createMany', 'upsert', 'upsertMany'],
 	beforeDelete: ['delete', 'deleteMany'],
 	beforeQuery: [
@@ -158,7 +164,7 @@ const PLUGIN_HOOK_KINDS = {
 		'findUnique',
 		'paginate',
 	],
-	beforeUpdate: ['update', 'updateMany'],
+	beforeUpdate: ['update', 'updateEach', 'updateMany'],
 } satisfies PluginHookMap;
 
 const PLUGIN_TRANSACTION_HOOK_NAMES = [
@@ -196,7 +202,8 @@ const getBeforeHookName = (
 	)
 		return 'beforeCreate';
 	if (kind === 'delete' || kind === 'deleteMany') return 'beforeDelete';
-	if (kind === 'update' || kind === 'updateMany') return 'beforeUpdate';
+	if (kind === 'update' || kind === 'updateEach' || kind === 'updateMany')
+		return 'beforeUpdate';
 	return 'beforeQuery';
 };
 
@@ -468,6 +475,7 @@ const assignOperationArgs = <
 		kind === 'createMany' ||
 		kind === 'upsertMany' ||
 		kind === 'update' ||
+		kind === 'updateEach' ||
 		kind === 'updateMany'
 	)
 		(args as { data?: unknown }).data = input.data;

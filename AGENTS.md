@@ -70,6 +70,7 @@
   - `create`
   - `createMany`
   - `update`
+  - `updateEach`
   - `updateMany`
   - `delete`
   - `deleteMany`
@@ -115,6 +116,12 @@
   - client hooks remain side-effect-only
   - plugin hooks/transforms are the mutation layer
   - `upsertMany` is a create-oriented hook/transform kind, matching `upsert` rather than `updateMany`
+  - `updateEach` is an update-oriented batch operation with its own plugin kind, but it still flows through `beforeUpdate` / `afterUpdate`
+- **Batch updateEach API**:
+  - `updateEach` is native-first and performance-sensitive
+  - it accepts `by`, `data`, `update`, optional `where`, optional scalar `select`, and `onEmpty`
+  - it uses a single `UPDATE ... SET column = CASE ... END` style statement instead of userland loops
+  - it rejects duplicate `by` values and relation selects should fail fast
 - **Batch upsert API**:
   - `upsertMany` is native-first and performance-sensitive
   - it accepts `data`, explicit `target`, `update`, optional `select`, optional `batchSize`, and optional SQL `where`

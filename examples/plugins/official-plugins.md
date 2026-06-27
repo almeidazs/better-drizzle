@@ -9,7 +9,7 @@ The repository currently includes two official plugins:
 
 | Plugin | Good fit when | Main behavior |
 | --- | --- | --- |
-| Timestamps | your app wants `createdAt` / `updatedAt` managed consistently | fills timestamp columns during create, update, upsert, and upsertMany flows |
+| Timestamps | your app wants `createdAt` / `updatedAt` managed consistently | fills timestamp columns during create, update, updateEach, upsert, and upsertMany flows |
 | Soft delete | rows should stay recoverable and filtered by default | overrides deletes, filters reads, and adds restore helpers |
 
 ## Composition example

@@ -7,6 +7,7 @@ import type {
 	DeleteArgs,
 	DeleteManyArgs,
 	UpdateArgs,
+	UpdateEachArgs,
 	UpdateManyArgs,
 	UpsertManyArgs,
 } from './delegate';
@@ -44,7 +45,11 @@ export type CreateHookAction =
 	| 'upsert'
 	| 'upsertMany';
 /** Action names for update operations. */
-export type UpdateHookAction = 'update' | 'updateMany' | 'upsert';
+export type UpdateHookAction =
+	| 'update'
+	| 'updateEach'
+	| 'updateMany'
+	| 'upsert';
 /** Action names for delete operations. */
 export type DeleteHookAction = 'delete' | 'deleteMany';
 /** Union of all hook action names. */
@@ -191,17 +196,23 @@ type UpdateHookArgsForAction<
 			Plugins,
 			'updateMany'
 		>
-	: Action extends 'upsert'
+	: Action extends 'updateEach'
 		? OperationArgsWithPlugins<
-				UpdateArgs<Schema, Name, Meta>,
+				UpdateEachArgs<Schema, Name, Meta>,
 				Plugins,
-				'upsert'
+				'updateEach'
 			>
-		: OperationArgsWithPlugins<
-				UpdateArgs<Schema, Name, Meta>,
-				Plugins,
-				'update'
-			>;
+		: Action extends 'upsert'
+			? OperationArgsWithPlugins<
+					UpdateArgs<Schema, Name, Meta>,
+					Plugins,
+					'upsert'
+				>
+			: OperationArgsWithPlugins<
+					UpdateArgs<Schema, Name, Meta>,
+					Plugins,
+					'update'
+				>;
 
 type UpdateHookResultForAction<
 	Schema extends AnySchema,
@@ -211,11 +222,19 @@ type UpdateHookResultForAction<
 	Action extends UpdateHookAction,
 > = Action extends 'updateMany'
 	? BatchResult<never>
-	: PayloadForArgs<
-			Schema,
-			Name,
-			UpdateHookArgsForAction<Schema, Name, Meta, Plugins, Action>
-		> | null;
+	: Action extends 'updateEach'
+		? BatchResult<
+				PayloadForArgs<
+					Schema,
+					Name,
+					UpdateHookArgsForAction<Schema, Name, Meta, Plugins, Action>
+				>
+			>
+		: PayloadForArgs<
+				Schema,
+				Name,
+				UpdateHookArgsForAction<Schema, Name, Meta, Plugins, Action>
+			> | null;
 
 type DeleteHookArgsForAction<
 	Schema extends AnySchema,
@@ -347,7 +366,7 @@ type UpdateHookContext<
 		Action
 	> & {
 		result: UpdateHookResultForAction<Schema, Name, Meta, Plugins, Action>;
-		row?: Action extends 'updateMany'
+		row?: Action extends 'updateEach' | 'updateMany'
 			? never
 			: UpdateHookResultForAction<Schema, Name, Meta, Plugins, Action>;
 	};
@@ -501,6 +520,20 @@ export type BeforeUpdateHookContext<
 				Meta,
 				Plugins,
 				OperationArgsWithPlugins<
+					UpdateEachArgs<Schema, Name, Meta>,
+					Plugins,
+					'updateEach'
+				>,
+				'updateEach'
+			>;
+	  }[TableKey<Schema>]
+	| {
+			[Name in TableKey<Schema>]: HookBaseContext<
+				Schema,
+				Name,
+				Meta,
+				Plugins,
+				OperationArgsWithPlugins<
 					UpdateManyArgs<Schema, Name, Meta>,
 					Plugins,
 					'updateMany'
@@ -522,6 +555,7 @@ export type AfterUpdateHookContext<
 	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
 > =
 	| UpdateHookContext<Schema, Meta, Plugins, 'update'>
+	| UpdateHookContext<Schema, Meta, Plugins, 'updateEach'>
 	| UpdateHookContext<Schema, Meta, Plugins, 'updateMany'>
 	| UpdateHookContext<Schema, Meta, Plugins, 'upsert'>;
 

@@ -83,7 +83,7 @@ const createHookContext = (events: HookEvent[]) => {
 		},
 	});
 
-	return { client, sqlite };
+	return { client, schema, sqlite };
 };
 
 describe('hooks - create', () => {
@@ -299,6 +299,25 @@ describe('hooks - update', () => {
 		expect(events).toEqual([
 			{ hook: 'beforeUpdate', action: 'updateMany', table: 'users' },
 			{ hook: 'afterUpdate', action: 'updateMany', table: 'users' },
+		]);
+		sqlite.close();
+	});
+
+	test('beforeUpdate and afterUpdate fire on updateEach', async () => {
+		const events: HookEvent[] = [];
+		const { client, schema, sqlite } = createHookContext(events);
+
+		await client.users.updateEach({
+			by: schema.users.id,
+			data: [{ id: 1, name: 'Updated Each' }],
+			update: {
+				name: (row) => row.name,
+			},
+		});
+
+		expect(events).toEqual([
+			{ hook: 'beforeUpdate', action: 'updateEach', table: 'users' },
+			{ hook: 'afterUpdate', action: 'updateEach', table: 'users' },
 		]);
 		sqlite.close();
 	});

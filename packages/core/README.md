@@ -53,7 +53,7 @@ It gets repetitive when every service ends up re-writing the same patterns:
 - Optional lifecycle hooks for cross-cutting behavior
 - First-class plugins with setup, transforms, and client/model extensions
 - Fast paths for simple reads and writes to reduce wrapper overhead
-- Consistent table delegates: `findMany`, `findFirst`, `create`, `update`, `delete`, `paginate`, `count`, `exists`, `upsert`, `upsertMany`
+- Consistent table delegates: `findMany`, `findFirst`, `create`, `update`, `updateEach`, `delete`, `paginate`, `count`, `exists`, `upsert`, `upsertMany`
 
 <h2 align="center">Querying your database with Better client</h2>
 
