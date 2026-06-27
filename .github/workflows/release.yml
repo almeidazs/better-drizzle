@@ -14,8 +14,8 @@ jobs:
         name: Publish package to npm
         runs-on: ubuntu-latest
         env:
-            NODE_AUTH_TOKEN: ""
-            NPM_TOKEN: ""
+            NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+            NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
         steps:
             - name: Checkout
@@ -31,12 +31,6 @@ jobs:
               with:
                   node-version: 24
                   registry-url: https://registry.npmjs.org
-
-            - name: Upgrade npm for trusted publishing
-              run: npm install -g npm@latest
-
-            - name: Remove temporary npm config
-              run: rm -f "$NPM_CONFIG_USERCONFIG"
 
             - name: Resolve release target
               id: release
@@ -56,9 +50,14 @@ jobs:
                       package_dir="packages/timestamps"
                       version="${tag#@better-drizzle/timestamps@}"
                       ;;
+                    @better-drizzle/soft-delete@*)
+                      package_name="@better-drizzle/soft-delete"
+                      package_dir="packages/soft-delete"
+                      version="${tag#@better-drizzle/soft-delete@}"
+                      ;;
                     *)
                       echo "::error::Unsupported release tag: $tag"
-                      echo "::error::Use the format better-drizzle@x.y.z or @better-drizzle/timestamps@x.y.z"
+                      echo "::error::Use the format better-drizzle@x.y.z, @better-drizzle/timestamps@x.y.z, or @better-drizzle/soft-delete@x.y.z"
                       exit 1
                       ;;
                   esac
