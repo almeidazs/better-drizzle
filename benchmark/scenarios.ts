@@ -5,6 +5,9 @@ import { OrderType, PaginationType } from '../packages/core/src';
 import { benchWrites, posts, users } from './schema';
 import type { BenchmarkContext } from './setup';
 
+// biome-ignore lint/suspicious/noExplicitAny: benchmark type erasure
+type Any = any;
+
 const nextWriteId = (context: BenchmarkContext) => {
 	const id = context.counters.createDeleteId;
 	context.counters.createDeleteId += 1;
@@ -26,10 +29,10 @@ const nextUpdateId = (context: BenchmarkContext) => {
 
 const betterClient = (context: BenchmarkContext) =>
 	context.better as unknown as {
-		benchWrites: any;
-		posts: any;
-		transaction<T>(callback: (tx: any) => Promise<T> | T): Promise<T>;
-		users: any;
+		benchWrites: Any;
+		posts: Any;
+		transaction<T>(callback: (tx: Any) => Promise<T> | T): Promise<T>;
+		users: Any;
 	};
 
 export const rawPointLookup = async (context: BenchmarkContext) => {
@@ -366,7 +369,7 @@ export const rawSimpleTransaction = async (context: BenchmarkContext) =>
  * `client.transaction()` callback.
  */
 export const betterSimpleTransaction = async (context: BenchmarkContext) =>
-	betterClient(context).transaction(async (tx: any) => {
+	betterClient(context).transaction(async (tx: Any) => {
 		const id = nextWriteId(context);
 		const token = nextWriteToken(context);
 
@@ -449,7 +452,7 @@ export const rawMultiOpTransaction = async (context: BenchmarkContext) =>
  * and one findFirst inside a single transaction.
  */
 export const betterMultiOpTransaction = async (context: BenchmarkContext) =>
-	betterClient(context).transaction(async (tx: any) => {
+	betterClient(context).transaction(async (tx: Any) => {
 		const baseId = nextWriteId(context);
 		const id2 = nextWriteId(context);
 		const id3 = nextWriteId(context);
@@ -506,7 +509,7 @@ export const betterMultiOpTransaction = async (context: BenchmarkContext) =>
  * nested savepoints.
  */
 export const betterNestedTransaction = async (context: BenchmarkContext) =>
-	betterClient(context).transaction(async (tx: any) => {
+	betterClient(context).transaction(async (tx: Any) => {
 		const outerId = nextWriteId(context);
 		const outerToken = nextWriteToken(context);
 
@@ -519,7 +522,7 @@ export const betterNestedTransaction = async (context: BenchmarkContext) =>
 			},
 		});
 
-		await tx.transaction(async (innerTx: any) => {
+		await tx.transaction(async (innerTx: Any) => {
 			const innerId = nextWriteId(context);
 			const innerToken = nextWriteToken(context);
 
@@ -570,7 +573,7 @@ export const rawReadOnlyTransaction = async (context: BenchmarkContext) =>
  * transaction to compare with the raw read-only transaction path.
  */
 export const betterReadOnlyTransaction = async (context: BenchmarkContext) =>
-	betterClient(context).transaction(async (tx: any) => {
+	betterClient(context).transaction(async (tx: Any) => {
 		const user = await tx.users.findFirst({
 			where: { id: context.ids.userLookupId },
 		});
