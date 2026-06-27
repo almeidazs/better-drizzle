@@ -262,17 +262,40 @@ export interface UpdateManyArgs<
 	meta?: Meta;
 }
 
+/**
+ * Extracts a Drizzle column instance for a given table and key.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name   - The table key within the schema.
+ * @typeParam Key    - The column key. Defaults to all scalar keys.
+ */
 export type TableColumnFor<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 	Key extends ScalarKeysFor<Schema, Name> = ScalarKeysFor<Schema, Name>,
 > = Extract<TableFor<Schema, Name>['_']['columns'][Key], AnyColumn>;
 
+/**
+ * Row shape for the `updateEach` operation. Extends the select model
+ * with an index signature for arbitrary additional properties.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name   - The table key within the schema.
+ */
 export type UpdateEachRow<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 > = Partial<SelectModelFor<Schema, Name>> & Record<string, unknown>;
 
+/**
+ * Per-column update callback map for `updateEach`. Each key maps to a
+ * function that receives the current row and returns the new value or
+ * a SQL expression for that column.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name   - The table key within the schema.
+ * @typeParam Row    - The row type passed to update callbacks.
+ */
 export type UpdateEachUpdateMap<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,

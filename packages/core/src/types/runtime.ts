@@ -346,8 +346,11 @@ export type WhereCompilerContext<
 	Schema extends AnySchema,
 	Meta = BetterMeta,
 > = RuntimeContext<Schema, Meta> & {
+	/** The root query arguments passed by the caller (if any). */
 	rootArgs?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>;
+	/** Runtime metadata for the table being queried. */
 	runtime: TableRuntime;
+	/** The database table name. */
 	tableName: string;
 };
 

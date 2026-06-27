@@ -914,6 +914,7 @@ export interface BetterClientOptions<
 	plugins?: Plugins;
 	/** Optional transaction configuration. */
 	transaction?: {
+		/** How to handle dialect-unsupported transaction options. */
 		unsupportedOptions?: TransactionUnsupportedOptionsBehavior;
 	};
 	/** Optional raw SQL configuration. */
