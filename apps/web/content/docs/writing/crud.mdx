@@ -1,6 +1,6 @@
 ---
 title: Create, update & delete
-description: The write surface — create, createMany, update, updateMany, delete, deleteMany, upsert, and upsertMany.
+description: The write surface — create, createMany, update, updateMany, updateEach, delete, deleteMany, upsert, and upsertMany.
 icon: SquarePen
 ---
 
@@ -78,6 +78,136 @@ const batch = await client.users.updateMany({
 
 batch.count; // rows updated
 ```
+
+## `updateEach`
+
+Updates many rows with different values in a single statement. Instead of applying the same value to all matching rows (like `updateMany`), `updateEach` generates a `CASE` expression per column so each row can have its own value:
+
+```ts
+const batch = await client.users.updateEach({
+	by: users.id,
+	data: [
+		{ id: 1, name: 'Alice Updated', city: 'New York' },
+		{ id: 2, name: 'Bob Updated', city: 'Chicago' },
+	],
+	update: {
+		name: (row) => row.name,
+		city: (row) => row.city,
+	},
+});
+```
+
+This generates a single SQL statement:
+
+```sql
+UPDATE users
+SET
+  name = CASE WHEN id = 1 THEN 'Alice Updated' WHEN id = 2 THEN 'Bob Updated' ELSE name END,
+  city = CASE WHEN id = 1 THEN 'New York' WHEN id = 2 THEN 'Chicago' ELSE city END
+WHERE id IN (1, 2)
+```
+
+### Options
+
+| Option | Type | Required | Description |
+| --- | --- | --- | --- |
+| `by` | `TableColumn` | Yes | Drizzle column instance used to match rows (e.g., `users.id`) |
+| `data` | `Row[]` | Yes | Source rows containing the `by` column value plus any extra fields |
+| `update` | `object` | Yes | Per-column callbacks `(row) => value` that resolve the new value for each row |
+| `where` | `WhereArg` | No | Extra filter combined with the generated `by IN (...)` predicate |
+| `select` | `SelectInput` | No | Scalar column projection for returned rows (relation `include` not supported) |
+| `onEmpty` | `'return' \| 'throw'` | No | Behavior when `data` is empty. Defaults to `'return'` |
+| `meta` | `Meta` | No | Custom metadata forwarded to hooks |
+
+### Return type
+
+`updateEach` returns `Promise<BatchResult<T>>`:
+
+```ts
+{
+  count: number;   // number of rows affected
+  data?: T[];      // returned rows when `select` is provided and driver supports RETURNING
+}
+```
+
+### Using `where` with `updateEach`
+
+Combine a `where` filter with the `by` column to scope which rows are eligible for update:
+
+```ts
+const batch = await client.users.updateEach({
+	by: users.id,
+	data: [
+		{ id: 1, name: 'Alice' },
+		{ id: 2, name: 'Bob' },
+	],
+	update: { name: (row) => row.name },
+	where: { active: true }, // only update active users
+});
+```
+
+### Projecting results
+
+Use `select` to return specific scalar columns after the update:
+
+```ts
+const batch = await client.users.updateEach({
+	by: users.id,
+	data: [
+		{ id: 1, name: 'Alice' },
+		{ id: 2, name: 'Bob' },
+	],
+	update: { name: (row) => row.name },
+	select: { id: true, name: true, email: true },
+});
+
+console.log(batch.data); // [{ id: 1, name: 'Alice', ... }, ...]
+```
+
+### Empty input handling
+
+By default, passing an empty `data` array returns `{ count: 0 }`. Set `onEmpty: 'throw'` to raise an error instead:
+
+```ts
+// Returns { count: 0 }
+await client.users.updateEach({
+	by: users.id,
+	data: [],
+	update: { name: (row) => row.name },
+});
+
+// Throws BetterDrizzleError
+await client.users.updateEach({
+	by: users.id,
+	data: [],
+	update: { name: (row) => row.name },
+	onEmpty: 'throw',
+});
+```
+
+### Duplicate detection
+
+`updateEach` rejects duplicate `by` values in the `data` array. Each row must have a unique match column value:
+
+```ts
+// Throws — duplicate id values
+await client.users.updateEach({
+	by: users.id,
+	data: [
+		{ id: 1, name: 'Alice' },
+		{ id: 1, name: 'Bob' }, // duplicate!
+	],
+	update: { name: (row) => row.name },
+});
+```
+
+### When to use `updateEach` vs `updateMany`
+
+| Use `updateMany` when | Use `updateEach` when |
+| --- | --- |
+| All matching rows should have the **same** value | Each row needs a **different** value |
+| A simple `WHERE` filter is sufficient | You need per-row logic via callbacks |
+| You don't need to return updated rows | You want to `select` and return specific columns |
 
 ## `delete`
 
@@ -158,7 +288,7 @@ const result = await client.users.upsertMany({
 
 ## Projecting write results
 
-`create`, `update`, `delete`, `upsert`, `createMany`, and `upsertMany` can project results. `upsertMany` supports `select`; the others support `select` and `include`:
+`create`, `update`, `delete`, `upsert`, `createMany`, `updateEach`, and `upsertMany` can project results. `updateEach` and `upsertMany` support `select`; the others support `select` and `include`:
 
 ```ts
 const user = await client.users.create({
@@ -170,9 +300,11 @@ const user = await client.users.create({
 
 ## Notes
 
-- `createMany`, `updateMany`, and `deleteMany` return a `{ count, data? }` summary, not individual rows.
+- `createMany`, `updateMany`, `updateEach`, and `deleteMany` return a `{ count, data? }` summary, not individual rows.
 - `upsertMany` also returns `{ count, data? }`.
 - `update` and `delete` are nullable by default because the target row may not exist — handle `null`, or call `.throw()`.
 - Returning affected rows (`data`) depends on the driver supporting `RETURNING`.
+- `updateEach` is native-first — it generates a single `UPDATE ... CASE` statement instead of per-row loops.
+- `updateEach` rejects duplicate `by` values in the input data.
 - `upsertMany` is intentionally native-first and currently fails fast on unsupported dialects instead of degrading to slow per-row loops.
 - Need lifecycle behavior on writes — timestamps, soft delete, audit trails? That belongs in [plugins](/docs/plugins/overview) or [hooks](/docs/advanced/hooks), not duplicated per call.
