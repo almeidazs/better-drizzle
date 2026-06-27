@@ -352,11 +352,24 @@ export interface UpsertArgs<
 	meta?: Meta;
 }
 
+/**
+ * Extracts the column names from the insert model that can be used as conflict targets.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ */
 export type UpsertManyTargetColumn<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 > = Extract<keyof InsertModelFor<Schema, Name>, string>;
 
+/**
+ * Defines the conflict target columns for `upsertMany`.
+ * Can be a single column name or an array of column names.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ */
 export type UpsertManyTarget<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
@@ -364,6 +377,13 @@ export type UpsertManyTarget<
 	| UpsertManyTargetColumn<Schema, Name>
 	| readonly UpsertManyTargetColumn<Schema, Name>[];
 
+/**
+ * Defines the update values for columns when a conflict is detected.
+ * Each key maps to either a direct value or a SQL expression.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ */
 export type UpsertManyUpdateValue<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
@@ -373,6 +393,13 @@ export type UpsertManyUpdateValue<
 		| SQL;
 }>;
 
+/**
+ * Represents the `EXCLUDED` table columns for PostgreSQL/SQLite conflict resolution.
+ * Each key maps to a SQL reference to the excluded (proposed) value.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ */
 export type UpsertManyExcluded<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
@@ -380,6 +407,13 @@ export type UpsertManyExcluded<
 	[K in UpsertManyTargetColumn<Schema, Name>]: SQL;
 };
 
+/**
+ * Maps conflict target column names to their Drizzle column objects.
+ * Used internally to build update expressions with proper column references.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ */
 export type UpsertManyTableColumns<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
@@ -387,15 +421,36 @@ export type UpsertManyTableColumns<
 	[K in UpsertManyTargetColumn<Schema, Name>]: AnyColumn;
 };
 
+/**
+ * Context object passed to custom update strategy callbacks in `upsertMany`.
+ * Provides access to the excluded (conflicting) row values, SQL builder, and column references.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ */
 export type UpsertManyUpdateContext<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 > = {
+	/** Reference to the proposed values that would have been inserted. */
 	excluded: UpsertManyExcluded<Schema, Name>;
+	/** Drizzle SQL template tag for building expressions. */
 	sql: typeof import('drizzle-orm').sql;
+	/** Column references for the target table. */
 	table: UpsertManyTableColumns<Schema, Name>;
 };
 
+/**
+ * Defines the update strategy for `upsertMany` when a conflict is detected.
+ *
+ * - `'all'`: Update all columns with the proposed values.
+ * - `string[]`: Update only the specified columns.
+ * - `object`: Static update values mapping column names to values or SQL expressions.
+ * - `function`: Callback that receives the update context and returns dynamic update values.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ */
 export type UpsertManyUpdateStrategy<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
