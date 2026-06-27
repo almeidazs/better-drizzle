@@ -116,6 +116,8 @@ export type TransactionOptions = {
 	timeoutMs?: number;
 	/** An `AbortSignal` whose abort event rolls back the transaction. */
 	signal?: AbortSignal;
+	/** Optional metadata merged over any client-scoped context. */
+	meta?: import('./query').BetterMeta;
 	/** Custom context object merged into the transaction-scoped context. */
 	context?: Record<string, unknown>;
 	/** Optional name for named transactions (PostgreSQL SAVEPOINT). */
@@ -229,6 +231,13 @@ export type BetterDrizzleTransactionClient<
 	Plugins extends readonly AnyPlugin[] = [],
 > = import('./delegate').BetterDrizzleClient<Schema, Meta, Plugins> & {
 	/**
+	 * Returns a cloned transaction client with default metadata merged into
+	 * every subsequent operation, raw query, and nested transaction.
+	 */
+	$withContext(
+		meta: Partial<Meta>,
+	): BetterDrizzleTransactionClient<Schema, Meta, Plugins>;
+	/**
 	 * Starts a nested transaction (savepoint) inside the current one.
 	 *
 	 * On SQLite, savepoints are managed explicitly with `SAVEPOINT` SQL.
@@ -243,7 +252,7 @@ export type BetterDrizzleTransactionClient<
 		callback: (
 			tx: BetterDrizzleTransactionClient<Schema, Meta, Plugins>,
 		) => Promise<T> | T,
-		options?: TransactionOptions,
+		options?: TransactionOptions & { meta?: Meta },
 	): Promise<T>;
 	/**
 	 * Rolls back the current transaction, optionally with a reason.

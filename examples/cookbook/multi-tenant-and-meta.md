@@ -17,6 +17,33 @@ await client.users.findMany({
 });
 ```
 
+## Scope default metadata with `$withContext(...)`
+
+```ts
+const scoped = client.$withContext({
+	requestId: 'req_123',
+	tenantId: 'tenant_42',
+});
+
+await scoped.users.findMany({
+	where: {
+		active: true,
+	},
+});
+```
+
+Per-call `meta` still wins on key conflicts:
+
+```ts
+await scoped.users.create({
+	data: { name: 'Alice' },
+	meta: {
+		requestId: 'req_override',
+		userId: 'admin_7',
+	},
+});
+```
+
 ## Read it in hooks
 
 ```ts
@@ -33,7 +60,7 @@ const client = better(db, {
 
 ## Transaction context
 
-Transaction options also accept a context object:
+Transaction options also accept a context object, and can override scoped `meta` too:
 
 ```ts
 await client.transaction(
@@ -41,6 +68,9 @@ await client.transaction(
 		return tx.users.findMany();
 	},
 	{
+		meta: {
+			requestId: 'req_tx',
+		},
 		context: {
 			requestId: 'req_123',
 			tenantId: 'tenant_42',
@@ -49,7 +79,7 @@ await client.transaction(
 );
 ```
 
-Hooks and plugins can then read `transactionContext`.
+Hooks and plugins can then read `meta` and `transactionContext`.
 
 ## Where this pattern fits
 

@@ -397,7 +397,7 @@ const createOperationInput = <
 		dialect: context.dialect,
 		isInTransaction: Boolean(context.transaction),
 		kind,
-		meta: getMeta<Meta>(args),
+		meta: getMeta(context, args),
 		model: runtime.model,
 		options: context.options,
 		schema: context.fullSchema,

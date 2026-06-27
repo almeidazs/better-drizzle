@@ -311,6 +311,8 @@ export type RuntimeContext<
 	models: Record<string, PluginModelInfo>;
 	/** The client configuration provided to `better()`. */
 	options: BetterClientOptions<Schema, Meta, Plugins>;
+	/** Default metadata merged into every scoped operation. */
+	scopedMeta: Meta | undefined;
 	/** Precomputed plugin buckets and metadata. */
 	plugins: {
 		byKind: Record<PluginHookKind, PluginRuntimeBucket>;

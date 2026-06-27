@@ -188,6 +188,7 @@ export const createRuntimeContext = <
 		hasPlugins: plugins.length > 0,
 		models,
 		options,
+		scopedMeta: undefined,
 		plugins: {
 			byKind: createPluginBuckets(),
 			meta: [],
@@ -210,6 +211,7 @@ export const createDerivedRuntimeContext = <
 	context: RuntimeContext<Schema, Meta, Plugins>,
 	db: unknown,
 	transaction: TransactionRuntime | null,
+	scopedMeta = context.scopedMeta,
 ): RuntimeContext<Schema, Meta, Plugins> => ({
 	client: null,
 	db: db as RuntimeContext<Schema, Meta, Plugins>['db'],
@@ -219,6 +221,7 @@ export const createDerivedRuntimeContext = <
 	hasPlugins: context.hasPlugins,
 	models: context.models,
 	options: context.options,
+	scopedMeta,
 	plugins: context.plugins,
 	fullSchema: context.fullSchema,
 	relational: context.relational,
@@ -260,10 +263,48 @@ export const getTableRuntime = <Schema extends AnySchema, Meta>(
  * @param args - The operation arguments (may contain a `meta` property).
  * @returns The metadata value, or `undefined` when not present.
  */
-export const getMeta = <Meta>(args: unknown): Meta | undefined =>
+export const getArgsMeta = <Meta>(args: unknown): Meta | undefined =>
 	typeof args === 'object' && args !== null && 'meta' in args
 		? (args as { meta?: Meta }).meta
 		: undefined;
+
+export const mergeMeta = <Meta>(
+	scopedMeta: Meta | undefined,
+	operationMeta: Meta | undefined,
+): Meta | undefined => {
+	if (operationMeta === undefined) return scopedMeta;
+	if (scopedMeta === undefined) return operationMeta;
+
+	return {
+		...(scopedMeta as Record<string, unknown>),
+		...(operationMeta as Record<string, unknown>),
+	} as Meta;
+};
+
+export function getMeta<Meta>(args: unknown): Meta | undefined;
+export function getMeta<
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
+	args: unknown,
+): Meta | undefined;
+export function getMeta<
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	contextOrArgs: RuntimeContext<Schema, Meta, Plugins> | unknown,
+	args?: unknown,
+): Meta | undefined {
+	if (args === undefined) return getArgsMeta<Meta>(contextOrArgs);
+
+	return mergeMeta(
+		(contextOrArgs as RuntimeContext<Schema, Meta, Plugins>).scopedMeta,
+		getArgsMeta<Meta>(args),
+	);
+}
 
 /**
  * Builds a where-clause object from a record's primary key values.

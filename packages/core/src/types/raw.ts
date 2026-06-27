@@ -5,6 +5,7 @@ import type { SQL, SQLWrapper } from 'drizzle-orm';
  *
  * @typeParam Row - Input row shape returned by the driver before mapping.
  * @typeParam Mapped - Output row shape returned after `map()` runs.
+ * @typeParam Meta - Custom metadata type forwarded to raw hooks.
  *
  * @example
  * ```ts
@@ -13,13 +14,18 @@ import type { SQL, SQLWrapper } from 'drizzle-orm';
  *   {
  *     name: 'active-users',
  *     comment: 'Fetch active users',
+ *     meta: { requestId: 'abc-123' },
  *     timeoutMs: 5000,
  *     map: (row) => ({ ...row, name: row.name.toUpperCase() }),
  *   },
  * );
  * ```
  */
-export type RawOptions<Row = unknown, Mapped = Row> = {
+export type RawOptions<
+	Row = unknown,
+	Mapped = Row,
+	Meta = import('./query').BetterMeta,
+> = {
 	/**
 	 * Optional human-readable name for logs or debugging.
 	 */
@@ -36,6 +42,10 @@ export type RawOptions<Row = unknown, Mapped = Row> = {
 	 * AbortSignal used to cancel the raw query.
 	 */
 	signal?: AbortSignal;
+	/**
+	 * Optional metadata merged over any client-scoped context.
+	 */
+	meta?: Meta;
 	/**
 	 * Optional row mapper applied to each returned row.
 	 *

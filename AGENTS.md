@@ -88,16 +88,21 @@
   - explicit column arrays map to schema column names; targeted duplicate-skip is intentionally dialect-sensitive
 - **Client-level lookup**:
   - `repository(name)` resolves by schema key or db table name
+- **Scoped metadata**:
+  - `db.$withContext(meta)` returns a cloned client that merges default `meta` into every repository operation, raw SQL call, and transaction lifecycle payload
+  - final operation metadata is a shallow merge: scoped context first, per-call `meta` second
+  - `transaction(options.meta)` and raw `options.meta` participate in the same merge and can override scoped keys
 - **Transactions**:
   - `db.transaction(callback, options?)` is the official API
   - transaction clients are full Better Drizzle clients with `transaction`, `rollback`, `afterCommit`, and `afterRollback`
-  - transaction context lives on the runtime context; operation/plugin hooks can read `isInTransaction`, `transaction`, and `transactionContext`
+  - transaction context lives on the runtime context; operation/plugin hooks can read `isInTransaction`, `transaction`, `transactionContext`, and merged `meta`
   - nested transactions use savepoints; SQLite is handled with explicit `BEGIN`/`SAVEPOINT` SQL because Bun SQLite's native Drizzle transaction callback is synchronous
 - **Raw SQL**:
   - raw APIs live on the client: `$raw`, `$executeRaw`, and `$rawUnsafe`
   - safe raw calls accept tagged templates or Drizzle `sql` objects; plain strings are only allowed through `$rawUnsafe`
   - `raw.allowUnsafe` defaults to disabled and gates `$rawUnsafe`
   - raw execution bypasses model transforms and CRUD hooks, but has dedicated client/plugin hooks: `beforeRaw`, `afterRaw`, and `onRawError`
+  - raw hooks now receive merged `meta`, including defaults from `$withContext(...)` and per-call `RawOptions.meta`
   - raw queries still bind to transaction-scoped Drizzle clients inside `db.transaction(...)`
   - SQLite raw reads use `db.all(...)` and raw execute uses `db.run(...)`; pg/mysql-style drivers use `db.execute(...)`
 - **Plugin composition**:

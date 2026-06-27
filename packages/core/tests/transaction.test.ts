@@ -56,6 +56,56 @@ const createContext = (
 };
 
 describe('transactions', () => {
+	test('scoped context is inherited by transaction hooks and tx client', async () => {
+		const seen: Array<Record<string, unknown> | undefined> = [];
+		const ctx = createContext({
+			hooks: {
+				beforeCreate(hook) {
+					seen.push(hook.meta as Record<string, unknown> | undefined);
+				},
+				beforeTransaction(hook) {
+					seen.push(hook.meta as Record<string, unknown> | undefined);
+				},
+			},
+			schema,
+		});
+
+		const scoped = ctx.client.$withContext({
+			organizationId: 'org-1',
+			requestId: 'req-1',
+		});
+
+		await scoped.transaction(
+			async (tx) => {
+				await tx.users.create({
+					data: { id: 1, email: 'a@test.com', name: 'Alice' },
+					meta: {
+						requestId: 'req-3',
+						userId: 'user-1',
+					},
+				});
+			},
+			{
+				meta: {
+					requestId: 'req-2',
+				},
+			},
+		);
+
+		expect(seen).toEqual([
+			{
+				organizationId: 'org-1',
+				requestId: 'req-2',
+			},
+			{
+				organizationId: 'org-1',
+				requestId: 'req-3',
+				userId: 'user-1',
+			},
+		]);
+		ctx.close();
+	});
+
 	test('basic commit', async () => {
 		const ctx = createContext();
 

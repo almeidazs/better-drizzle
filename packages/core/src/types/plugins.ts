@@ -408,12 +408,13 @@ export type PluginTransactionHookContext<
 	dialect: PluginDialect;
 	depth: number;
 	isInTransaction: true;
+	meta: Meta | undefined;
 	models: ModelRegistry<Schema>;
 	name?: string;
 	options: BetterClientOptions<Schema, Meta, Plugins>;
 	schema: Schema;
 	transactionContext: Record<string, unknown> | undefined;
-	transactionOptions: TransactionOptions;
+	transactionOptions: TransactionOptions & { meta?: Meta };
 };
 
 export type PluginTransactionErrorHookContext<
@@ -449,11 +450,12 @@ export type PluginRawHookContext<
 	db: unknown;
 	dialect: PluginDialect;
 	isInTransaction: boolean;
-	map?: RawOptions['map'];
+	map?: RawOptions<unknown, unknown, Meta>['map'];
+	meta: Meta | undefined;
 	name?: string;
 	options: BetterClientOptions<Schema, Meta, Plugins>;
 	query: string;
-	rawOptions: RawOptions;
+	rawOptions: RawOptions<unknown, unknown, Meta>;
 	result: Result;
 	schema: Schema;
 	signal?: AbortSignal;

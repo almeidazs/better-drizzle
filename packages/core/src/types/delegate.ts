@@ -507,6 +507,18 @@ export type BetterDrizzleClient<
 > = BetterDrizzleClientByTableWithPlugins<Schema, Meta, Plugins> &
 	ClientExtensionsOf<Plugins> & {
 		/**
+		 * Returns a cloned client with default metadata merged into every
+		 * operation, raw query, and transaction created from it.
+		 *
+		 * Per-call `meta` values override matching keys from this scoped context.
+		 *
+		 * @param meta - Default metadata to merge into subsequent calls.
+		 * @returns A new client bound to the merged scoped metadata.
+		 */
+		$withContext(
+			meta: Partial<Meta>,
+		): BetterDrizzleClient<Schema, Meta, Plugins>;
+		/**
 		 * Executes a safe raw SQL query and returns rows.
 		 *
 		 * Accepts a tagged template literal or a Drizzle `sql` object.
@@ -565,7 +577,7 @@ export type BetterDrizzleClient<
 		 */
 		$raw<Row = unknown, Mapped = Row>(
 			query: RawSql,
-			options: RawOptions<Row, Mapped>,
+			options: RawOptions<Row, Mapped, Meta>,
 		): Promise<Mapped[]>;
 		/**
 		 * Executes a safe raw SQL statement (INSERT, UPDATE, DELETE) and
@@ -600,7 +612,7 @@ export type BetterDrizzleClient<
 		 */
 		$executeRaw(
 			query: RawSql,
-			options?: RawOptions,
+			options?: RawOptions<unknown, unknown, Meta>,
 		): Promise<RawExecutionResult>;
 		/**
 		 * Executes a raw SQL string with optional parameter bindings.
@@ -644,7 +656,7 @@ export type BetterDrizzleClient<
 		$rawUnsafe<Row = unknown, Mapped = Row>(
 			query: string,
 			params: unknown[] | undefined,
-			options: RawOptions<Row, Mapped>,
+			options: RawOptions<Row, Mapped, Meta>,
 		): Promise<Mapped[]>;
 		/**
 		 * Runs the callback inside a database transaction and returns its result.
@@ -678,7 +690,7 @@ export type BetterDrizzleClient<
 			callback: (
 				tx: BetterDrizzleTransactionClient<Schema, Meta, Plugins>,
 			) => Promise<T> | T,
-			options?: TransactionOptions,
+			options?: TransactionOptions & { meta?: Meta },
 		): Promise<T>;
 		/**
 		 * Retrieves the model delegate for the given repository name.

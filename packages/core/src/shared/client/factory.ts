@@ -24,7 +24,12 @@ import {
 	BetterDrizzleErrorCode,
 	type DatabaseDriver,
 } from '../errors';
-import { createDerivedRuntimeContext, createRuntimeContext } from './context';
+import {
+	createDerivedRuntimeContext,
+	createRuntimeContext,
+	getMeta,
+	mergeMeta,
+} from './context';
 import { createModelDelegate } from './delegate';
 import {
 	applyClientExtensions,
@@ -289,7 +294,7 @@ const createLifecyclePayload = <
 >(
 	context: RuntimeContext<Schema, Meta, Plugins>,
 	client: BetterDrizzleTransactionClient<Schema, Meta, Plugins>,
-	options: TransactionOptions,
+	options: TransactionOptions & { meta?: Meta },
 ) => {
 	const transaction = context.transaction;
 	if (!transaction)
@@ -320,6 +325,7 @@ const createLifecyclePayload = <
 		dialect: context.dialect,
 		depth: transaction.depth,
 		isInTransaction: true as const,
+		meta: getMeta(context, { meta: options.meta }),
 		models: context.models,
 		name: transaction.name,
 		options: context.options,
@@ -484,7 +490,7 @@ const assertRawAllowed = <
 	Plugins extends readonly AnyPlugin[],
 >(
 	context: RuntimeContext<Schema, Meta, Plugins>,
-	options: RawOptions,
+	options: RawOptions<unknown, unknown, Meta>,
 	unsafe: boolean,
 ) => {
 	const rawOptions = context.options.raw;
@@ -508,7 +514,7 @@ const assertRawAllowed = <
 };
 
 const withAbortGuard = async <T>(
-	options: RawOptions,
+	options: RawOptions<unknown, unknown, unknown>,
 	operation: () => Promise<T> | T,
 ) => {
 	const aborted = () =>
@@ -591,16 +597,17 @@ const executeRawQuery = async <
 	context: RuntimeContext<Schema, Meta, Plugins>,
 	action: 'raw' | 'executeRaw' | 'rawUnsafe',
 	queryInput: RawSql,
-	options: RawOptions | undefined,
+	options: RawOptions<unknown, unknown, Meta> | undefined,
 	executor: (query: SQL) => Promise<Result> | Result,
 ) => {
 	const rawOptions = {
 		comment: options?.comment,
 		map: options?.map,
+		meta: options?.meta,
 		name: options?.name,
 		signal: options?.signal,
 		timeoutMs: options?.timeoutMs ?? context.options.raw?.timeoutMs,
-	} satisfies RawOptions;
+	} satisfies RawOptions<unknown, unknown, Meta>;
 	const query = withSqlComment(
 		context,
 		queryInput instanceof SQL ? queryInput : queryInput.getSQL(),
@@ -642,6 +649,7 @@ const executeRawQuery = async <
 			error,
 			isInTransaction: Boolean(context.transaction),
 			map: rawOptions.map,
+			meta: getMeta(context, rawOptions),
 			name: rawOptions.name,
 			options: context.options,
 			query: toSqlText(query),
@@ -701,7 +709,7 @@ const runBetterTransaction = async <
 	callback: (
 		tx: BetterDrizzleTransactionClient<Schema, Meta, Plugins>,
 	) => Promise<T> | T,
-	options: TransactionOptions = {},
+	options: TransactionOptions & { meta?: Meta } = {},
 ): Promise<T> => {
 	const transactionRunner = context.db.transaction;
 	if (context.dialect !== 'sqlite' && typeof transactionRunner !== 'function')
@@ -733,6 +741,7 @@ const runBetterTransaction = async <
 				context,
 				context.db,
 				attemptState,
+				mergeMeta(context.scopedMeta, options.meta),
 			);
 			attemptClient = createBoundClient(
 				attemptContext,
@@ -843,6 +852,7 @@ const runBetterTransaction = async <
 						context,
 						rawTx,
 						attemptState,
+						mergeMeta(context.scopedMeta, options.meta),
 					);
 					attemptClient = createBoundClient(
 						attemptContext,
@@ -1015,6 +1025,15 @@ export const createBoundClient = <
 
 		return repository;
 	};
+	client.$withContext = (meta: Partial<Meta>) =>
+		createBoundClient(
+			createDerivedRuntimeContext(
+				context,
+				context.db,
+				context.transaction,
+				mergeMeta(context.scopedMeta, meta as Meta),
+			),
+		);
 	client.$raw = async <T = unknown[]>(
 		queryOrStrings: TemplateStringsArray | RawSql,
 		...paramsOrOptions: unknown[]
@@ -1022,8 +1041,10 @@ export const createBoundClient = <
 		const rawOptions = (
 			isTemplateStringsArray(queryOrStrings)
 				? {}
-				: ((paramsOrOptions[0] as RawOptions | undefined) ?? {})
-		) as RawOptions;
+				: ((paramsOrOptions[0] as
+						| RawOptions<unknown, unknown, Meta>
+						| undefined) ?? {})
+		) as RawOptions<unknown, unknown, Meta>;
 		const query = isTemplateStringsArray(queryOrStrings)
 			? sql(queryOrStrings, ...paramsOrOptions)
 			: queryOrStrings;
@@ -1064,8 +1085,10 @@ export const createBoundClient = <
 		const rawOptions = (
 			isTemplateStringsArray(queryOrStrings)
 				? {}
-				: ((paramsOrOptions[0] as RawOptions | undefined) ?? {})
-		) as RawOptions;
+				: ((paramsOrOptions[0] as
+						| RawOptions<unknown, unknown, Meta>
+						| undefined) ?? {})
+		) as RawOptions<unknown, unknown, Meta>;
 		const query = isTemplateStringsArray(queryOrStrings)
 			? sql(queryOrStrings, ...paramsOrOptions)
 			: queryOrStrings;
@@ -1123,9 +1146,13 @@ export const createBoundClient = <
 	client.$rawUnsafe = async <T = unknown[]>(
 		query: string,
 		params?: unknown[],
-		options?: RawOptions,
+		options?: RawOptions<unknown, unknown, Meta>,
 	) => {
-		const rawOptions = (options ?? {}) as RawOptions;
+		const rawOptions = (options ?? {}) as RawOptions<
+			unknown,
+			unknown,
+			Meta
+		>;
 		assertRawAllowed(context, rawOptions, true);
 
 		return executeRawQuery(
@@ -1180,7 +1207,7 @@ export const createBoundClient = <
 		callback: (
 			tx: BetterDrizzleTransactionClient<Schema, Meta, Plugins>,
 		) => Promise<T> | T,
-		options?: TransactionOptions,
+		options?: TransactionOptions & { meta?: Meta },
 	) => runBetterTransaction(context, callback, options);
 
 	if (context.transaction) {

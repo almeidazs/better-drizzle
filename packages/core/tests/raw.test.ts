@@ -52,6 +52,39 @@ const createContext = (
 };
 
 describe('raw sql', () => {
+	test('scoped context meta is merged into raw hooks and can be overridden', async () => {
+		const seen: Array<Record<string, unknown> | undefined> = [];
+		const ctx = createContext({
+			hooks: {
+				beforeRaw(raw) {
+					seen.push(raw.meta as Record<string, unknown> | undefined);
+				},
+			},
+			schema,
+		});
+
+		const scoped = ctx.client.$withContext({
+			organizationId: 'org-1',
+			requestId: 'req-1',
+		});
+
+		await scoped.$raw(sql`select id from raw_users`, {
+			meta: {
+				requestId: 'req-2',
+				userId: 'user-1',
+			},
+		});
+
+		expect(seen).toEqual([
+			{
+				organizationId: 'org-1',
+				requestId: 'req-2',
+				userId: 'user-1',
+			},
+		]);
+		ctx.close();
+	});
+
 	test('$raw returns rows', async () => {
 		const ctx = createContext();
 

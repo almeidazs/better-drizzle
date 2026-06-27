@@ -273,6 +273,28 @@ const client = better(drizzle, {
 });
 ```
 
+`meta` can still be passed per call, but you can now scope default metadata once on the client with `$withContext(...)`. Scoped values are merged into repository calls, raw SQL hooks, and transaction hooks, and per-call `meta` overrides matching keys.
+
+```ts
+type RequestMeta = {
+	organizationId?: string;
+	requestId?: string;
+	userId?: string;
+};
+
+const client = better<typeof schema, RequestMeta>(drizzle, { schema });
+
+const scoped = client.$withContext({
+	organizationId: 'org_123',
+	requestId: 'req_123',
+});
+
+await scoped.users.create({
+	data: { name: 'Alice' },
+	meta: { requestId: 'req_456', userId: 'user_7' },
+});
+```
+
 <div align="center">
 
 ## Performance

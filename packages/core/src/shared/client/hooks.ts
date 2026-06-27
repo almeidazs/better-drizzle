@@ -75,7 +75,7 @@ export const buildHookContext = <
 		args,
 		db: context.db,
 		isInTransaction: Boolean(context.transaction),
-		meta: getMeta<Meta>(args),
+		meta: getMeta(context, args),
 		options: context.options,
 		repository: context.repositories[tableName],
 		schema: context.fullSchema,

@@ -34,6 +34,36 @@ const client = better(db, {
 });
 ```
 
+## Scope default metadata with `$withContext(...)`
+
+Passing `meta` on every call works, but gets repetitive when the same context applies to many operations. `$withContext` clones the client with default metadata that is automatically merged into every subsequent operation:
+
+```ts
+const scoped = client.$withContext({
+	requestId: 'req_123',
+	tenantId: 'tenant_42',
+});
+
+// All operations on `scoped` carry the metadata automatically
+await scoped.users.findMany({
+	where: { active: true },
+});
+```
+
+Per-call `meta` still wins on key conflicts:
+
+```ts
+await scoped.users.create({
+	data: { name: 'Alice' },
+	meta: {
+		requestId: 'req_override',
+		userId: 'admin_7',
+	},
+});
+```
+
+The returned client is a clone — the original client is unaffected. Nested `$withContext` calls stack, and the scoped metadata is inherited into transactions.
+
 ## Transaction context
 
 [Transactions](/docs/advanced/transactions) accept a `context` object, readable by hooks and plugins as `transactionContext`:

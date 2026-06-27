@@ -46,6 +46,16 @@ describe('repository()', () => {
 		expect(result[0]?.name).toBe('Alice');
 	});
 
+	test('repository works on scoped clients', async () => {
+		const repo = ctx.better
+			.$withContext({ requestId: 'req-1' })
+			.repository('users');
+		const result = await repo.findMany({ where: { id: 1 } });
+
+		expect(result.length).toBe(1);
+		expect(result[0]?.name).toBe('Alice');
+	});
+
 	test('repository works for all tables', async () => {
 		const users = ctx.better.repository('users');
 		const posts = ctx.better.repository('posts');

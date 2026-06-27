@@ -87,6 +87,59 @@ const createHookContext = (events: HookEvent[]) => {
 };
 
 describe('hooks - create', () => {
+	test('scoped context meta is merged and can be overridden per call', async () => {
+		const seen: Array<Record<string, unknown> | undefined> = [];
+		const sqlite = new Database(':memory:');
+		sqlite.exec(
+			`PRAGMA journal_mode = MEMORY; PRAGMA foreign_keys = ON; ${createTablesSql}`,
+		);
+
+		const raw = drizzle(sqlite, { schema });
+		const client = better<
+			typeof schema,
+			{
+				organizationId?: string;
+				requestId?: string;
+				userId?: string;
+			}
+		>(raw, {
+			schema,
+			hooks: {
+				beforeCreate(ctx) {
+					seen.push(ctx.meta);
+				},
+			},
+		});
+
+		await client
+			.$withContext({
+				organizationId: 'org-1',
+				requestId: 'req-1',
+			})
+			.users.create({
+				data: {
+					id: 2,
+					email: 'b@test.com',
+					name: 'B',
+					age: 25,
+					active: true,
+				},
+				meta: {
+					requestId: 'req-2',
+					userId: 'user-1',
+				},
+			});
+
+		expect(seen).toEqual([
+			{
+				organizationId: 'org-1',
+				requestId: 'req-2',
+				userId: 'user-1',
+			},
+		]);
+		sqlite.close();
+	});
+
 	test('beforeCreate and afterCreate fire on create', async () => {
 		const events: HookEvent[] = [];
 		const { client, sqlite } = createHookContext(events);

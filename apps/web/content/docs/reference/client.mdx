@@ -83,6 +83,7 @@ Beyond the per-table delegates, the client exposes:
 | `$raw(...)` | run a [safe raw](/docs/advanced/raw-sql) read, returns rows |
 | `$executeRaw(...)` | run a safe raw write, returns `{ rowsAffected }` |
 | `$rawUnsafe(...)` | run a raw string query (requires `raw.allowUnsafe`) |
+| `$withContext(meta)` | clone the client with default [metadata](/docs/guides/multi-tenancy) merged into every operation |
 | `afterCommit(cb)` | register a callback for the current transaction scope |
 | `afterRollback(cb)` | register a callback for the current transaction scope |
 
