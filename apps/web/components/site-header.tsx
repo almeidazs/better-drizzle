@@ -62,6 +62,21 @@ function GithubStarsButton({ stars }: { stars: number }) {
 	);
 }
 
+function GithubStarsCompactButton({ stars }: { stars: number }) {
+	return (
+		<a
+			href="https://github.com/almeidazs/better-drizzle"
+			target="_blank"
+			rel="noreferrer"
+			aria-label="better-drizzle GitHub"
+			className="inline-flex h-9 items-center gap-2 rounded-lg border border-fd-border bg-fd-card px-2.5 text-sm font-semibold text-fd-foreground transition-colors hover:border-[#686868] hover:bg-white/[0.06]"
+		>
+			<Github className="size-4" />
+			<span>{formatGithubStars(stars)}</span>
+		</a>
+	);
+}
+
 function useGithubStars() {
 	const [stars, setStars] = useState(0);
 
@@ -89,22 +104,34 @@ function useGithubStars() {
 function HeaderShell({
 	children,
 	right,
+	className,
 }: {
 	children?: React.ReactNode;
 	right?: React.ReactNode;
+	className?: string;
 }) {
 	const stars = useGithubStars();
 
 	return (
-		<header className="sticky top-0 z-40 border-b border-fd-border/70 bg-fd-background/80 backdrop-blur-lg">
-			<div className="mx-auto flex h-14 max-w-6xl items-center gap-4 px-4 sm:px-6">
+		<header
+			className={cn(
+				'sticky top-0 z-40 min-w-0 border-b border-fd-border/70 bg-fd-background/80 backdrop-blur-lg',
+				className,
+			)}
+		>
+			<div className="mx-auto flex h-14 min-w-0 max-w-6xl items-center gap-3 px-4 sm:px-6">
 				<Link href="/" className="shrink-0">
 					<Logo className="w-28 sm:w-32" />
 				</Link>
 				<NavLinks />
-				<div className="ml-auto flex items-center gap-2">
+				<div className="ml-auto flex min-w-0 items-center gap-2">
 					{children}
-					<GithubStarsButton stars={stars} />
+					<div className="hidden sm:block">
+						<GithubStarsButton stars={stars} />
+					</div>
+					<div className="sm:hidden">
+						<GithubStarsCompactButton stars={stars} />
+					</div>
 					{right}
 				</div>
 			</div>
@@ -139,6 +166,7 @@ export function DocsSiteHeader() {
 
 	return (
 		<HeaderShell
+			className="[grid-area:header]"
 			right={
 				<>
 					<div className="hidden lg:block">

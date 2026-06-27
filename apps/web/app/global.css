@@ -25,6 +25,11 @@
 	--font-mono: var(--font-mono), ui-monospace, SFMono-Regular, monospace;
 }
 
+html,
+body {
+	overflow-x: clip;
+}
+
 .dark {
 	--brand: #c5f74f;
 	--brand-strong: #e1ff97;
@@ -118,5 +123,24 @@
 @media (prefers-reduced-motion: reduce) {
 	.bd-rise {
 		animation: none;
+	}
+}
+
+#nd-docs-layout {
+	--fd-header-height: 3.5rem;
+}
+
+#nd-page,
+#nd-page > *,
+[data-toc-popover-trigger] {
+	min-width: 0;
+}
+
+@media (max-width: 767px) {
+	#nd-docs-layout {
+		grid-template:
+			"header"
+			"toc-popover"
+			"main" 1fr / minmax(0, 1fr) !important;
 	}
 }
