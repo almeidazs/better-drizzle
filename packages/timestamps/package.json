@@ -1,6 +1,6 @@
 {
 	"name": "@better-drizzle/timestamps",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Timestamp plugin for better-drizzle.",
 	"license": "Apache-2.0",
 	"main": "./dist/index.cjs",
@@ -8,9 +8,14 @@
 	"types": "./dist/index.d.ts",
 	"exports": {
 		".": {
-			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js",
-			"require": "./dist/index.cjs",
+			"import": {
+				"types": "./dist/index.d.ts",
+				"default": "./dist/index.js"
+			},
+			"require": {
+				"types": "./dist/index.d.cts",
+				"default": "./dist/index.cjs"
+			},
 			"default": "./dist/index.js"
 		}
 	},
@@ -44,8 +49,11 @@
 	},
 	"sideEffects": false,
 	"type": "module",
+	"engines": {
+		"node": ">=18"
+	},
 	"peerDependencies": {
-		"better-drizzle": "^0.1.0",
+		"better-drizzle": "^0.1.1",
 		"drizzle-orm": "^0.30.0",
 		"typescript": "^5"
 	},

@@ -19,6 +19,8 @@
   - root build entrypoint is `scripts/build.ts`, powered by `Bun.build` plus `tsc` declaration emit
   - keep package bundle minification disabled in `scripts/build.ts`; the published 0.1.0 minified Bun build produced broken export footers (`dist/index.js`/`dist/index.cjs`) with unresolved symbols at import time
   - package manifests publish only `dist`, `README.md`, and `LICENSE`
+  - published package manifests now use conditional type exports: ESM reads `dist/index.d.ts` and CJS reads `dist/index.d.cts`
+  - `scripts/build.ts` post-processes emitted declarations after all package builds: relative specifiers are rewritten for NodeNext compatibility (directory imports become `.../index.js`), `.d.cts` copies are generated, and declaration-only internal modules get tiny ESM stub `.js` files so TypeScript can resolve the declaration graph from published tarballs
 - **Top-level scripts**:
   - `bun run bench`: run the time benchmark suite
   - `bun run bench:memory`: run the memory/overhead benchmark suite

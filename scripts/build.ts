@@ -1,5 +1,13 @@
-import { readFile, rm, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { existsSync, statSync } from 'node:fs';
+import {
+	copyFile,
+	readdir,
+	readFile,
+	rm,
+	stat,
+	writeFile,
+} from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 
 type PackageName = 'core' | 'soft-delete' | 'timestamps';
 
@@ -60,6 +68,7 @@ const buildOrder = Array.from(
 			: packages,
 	),
 );
+const declarationPostprocessDirs: string[] = [];
 
 const ensureSuccess = (
 	result: Awaited<ReturnType<typeof Bun.build>>,
@@ -69,6 +78,102 @@ const ensureSuccess = (
 
 	const logs = result.logs.map((entry) => entry.message).join('\n');
 	throw new Error(`Failed to build ${label}\n${logs}`);
+};
+
+const declarationSpecifierPattern =
+	/((?:from\s+['"])|(?:import\(\s*['"]))((?:\.{1,2}\/[^'")]+)|\.)(['"]\s*\)?)/g;
+
+const rewriteDeclarationSpecifiers = (source: string, filePath: string) =>
+	source.replace(
+		declarationSpecifierPattern,
+		(_, prefix: string, specifier: string, suffix: string) => {
+			if (specifier.endsWith('.js') || specifier.endsWith('.cjs'))
+				return `${prefix}${specifier}${suffix}`;
+
+			if (specifier === '.') return `${prefix}./index.js${suffix}`;
+
+			const targetPath = resolve(dirname(filePath), specifier);
+			const rewrittenSpecifier =
+				existsSync(targetPath) && statSync(targetPath).isDirectory()
+					? `${specifier}/index.js`
+					: `${specifier}.js`;
+
+			return `${prefix}${rewrittenSpecifier}${suffix}`;
+		},
+	);
+
+const postprocessDeclarations = async (directory: string) => {
+	const entries = await readdir(directory, { withFileTypes: true });
+
+	for (const entry of entries) {
+		const entryPath = join(directory, entry.name);
+
+		if (entry.isDirectory()) {
+			await postprocessDeclarations(entryPath);
+			continue;
+		}
+
+		if (!entry.isFile() || !entry.name.endsWith('.d.ts')) continue;
+
+		const source = await readFile(entryPath, 'utf8');
+		const rewritten = rewriteDeclarationSpecifiers(source, entryPath);
+		const modulePath = entryPath.slice(0, -'.d.ts'.length).concat('.js');
+
+		if (rewritten !== source) await writeFile(entryPath, rewritten);
+
+		await copyFile(
+			entryPath,
+			entryPath.slice(0, -'.d.ts'.length).concat('.d.cts'),
+		);
+
+		try {
+			const moduleStats = await stat(modulePath);
+			if (!moduleStats.isFile())
+				await writeFile(modulePath, 'export {};\n');
+		} catch (error) {
+			if (
+				error &&
+				typeof error === 'object' &&
+				'code' in error &&
+				error.code === 'ENOENT'
+			) {
+				await writeFile(modulePath, 'export {};\n');
+				continue;
+			}
+
+			throw error;
+		}
+	}
+};
+
+const removeGeneratedDeclarationCopies = async (directory: string) => {
+	let entries: Awaited<ReturnType<typeof readdir>>;
+
+	try {
+		entries = await readdir(directory, { withFileTypes: true });
+	} catch (error) {
+		if (
+			error &&
+			typeof error === 'object' &&
+			'code' in error &&
+			error.code === 'ENOENT'
+		)
+			return;
+
+		throw error;
+	}
+
+	for (const entry of entries) {
+		const entryPath = join(directory, entry.name);
+
+		if (entry.isDirectory()) {
+			await removeGeneratedDeclarationCopies(entryPath);
+			continue;
+		}
+
+		if (entry.isFile() && entry.name.endsWith('.d.cts'))
+			await rm(entryPath, { force: true });
+	}
 };
 
 function createEsmWrapper(exports: string[], defaultExport?: string) {
@@ -99,6 +204,7 @@ for (const name of buildOrder) {
 	const versionPath = join(config.dir, 'src/version.ts');
 
 	await rm(distDir, { force: true, recursive: true });
+	await removeGeneratedDeclarationCopies(config.dir);
 	for await (const file of new Bun.Glob('src/**/*.d.ts').scan({
 		cwd: config.dir,
 		onlyFiles: true,
@@ -211,4 +317,11 @@ for (const name of buildOrder) {
 			`Failed to emit types for ${config.packageName}\n${output}`,
 		);
 	}
+
+	declarationPostprocessDirs.push(distDir);
+}
+
+for (const distDir of declarationPostprocessDirs) {
+	const distStats = await stat(distDir);
+	if (distStats.isDirectory()) await postprocessDeclarations(distDir);
 }
