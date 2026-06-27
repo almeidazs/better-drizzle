@@ -12,7 +12,7 @@
         "mitata": "^1.0.34",
       },
       "peerDependencies": {
-        "drizzle-orm": "^0.45.2",
+        "drizzle-orm": "^0.30.0",
         "typescript": "^5",
       },
     },
@@ -42,31 +42,33 @@
     },
     "packages/core": {
       "name": "better-drizzle",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "peerDependencies": {
-        "drizzle-orm": "^0.45.2",
+        "drizzle-orm": "^0.30.0",
         "typescript": "^5",
       },
     },
     "packages/soft-delete": {
       "name": "@better-drizzle/soft-delete",
-      "version": "0.0.0",
-      "dependencies": {
+      "version": "0.1.0",
+      "devDependencies": {
         "better-drizzle": "workspace:*",
       },
       "peerDependencies": {
-        "drizzle-orm": "^0.45.2",
+        "better-drizzle": "^0.1.0",
+        "drizzle-orm": "^0.30.0",
         "typescript": "^5",
       },
     },
     "packages/timestamps": {
       "name": "@better-drizzle/timestamps",
-      "version": "0.0.0",
-      "dependencies": {
+      "version": "0.1.0",
+      "devDependencies": {
         "better-drizzle": "workspace:*",
       },
       "peerDependencies": {
-        "drizzle-orm": "^0.45.2",
+        "better-drizzle": "^0.1.0",
+        "drizzle-orm": "^0.30.0",
         "typescript": "^5",
       },
     },

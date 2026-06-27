@@ -3,9 +3,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
-
+import type { BetterDrizzleClient } from '../packages/core/src';
 import { better } from '../packages/core/src';
-
+import type { BenchmarkSchema } from './schema';
 import { createTablesSql, schema } from './schema';
 
 const USER_COUNT = 400;
@@ -13,9 +13,30 @@ const POSTS_PER_USER = 4;
 const COMMENTS_PER_POST = 3;
 const BENCH_WRITE_COUNT = 2048;
 
-export type BenchmarkContext = ReturnType<typeof createBenchmarkContext>;
+const createRawBenchmarkClient = (sqlite: Database) =>
+	drizzle(sqlite, { schema });
 
-export const createBenchmarkContext = () => {
+type BenchmarkRawClient = ReturnType<typeof createRawBenchmarkClient>;
+
+export type BenchmarkContext = {
+	better: BetterDrizzleClient<BenchmarkSchema>;
+	counters: {
+		createDeleteId: number;
+		createDeleteToken: number;
+		updateOffset: number;
+	};
+	ids: {
+		cursorAfterId: number;
+		relationLimit: number;
+		updatePoolSize: number;
+		userLookupId: number;
+	};
+	raw: BenchmarkRawClient;
+	sqlite: Database;
+	close(): void;
+};
+
+export const createBenchmarkContext = (): BenchmarkContext => {
 	const dir = mkdtempSync(join(tmpdir(), 'bench-'));
 	const sqlite = new Database(join(dir, 'bench.db'));
 
@@ -95,8 +116,10 @@ ${createTablesSql}
 
 	seed();
 
-	const raw = drizzle(sqlite, { schema });
-	const client = better(raw, { schema });
+	const raw = createRawBenchmarkClient(sqlite);
+	const client: BetterDrizzleClient<BenchmarkSchema> = better(raw, {
+		schema,
+	});
 
 	return {
 		better: client,

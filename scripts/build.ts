@@ -9,19 +9,41 @@ const packageConfigs: Record<
 	PackageName,
 	{
 		dir: string;
+		esmExports: string[];
+		defaultExport?: string;
 		packageName: string;
 	}
 > = {
 	core: {
 		dir: join(rootDir, 'packages/core'),
+		esmExports: [
+			'BetterDrizzleError',
+			'BetterDrizzleErrorCode',
+			'BetterDrizzleTransactionRollbackError',
+			'OrderType',
+			'PaginationType',
+			'better',
+			'definePlugin',
+			'getDatabaseErrorInfo',
+			'isCheckViolation',
+			'isDatabaseError',
+			'isForeignKeyViolation',
+			'isNotNullViolation',
+			'isUniqueViolation',
+			'version',
+		],
 		packageName: 'better-drizzle',
 	},
 	'soft-delete': {
 		dir: join(rootDir, 'packages/soft-delete'),
+		defaultExport: 'softDelete',
+		esmExports: ['softDelete', 'version'],
 		packageName: '@better-drizzle/soft-delete',
 	},
 	timestamps: {
 		dir: join(rootDir, 'packages/timestamps'),
+		defaultExport: 'timestamps',
+		esmExports: ['timestamps', 'version'],
 		packageName: '@better-drizzle/timestamps',
 	},
 };
@@ -48,6 +70,23 @@ const ensureSuccess = (
 	const logs = result.logs.map((entry) => entry.message).join('\n');
 	throw new Error(`Failed to build ${label}\n${logs}`);
 };
+
+function createEsmWrapper(exports: string[], defaultExport?: string) {
+	return [
+		"import { createRequire } from 'node:module';",
+		'',
+		'const require = createRequire(import.meta.url);',
+		'const mod = require(MODULE_PATH);',
+		'',
+		...exports.map((name) => `export const ${name} = mod.${name};`),
+		defaultExport
+			? `export default mod.default ?? mod.${defaultExport};`
+			: '',
+		'',
+	]
+		.filter(Boolean)
+		.join('\n');
+}
 
 for (const name of buildOrder) {
 	const config = packageConfigs[name];
@@ -82,35 +121,81 @@ for (const name of buildOrder) {
 		].join('\n'),
 	);
 
-	ensureSuccess(
-		await Bun.build({
-			entrypoints: [entrypoint],
-			format: 'esm',
-			minify: true,
-			naming: '[name].js',
-			outdir: distDir,
-			packages: 'external',
-			sourcemap: 'none',
-			splitting: false,
-			target: 'node',
-		}),
-		`${config.packageName} (esm)`,
-	);
+	if (name === 'core') {
+		const runtime = Bun.spawnSync(
+			[
+				'bunx',
+				'tsc',
+				'-p',
+				typescriptConfigPath,
+				'--declaration',
+				'false',
+				'--emitDeclarationOnly',
+				'false',
+				'--module',
+				'commonjs',
+				'--moduleResolution',
+				'node',
+				'--outDir',
+				join(distDir, 'cjs'),
+			],
+			{
+				cwd: rootDir,
+				stdout: 'pipe',
+				stderr: 'pipe',
+			},
+		);
 
-	ensureSuccess(
-		await Bun.build({
-			entrypoints: [entrypoint],
-			format: 'cjs',
-			minify: true,
-			naming: '[name].cjs',
-			outdir: distDir,
-			packages: 'external',
-			sourcemap: 'none',
-			splitting: false,
-			target: 'node',
-		}),
-		`${config.packageName} (cjs)`,
-	);
+		if (runtime.exitCode !== 0) {
+			const decoder = new TextDecoder();
+			const output =
+				decoder.decode(runtime.stderr) ||
+				decoder.decode(runtime.stdout);
+
+			throw new Error(
+				`Failed to build runtime for ${config.packageName}\n${output}`,
+			);
+		}
+
+		await writeFile(
+			join(distDir, 'index.cjs'),
+			"module.exports = require('./cjs/index.js');\n",
+		);
+		await writeFile(
+			join(distDir, 'cjs/package.json'),
+			'{\n  "type": "commonjs"\n}\n',
+		);
+		await writeFile(
+			join(distDir, 'index.js'),
+			createEsmWrapper(config.esmExports, config.defaultExport).replace(
+				'MODULE_PATH',
+				"'./cjs/index.js'",
+			),
+		);
+	} else {
+		ensureSuccess(
+			await Bun.build({
+				entrypoints: [entrypoint],
+				format: 'cjs',
+				minify: false,
+				naming: 'index.cjs',
+				outdir: distDir,
+				packages: 'external',
+				sourcemap: 'none',
+				splitting: false,
+				target: 'node',
+			}),
+			`${config.packageName} (cjs)`,
+		);
+
+		await writeFile(
+			join(distDir, 'index.js'),
+			createEsmWrapper(config.esmExports, config.defaultExport).replace(
+				'MODULE_PATH',
+				"'./index.cjs'",
+			),
+		);
+	}
 
 	const tsc = Bun.spawnSync(['bunx', 'tsc', '-p', typescriptConfigPath], {
 		cwd: rootDir,

@@ -24,6 +24,14 @@ const nextUpdateId = (context: BenchmarkContext) => {
 	return context.counters.updateOffset + 1;
 };
 
+const betterClient = (context: BenchmarkContext) =>
+	context.better as unknown as {
+		benchWrites: any;
+		posts: any;
+		transaction<T>(callback: (tx: any) => Promise<T> | T): Promise<T>;
+		users: any;
+	};
+
 export const rawPointLookup = async (context: BenchmarkContext) => {
 	const rows = await context.raw
 		.select()
@@ -35,7 +43,7 @@ export const rawPointLookup = async (context: BenchmarkContext) => {
 };
 
 export const betterPointLookup = async (context: BenchmarkContext) =>
-	context.better.users.findFirst({
+	betterClient(context).users.findFirst({
 		take: 1,
 		where: { id: context.ids.userLookupId },
 	});
@@ -55,7 +63,7 @@ export const rawFilteredList = async (context: BenchmarkContext) =>
 		.limit(25);
 
 export const betterFilteredList = async (context: BenchmarkContext) =>
-	context.better.users.findMany({
+	betterClient(context).users.findMany({
 		orderBy: [{ age: 'desc' }, { id: 'asc' }],
 		take: 25,
 		where: {
@@ -78,7 +86,7 @@ export const rawRelationGraph = async (context: BenchmarkContext) =>
 	});
 
 export const betterRelationGraph = async (context: BenchmarkContext) =>
-	context.better.users.findMany({
+	betterClient(context).users.findMany({
 		include: {
 			posts: {
 				include: {
@@ -100,7 +108,7 @@ export const rawActiveCount = async (context: BenchmarkContext) =>
 	);
 
 export const betterActiveCount = async (context: BenchmarkContext) =>
-	context.better.users.count({
+	betterClient(context).users.count({
 		where: {
 			active: true,
 			age: { gte: 30 },
@@ -118,7 +126,7 @@ export const rawExists = async (context: BenchmarkContext) => {
 };
 
 export const betterExists = async (context: BenchmarkContext) =>
-	context.better.users.exists({
+	betterClient(context).users.exists({
 		where: {
 			active: true,
 			age: { gte: 50 },
@@ -147,7 +155,7 @@ export const rawOffsetPaginate = async (context: BenchmarkContext) => {
 };
 
 export const betterOffsetPaginate = async (context: BenchmarkContext) =>
-	context.better.users.paginate({
+	betterClient(context).users.paginate({
 		limit: 25,
 		orderBy: [{ id: OrderType.Asc }],
 		skip: 80,
@@ -176,7 +184,7 @@ export const rawCursorPaginate = async (context: BenchmarkContext) => {
 };
 
 export const betterCursorPaginate = async (context: BenchmarkContext) =>
-	context.better.users.paginate({
+	betterClient(context).users.paginate({
 		after: { id: context.ids.cursorAfterId },
 		limit: 25,
 		orderBy: [{ id: OrderType.Asc }],
@@ -225,7 +233,7 @@ export const betterCreateDeleteRoundtrip = async (
 	const id = nextWriteId(context);
 	const token = nextWriteToken(context);
 
-	const created = await context.better.benchWrites.create({
+	const created = await betterClient(context).benchWrites.create({
 		data: {
 			id,
 			payload: `payload-${id}`,
@@ -234,7 +242,7 @@ export const betterCreateDeleteRoundtrip = async (
 		},
 	});
 
-	await context.better.benchWrites.delete({
+	await betterClient(context).benchWrites.delete({
 		where: { id },
 	});
 
@@ -261,7 +269,7 @@ export const betterUpdateAndLoad = async (context: BenchmarkContext) => {
 	const id = nextUpdateId(context);
 	const nextValue = (context.counters.updateOffset * 19) % 10_000;
 
-	return context.better.benchWrites.update({
+	return betterClient(context).benchWrites.update({
 		data: {
 			payload: `payload-updated-${nextValue}`,
 			value: nextValue,
@@ -307,7 +315,7 @@ export const rawComplexJoinFlat = async (context: BenchmarkContext) =>
 		.limit(40);
 
 export const betterComplexJoinEquivalent = async (context: BenchmarkContext) =>
-	context.better.posts.findMany({
+	betterClient(context).posts.findMany({
 		include: {
 			author: true,
 		},
@@ -358,7 +366,7 @@ export const rawSimpleTransaction = async (context: BenchmarkContext) =>
  * `client.transaction()` callback.
  */
 export const betterSimpleTransaction = async (context: BenchmarkContext) =>
-	context.better.transaction(async (tx) => {
+	betterClient(context).transaction(async (tx: any) => {
 		const id = nextWriteId(context);
 		const token = nextWriteToken(context);
 
@@ -441,7 +449,7 @@ export const rawMultiOpTransaction = async (context: BenchmarkContext) =>
  * and one findFirst inside a single transaction.
  */
 export const betterMultiOpTransaction = async (context: BenchmarkContext) =>
-	context.better.transaction(async (tx) => {
+	betterClient(context).transaction(async (tx: any) => {
 		const baseId = nextWriteId(context);
 		const id2 = nextWriteId(context);
 		const id3 = nextWriteId(context);
@@ -498,7 +506,7 @@ export const betterMultiOpTransaction = async (context: BenchmarkContext) =>
  * nested savepoints.
  */
 export const betterNestedTransaction = async (context: BenchmarkContext) =>
-	context.better.transaction(async (tx) => {
+	betterClient(context).transaction(async (tx: any) => {
 		const outerId = nextWriteId(context);
 		const outerToken = nextWriteToken(context);
 
@@ -511,7 +519,7 @@ export const betterNestedTransaction = async (context: BenchmarkContext) =>
 			},
 		});
 
-		await tx.transaction(async (innerTx) => {
+		await tx.transaction(async (innerTx: any) => {
 			const innerId = nextWriteId(context);
 			const innerToken = nextWriteToken(context);
 
@@ -562,7 +570,7 @@ export const rawReadOnlyTransaction = async (context: BenchmarkContext) =>
  * transaction to compare with the raw read-only transaction path.
  */
 export const betterReadOnlyTransaction = async (context: BenchmarkContext) =>
-	context.better.transaction(async (tx) => {
+	betterClient(context).transaction(async (tx: any) => {
 		const user = await tx.users.findFirst({
 			where: { id: context.ids.userLookupId },
 		});

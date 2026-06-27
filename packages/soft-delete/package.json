@@ -46,7 +46,7 @@
 	"type": "module",
 	"peerDependencies": {
 		"better-drizzle": "^0.1.0",
-		"drizzle-orm": "^0.45.2",
+		"drizzle-orm": "^0.30.0",
 		"typescript": "^5"
 	},
 	"devDependencies": {

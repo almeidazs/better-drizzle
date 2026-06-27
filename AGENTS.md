@@ -16,6 +16,7 @@
   - all published workspace libraries now build to `dist/`
   - each package emits `dist/index.js` (ESM), `dist/index.cjs` (CommonJS), and `dist/index.d.ts`
   - root build entrypoint is `scripts/build.ts`, powered by `Bun.build` plus `tsc` declaration emit
+  - keep package bundle minification disabled in `scripts/build.ts`; the published 0.1.0 minified Bun build produced broken export footers (`dist/index.js`/`dist/index.cjs`) with unresolved symbols at import time
   - package manifests publish only `dist`, `README.md`, and `LICENSE`
 - **Top-level scripts**:
   - `bun run bench`: run the time benchmark suite
@@ -26,6 +27,7 @@
   - `typescript` as a peer dependency
   - `mitata` for benchmarking
   - `@biomejs/biome` for formatting and linting
+  - the published compatibility floor is `drizzle-orm@^0.30.0`; `0.29.5` failed the workspace typecheck, while `0.30.0` passed typecheck plus the core/plugin test suites
 
 ## Architecture
 
