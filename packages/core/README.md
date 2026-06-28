@@ -14,6 +14,22 @@ Minimal, type-safe repository helpers for [Drizzle ORM](https://orm.drizzle.team
 
 Website: https://better-drizzle.vercel.app/
 
+## Sponsors
+
+<p align="center">
+  <a href="https://neon.com">
+    <img src="https://neon.com/brand/neon-logomark-dark-color.svg" width="48" alt="Neon" />
+  </a>
+</p>
+
+<p align="center">
+  <strong>Sponsored by <a href="https://neon.com">Neon</a></strong>
+</p>
+
+<p align="center">
+  Neon is the serverless Postgres platform built for modern developer workflows.
+</p>
+
 </div>
 
 ```bash
