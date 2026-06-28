@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { FaDiscord, FaGithub } from 'react-icons/fa';
 import { SiPostgresql } from 'react-icons/si';
 import { CodeWindow } from '@/components/landing/code-window';
+import { SponsorHeart } from '@/components/landing/database-logos';
 import { InstallCommand } from '@/components/landing/install-command';
 import { Logo } from '@/components/logo';
 
@@ -283,7 +284,25 @@ export default function HomePage() {
 						choice does not change.
 					</p>
 				</div>
-				<div className="mt-10 grid gap-px overflow-hidden rounded-xl border border-fd-border bg-fd-border sm:grid-cols-3">
+				<div className="mt-10 grid gap-px overflow-hidden rounded-xl border border-fd-border bg-fd-border sm:grid-cols-2 lg:grid-cols-4">
+					<div className="relative flex items-center gap-4 bg-fd-background p-6">
+						<div className="absolute right-4 top-3 inline-flex items-center gap-1 rounded-full border border-rose-200/70 bg-rose-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200">
+							OUR SPONSOR
+							<SponsorHeart className="size-3 fill-current stroke-current" />
+						</div>
+						<img
+							src="https://neon.com/brand/neon-logomark-dark-color.svg"
+							alt="Neon"
+							className="size-8 shrink-0"
+						/>
+						<div className="pr-12">
+							<p className="font-semibold">Neon</p>
+							<p className="text-sm text-fd-muted-foreground">
+								Serverless Postgres for modern Drizzle
+								workflows.
+							</p>
+						</div>
+					</div>
 					<div className="flex items-center gap-4 bg-fd-background p-6">
 						<SiPostgresql className="size-8 text-[#336791]" />
 						<div>
@@ -370,6 +389,47 @@ export default function HomePage() {
 						</div>
 					</div>
 					<CodeWindow code={PLUGINS_CODE} title="db.ts" />
+				</div>
+			</section>
+
+			<section className="bg-[#111111] text-white">
+				<div className="mx-auto max-w-6xl px-6 py-24">
+					<div className="mx-auto max-w-2xl text-center">
+						<h2 className="text-4xl font-semibold tracking-tight">
+							Our Sponsors
+						</h2>
+						<p className="mt-4 text-lg text-white/72">
+							Thanks to companies backing better-drizzle and the
+							work around it.
+						</p>
+					</div>
+					<div className="mt-12 flex justify-center">
+						<a
+							href="https://neon.com"
+							target="_blank"
+							rel="noreferrer"
+							className="group inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-6 py-4 transition-colors duration-200 hover:border-[#3cf2b2]/40 hover:bg-white/[0.06]"
+						>
+							<img
+								src="https://neon.com/brand/neon-logomark-dark-color.svg"
+								alt="Neon"
+								className="size-10 shrink-0"
+							/>
+							<span className="text-2xl font-semibold tracking-tight text-white">
+								Neon
+							</span>
+						</a>
+					</div>
+					<div className="mt-8 flex justify-center">
+						<a
+							href="https://github.com/sponsors/almeidazs"
+							target="_blank"
+							rel="noreferrer"
+							className="inline-flex items-center justify-center rounded-lg border border-white/12 bg-white/[0.06] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/[0.1]"
+						>
+							Become a sponsor
+						</a>
+					</div>
 				</div>
 			</section>
 
