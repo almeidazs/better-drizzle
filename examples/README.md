@@ -63,6 +63,7 @@ For the docs site version of this material, see:
 | `select`, `include`, nested relation filters | [`basics/relations.md`](./basics/relations.md) |
 | `paginate`, offset, cursor, backwards navigation | [`basics/pagination.md`](./basics/pagination.md) |
 | `transaction`, nested savepoints, retries, rollback hooks | [`basics/transactions.md`](./basics/transactions.md) |
+| row locks: `FOR UPDATE`, `FOR SHARE`, `skipLocked`, `noWait`, `tables`, `transactionsOnly` | [`basics/locks.md`](./basics/locks.md) |
 | `$raw`, `$executeRaw`, `$rawUnsafe` | [`basics/raw-sql.md`](./basics/raw-sql.md) |
 | client hooks | [`basics/hooks.md`](./basics/hooks.md) |
 | `.throw()` helpers | [`basics/throwing-results.md`](./basics/throwing-results.md) |

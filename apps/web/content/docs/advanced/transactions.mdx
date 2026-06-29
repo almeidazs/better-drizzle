@@ -156,7 +156,9 @@ Plugins and hooks can read `transactionContext` and `isInTransaction` throughout
 
 ## Locked reads
 
-If you use row locks regularly, keep them inside transactions:
+Row locks (`FOR UPDATE`, `FOR SHARE`, `skipLocked`, `noWait`, table targeting) are covered in detail on the [row locks page](/docs/advanced/locks).
+
+The most common pattern is combining locks with transactions:
 
 ```ts
 await client.transaction(async (tx) => {
@@ -170,7 +172,7 @@ await client.transaction(async (tx) => {
 });
 ```
 
-You can enforce that rule at the client level:
+You can enforce that all locked reads happen inside transactions at the client level:
 
 ```ts
 const client = better(db, {

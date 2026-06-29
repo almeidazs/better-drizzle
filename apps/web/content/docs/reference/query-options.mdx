@@ -57,6 +57,9 @@ Accepted by `findMany`, `findFirst`, `findOne`, and `findUnique`:
 
 ## Row locks
 
+Locks control concurrent row access during reads.
+See the dedicated [row locks page](/docs/advanced/locks) for the full guide, including dialect support, error handling, and transaction-only enforcement.
+
 ```ts
 await client.transaction(async (tx) => {
 	return tx.users.findMany({
