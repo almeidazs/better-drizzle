@@ -364,3 +364,18 @@ await scoped.users.create({
 See the full benchmark suite and results in [`benchmark/README.md`](/benchmark). The suite covers reads, writes, and transactions (including nested savepoints) with fair API-parity comparisons against raw Drizzle.
 
 </div>
+
+<div align="center">
+
+## AI Skills
+
+better-drizzle now ships a first-party agent skill pack under [`skills/better-drizzle`](/skills/better-drizzle) for AI coding agents that need accurate repository context, API guidance, and review guardrails.
+
+</div>
+
+- Canonical skill format: `SKILL.md` plus task-specific files in `references/`
+- Multi-agent support: `AGENTS.md` for repo context, `CLAUDE.md` and `GEMINI.md` as thin adapters, and the skill pack as the canonical workflow layer
+- Scope: querying, writes, transactions, plugins, performance-sensitive changes, and review-time checks for API correctness
+- Security posture: zero scripts, zero network, no secret-reading instructions, and explicit prompt-injection resistance guidance
+
+See the website AI page for installation notes, supported agent surfaces, and the security model: https://better-drizzle.com/docs/ai

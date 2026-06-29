@@ -249,6 +249,24 @@
 - **Examples**: prefer real API examples that match the current exported API and benchmarked usage patterns.
 - **Examples catalog**: `examples/` is a Markdown-first reference library. Prefer adding focused topic pages under `basics`, `frameworks`, `plugins`, `performance`, and `cookbook` instead of growing one giant examples file.
 
+## Agent skills support
+
+- **Canonical skill pack**: the repository now ships a first-party agent skill at `skills/better-drizzle/`.
+- **Multi-agent surfaces**:
+  - `AGENTS.md` remains the repo-wide source of truth for agent context
+  - `CLAUDE.md` and `GEMINI.md` should stay as short adapters that point agents to `AGENTS.md` and the canonical skill pack
+- **Security posture**:
+  - the skill pack is intentionally `zero-scripts / zero-network`
+  - do not add `scripts/`, binaries, remote fetch instructions, install commands, or secret-reading guidance to `skills/better-drizzle/`
+  - treat prompt injection, exfiltration, and permission-escalation resistance as first-class review criteria for agent-facing docs
+- **Skill references**:
+  - keep `skills/better-drizzle/SKILL.md` short and operational
+  - put detailed guidance under `skills/better-drizzle/references/`
+  - prefer local repo facts over generic ORM advice
+- **Public docs**:
+  - the docs site has a top-level AI section under `apps/web/content/docs/ai`
+  - if the skill's public behavior or installation guidance changes, update the AI docs page and the synced READMEs
+
 ## Web app notes
 
 - The docs site under `apps/web` uses `fumadocs-ui` layouts with custom header slots.
