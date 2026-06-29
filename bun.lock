@@ -37,12 +37,12 @@
         "@types/react": "^19.0.0",
         "@types/react-dom": "^19.0.0",
         "tailwindcss": "^4.0.0",
-        "typescript": "^5.7.0",
+        "typescript": "^6.0.3",
       },
     },
     "packages/core": {
       "name": "better-drizzle",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "peerDependencies": {
         "drizzle-orm": "^0.30.0",
         "typescript": "^5",
@@ -50,24 +50,24 @@
     },
     "packages/soft-delete": {
       "name": "@better-drizzle/soft-delete",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "devDependencies": {
         "better-drizzle": "workspace:*",
       },
       "peerDependencies": {
-        "better-drizzle": "^0.1.0",
+        "better-drizzle": "^0.1.1",
         "drizzle-orm": "^0.30.0",
         "typescript": "^5",
       },
     },
     "packages/timestamps": {
       "name": "@better-drizzle/timestamps",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "devDependencies": {
         "better-drizzle": "workspace:*",
       },
       "peerDependencies": {
-        "better-drizzle": "^0.1.0",
+        "better-drizzle": "^0.1.1",
         "drizzle-orm": "^0.30.0",
         "typescript": "^5",
       },
@@ -953,6 +953,8 @@
     "zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
 
     "zwitch": ["zwitch@2.0.4", "", {}, "sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A=="],
+
+    "@better-drizzle/web/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
 
     "@shikijs/primitive/@shikijs/types": ["@shikijs/types@4.3.0", "", { "dependencies": { "@shikijs/vscode-textmate": "^10.0.2", "@types/hast": "^3.0.4" } }, "sha512-oc8b9U2SYvofKZk8e/737nIX0qwf6eV2vHFATeObAu7r+mUVpLs8Re0BmVkIjAWAYgkmG/CzLNo7rzuBzRu/wQ=="],
 
