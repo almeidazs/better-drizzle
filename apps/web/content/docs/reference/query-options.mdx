@@ -40,6 +40,10 @@ Accepted by `findMany`, `findFirst`, `findOne`, and `findUnique`:
 			description: 'Cursor position (scalar column values) for cursor-style reads.',
 			type: 'CursorInput',
 		},
+		lock: {
+			description: 'Row lock clause for PostgreSQL/MySQL reads (`FOR UPDATE`, `FOR SHARE`, `SKIP LOCKED`, `NOWAIT`).',
+			type: 'LockOption',
+		},
 		meta: {
 			description: 'Custom metadata forwarded to hooks and plugins.',
 			type: 'Record<string, unknown>',
@@ -50,6 +54,29 @@ Accepted by `findMany`, `findFirst`, `findOne`, and `findUnique`:
 `count` and `exists` accept only `where`, `cursor`, and `meta`.
 
 `findUnique` is the strictest of the read helpers semantically, but it still accepts the same query-argument shape as the other reads. The main difference is intent: use it when the `where` clause targets a unique lookup.
+
+## Row locks
+
+Locks control concurrent row access during reads.
+See the dedicated [row locks page](/docs/advanced/locks) for the full guide, including dialect support, error handling, and transaction-only enforcement.
+
+```ts
+await client.transaction(async (tx) => {
+	return tx.users.findMany({
+		where: { id: { gt: 0 } },
+		lock: {
+			mode: 'update',
+			skipLocked: true,
+		},
+	});
+});
+```
+
+- Supported on PostgreSQL and MySQL read helpers only.
+- `count`, `exists`, and all write operations do not accept `lock`.
+- `skipLocked` and `noWait` are mutually exclusive.
+- `tables` is PostgreSQL-only.
+- General relation loading with `include` / relation `select` is intentionally rejected when `lock` is present.
 
 ## Filter operators
 
@@ -84,27 +111,35 @@ A relation value can be `true` or a nested read-args object (with its own `where
 
 <TypeTable
 	type={{
-		type: {
-			description: 'Pagination strategy.',
-			type: 'PaginationType',
-			default: 'PaginationType.Offset',
+		limit: {
+			description: 'Max rows per page.',
+			type: 'number',
 		},
+	}}
+/>
+
+It returns `{ data, pagination: { type, page, perPage, total, pageCount, hasNext, hasPrevious } }`.
+
+`cursor` accepts everything above plus:
+
+<TypeTable
+	type={{
 		limit: {
 			description: 'Max rows per page.',
 			type: 'number',
 		},
 		after: {
-			description: 'Cursor token to read rows after (cursor mode).',
+			description: 'Cursor token to read rows after.',
 			type: 'CursorInput',
 		},
 		before: {
-			description: 'Cursor token to read rows before (cursor mode).',
+			description: 'Cursor token to read rows before.',
 			type: 'CursorInput',
 		},
 	}}
 />
 
-It returns `{ data, pagination: { count, hasNext, hasPrevious } }`. See [pagination](/docs/querying/pagination).
+It returns `{ data, pagination: { type, hasNext, hasPrevious, nextCursor, previousCursor } }`. See [pagination](/docs/querying/pagination).
 
 ## Write-specific arguments
 

@@ -37,6 +37,10 @@ const client = better(db, options);
 			description: 'Transaction configuration, e.g. how to handle dialect-unsupported options.',
 			type: '{ unsupportedOptions?: "warn" | "throw" | "ignore" }',
 		},
+		locks: {
+			description: 'Row lock configuration, e.g. requiring locked reads to run inside transactions.',
+			type: '{ transactionsOnly?: boolean }',
+		},
 	}}
 />
 
@@ -102,7 +106,6 @@ const usersByDbName = client.repository('app_users');
 import {
 	better,
 	definePlugin,
-	PaginationType,
 	OrderType,
 	version,
 	// error helpers
@@ -120,11 +123,6 @@ import {
 ### Enums
 
 ```ts
-enum PaginationType {
-	Cursor = 1,
-	Offset,
-}
-
 enum OrderType {
 	Asc = 'asc',
 	Desc = 'desc',

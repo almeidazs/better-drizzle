@@ -63,7 +63,7 @@ better-drizzle packages those patterns into a repository-style API — without r
 <Cards>
 	<Card title="A delegate per table" href="/docs/getting-started">
 		`client.users`, `client.posts`, … each with `findMany`, `findFirst`,
-		`create`, `update`, `delete`, `paginate`, `count`, `exists`, `upsert`,
+		`create`, `update`, `delete`, `paginate`, `cursor`, `count`, `exists`, `upsert`,
 		and `upsertMany`.
 	</Card>
 	<Card title="Typed nested filters" href="/docs/querying/relations">
@@ -71,7 +71,8 @@ better-drizzle packages those patterns into a repository-style API — without r
 		against your relations.
 	</Card>
 	<Card title="One pagination shape" href="/docs/querying/pagination">
-		Offset and cursor pagination return the same `{ data, pagination }` shape.
+		Offset pages and cursor pages each return `{ data, pagination }`, with
+		metadata tailored to the strategy.
 	</Card>
 	<Card title="First-class plugins" href="/docs/plugins/overview">
 		Timestamps, soft delete, and your own — with transforms, hooks, and typed

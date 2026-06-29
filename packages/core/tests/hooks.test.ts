@@ -442,6 +442,19 @@ describe('hooks - query', () => {
 		]);
 		sqlite.close();
 	});
+
+	test('beforeQuery and afterQuery fire on cursor', async () => {
+		const events: HookEvent[] = [];
+		const { client, sqlite } = createHookContext(events);
+
+		await client.users.cursor({ limit: 10, orderBy: [{ id: 'asc' }] });
+
+		expect(events).toEqual([
+			{ hook: 'beforeQuery', action: 'cursor', table: 'users' },
+			{ hook: 'afterQuery', action: 'cursor', table: 'users' },
+		]);
+		sqlite.close();
+	});
 });
 
 describe('hooks - context', () => {

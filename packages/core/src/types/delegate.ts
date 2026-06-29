@@ -1,6 +1,14 @@
 import type { AnyColumn, SQL, TableRelationalConfig } from 'drizzle-orm';
 
-import type { PaginationResult } from './database';
+import type {
+	CursorPaginationResult,
+	OffsetPaginationResult,
+} from './database';
+import type {
+	ExplainableResult,
+	ExplainOptions,
+	ExplainResult,
+} from './explain';
 import type {
 	AnyPlugin,
 	ClientExtensionsOf,
@@ -9,6 +17,7 @@ import type {
 	PluginState,
 } from './plugins';
 import type {
+	CursorArgs,
 	IncludeInput,
 	PaginationArgs,
 	PayloadForArgs,
@@ -61,7 +70,7 @@ export type ThrowFactory = () => unknown;
  * );
  * ```
  */
-export type ThrowingResult<T> = Promise<T | null> & {
+export type ThrowingResult<T> = ExplainableResult<T | null> & {
 	/** Throws a `BetterDrizzleError` with code `RESULT_NOT_FOUND` when the result is `null`. */
 	throw(): Promise<import('./utils').NonNullish<T>>;
 	/**
@@ -71,6 +80,8 @@ export type ThrowingResult<T> = Promise<T | null> & {
 	 */
 	throw(factory: ThrowFactory): Promise<import('./utils').NonNullish<T>>;
 };
+
+export type { ExplainableResult, ExplainOptions, ExplainResult };
 
 /**
  * Result returned by batch operations (`createMany`, `updateMany`, `deleteMany`).
@@ -1023,7 +1034,7 @@ export type BetterDrizzleModelDelegate<
 			Plugins,
 			'count'
 		>,
-	): Promise<number>;
+	): ExplainableResult<number>;
 	/**
 	 * Returns `true` when at least one matching row exists.
 	 *
@@ -1045,7 +1056,7 @@ export type BetterDrizzleModelDelegate<
 			Plugins,
 			'exists'
 		>,
-	): Promise<boolean>;
+	): ExplainableResult<boolean>;
 	/**
 	 * Inserts a single row and returns the created record.
 	 *
@@ -1236,7 +1247,7 @@ export type BetterDrizzleModelDelegate<
 			Plugins,
 			'findMany'
 		>,
-	>(args?: Args): Promise<PayloadForArgs<Schema, Name, Args>[]>;
+	>(args?: Args): ExplainableResult<PayloadForArgs<Schema, Name, Args>[]>;
 	/**
 	 * Updates a single matching row and returns the updated record.
 	 *
@@ -1414,12 +1425,9 @@ export type BetterDrizzleModelDelegate<
 		>,
 	>(args: Args): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	/**
-	 * Returns a paginated result set with total count and navigation metadata.
+	 * Returns an offset-based paginated result set with page metadata.
 	 *
-	 * Supports both offset-based and cursor-based pagination strategies.
-	 *
-	 * @param args - Pagination options including `limit`, `orderBy`, and
-	 *   optional `after`/`before` cursors.
+	 * @param args - Offset pagination options including `limit`, `skip`, and `orderBy`.
 	 * @returns A promise resolving to `{ data, pagination }`.
 	 *
 	 * @example
@@ -1430,15 +1438,7 @@ export type BetterDrizzleModelDelegate<
 	 *   orderBy: { name: 'asc' },
 	 * });
 	 * console.log(page.data);        // rows
-	 * console.log(page.pagination);  // { count, hasNext, hasPrevious }
-	 *
-	 * // Cursor pagination
-	 * const page = await db.user.paginate({
-	 *   type: PaginationType.Cursor,
-	 *   limit: 10,
-	 *   after: lastCursor,
-	 *   orderBy: { createdAt: 'desc' },
-	 * });
+	 * console.log(page.pagination);  // { type, page, perPage, total, pageCount, hasNext, hasPrevious }
 	 * ```
 	 */
 	paginate<
@@ -1449,7 +1449,25 @@ export type BetterDrizzleModelDelegate<
 		>,
 	>(
 		args: Args,
-	): Promise<PaginationResult<PayloadForArgs<Schema, Name, Args>>>;
+	): ExplainableResult<
+		OffsetPaginationResult<PayloadForArgs<Schema, Name, Args>>
+	>;
+	/**
+	 * Returns a cursor-based result set with navigation cursors.
+	 *
+	 * Accepts either `after` or `before`, but never both.
+	 */
+	cursor<
+		Args extends OperationArgsWithPlugins<
+			CursorArgs<Schema, Name, Meta>,
+			Plugins,
+			'cursor'
+		>,
+	>(
+		args: Args,
+	): ExplainableResult<
+		CursorPaginationResult<PayloadForArgs<Schema, Name, Args>>
+	>;
 	/**
 	 * Deletes a single matching row and returns the deleted record.
 	 *

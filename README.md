@@ -12,7 +12,23 @@ Minimal, type-safe repository helpers for [Drizzle ORM](https://orm.drizzle.team
 
 [better-drizzle](https://npmjs.com/package/better-drizzle) wraps an existing Drizzle client and gives each table a small, consistent API for reads, writes, pagination, nested filters, relation loading, and optional hooks. The goal is simple: keep Drizzle's type-safety, remove repetitive query glue, and stay close enough to the metal that performance still matters.
 
-Website: https://better-drizzle.vercel.app/
+Website: https://better-drizzle.com/
+
+## Sponsors
+
+<p align="center">
+  <a href="https://neon.com">
+    <img src="https://neon.com/brand/neon-logomark-dark-color.svg" width="48" alt="Neon" />
+  </a>
+</p>
+
+<p align="center">
+  <strong>Sponsored by <a href="https://neon.com">Neon</a></strong>
+</p>
+
+<p align="center">
+  Neon is the serverless Postgres platform built for modern developer workflows.
+</p>
 
 ## Sponsors
 
@@ -65,11 +81,12 @@ It gets repetitive when every service ends up re-writing the same patterns:
 - Less repeated query code for common CRUD flows
 - Nested relation filters with Drizzle-backed typing
 - `include` and `select` support with typed payload inference
-- Unified pagination return shape
+- Offset and cursor pagination helpers with typed metadata
+- Thenable `.explain()` on read helpers for query-plan inspection
 - Optional lifecycle hooks for cross-cutting behavior
 - First-class plugins with setup, transforms, and client/model extensions
 - Fast paths for simple reads and writes to reduce wrapper overhead
-- Consistent table delegates: `findMany`, `findFirst`, `create`, `update`, `updateEach`, `delete`, `paginate`, `count`, `exists`, `upsert`, `upsertMany`
+- Consistent table delegates: `findMany`, `findFirst`, `create`, `update`, `updateEach`, `delete`, `paginate`, `cursor`, `count`, `exists`, `upsert`, `upsertMany`
 
 <h2 align="center">Querying your database with Better client</h2>
 
@@ -118,7 +135,19 @@ const count = await client.users.count({
 		name: { contains: 'drizzle-orm' },
 	},
 });
+
+const plan = await client.users
+	.findMany({
+		where: { active: true },
+		orderBy: [{ id: 'asc' }],
+	})
+	.explain({
+		analyze: true,
+		comment: 'users.active.explain',
+	});
 ```
+
+`.explain()` is available on read helpers (`findMany`, `findFirst`, `findOne`, `findUnique`, `count`, `exists`, `paginate`, `cursor`). PostgreSQL returns the richest output, while MySQL and SQLite ignore unsupported explain options and return the plan shape their drivers support.
 
 <div align="center">
 
@@ -215,6 +244,33 @@ const user = await client.transaction(async (tx) => {
 	});
 
 	return created;
+});
+```
+
+On PostgreSQL and MySQL, read helpers also accept `lock` for row-level locking:
+
+```ts
+await client.transaction(async (tx) => {
+	const jobs = await tx.posts.findMany({
+		where: { id: { gt: 0 } },
+		lock: {
+			mode: 'update',
+			skipLocked: true,
+		},
+	});
+
+	return jobs;
+});
+```
+
+If you want to enforce that locked reads only happen inside transactions, enable it once on the client:
+
+```ts
+const client = better(db, {
+	schema,
+	locks: {
+		transactionsOnly: true,
+	},
 });
 ```
 

@@ -22,7 +22,13 @@ import type {
 	UpsertArgs,
 	UpsertManyArgs,
 } from './delegate';
-import type { CountArgs, ExistsArgs, PaginationArgs, QueryArgs } from './query';
+import type {
+	CountArgs,
+	CursorArgs,
+	ExistsArgs,
+	PaginationArgs,
+	QueryArgs,
+} from './query';
 import type { RawExecutionResult, RawOptions } from './raw';
 import type {
 	BetterDrizzleTransactionClient,
@@ -146,6 +152,7 @@ export type PluginHookKind =
 	| 'findMany'
 	| 'findOne'
 	| 'findUnique'
+	| 'cursor'
 	| 'paginate'
 	| 'update'
 	| 'updateEach'
@@ -198,6 +205,8 @@ type PluginOperationArgsMap<
 		OperationArgsForKind<OperationArgs, 'findOne'>;
 	findUnique: QueryArgs<Schema, Name, Meta> &
 		OperationArgsForKind<OperationArgs, 'findUnique'>;
+	cursor: CursorArgs<Schema, Name, Meta> &
+		OperationArgsForKind<OperationArgs, 'cursor'>;
 	paginate: PaginationArgs<Schema, Name, Meta> &
 		OperationArgsForKind<OperationArgs, 'paginate'>;
 	update: UpdateArgs<Schema, Name, Meta> &
@@ -227,6 +236,7 @@ type PluginOperationResultMap<
 	findMany: unknown[];
 	findOne: unknown;
 	findUnique: unknown;
+	cursor: unknown;
 	paginate: unknown;
 	update: unknown;
 	updateEach: BatchResult<unknown>;
@@ -636,6 +646,7 @@ export type PluginHooks<
 			| 'findMany'
 			| 'findOne'
 			| 'findUnique'
+			| 'cursor'
 			| 'paginate'
 		>,
 	): unknown;
@@ -726,6 +737,7 @@ export type PluginHooks<
 			| 'findMany'
 			| 'findOne'
 			| 'findUnique'
+			| 'cursor'
 			| 'paginate'
 		>,
 	):
@@ -736,6 +748,7 @@ export type PluginHooks<
 				| 'findMany'
 				| 'findOne'
 				| 'findUnique'
+				| 'cursor'
 				| 'paginate']
 		| undefined;
 	beforeTransaction?(

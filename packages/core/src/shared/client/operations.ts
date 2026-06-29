@@ -9,11 +9,13 @@ import type {
 	CompilableWhere,
 	CreateArgs,
 	CreateManyArgs,
+	CursorArgs,
 	DeleteArgs,
 	DeleteManyArgs,
 	PaginationArgs,
 	QueryArgs,
 	RuntimeContext,
+	SelectQueryLike,
 	SkipDuplicatesOption,
 	TableRuntime,
 	UpdateArgs,
@@ -25,10 +27,10 @@ import type {
 	WhereArg,
 	WhereCompilerContext,
 } from '../../types';
-import { PaginationType } from '../../types';
 import { BetterDrizzleError, BetterDrizzleErrorCode } from '../errors';
 import {
-	buildPaginationQuery,
+	buildCursorPaginationQuery,
+	buildOffsetPaginationQuery,
 	buildQueryConfig,
 	compileCursorWhere,
 	compileOrderBy,
@@ -41,6 +43,22 @@ type ResolvedSkipDuplicates = {
 	enabled: boolean;
 	targets?: string[];
 };
+
+type LockStrength = 'update' | 'share' | 'no key update' | 'key share';
+
+type ResolvedLockOption = {
+	noWait?: true;
+	skipLocked?: true;
+	strength: LockStrength;
+	tables?: TableRuntime[];
+};
+
+const LOCK_STRENGTH_MAP = {
+	keyShare: 'key share',
+	noKeyUpdate: 'no key update',
+	share: 'share',
+	update: 'update',
+} as const satisfies Record<string, LockStrength>;
 
 const getSkipDuplicatesConfig = <Schema extends AnySchema>(
 	skipDuplicates?: SkipDuplicatesOption<Schema, BetterTableKey<Schema>>,
@@ -652,6 +670,216 @@ const buildReadState = <Schema extends AnySchema, Meta>(
 	};
 };
 
+const resolveLockTables = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	runtime: TableRuntime,
+	operation: string,
+	targets: readonly string[] | undefined,
+) => {
+	if (!targets?.length) return;
+
+	const resolved: TableRuntime[] = [];
+	const seen = new Set<string>();
+
+	for (const target of targets) {
+		let tableRuntime = context.tables[target];
+
+		if (!tableRuntime)
+			for (const key in context.tables)
+				if (context.tables[key]?.dbName === target) {
+					tableRuntime = context.tables[key];
+					break;
+				}
+
+		if (!tableRuntime)
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.OperationError,
+				details: { target },
+				message: `Invalid lock table "${target}" for table "${runtime.dbName}"`,
+				operation,
+				table: runtime.dbName,
+			});
+
+		if (seen.has(tableRuntime.dbName)) continue;
+
+		seen.add(tableRuntime.dbName);
+		resolved.push(tableRuntime);
+	}
+
+	return resolved;
+};
+
+const resolveReadLock = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	runtime: TableRuntime,
+	operation: string,
+	args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
+) => {
+	const lock = args?.lock;
+	if (!lock) return;
+
+	if (context.options.locks?.transactionsOnly && !context.transaction)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.LockRequiresTransaction,
+			details: {
+				lock,
+				transactionsOnly: true,
+			},
+			message: 'Row locks can only be used inside a transaction.',
+			operation,
+			table: runtime.dbName,
+		});
+
+	if (context.dialect === 'sqlite')
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.LockNotSupported,
+			details: { dialect: context.dialect, lock },
+			dialect: context.dialect,
+			message: 'Row locks are not supported on SQLite.',
+			operation,
+			table: runtime.dbName,
+		});
+
+	const normalized =
+		typeof lock === 'string'
+			? {
+					mode: lock,
+					noWait: undefined,
+					skipLocked: undefined,
+					tables: undefined,
+				}
+			: lock;
+
+	if (normalized.noWait && normalized.skipLocked)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			details: { lock },
+			message: 'lock cannot enable both noWait and skipLocked.',
+			operation,
+			table: runtime.dbName,
+		});
+
+	if (
+		context.dialect === 'mysql' &&
+		(normalized.mode === 'keyShare' || normalized.mode === 'noKeyUpdate')
+	)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.LockNotSupported,
+			details: { dialect: context.dialect, lock },
+			dialect: context.dialect,
+			message: `Lock mode "${normalized.mode}" is not supported on MySQL.`,
+			operation,
+			table: runtime.dbName,
+		});
+
+	if (normalized.tables?.length && context.dialect !== 'pg')
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.LockNotSupported,
+			details: { dialect: context.dialect, lock },
+			dialect: context.dialect,
+			message: 'lock.tables is only supported on PostgreSQL.',
+			operation,
+			table: runtime.dbName,
+		});
+
+	return {
+		noWait: normalized.noWait ? true : undefined,
+		skipLocked: normalized.skipLocked ? true : undefined,
+		strength: LOCK_STRENGTH_MAP[normalized.mode],
+		tables: resolveLockTables(
+			context,
+			runtime,
+			operation,
+			normalized.tables,
+		),
+	} satisfies ResolvedLockOption;
+};
+
+const applyReadLock = (
+	query: SelectQueryLike,
+	runtime: TableRuntime,
+	operation: string,
+	lock: ResolvedLockOption,
+) => {
+	if (typeof query.for !== 'function')
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.LockNotSupported,
+			details: { lock: lock.strength },
+			message:
+				'The current Drizzle select builder does not support row locks.',
+			operation,
+			table: runtime.dbName,
+		});
+
+	const config = Object.create(null) as Record<string, unknown>;
+	if (lock.noWait) config.noWait = true;
+	if (lock.skipLocked) config.skipLocked = true;
+	if (lock.tables?.length)
+		config.of = lock.tables.map((table) => table.table);
+
+	return query.for(
+		lock.strength,
+		Object.keys(config).length ? config : undefined,
+	);
+};
+
+const normalizeLockError = (
+	error: unknown,
+	runtime: TableRuntime,
+	operation: string,
+	lock: unknown,
+) => {
+	if (error instanceof BetterDrizzleError) return error;
+
+	const fields =
+		typeof error === 'object' && error !== null
+			? (error as {
+					code?: string | number;
+					errno?: string | number;
+					message?: string;
+					sqlState?: string;
+				})
+			: undefined;
+	const code = `${fields?.code ?? fields?.sqlState ?? ''}`.toLowerCase();
+	const errno = Number(fields?.errno);
+	const message = `${fields?.message ?? ''}`.toLowerCase();
+
+	if (
+		code === '55p03' ||
+		errno === 1205 ||
+		errno === 3572 ||
+		message.includes('lock timeout') ||
+		message.includes('could not obtain lock') ||
+		message.includes('could not be acquired immediately') ||
+		message.includes('nowait is set')
+	)
+		return BetterDrizzleError.from(error, {
+			code: BetterDrizzleErrorCode.LockTimeout,
+			details: { lock },
+			message:
+				error instanceof Error
+					? error.message
+					: 'Failed to acquire the requested row lock.',
+			operation,
+			table: runtime.dbName,
+		});
+
+	return error;
+};
+
+const executeReadQuery = async (
+	query: SelectQueryLike,
+	runtime: TableRuntime,
+	operation: string,
+	lock: unknown,
+) => {
+	try {
+		return await query;
+	} catch (error) {
+		throw normalizeLockError(error, runtime, operation, lock);
+	}
+};
+
 const buildDirectReadQuery = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
@@ -822,16 +1050,52 @@ const buildJoinedOneRelationQuery = <Schema extends AnySchema, Meta>(
  * @param args      - Query arguments (where, select, include, orderBy, take, skip, cursor).
  * @returns A promise resolving to an array of matching records.
  */
-export const findManyRecords = <Schema extends AnySchema, Meta>(
+export const findManyRecords = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
 	args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
+	operation = 'findMany',
+) => {
+	const query = buildFindManyQuery(context, tableName, args, operation);
+
+	return args?.lock
+		? executeReadQuery(
+				query as SelectQueryLike,
+				getTableRuntime(context, tableName as string),
+				operation,
+				args.lock,
+			)
+		: query;
+};
+
+export const buildFindManyQuery = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
+	operation = 'findMany',
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
 	const joinedQuery = buildJoinedOneRelationQuery(context, tableName, args);
-	if (joinedQuery) return joinedQuery;
-	if (canUseDirectRead(runtime, args))
-		return buildDirectReadQuery(context, tableName, args);
+	const lock = resolveReadLock(context, runtime, operation, args);
+	if (joinedQuery)
+		return lock
+			? applyReadLock(joinedQuery, runtime, operation, lock)
+			: joinedQuery;
+	if (canUseDirectRead(runtime, args)) {
+		const query = buildDirectReadQuery(context, tableName, args);
+		return lock ? applyReadLock(query, runtime, operation, lock) : query;
+	}
+
+	if (lock)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.LockNotSupported,
+			details: { dialect: context.dialect, lock: args?.lock },
+			dialect: context.dialect,
+			message:
+				'Row locks are only supported on read queries without general relation loading.',
+			operation,
+			table: runtime.dbName,
+		});
 
 	return context.db.query[tableName].findMany(
 		buildQueryConfig(context, tableName, args),
@@ -854,43 +1118,75 @@ export const findFirstRecord = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
 	args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
+	operation = 'findFirst',
+) => {
+	const query = buildFindFirstQuery(context, tableName, args, operation);
+	const runtime = getTableRuntime(context, tableName as string);
+	const rows = await (args?.lock
+		? executeReadQuery(
+				query as SelectQueryLike,
+				runtime,
+				operation,
+				args.lock,
+			)
+		: query);
+
+	return (Array.isArray(rows) ? (rows[0] ?? null) : (rows ?? null)) as Record<
+		string,
+		unknown
+	> | null;
+};
+
+export const buildFindFirstQuery = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
+	operation = 'findFirst',
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
+	const lock = resolveReadLock(context, runtime, operation, args);
 	const joinedQuery = buildJoinedOneRelationQuery(context, tableName, {
 		...args,
 		take: args?.take ?? 1,
 	});
 
 	if (joinedQuery) {
-		const rows = await joinedQuery;
-		return (rows[0] ?? null) as Record<string, unknown> | null;
+		return lock
+			? applyReadLock(joinedQuery, runtime, operation, lock)
+			: joinedQuery;
 	}
 
 	if (canUseDirectRead(runtime, args)) {
-		const rows = await buildDirectReadQuery(context, tableName, {
+		const query = buildDirectReadQuery(context, tableName, {
 			...args,
 			take: args?.take ?? 1,
 		});
-
-		return (rows[0] ?? null) as Record<string, unknown> | null;
+		return lock ? applyReadLock(query, runtime, operation, lock) : query;
 	}
+
+	if (lock)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.LockNotSupported,
+			details: { dialect: context.dialect, lock: args?.lock },
+			dialect: context.dialect,
+			message:
+				'Row locks are only supported on read queries without general relation loading.',
+			operation,
+			table: runtime.dbName,
+		});
 
 	if (context.db.query[tableName].findFirst) {
-		const row = await context.db.query[tableName].findFirst(
+		return context.db.query[tableName].findFirst(
 			buildQueryConfig(context, tableName, args),
 		);
-
-		return (row ?? null) as Record<string, unknown> | null;
 	}
 
-	const rows = await context.db.query[tableName].findMany(
+	return context.db.query[tableName].findMany(
 		buildQueryConfig(context, tableName, {
 			...args,
 			take: args?.take ?? 1,
 		}),
 	);
-
-	return (rows[0] ?? null) as Record<string, unknown> | null;
 };
 
 /**
@@ -907,17 +1203,40 @@ export const findFirstRecord = async <Schema extends AnySchema, Meta>(
 export const existsRecord = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
-	args?: { where?: WhereArg<Schema, BetterTableKey<Schema>> },
+	args?: {
+		cursor?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>['cursor'];
+		where?: WhereArg<Schema, BetterTableKey<Schema>>;
+	},
+) => {
+	const rows = await buildExistsQuery(context, tableName, args).limit(1);
+
+	return rows.length > 0;
+};
+
+export const buildExistsQuery = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	args?: {
+		cursor?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>['cursor'];
+		where?: WhereArg<Schema, BetterTableKey<Schema>>;
+	},
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
 	const predicate = getPredicate(context, runtime, tableName, args?.where);
+	const cursorPredicate = compileCursorWhere(
+		{
+			...context,
+			runtime,
+			tableName: tableName as string,
+		},
+		args?.cursor,
+	);
 	let query = context.db.select({ one: sql`1` }).from(runtime.table);
 
-	if (predicate) query = query.where(predicate);
+	if (predicate || cursorPredicate)
+		query = query.where(and(predicate, cursorPredicate));
 
-	const rows = await query.limit(1);
-
-	return rows.length > 0;
+	return query;
 };
 
 /**
@@ -1427,15 +1746,15 @@ export const upsertRecord = async <Schema extends AnySchema, Meta>(
 };
 
 /**
- * Executes a paginated query, returning the data slice alongside
- * pagination metadata (total count, hasNext, hasPrevious). Supports
- * both offset-based and cursor-based pagination strategies.
+ * Executes an offset paginated query, returning the data slice alongside
+ * page metadata (`page`, `perPage`, `total`, `pageCount`, `hasNext`,
+ * `hasPrevious`).
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Meta   - Custom metadata type.
  * @param context   - The runtime context.
  * @param tableName - The table to paginate.
- * @param args      - Pagination arguments (type, limit, take, skip, after, before, where).
+ * @param args      - Pagination arguments (`limit`, `take`, `skip`, `where`, `orderBy`).
  * @returns A promise resolving to `{ data, pagination }`.
  */
 export const paginateRecords = async <Schema extends AnySchema, Meta>(
@@ -1443,21 +1762,280 @@ export const paginateRecords = async <Schema extends AnySchema, Meta>(
 	tableName: BetterTableKey<Schema>,
 	args: PaginationArgs<Schema, BetterTableKey<Schema>, Meta>,
 ) => {
-	const { take, query } = buildPaginationQuery(args);
+	const { take, query } = buildOffsetPaginationQuery(args);
 	const [data, total] = await Promise.all([
-		findManyRecords(context, tableName, query),
+		findManyRecords(context, tableName, query, 'paginate'),
 		countRows(context, tableName, args.where),
 	]);
+	const skip = query.skip ?? 0;
+	const page = Math.floor(skip / take) + 1;
+	const pageCount = total === 0 ? 0 : Math.ceil(total / take);
 
 	return {
 		data,
 		pagination: {
-			count: total,
-			hasNext: data.length >= take,
-			hasPrevious:
-				args.type === PaginationType.Cursor
-					? Boolean(args.after || args.before)
-					: Boolean((args.skip ?? 0) > 0),
+			type: 'offset' as const,
+			page,
+			perPage: take,
+			total,
+			pageCount,
+			hasNext: skip + data.length < total,
+			hasPrevious: skip > 0,
+		},
+	};
+};
+
+const getCursorField = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	args: CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
+) => {
+	const runtime = getTableRuntime(context, tableName as string);
+	const cursorToken = (
+		args.after && typeof args.after === 'object'
+			? args.after
+			: args.before && typeof args.before === 'object'
+				? args.before
+				: undefined
+	) as Record<string, unknown> | undefined;
+
+	if (cursorToken)
+		for (const key in cursorToken) if (runtime.columns[key]) return key;
+
+	const entries = args.orderBy
+		? Array.isArray(args.orderBy)
+			? args.orderBy
+			: [args.orderBy]
+		: undefined;
+
+	if (entries)
+		for (const entry of entries)
+			for (const key in entry as Record<string, unknown>)
+				if (runtime.columns[key]) return key;
+
+	return runtime.primaryKeyFields[0];
+};
+
+const getCursorToken = (
+	row: Record<string, unknown> | undefined,
+	field: string | undefined,
+	tableName: string,
+	operation: 'cursor',
+) => {
+	if (!row || !field) return null;
+	if (!(field in row))
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			details: { cursorField: field },
+			message: `Cursor field "${field}" must be selected when using cursor pagination on table "${tableName}"`,
+			operation,
+			table: tableName,
+		});
+
+	return { [field]: row[field] };
+};
+
+const hasCursorPage = async <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	args: CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
+) => {
+	const result = buildCursorPaginationQuery(args, 1);
+	if ('error' in result)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			message:
+				result.error === 'AMBIGUOUS_CURSOR'
+					? 'cursor() accepts either before or after, but not both.'
+					: result.error === 'INVALID_BEFORE_CURSOR'
+						? 'cursor() before must be a cursor object.'
+						: 'cursor() after must be a cursor object.',
+			operation: 'cursor',
+			table: getTableRuntime(context, tableName as string).dbName,
+		});
+
+	const rows = await findManyRecords(
+		context,
+		tableName,
+		result.query,
+		'cursor',
+	);
+	return rows.length > 0;
+};
+
+export const getCursorExplainProbes = async <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	args: CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
+	built: {
+		direction: 'before' | 'forward';
+	},
+	dataQuery: Promise<unknown[]>,
+	limit: number,
+) => {
+	const rows = (await dataQuery) as Record<string, unknown>[];
+	const hasOverflow = rows.length > limit;
+	const slice = hasOverflow ? rows.slice(0, limit) : rows;
+	const data = built.direction === 'before' ? [...slice].reverse() : slice;
+	const runtime = getTableRuntime(context, tableName as string);
+	const cursorField = getCursorField(context, tableName, args);
+	const firstRow = data[0] as Record<string, unknown> | undefined;
+	const lastRow = data[data.length - 1] as
+		| Record<string, unknown>
+		| undefined;
+	const previousToken = (getCursorToken(
+		firstRow,
+		cursorField,
+		runtime.dbName,
+		'cursor',
+	) ?? undefined) as CursorArgs<
+		Schema,
+		BetterTableKey<Schema>,
+		Meta
+	>['before'];
+	const nextToken = (getCursorToken(
+		lastRow,
+		cursorField,
+		runtime.dbName,
+		'cursor',
+	) ?? undefined) as CursorArgs<
+		Schema,
+		BetterTableKey<Schema>,
+		Meta
+	>['after'];
+	const probes: Array<{
+		key: string;
+		query: Promise<Record<string, unknown>[]>;
+	}> = [];
+
+	if (built.direction !== 'before' && args.after && previousToken)
+		probes.push({
+			key: 'probe:hasPrevious',
+			query: buildFindManyQuery(
+				context,
+				tableName,
+				buildCursorPaginationQuery(
+					{
+						...args,
+						after: undefined,
+						before: previousToken,
+						limit: 1,
+					},
+					1,
+				).query,
+				'cursor',
+			) as Promise<Record<string, unknown>[]>,
+		});
+
+	if (built.direction === 'before' && args.before && nextToken)
+		probes.push({
+			key: 'probe:hasNext',
+			query: buildFindManyQuery(
+				context,
+				tableName,
+				buildCursorPaginationQuery(
+					{
+						...args,
+						before: undefined,
+						after: nextToken,
+						limit: 1,
+					},
+					1,
+				).query,
+				'cursor',
+			) as Promise<Record<string, unknown>[]>,
+		});
+
+	return probes;
+};
+
+export const cursorRecords = async <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	args: CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
+) => {
+	const limit = Math.abs(args.limit ?? args.take ?? 10) || 10;
+	const runtime = getTableRuntime(context, tableName as string);
+	const built = buildCursorPaginationQuery(args, limit + 1);
+
+	if ('error' in built)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			message:
+				built.error === 'AMBIGUOUS_CURSOR'
+					? 'cursor() accepts either before or after, but not both.'
+					: built.error === 'INVALID_BEFORE_CURSOR'
+						? 'cursor() before must be a cursor object.'
+						: 'cursor() after must be a cursor object.',
+			operation: 'cursor',
+			table: runtime.dbName,
+		});
+
+	const rows = await findManyRecords(
+		context,
+		tableName,
+		built.query,
+		'cursor',
+	);
+	const hasOverflow = rows.length > limit;
+	const slice = hasOverflow ? rows.slice(0, limit) : rows;
+	const data = built.direction === 'before' ? [...slice].reverse() : slice;
+	const cursorField = getCursorField(context, tableName, args);
+	const firstRow = data[0] as Record<string, unknown> | undefined;
+	const lastRow = data[data.length - 1] as
+		| Record<string, unknown>
+		| undefined;
+	const previousToken = (getCursorToken(
+		firstRow,
+		cursorField,
+		runtime.dbName,
+		'cursor',
+	) ?? undefined) as CursorArgs<
+		Schema,
+		BetterTableKey<Schema>,
+		Meta
+	>['before'];
+	const nextToken = (getCursorToken(
+		lastRow,
+		cursorField,
+		runtime.dbName,
+		'cursor',
+	) ?? undefined) as CursorArgs<
+		Schema,
+		BetterTableKey<Schema>,
+		Meta
+	>['after'];
+	const hasPrevious =
+		built.direction === 'before'
+			? hasOverflow
+			: args.after
+				? await hasCursorPage(context, tableName, {
+						...args,
+						after: undefined,
+						before: previousToken,
+						limit: 1,
+					})
+				: false;
+	const hasNext =
+		built.direction === 'before'
+			? args.before
+				? await hasCursorPage(context, tableName, {
+						...args,
+						before: undefined,
+						after: nextToken,
+						limit: 1,
+					})
+				: false
+			: hasOverflow;
+
+	return {
+		data,
+		pagination: {
+			type: 'cursor' as const,
+			hasNext,
+			hasPrevious,
+			nextCursor: hasNext ? (nextToken ?? null) : null,
+			previousCursor: hasPrevious ? (previousToken ?? null) : null,
 		},
 	};
 };

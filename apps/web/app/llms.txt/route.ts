@@ -1,6 +1,6 @@
 export const revalidate = false;
 
-const BASE = 'https://better-drizzle.vercel.app';
+const BASE = 'https://better-drizzle.com';
 
 /**
  * Generates a comprehensive llms.txt file following the llmstxt.org spec.
@@ -42,7 +42,7 @@ Key characteristics:
 - [Filters](${BASE}/docs/querying/filters): Typed where clauses with AND/OR/NOT, scalar operators, and nested relation filters.
 - [Selecting Fields](${BASE}/docs/querying/selecting-fields): Pick specific columns or load nested relations with select and include.
 - [Relations](${BASE}/docs/querying/relations): Loading related records — one-to-one, one-to-many, and many-to-many patterns.
-- [Pagination](${BASE}/docs/querying/pagination): Offset and cursor-based pagination with typed results and navigation metadata.
+- [Pagination](${BASE}/docs/querying/pagination): \`paginate()\` for offset pages and \`cursor()\` for cursor navigation, both with typed metadata.
 
 ## Writing
 

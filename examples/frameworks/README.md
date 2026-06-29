@@ -7,7 +7,7 @@ create Drizzle once, wrap it with `better(...)` once, then pass the resulting cl
 
 </div>
 
-Website docs: https://better-drizzle.vercel.app/docs/guides/frameworks
+Website docs: https://better-drizzle.com/docs/guides/frameworks
 
 ## Files
 

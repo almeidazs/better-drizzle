@@ -1,8 +1,12 @@
 import type { Many, One, SQL, SQLWrapper } from 'drizzle-orm';
 
-import type { PaginationOptions } from './database';
+import type {
+	CursorPaginationOptions,
+	OffsetPaginationOptions,
+} from './database';
 import type {
 	AnySchema,
+	DbNameKey,
 	RelatedNameFor,
 	RelationFor,
 	RelationKeysFor,
@@ -278,6 +282,81 @@ export type CursorInput<
 > = Partial<Pick<SelectModelFor<Schema, Name>, ScalarKeysFor<Schema, Name>>>;
 
 /**
+ * Row lock strength mode. Determines the type of lock acquired on matched rows.
+ *
+ * - `'update'` – `FOR UPDATE` – exclusive lock for writing.
+ * - `'share'` – `FOR SHARE` – shared lock that prevents updates but allows reads.
+ * - `'noKeyUpdate'` – `FOR NO KEY UPDATE` – like update but does not block key share locks (PostgreSQL only).
+ * - `'keyShare'` – `FOR KEY SHARE` – like share but does not block update locks (PostgreSQL only).
+ */
+export type LockMode = 'update' | 'share' | 'noKeyUpdate' | 'keyShare';
+
+/**
+ * Valid table name for the `lock.tables` option. Accepts either the
+ * TypeScript table key or the database table name from the schema.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ */
+export type LockTableName<Schema extends AnySchema> = Extract<
+	TableKey<Schema> | DbNameKey<Schema>,
+	string
+>;
+
+/**
+ * Row lock configuration for read operations. Can be a string shorthand
+ * (`'update'` or `'share'`) or a full configuration object.
+ *
+ * Supported on PostgreSQL and MySQL only. SQLite will throw `LOCK_NOT_SUPPORTED`.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ *
+ * @example
+ * ```ts
+ * // String shorthand
+ * await db.user.findMany({ lock: 'update' });
+ *
+ * // Full object form
+ * await db.user.findMany({
+ *   lock: {
+ *     mode: 'update',
+ *     skipLocked: true,
+ *     tables: ['user'],
+ *   },
+ * });
+ * ```
+ */
+export type LockOption<Schema extends AnySchema = AnySchema> =
+	| 'update'
+	| 'share'
+	| {
+			/** The lock strength mode. */
+			mode: LockMode;
+			/** Skip rows that are already locked by another transaction. Mutually exclusive with `noWait`. */
+			skipLocked?: boolean;
+			/** Fail immediately if any requested row is locked. Mutually exclusive with `skipLocked`. */
+			noWait?: boolean;
+			/** PostgreSQL only: restrict the lock to specific tables. */
+			tables?: readonly LockTableName<Schema>[];
+	  };
+
+/**
+ * Client-level row lock configuration. Passed to {@link BetterClientOptions}
+ * via the `locks` property.
+ *
+ * @example
+ * ```ts
+ * const db = better(drizzle, {
+ *   schema,
+ *   locks: { transactionsOnly: true },
+ * });
+ * ```
+ */
+export interface BetterLockClientOptions {
+	/** When `true`, row locks are only allowed inside a transaction. */
+	transactionsOnly?: boolean;
+}
+
+/**
  * Arguments accepted by read operations (`findMany`, `findFirst`, `findOne`,
  * `findUnique`). Controls filtering, projection, ordering, pagination, and
  * cursor position.
@@ -328,6 +407,8 @@ export interface QueryArgs<
 	skip?: number;
 	/** Cursor position for cursor-based pagination. */
 	cursor?: CursorInput<Schema, Name>;
+	/** Row locking clause for supported dialects and query shapes. */
+	lock?: LockOption<Schema>;
 	/** Custom metadata forwarded to hooks. */
 	meta?: Meta;
 }
@@ -379,7 +460,7 @@ export type ExistsArgs<
 
 /**
  * Arguments for the `paginate` operation.
- * Combines {@link QueryArgs} with pagination-specific options.
+ * Offset-only pagination with count and page metadata.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
@@ -394,13 +475,6 @@ export type ExistsArgs<
  *   where: { active: true },
  * });
  *
- * // Cursor pagination
- * const page = await db.user.paginate({
- *   type: PaginationType.Cursor,
- *   limit: 10,
- *   after: lastCursor,
- *   orderBy: { createdAt: 'desc' },
- * });
  * ```
  */
 export type PaginationArgs<
@@ -408,7 +482,28 @@ export type PaginationArgs<
 	Name extends TableKey<Schema>,
 	Meta = BetterMeta,
 > = QueryArgs<Schema, Name, Meta> &
-	PaginationOptions<SelectModelFor<Schema, Name>>;
+	OffsetPaginationOptions<SelectModelFor<Schema, Name>>;
+
+/**
+ * Arguments for the `cursor` operation.
+ * Cursor-based pagination using `before` or `after`.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ */
+export type CursorArgs<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta = BetterMeta,
+> = QueryArgs<Schema, Name, Meta> &
+	Omit<
+		CursorPaginationOptions<SelectModelFor<Schema, Name>>,
+		'after' | 'before'
+	> & {
+		after?: CursorInput<Schema, Name> | string;
+		before?: CursorInput<Schema, Name> | string;
+	};
 
 type RelationPayloadFromArg<
 	Schema extends AnySchema,

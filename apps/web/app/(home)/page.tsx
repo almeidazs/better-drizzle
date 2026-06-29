@@ -89,7 +89,7 @@ const FEATURES = [
 	{
 		icon: BookOpenText,
 		title: 'One pagination shape',
-		body: 'Offset and cursor both return { data, pagination } with count, hasNext, and hasPrevious. Stop rebuilding it.',
+		body: 'Use paginate() for offset pages and cursor() for feed-style navigation. Both return { data, pagination } without rebuilding metadata by hand.',
 	},
 	{
 		icon: Layers,
