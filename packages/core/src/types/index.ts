@@ -1,5 +1,6 @@
 export * from './database';
 export * from './delegate';
+export * from './explain';
 export * from './hooks';
 export * from './plugins';
 export * from './query';

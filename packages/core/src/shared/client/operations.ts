@@ -1056,28 +1056,34 @@ export const findManyRecords = async <Schema extends AnySchema, Meta>(
 	args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
 	operation = 'findMany',
 ) => {
+	const query = buildFindManyQuery(context, tableName, args, operation);
+
+	return args?.lock
+		? executeReadQuery(
+				query as SelectQueryLike,
+				getTableRuntime(context, tableName as string),
+				operation,
+				args.lock,
+			)
+		: query;
+};
+
+export const buildFindManyQuery = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
+	operation = 'findMany',
+) => {
 	const runtime = getTableRuntime(context, tableName as string);
 	const joinedQuery = buildJoinedOneRelationQuery(context, tableName, args);
 	const lock = resolveReadLock(context, runtime, operation, args);
 	if (joinedQuery)
 		return lock
-			? executeReadQuery(
-					applyReadLock(joinedQuery, runtime, operation, lock),
-					runtime,
-					operation,
-					args?.lock,
-				)
+			? applyReadLock(joinedQuery, runtime, operation, lock)
 			: joinedQuery;
 	if (canUseDirectRead(runtime, args)) {
 		const query = buildDirectReadQuery(context, tableName, args);
-		return lock
-			? executeReadQuery(
-					applyReadLock(query, runtime, operation, lock),
-					runtime,
-					operation,
-					args?.lock,
-				)
-			: query;
+		return lock ? applyReadLock(query, runtime, operation, lock) : query;
 	}
 
 	if (lock)
@@ -1114,6 +1120,29 @@ export const findFirstRecord = async <Schema extends AnySchema, Meta>(
 	args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
 	operation = 'findFirst',
 ) => {
+	const query = buildFindFirstQuery(context, tableName, args, operation);
+	const runtime = getTableRuntime(context, tableName as string);
+	const rows = await (args?.lock
+		? executeReadQuery(
+				query as SelectQueryLike,
+				runtime,
+				operation,
+				args.lock,
+			)
+		: query);
+
+	return (Array.isArray(rows) ? (rows[0] ?? null) : (rows ?? null)) as Record<
+		string,
+		unknown
+	> | null;
+};
+
+export const buildFindFirstQuery = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
+	operation = 'findFirst',
+) => {
 	const runtime = getTableRuntime(context, tableName as string);
 	const lock = resolveReadLock(context, runtime, operation, args);
 	const joinedQuery = buildJoinedOneRelationQuery(context, tableName, {
@@ -1122,15 +1151,9 @@ export const findFirstRecord = async <Schema extends AnySchema, Meta>(
 	});
 
 	if (joinedQuery) {
-		const rows = await (lock
-			? executeReadQuery(
-					applyReadLock(joinedQuery, runtime, operation, lock),
-					runtime,
-					operation,
-					args?.lock,
-				)
-			: joinedQuery);
-		return (rows[0] ?? null) as Record<string, unknown> | null;
+		return lock
+			? applyReadLock(joinedQuery, runtime, operation, lock)
+			: joinedQuery;
 	}
 
 	if (canUseDirectRead(runtime, args)) {
@@ -1138,16 +1161,7 @@ export const findFirstRecord = async <Schema extends AnySchema, Meta>(
 			...args,
 			take: args?.take ?? 1,
 		});
-		const rows = await (lock
-			? executeReadQuery(
-					applyReadLock(query, runtime, operation, lock),
-					runtime,
-					operation,
-					args?.lock,
-				)
-			: query);
-
-		return (rows[0] ?? null) as Record<string, unknown> | null;
+		return lock ? applyReadLock(query, runtime, operation, lock) : query;
 	}
 
 	if (lock)
@@ -1162,21 +1176,17 @@ export const findFirstRecord = async <Schema extends AnySchema, Meta>(
 		});
 
 	if (context.db.query[tableName].findFirst) {
-		const row = await context.db.query[tableName].findFirst(
+		return context.db.query[tableName].findFirst(
 			buildQueryConfig(context, tableName, args),
 		);
-
-		return (row ?? null) as Record<string, unknown> | null;
 	}
 
-	const rows = await context.db.query[tableName].findMany(
+	return context.db.query[tableName].findMany(
 		buildQueryConfig(context, tableName, {
 			...args,
 			take: args?.take ?? 1,
 		}),
 	);
-
-	return (rows[0] ?? null) as Record<string, unknown> | null;
 };
 
 /**
@@ -1191,6 +1201,19 @@ export const findFirstRecord = async <Schema extends AnySchema, Meta>(
  * @returns A promise resolving to `true` if a matching record exists.
  */
 export const existsRecord = async <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	args?: {
+		cursor?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>['cursor'];
+		where?: WhereArg<Schema, BetterTableKey<Schema>>;
+	},
+) => {
+	const rows = await buildExistsQuery(context, tableName, args).limit(1);
+
+	return rows.length > 0;
+};
+
+export const buildExistsQuery = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
 	args?: {
@@ -1213,9 +1236,7 @@ export const existsRecord = async <Schema extends AnySchema, Meta>(
 	if (predicate || cursorPredicate)
 		query = query.where(and(predicate, cursorPredicate));
 
-	const rows = await query.limit(1);
-
-	return rows.length > 0;
+	return query;
 };
 
 /**
@@ -1840,6 +1861,92 @@ const hasCursorPage = async <Schema extends AnySchema, Meta>(
 		'cursor',
 	);
 	return rows.length > 0;
+};
+
+export const getCursorExplainProbes = async <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	args: CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
+	built: {
+		direction: 'before' | 'forward';
+	},
+	dataQuery: Promise<unknown[]>,
+	limit: number,
+) => {
+	const rows = (await dataQuery) as Record<string, unknown>[];
+	const hasOverflow = rows.length > limit;
+	const slice = hasOverflow ? rows.slice(0, limit) : rows;
+	const data = built.direction === 'before' ? [...slice].reverse() : slice;
+	const runtime = getTableRuntime(context, tableName as string);
+	const cursorField = getCursorField(context, tableName, args);
+	const firstRow = data[0] as Record<string, unknown> | undefined;
+	const lastRow = data[data.length - 1] as
+		| Record<string, unknown>
+		| undefined;
+	const previousToken = (getCursorToken(
+		firstRow,
+		cursorField,
+		runtime.dbName,
+		'cursor',
+	) ?? undefined) as CursorArgs<
+		Schema,
+		BetterTableKey<Schema>,
+		Meta
+	>['before'];
+	const nextToken = (getCursorToken(
+		lastRow,
+		cursorField,
+		runtime.dbName,
+		'cursor',
+	) ?? undefined) as CursorArgs<
+		Schema,
+		BetterTableKey<Schema>,
+		Meta
+	>['after'];
+	const probes: Array<{
+		key: string;
+		query: Promise<Record<string, unknown>[]>;
+	}> = [];
+
+	if (built.direction !== 'before' && args.after && previousToken)
+		probes.push({
+			key: 'probe:hasPrevious',
+			query: buildFindManyQuery(
+				context,
+				tableName,
+				buildCursorPaginationQuery(
+					{
+						...args,
+						after: undefined,
+						before: previousToken,
+						limit: 1,
+					},
+					1,
+				).query,
+				'cursor',
+			) as Promise<Record<string, unknown>[]>,
+		});
+
+	if (built.direction === 'before' && args.before && nextToken)
+		probes.push({
+			key: 'probe:hasNext',
+			query: buildFindManyQuery(
+				context,
+				tableName,
+				buildCursorPaginationQuery(
+					{
+						...args,
+						before: undefined,
+						after: nextToken,
+						limit: 1,
+					},
+					1,
+				).query,
+				'cursor',
+			) as Promise<Record<string, unknown>[]>,
+		});
+
+	return probes;
 };
 
 export const cursorRecords = async <Schema extends AnySchema, Meta>(

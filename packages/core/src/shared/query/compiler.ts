@@ -609,6 +609,31 @@ export const buildQueryConfig = <Schema extends AnySchema, Meta>(
  * @param where     - Optional where-clause to filter by.
  * @returns A promise resolving to the row count.
  */
+export const buildCountQuery = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	where?: WhereArg<Schema, BetterTableKey<Schema>>,
+	cursor?: CursorInput<Schema, BetterTableKey<Schema>>,
+) => {
+	const runtime = getTableRuntime(context, tableName as string);
+	const whereContext = {
+		...context,
+		runtime,
+		tableName: tableName as string,
+	} as WhereCompilerContext<Schema, Meta>;
+	const predicate = compileWhereInput(
+		whereContext,
+		where as CompilableWhere | undefined,
+	);
+	const cursorPredicate = compileCursorWhere(whereContext, cursor);
+	const mergedPredicate = and(predicate, cursorPredicate);
+
+	return context.db
+		.select({ count: count() })
+		.from(runtime.table)
+		.where(mergedPredicate);
+};
+
 export const countRows = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
@@ -631,10 +656,7 @@ export const countRows = async <Schema extends AnySchema, Meta>(
 	if (typeof context.db.$count === 'function')
 		return context.db.$count(runtime.table, mergedPredicate);
 
-	const result = await context.db
-		.select({ count: count() })
-		.from(runtime.table)
-		.where(mergedPredicate);
+	const result = await buildCountQuery(context, tableName, where, cursor);
 
 	return Number(result[0]?.count ?? 0);
 };

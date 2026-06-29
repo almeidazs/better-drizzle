@@ -67,6 +67,7 @@ For the docs site version of this material, see:
 | `$raw`, `$executeRaw`, `$rawUnsafe` | [`basics/raw-sql.md`](./basics/raw-sql.md) |
 | client hooks | [`basics/hooks.md`](./basics/hooks.md) |
 | `.throw()` helpers | [`basics/throwing-results.md`](./basics/throwing-results.md) |
+| `.explain()` query plans and options | [`basics/explain.md`](./basics/explain.md) |
 | `repository(name)` | [`cookbook/dynamic-repositories.md`](./cookbook/dynamic-repositories.md) |
 | `$withState` and `$withoutPlugins` | [`cookbook/plugin-bypass-and-state.md`](./cookbook/plugin-bypass-and-state.md) |
 | timestamps plugin | [`plugins/timestamps.md`](./plugins/timestamps.md) |

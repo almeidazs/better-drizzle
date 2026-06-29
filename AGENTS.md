@@ -98,6 +98,12 @@
   - `cursor()` is the cursor-based API and returns `{ data, pagination: { type: "cursor", hasNext, hasPrevious, nextCursor, previousCursor } }`
   - cursor pagination accepts `before` or `after`, never both, and returns raw cursor objects by default
   - `count()` and `exists()` also honor `cursor` filters when provided, so helper queries stay aligned with cursor pagination semantics
+- **Read query plans**:
+  - read helpers (`findMany`, `findFirst`, `findOne`, `findUnique`, `count`, `exists`, `paginate`, `cursor`) now return explainable thenables with `.explain(options?)`
+  - `.explain()` is lazy and does not execute the normal read path or query hooks unless the result is separately awaited
+  - plugin transforms still affect `.explain()`, but query hooks do not
+  - explain output is cross-dialect and structured as `{ driver, operation, statements }`; unsupported explain flags are reported under `ignoredOptions`
+  - PostgreSQL maps `analyze`, `verbose`, `costs`, `timing`, and `summary`; SQLite uses `EXPLAIN QUERY PLAN`; MySQL uses the best available `EXPLAIN` form and ignores unsupported flags
 - **Row locks**:
   - read helpers built on `QueryArgs` (`findMany`, `findFirst`, `findOne`, `findUnique`, `paginate`, `cursor`) accept `lock`
   - `count`, `exists`, and write operations do not accept `lock`

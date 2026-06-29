@@ -66,6 +66,7 @@ It gets repetitive when every service ends up re-writing the same patterns:
 - Nested relation filters with Drizzle-backed typing
 - `include` and `select` support with typed payload inference
 - Offset and cursor pagination helpers with typed metadata
+- Thenable `.explain()` on read helpers for query-plan inspection
 - Optional lifecycle hooks for cross-cutting behavior
 - First-class plugins with setup, transforms, and client/model extensions
 - Fast paths for simple reads and writes to reduce wrapper overhead
@@ -118,7 +119,19 @@ const count = await client.users.count({
 		name: { contains: 'drizzle-orm' },
 	},
 });
+
+const plan = await client.users
+	.findMany({
+		where: { active: true },
+		orderBy: [{ id: 'asc' }],
+	})
+	.explain({
+		analyze: true,
+		comment: 'users.active.explain',
+	});
 ```
+
+`.explain()` is available on read helpers (`findMany`, `findFirst`, `findOne`, `findUnique`, `count`, `exists`, `paginate`, `cursor`). PostgreSQL returns the richest output, while MySQL and SQLite ignore unsupported explain options and return the plan shape their drivers support.
 
 <div align="center">
 

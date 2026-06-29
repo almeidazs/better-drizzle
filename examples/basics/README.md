@@ -21,6 +21,7 @@ If someone understands this folder, they can already use most of `better-drizzle
 | [`raw-sql.md`](./raw-sql.md) | Safe and unsafe raw SQL, row mapping, options |
 | [`hooks.md`](./hooks.md) | Client hooks across reads, writes, raw SQL, and transactions |
 | [`throwing-results.md`](./throwing-results.md) | `.throw()` helpers for nullable operations |
+| [`explain.md`](./explain.md) | `.explain()` query plans, options, cross-dialect behavior |
 
 ## Suggested order
 
@@ -31,6 +32,7 @@ If someone understands this folder, they can already use most of `better-drizzle
 5. `transactions.md`
 6. `locks.md`
 7. `hooks.md`
+8. `explain.md`
 
 ## Mental model
 

@@ -22,9 +22,13 @@ import type { TransactionOptions } from './transaction';
  */
 export type DrizzleQueryDelegate = {
 	/** Execute a relational query returning multiple rows. */
-	findMany(config?: unknown): Promise<unknown[]>;
+	findMany(config?: unknown): Promise<unknown[]> & {
+		getSQL?(): SQL;
+	};
 	/** Execute a relational query returning a single row. */
-	findFirst?(config?: unknown): Promise<unknown | undefined>;
+	findFirst?(config?: unknown): Promise<unknown | undefined> & {
+		getSQL?(): SQL;
+	};
 };
 
 /**

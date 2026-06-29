@@ -5,6 +5,11 @@ import type {
 	OffsetPaginationResult,
 } from './database';
 import type {
+	ExplainableResult,
+	ExplainOptions,
+	ExplainResult,
+} from './explain';
+import type {
 	AnyPlugin,
 	ClientExtensionsOf,
 	ModelExtensionsOf,
@@ -65,7 +70,7 @@ export type ThrowFactory = () => unknown;
  * );
  * ```
  */
-export type ThrowingResult<T> = Promise<T | null> & {
+export type ThrowingResult<T> = ExplainableResult<T | null> & {
 	/** Throws a `BetterDrizzleError` with code `RESULT_NOT_FOUND` when the result is `null`. */
 	throw(): Promise<import('./utils').NonNullish<T>>;
 	/**
@@ -75,6 +80,8 @@ export type ThrowingResult<T> = Promise<T | null> & {
 	 */
 	throw(factory: ThrowFactory): Promise<import('./utils').NonNullish<T>>;
 };
+
+export type { ExplainableResult, ExplainOptions, ExplainResult };
 
 /**
  * Result returned by batch operations (`createMany`, `updateMany`, `deleteMany`).
@@ -1027,7 +1034,7 @@ export type BetterDrizzleModelDelegate<
 			Plugins,
 			'count'
 		>,
-	): Promise<number>;
+	): ExplainableResult<number>;
 	/**
 	 * Returns `true` when at least one matching row exists.
 	 *
@@ -1049,7 +1056,7 @@ export type BetterDrizzleModelDelegate<
 			Plugins,
 			'exists'
 		>,
-	): Promise<boolean>;
+	): ExplainableResult<boolean>;
 	/**
 	 * Inserts a single row and returns the created record.
 	 *
@@ -1240,7 +1247,7 @@ export type BetterDrizzleModelDelegate<
 			Plugins,
 			'findMany'
 		>,
-	>(args?: Args): Promise<PayloadForArgs<Schema, Name, Args>[]>;
+	>(args?: Args): ExplainableResult<PayloadForArgs<Schema, Name, Args>[]>;
 	/**
 	 * Updates a single matching row and returns the updated record.
 	 *
@@ -1442,7 +1449,9 @@ export type BetterDrizzleModelDelegate<
 		>,
 	>(
 		args: Args,
-	): Promise<OffsetPaginationResult<PayloadForArgs<Schema, Name, Args>>>;
+	): ExplainableResult<
+		OffsetPaginationResult<PayloadForArgs<Schema, Name, Args>>
+	>;
 	/**
 	 * Returns a cursor-based result set with navigation cursors.
 	 *
@@ -1456,7 +1465,9 @@ export type BetterDrizzleModelDelegate<
 		>,
 	>(
 		args: Args,
-	): Promise<CursorPaginationResult<PayloadForArgs<Schema, Name, Args>>>;
+	): ExplainableResult<
+		CursorPaginationResult<PayloadForArgs<Schema, Name, Args>>
+	>;
 	/**
 	 * Deletes a single matching row and returns the deleted record.
 	 *
