@@ -1,6 +1,6 @@
 export const revalidate = false;
 
-const BASE = 'https://better-drizzle.vercel.app';
+const BASE = 'https://better-drizzle.com';
 
 /**
  * Generates a comprehensive llms.txt file following the llmstxt.org spec.

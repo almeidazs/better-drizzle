@@ -14,9 +14,9 @@ There are no demo apps here, only copyable examples, patterns, and feature cover
 
 For the docs site version of this material, see:
 
-- https://better-drizzle.vercel.app/docs
-- https://better-drizzle.vercel.app/docs/reference/support-matrix
-- https://better-drizzle.vercel.app/docs/guides/migrating-from-drizzle
+- https://better-drizzle.com/docs
+- https://better-drizzle.com/docs/reference/support-matrix
+- https://better-drizzle.com/docs/guides/migrating-from-drizzle
 
 </div>
 
