@@ -21,7 +21,9 @@ import type { TransactionOptions } from './transaction';
  * Matches the `db.query.TableName` interface exposed by Drizzle ORM.
  */
 export type DrizzleQueryDelegate = {
+	/** Execute a relational query returning multiple rows. */
 	findMany(config?: unknown): Promise<unknown[]>;
+	/** Execute a relational query returning a single row. */
 	findFirst?(config?: unknown): Promise<unknown | undefined>;
 };
 
@@ -31,12 +33,15 @@ export type DrizzleQueryDelegate = {
  * Drizzle's internal types.
  */
 export type InsertBuilderLike = {
+	/** Append a RETURNING clause to the insert statement. */
 	returning?: (
 		fields?: Record<string, unknown>,
 	) => Promise<Record<string, unknown>[]>;
+	/** Append an ON CONFLICT DO NOTHING clause. */
 	onConflictDoNothing?: (config?: {
 		target?: AnyColumn | AnyColumn[];
 	}) => InsertBuilderLike & Promise<unknown>;
+	/** Append an ON CONFLICT DO UPDATE clause (PostgreSQL/SQLite). */
 	onConflictDoUpdate?: (config: {
 		set: Record<string, unknown>;
 		target: AnyColumn | AnyColumn[];
@@ -44,6 +49,7 @@ export type InsertBuilderLike = {
 		targetWhere?: SQL;
 		where?: SQL;
 	}) => InsertBuilderLike & Promise<unknown>;
+	/** Append an ON DUPLICATE KEY UPDATE clause (MySQL). */
 	onDuplicateKeyUpdate?: (config: {
 		set: Record<string, unknown>;
 	}) => InsertBuilderLike & Promise<unknown>;
@@ -54,6 +60,7 @@ export type InsertBuilderLike = {
  * resolves to a Promise-like that also exposes an optional `returning()`.
  */
 export type UpdateBuilderLike = Promise<unknown> & {
+	/** Append a RETURNING clause to the update statement. */
 	returning?: (
 		fields?: Record<string, unknown>,
 	) => Promise<Record<string, unknown>[]>;
@@ -64,6 +71,7 @@ export type UpdateBuilderLike = Promise<unknown> & {
  * to a Promise-like that also exposes an optional `returning()`.
  */
 export type DeleteBuilderLike = Promise<unknown> & {
+	/** Append a RETURNING clause to the delete statement. */
 	returning?: () => Promise<Record<string, unknown>[]>;
 };
 
@@ -74,12 +82,19 @@ export type DeleteBuilderLike = Promise<unknown> & {
  */
 export type SelectQueryLike = SQL &
 	Promise<Record<string, unknown>[]> & {
+		/** Acquire a row-level lock on the result set (PostgreSQL/MySQL). */
 		for?(strength: string, config?: unknown): SelectQueryLike;
+		/** Perform an inner join with another table. */
 		innerJoin(table: Table, on: unknown): SelectQueryLike;
+		/** Perform a left join with another table. */
 		leftJoin(table: Table, on: unknown): SelectQueryLike;
+		/** Limit the number of returned rows. */
 		limit(limit: number): SelectQueryLike;
+		/** Skip a number of rows from the start. */
 		offset(offset: number): SelectQueryLike;
+		/** Sort the result set by one or more columns. */
 		orderBy(...values: unknown[]): SelectQueryLike;
+		/** Filter the result set with a WHERE clause. */
 		where(where?: unknown): SelectQueryLike;
 	};
 
@@ -89,37 +104,50 @@ export type SelectQueryLike = SQL &
  * `query`, and optional `$count`) without importing Drizzle's internal types.
  */
 export type DrizzleLikeDatabase = {
+	/** Dialect constructor info used for auto-detection. */
 	dialect?: {
 		constructor?: {
 			name?: string;
 		};
 	};
+	/** Relational query delegates keyed by table name. */
 	query: Record<string, DrizzleQueryDelegate>;
+	/** Execute a raw query and return all matching rows. */
 	all?(query: SQL | SQLWrapper | string): Promise<unknown[]> | unknown[];
+	/** Execute a raw query and return the result. */
 	execute?(query: SQL | SQLWrapper | string): Promise<unknown> | unknown;
+	/** Start an insert statement on the given table. */
 	insert(table: Table): {
+		/** MySQL-specific ignore variant. */
 		ignore?(): {
 			values(data: unknown): InsertBuilderLike & Promise<unknown>;
 		};
 		values(data: unknown): InsertBuilderLike & Promise<unknown>;
 	};
+	/** Start an update statement on the given table. */
 	update(table: Table): {
 		set(data: unknown): {
 			where(where: unknown): UpdateBuilderLike;
 		};
 	};
+	/** Start a delete statement on the given table. */
 	delete(table: Table): {
 		where(where: unknown): DeleteBuilderLike;
 	};
+	/** Start a select statement, optionally with specific fields. */
 	select(selection?: Record<string, unknown>): {
 		from(table: Table): SelectQueryLike;
 	};
+	/** Count rows in the given table (Drizzle optional method). */
 	$count?(table: Table, filters?: unknown): Promise<number>;
+	/** Execute a raw SQL statement (SQLite-specific). */
 	run?(query: SQL): unknown;
+	/** Open a database transaction. */
 	transaction?<T>(
 		callback: (tx: DrizzleLikeDatabase) => Promise<T> | T,
 		config?: unknown,
 	): Promise<T>;
+	/** Rollback the current transaction (SQLite-specific). */
 	rollback?(): never;
 };
 

@@ -31,34 +31,81 @@ export interface DeleteResult {
 	count: number;
 }
 
+/**
+ * Result returned by the `paginate()` operation. Contains the page of data
+ * and offset-based pagination metadata.
+ *
+ * @typeParam Columns - The row type returned by the query.
+ *
+ * @example
+ * ```ts
+ * const page = await db.user.paginate({ limit: 10 });
+ * console.log(page.data);        // the rows
+ * console.log(page.pagination);  // { type: 'offset', page, perPage, total, ... }
+ * ```
+ */
 export interface OffsetPaginationResult<
 	Columns extends Record<string, unknown>,
 > {
+	/** The page of rows matching the query. */
 	data: Columns[];
+	/** Offset-based pagination metadata. */
 	pagination: {
+		/** Always `'offset'` to distinguish from cursor pagination. */
 		type: 'offset';
+		/** Current page number (1-indexed). */
 		page: number;
+		/** Maximum rows per page. */
 		perPage: number;
+		/** Total number of matching rows across all pages. */
 		total: number;
+		/** Total number of pages. */
 		pageCount: number;
+		/** `true` when a next page exists. */
 		hasNext: boolean;
+		/** `true` when a previous page exists. */
 		hasPrevious: boolean;
 	};
 }
 
+/**
+ * Result returned by the `cursor()` operation. Contains the page of data
+ * and cursor-based navigation metadata.
+ *
+ * @typeParam Columns - The row type returned by the query.
+ *
+ * @example
+ * ```ts
+ * const page = await db.user.cursor({ limit: 10 });
+ * console.log(page.data);        // the rows
+ * console.log(page.pagination);  // { type: 'cursor', hasNext, nextCursor, ... }
+ * ```
+ */
 export interface CursorPaginationResult<
 	Columns extends Record<string, unknown>,
 > {
+	/** The page of rows matching the query. */
 	data: Columns[];
+	/** Cursor-based pagination metadata. */
 	pagination: {
+		/** Always `'cursor'` to distinguish from offset pagination. */
 		type: 'cursor';
+		/** `true` when more rows exist after the current page. */
 		hasNext: boolean;
+		/** `true` when more rows exist before the current page. */
 		hasPrevious: boolean;
+		/** Cursor token for fetching the next page, or `null` if at the end. */
 		nextCursor: string | object | null;
+		/** Cursor token for fetching the previous page, or `null` if at the start. */
 		previousCursor: string | object | null;
 	};
 }
 
+/**
+ * Options for offset-based pagination. Used by the `paginate()` operation.
+ *
+ * @typeParam Columns - The row type of the result set.
+ */
 export interface OffsetPaginationOptions<
 	Columns extends Record<string, unknown>,
 > {
@@ -68,6 +115,12 @@ export interface OffsetPaginationOptions<
 	orderBy?: OrderBy<Columns>;
 }
 
+/**
+ * Options for cursor-based pagination. Used by the `cursor()` operation.
+ * Accepts either `after` or `before`, but never both.
+ *
+ * @typeParam Columns - The row type of the result set.
+ */
 export interface CursorPaginationOptions<
 	Columns extends Record<string, unknown>,
 > {

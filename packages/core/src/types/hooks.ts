@@ -32,7 +32,7 @@ import type {
 } from './transaction';
 import type { AnySchema, TableFor, TableKey } from './utils';
 
-/** Action names for query operations. */
+/** Action names for query (read) operations. */
 export type QueryHookAction =
 	| 'findMany'
 	| 'findFirst'
@@ -43,21 +43,21 @@ export type QueryHookAction =
 	| 'paginate'
 	| 'cursor';
 
-/** Action names for create operations. */
+/** Action names for create-oriented operations. */
 export type CreateHookAction =
 	| 'create'
 	| 'createMany'
 	| 'upsert'
 	| 'upsertMany';
-/** Action names for update operations. */
+/** Action names for update-oriented operations. */
 export type UpdateHookAction =
 	| 'update'
 	| 'updateEach'
 	| 'updateMany'
 	| 'upsert';
-/** Action names for delete operations. */
+/** Action names for delete-oriented operations. */
 export type DeleteHookAction = 'delete' | 'deleteMany';
-/** Union of all hook action names. */
+/** Union of all CRUD and query hook action names. */
 export type HookAction =
 	| QueryHookAction
 	| CreateHookAction
@@ -67,7 +67,7 @@ export type HookAction =
 /** Action names for raw SQL operations. */
 export type RawHookAction = 'raw' | 'executeRaw' | 'rawUnsafe';
 
-/** Stage within a hook lifecycle. */
+/** Lifecycle stage within a hook execution. */
 export type HookStage = 'beforeHook' | 'afterHook' | 'operation';
 
 type HookBaseContext<

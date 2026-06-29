@@ -281,23 +281,76 @@ export type CursorInput<
 	Name extends TableKey<Schema>,
 > = Partial<Pick<SelectModelFor<Schema, Name>, ScalarKeysFor<Schema, Name>>>;
 
+/**
+ * Row lock strength mode. Determines the type of lock acquired on matched rows.
+ *
+ * - `'update'` – `FOR UPDATE` – exclusive lock for writing.
+ * - `'share'` – `FOR SHARE` – shared lock that prevents updates but allows reads.
+ * - `'noKeyUpdate'` – `FOR NO KEY UPDATE` – like update but does not block key share locks (PostgreSQL only).
+ * - `'keyShare'` – `FOR KEY SHARE` – like share but does not block update locks (PostgreSQL only).
+ */
 export type LockMode = 'update' | 'share' | 'noKeyUpdate' | 'keyShare';
 
+/**
+ * Valid table name for the `lock.tables` option. Accepts either the
+ * TypeScript table key or the database table name from the schema.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ */
 export type LockTableName<Schema extends AnySchema> = Extract<
 	TableKey<Schema> | DbNameKey<Schema>,
 	string
 >;
 
+/**
+ * Row lock configuration for read operations. Can be a string shorthand
+ * (`'update'` or `'share'`) or a full configuration object.
+ *
+ * Supported on PostgreSQL and MySQL only. SQLite will throw `LOCK_NOT_SUPPORTED`.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ *
+ * @example
+ * ```ts
+ * // String shorthand
+ * await db.user.findMany({ lock: 'update' });
+ *
+ * // Full object form
+ * await db.user.findMany({
+ *   lock: {
+ *     mode: 'update',
+ *     skipLocked: true,
+ *     tables: ['user'],
+ *   },
+ * });
+ * ```
+ */
 export type LockOption<Schema extends AnySchema = AnySchema> =
 	| 'update'
 	| 'share'
 	| {
+			/** The lock strength mode. */
 			mode: LockMode;
+			/** Skip rows that are already locked by another transaction. Mutually exclusive with `noWait`. */
 			skipLocked?: boolean;
+			/** Fail immediately if any requested row is locked. Mutually exclusive with `skipLocked`. */
 			noWait?: boolean;
+			/** PostgreSQL only: restrict the lock to specific tables. */
 			tables?: readonly LockTableName<Schema>[];
 	  };
 
+/**
+ * Client-level row lock configuration. Passed to {@link BetterClientOptions}
+ * via the `locks` property.
+ *
+ * @example
+ * ```ts
+ * const db = better(drizzle, {
+ *   schema,
+ *   locks: { transactionsOnly: true },
+ * });
+ * ```
+ */
 export interface BetterLockClientOptions {
 	/** When `true`, row locks are only allowed inside a transaction. */
 	transactionsOnly?: boolean;
