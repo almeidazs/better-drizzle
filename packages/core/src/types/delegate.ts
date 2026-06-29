@@ -1,6 +1,9 @@
 import type { AnyColumn, SQL, TableRelationalConfig } from 'drizzle-orm';
 
-import type { PaginationResult } from './database';
+import type {
+	CursorPaginationResult,
+	OffsetPaginationResult,
+} from './database';
 import type {
 	AnyPlugin,
 	ClientExtensionsOf,
@@ -9,6 +12,7 @@ import type {
 	PluginState,
 } from './plugins';
 import type {
+	CursorArgs,
 	IncludeInput,
 	PaginationArgs,
 	PayloadForArgs,
@@ -1414,12 +1418,9 @@ export type BetterDrizzleModelDelegate<
 		>,
 	>(args: Args): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	/**
-	 * Returns a paginated result set with total count and navigation metadata.
+	 * Returns an offset-based paginated result set with page metadata.
 	 *
-	 * Supports both offset-based and cursor-based pagination strategies.
-	 *
-	 * @param args - Pagination options including `limit`, `orderBy`, and
-	 *   optional `after`/`before` cursors.
+	 * @param args - Offset pagination options including `limit`, `skip`, and `orderBy`.
 	 * @returns A promise resolving to `{ data, pagination }`.
 	 *
 	 * @example
@@ -1430,15 +1431,7 @@ export type BetterDrizzleModelDelegate<
 	 *   orderBy: { name: 'asc' },
 	 * });
 	 * console.log(page.data);        // rows
-	 * console.log(page.pagination);  // { count, hasNext, hasPrevious }
-	 *
-	 * // Cursor pagination
-	 * const page = await db.user.paginate({
-	 *   type: PaginationType.Cursor,
-	 *   limit: 10,
-	 *   after: lastCursor,
-	 *   orderBy: { createdAt: 'desc' },
-	 * });
+	 * console.log(page.pagination);  // { type, page, perPage, total, pageCount, hasNext, hasPrevious }
 	 * ```
 	 */
 	paginate<
@@ -1449,7 +1442,21 @@ export type BetterDrizzleModelDelegate<
 		>,
 	>(
 		args: Args,
-	): Promise<PaginationResult<PayloadForArgs<Schema, Name, Args>>>;
+	): Promise<OffsetPaginationResult<PayloadForArgs<Schema, Name, Args>>>;
+	/**
+	 * Returns a cursor-based result set with navigation cursors.
+	 *
+	 * Accepts either `after` or `before`, but never both.
+	 */
+	cursor<
+		Args extends OperationArgsWithPlugins<
+			CursorArgs<Schema, Name, Meta>,
+			Plugins,
+			'cursor'
+		>,
+	>(
+		args: Args,
+	): Promise<CursorPaginationResult<PayloadForArgs<Schema, Name, Args>>>;
 	/**
 	 * Deletes a single matching row and returns the deleted record.
 	 *

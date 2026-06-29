@@ -14,6 +14,7 @@ import type {
 	CountArgs,
 	CreateArgs,
 	CreateManyArgs,
+	CursorArgs,
 	DeleteArgs,
 	DeleteManyArgs,
 	ExistsArgs,
@@ -34,6 +35,7 @@ import { attachThrow, buildHookContext, executeOperation } from './hooks';
 import {
 	createManyRecords,
 	createRecord,
+	cursorRecords,
 	deleteManyRecords,
 	deleteRecord,
 	existsRecord,
@@ -165,6 +167,7 @@ export const createModelDelegate = <
 			| 'findMany'
 			| 'findOne'
 			| 'findUnique'
+			| 'cursor'
 			| 'paginate'
 			| 'update'
 			| 'updateEach'
@@ -787,6 +790,32 @@ export const createModelDelegate = <
 				kind: 'paginate',
 				operation: (resolvedArgs) =>
 					paginateRecords(context, tableName, resolvedArgs),
+			}),
+		cursor: (
+			args: OperationArgsWithPlugins<
+				CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
+				Plugins,
+				'cursor'
+			>,
+		) =>
+			runOperation({
+				action: 'cursor',
+				args,
+				afterHookName: 'afterQuery',
+				afterPayload: (result, resolvedArgs) =>
+					({
+						...hookContext('cursor', resolvedArgs),
+						result,
+					}) as AfterQueryHookContext<Schema, Meta, Plugins>,
+				beforeHookName: 'beforeQuery',
+				beforePayload: (resolvedArgs) =>
+					hookContext(
+						'cursor',
+						resolvedArgs,
+					) as BeforeQueryHookContext<Schema, Meta, Plugins>,
+				kind: 'cursor',
+				operation: (resolvedArgs) =>
+					cursorRecords(context, tableName, resolvedArgs),
 			}),
 	});
 };

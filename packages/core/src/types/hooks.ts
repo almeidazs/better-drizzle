@@ -1,4 +1,7 @@
-import type { PaginationResult } from './database';
+import type {
+	CursorPaginationResult,
+	OffsetPaginationResult,
+} from './database';
 import type {
 	BatchResult,
 	BetterDrizzleModelDelegate,
@@ -15,6 +18,7 @@ import type { AnyPlugin, OperationArgsWithPlugins } from './plugins';
 import type {
 	BetterMeta,
 	CountArgs,
+	CursorArgs,
 	ExistsArgs,
 	PaginationArgs,
 	PayloadForArgs,
@@ -36,7 +40,8 @@ export type QueryHookAction =
 	| 'findUnique'
 	| 'count'
 	| 'exists'
-	| 'paginate';
+	| 'paginate'
+	| 'cursor';
 
 /** Action names for create operations. */
 export type CreateHookAction =
@@ -282,17 +287,23 @@ type QueryHookArgsForAction<
 				Plugins,
 				'exists'
 			>
-		: Action extends 'paginate'
+		: Action extends 'cursor'
 			? OperationArgsWithPlugins<
-					PaginationArgs<Schema, Name, Meta>,
+					CursorArgs<Schema, Name, Meta>,
 					Plugins,
-					'paginate'
+					'cursor'
 				>
-			: OperationArgsWithPlugins<
-					QueryArgs<Schema, Name, Meta>,
-					Plugins,
-					Action
-				>;
+			: Action extends 'paginate'
+				? OperationArgsWithPlugins<
+						PaginationArgs<Schema, Name, Meta>,
+						Plugins,
+						'paginate'
+					>
+				: OperationArgsWithPlugins<
+						QueryArgs<Schema, Name, Meta>,
+						Plugins,
+						Action
+					>;
 
 type QueryHookResultForAction<
 	Schema extends AnySchema,
@@ -316,19 +327,33 @@ type QueryHookResultForAction<
 			? number
 			: Action extends 'exists'
 				? boolean
-				: PaginationResult<
-						PayloadForArgs<
-							Schema,
-							Name,
-							QueryHookArgsForAction<
+				: Action extends 'cursor'
+					? CursorPaginationResult<
+							PayloadForArgs<
 								Schema,
 								Name,
-								Meta,
-								Plugins,
-								Action
+								QueryHookArgsForAction<
+									Schema,
+									Name,
+									Meta,
+									Plugins,
+									Action
+								>
 							>
 						>
-					>;
+					: OffsetPaginationResult<
+							PayloadForArgs<
+								Schema,
+								Name,
+								QueryHookArgsForAction<
+									Schema,
+									Name,
+									Meta,
+									Plugins,
+									Action
+								>
+							>
+						>;
 
 type CreateHookContext<
 	Schema extends AnySchema,
@@ -708,6 +733,18 @@ export type BeforeQueryHookContext<
 					'paginate'
 				>,
 				'paginate'
+		  >
+		| HookBaseContext<
+				Schema,
+				Name,
+				Meta,
+				Plugins,
+				OperationArgsWithPlugins<
+					CursorArgs<Schema, Name, Meta>,
+					Plugins,
+					'cursor'
+				>,
+				'cursor'
 		  >;
 }[TableKey<Schema>];
 
@@ -728,6 +765,7 @@ export type AfterQueryHookContext<
 	| QueryHookContext<Schema, Meta, Plugins, 'findUnique'>
 	| QueryHookContext<Schema, Meta, Plugins, 'count'>
 	| QueryHookContext<Schema, Meta, Plugins, 'exists'>
+	| QueryHookContext<Schema, Meta, Plugins, 'cursor'>
 	| QueryHookContext<Schema, Meta, Plugins, 'paginate'>;
 
 /**

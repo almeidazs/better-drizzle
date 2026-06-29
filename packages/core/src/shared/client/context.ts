@@ -59,6 +59,7 @@ const createPluginBuckets = () => {
 		findMany: createBucket(),
 		findOne: createBucket(),
 		findUnique: createBucket(),
+		cursor: createBucket(),
 		paginate: createBucket(),
 		update: createBucket(),
 		updateEach: createBucket(),

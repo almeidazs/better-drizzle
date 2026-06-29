@@ -51,7 +51,7 @@ Both are fully typed. The difference shows up when you have *dozens* of these ac
 | Point lookups | `db.select().from().where(eq(...))` + unwrap | `findUnique({ where: { email } })` |
 | Relation loading | manual joins or `db.query` config | `include` / `select` with inferred payloads |
 | Nested relation filters | hand-built `exists` subqueries | `some` / `every` / `none` / `is` |
-| Pagination | rebuild `count` + `hasNext` each time | `paginate()` → `{ data, pagination }` |
+| Pagination | rebuild page metadata and cursor navigation each time | `paginate()` / `cursor()` → `{ data, pagination }` |
 | Not-found handling | check for `undefined` everywhere | nullable result **or** `.throw()` |
 | Cross-cutting concerns | sprinkle through call sites | client hooks and plugins |
 | Timestamps / soft delete | repeat in every write | official plugins |

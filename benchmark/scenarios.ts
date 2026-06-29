@@ -1,6 +1,6 @@
 import { and, asc, count, desc, eq, gte, like } from 'drizzle-orm';
 
-import { OrderType, PaginationType } from '../packages/core/src';
+import { OrderType } from '../packages/core/src';
 
 import { benchWrites, posts, users } from './schema';
 import type { BenchmarkContext } from './setup';
@@ -150,8 +150,12 @@ export const rawOffsetPaginate = async (context: BenchmarkContext) => {
 	return {
 		data,
 		pagination: {
-			count: Number(total[0]?.count ?? 0),
-			hasNext: data.length >= 25,
+			type: 'offset' as const,
+			page: 4,
+			perPage: 25,
+			total: Number(total[0]?.count ?? 0),
+			pageCount: Math.ceil(Number(total[0]?.count ?? 0) / 25),
+			hasNext: 80 + data.length < Number(total[0]?.count ?? 0),
 			hasPrevious: true,
 		},
 	};
@@ -162,36 +166,38 @@ export const betterOffsetPaginate = async (context: BenchmarkContext) =>
 		limit: 25,
 		orderBy: [{ id: OrderType.Asc }],
 		skip: 80,
-		type: PaginationType.Offset,
 	});
 
 export const rawCursorPaginate = async (context: BenchmarkContext) => {
-	const [data, total] = await Promise.all([
-		context.raw
-			.select()
-			.from(users)
-			.where(gte(users.id, context.ids.cursorAfterId + 1))
-			.orderBy(asc(users.id))
-			.limit(25),
-		context.raw.select({ count: count() }).from(users),
-	]);
+	const data = await context.raw
+		.select()
+		.from(users)
+		.where(gte(users.id, context.ids.cursorAfterId + 1))
+		.orderBy(asc(users.id))
+		.limit(26);
+
+	const visible = data.slice(0, 25);
 
 	return {
-		data,
+		data: visible,
 		pagination: {
-			count: Number(total[0]?.count ?? 0),
-			hasNext: data.length >= 25,
+			type: 'cursor' as const,
+			hasNext: data.length > 25,
 			hasPrevious: true,
+			nextCursor:
+				data.length > 25
+					? { id: visible[visible.length - 1]?.id }
+					: null,
+			previousCursor: visible.length ? { id: visible[0]?.id } : null,
 		},
 	};
 };
 
 export const betterCursorPaginate = async (context: BenchmarkContext) =>
-	betterClient(context).users.paginate({
+	betterClient(context).users.cursor({
 		after: { id: context.ids.cursorAfterId },
 		limit: 25,
 		orderBy: [{ id: OrderType.Asc }],
-		type: PaginationType.Cursor,
 	});
 
 export const rawCreateDeleteRoundtrip = async (context: BenchmarkContext) => {

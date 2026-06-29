@@ -84,27 +84,35 @@ A relation value can be `true` or a nested read-args object (with its own `where
 
 <TypeTable
 	type={{
-		type: {
-			description: 'Pagination strategy.',
-			type: 'PaginationType',
-			default: 'PaginationType.Offset',
+		limit: {
+			description: 'Max rows per page.',
+			type: 'number',
 		},
+	}}
+/>
+
+It returns `{ data, pagination: { type, page, perPage, total, pageCount, hasNext, hasPrevious } }`.
+
+`cursor` accepts everything above plus:
+
+<TypeTable
+	type={{
 		limit: {
 			description: 'Max rows per page.',
 			type: 'number',
 		},
 		after: {
-			description: 'Cursor token to read rows after (cursor mode).',
+			description: 'Cursor token to read rows after.',
 			type: 'CursorInput',
 		},
 		before: {
-			description: 'Cursor token to read rows before (cursor mode).',
+			description: 'Cursor token to read rows before.',
 			type: 'CursorInput',
 		},
 	}}
 />
 
-It returns `{ data, pagination: { count, hasNext, hasPrevious } }`. See [pagination](/docs/querying/pagination).
+It returns `{ data, pagination: { type, hasNext, hasPrevious, nextCursor, previousCursor } }`. See [pagination](/docs/querying/pagination).
 
 ## Write-specific arguments
 

@@ -128,7 +128,18 @@ describe('repository()', () => {
 		});
 
 		expect(result.data.length).toBe(2);
-		expect(result.pagination.count).toBe(5);
+		expect(result.pagination.total).toBe(5);
+	});
+
+	test('repository supports cursor', async () => {
+		const repo = ctx.better.repository('users');
+		const result = await repo.cursor({
+			limit: 2,
+			orderBy: [{ id: 'asc' }],
+		});
+
+		expect(result.data.length).toBe(2);
+		expect(result.pagination.type).toBe('cursor');
 	});
 });
 
@@ -151,6 +162,7 @@ describe('client - table delegates', () => {
 			'findMany',
 			'findOne',
 			'findUnique',
+			'cursor',
 			'paginate',
 			'update',
 			'updateEach',

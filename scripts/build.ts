@@ -29,7 +29,6 @@ const packageConfigs: Record<
 			'BetterDrizzleErrorCode',
 			'BetterDrizzleTransactionRollbackError',
 			'OrderType',
-			'PaginationType',
 			'better',
 			'definePlugin',
 			'getDatabaseErrorInfo',

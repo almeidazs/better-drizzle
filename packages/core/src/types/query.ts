@@ -1,6 +1,9 @@
 import type { Many, One, SQL, SQLWrapper } from 'drizzle-orm';
 
-import type { PaginationOptions } from './database';
+import type {
+	CursorPaginationOptions,
+	OffsetPaginationOptions,
+} from './database';
 import type {
 	AnySchema,
 	RelatedNameFor,
@@ -379,7 +382,7 @@ export type ExistsArgs<
 
 /**
  * Arguments for the `paginate` operation.
- * Combines {@link QueryArgs} with pagination-specific options.
+ * Offset-only pagination with count and page metadata.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
@@ -394,13 +397,6 @@ export type ExistsArgs<
  *   where: { active: true },
  * });
  *
- * // Cursor pagination
- * const page = await db.user.paginate({
- *   type: PaginationType.Cursor,
- *   limit: 10,
- *   after: lastCursor,
- *   orderBy: { createdAt: 'desc' },
- * });
  * ```
  */
 export type PaginationArgs<
@@ -408,7 +404,28 @@ export type PaginationArgs<
 	Name extends TableKey<Schema>,
 	Meta = BetterMeta,
 > = QueryArgs<Schema, Name, Meta> &
-	PaginationOptions<SelectModelFor<Schema, Name>>;
+	OffsetPaginationOptions<SelectModelFor<Schema, Name>>;
+
+/**
+ * Arguments for the `cursor` operation.
+ * Cursor-based pagination using `before` or `after`.
+ *
+ * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Name - The table key within the schema.
+ * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
+ */
+export type CursorArgs<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta = BetterMeta,
+> = QueryArgs<Schema, Name, Meta> &
+	Omit<
+		CursorPaginationOptions<SelectModelFor<Schema, Name>>,
+		'after' | 'before'
+	> & {
+		after?: CursorInput<Schema, Name> | string;
+		before?: CursorInput<Schema, Name> | string;
+	};
 
 type RelationPayloadFromArg<
 	Schema extends AnySchema,

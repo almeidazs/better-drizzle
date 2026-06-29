@@ -7,6 +7,7 @@ import type {
 	CountArgs,
 	CreateArgs,
 	CreateManyArgs,
+	CursorArgs,
 	DeleteArgs,
 	DeleteManyArgs,
 	ExistsArgs,
@@ -79,6 +80,11 @@ type AnyArgs<
 			'exists'
 	  >
 	| OperationArgsWithPlugins<
+			CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
+			Plugins,
+			'cursor'
+	  >
+	| OperationArgsWithPlugins<
 			PaginationArgs<Schema, BetterTableKey<Schema>, Meta>,
 			Plugins,
 			'paginate'
@@ -145,6 +151,7 @@ const PLUGIN_HOOK_KINDS = {
 	afterDelete: ['delete', 'deleteMany'],
 	afterQuery: [
 		'count',
+		'cursor',
 		'exists',
 		'findFirst',
 		'findMany',
@@ -157,6 +164,7 @@ const PLUGIN_HOOK_KINDS = {
 	beforeDelete: ['delete', 'deleteMany'],
 	beforeQuery: [
 		'count',
+		'cursor',
 		'exists',
 		'findFirst',
 		'findMany',

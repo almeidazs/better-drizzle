@@ -82,6 +82,7 @@
   - `count`
   - `exists`
   - `paginate`
+  - `cursor`
   - `$withState`
   - `$withoutPlugins`
 - **Create conflict handling**:
@@ -92,6 +93,10 @@
   - explicit column arrays map to schema column names; targeted duplicate-skip is intentionally dialect-sensitive
 - **Client-level lookup**:
   - `repository(name)` resolves by schema key or db table name
+- **Pagination split**:
+  - `paginate()` is offset-only and returns `{ data, pagination: { type: "offset", page, perPage, total, pageCount, hasNext, hasPrevious } }`
+  - `cursor()` is the cursor-based API and returns `{ data, pagination: { type: "cursor", hasNext, hasPrevious, nextCursor, previousCursor } }`
+  - cursor pagination accepts `before` or `after`, never both, and returns raw cursor objects by default
 - **Scoped metadata**:
   - `db.$withContext(meta)` returns a cloned client that merges default `meta` into every repository operation, raw SQL call, and transaction lifecycle payload
   - final operation metadata is a shallow merge: scoped context first, per-call `meta` second

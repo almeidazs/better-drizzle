@@ -102,7 +102,6 @@ const usersByDbName = client.repository('app_users');
 import {
 	better,
 	definePlugin,
-	PaginationType,
 	OrderType,
 	version,
 	// error helpers
@@ -120,11 +119,6 @@ import {
 ### Enums
 
 ```ts
-enum PaginationType {
-	Cursor = 1,
-	Offset,
-}
-
 enum OrderType {
 	Asc = 'asc',
 	Desc = 'desc',
