@@ -7,6 +7,7 @@ import {
 	Terminal,
 	Webhook,
 } from 'lucide-react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { FaDiscord, FaGithub } from 'react-icons/fa';
 import { SiPostgresql } from 'react-icons/si';
@@ -292,10 +293,12 @@ export default function HomePage() {
 							OUR SPONSOR
 							<SponsorHeart className="size-3 fill-current stroke-current" />
 						</div>
-						<img
+						<Image
 							src="https://neon.com/brand/neon-logomark-dark-color.svg"
 							alt="Neon"
 							className="size-8 shrink-0"
+							width={32}
+							height={32}
 						/>
 						<div className="pr-12">
 							<p className="font-semibold">Neon</p>
@@ -412,10 +415,12 @@ export default function HomePage() {
 							rel="noreferrer"
 							className="group inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-6 py-4 transition-colors duration-200 hover:border-[#3cf2b2]/40 hover:bg-white/[0.06]"
 						>
-							<img
+							<Image
 								src="https://neon.com/brand/neon-logomark-dark-color.svg"
 								alt="Neon"
 								className="size-10 shrink-0"
+								width={40}
+								height={40}
 							/>
 							<span className="text-2xl font-semibold tracking-tight text-white">
 								Neon

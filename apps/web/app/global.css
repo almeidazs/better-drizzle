@@ -141,6 +141,6 @@ body {
 		grid-template:
 			"header"
 			"toc-popover"
-			"main" 1fr / minmax(0, 1fr) !important;
+			"main" 1fr / minmax(0, 1fr);
 	}
 }
