@@ -6,6 +6,7 @@ import type {
 } from './database';
 import type {
 	AnySchema,
+	DbNameKey,
 	RelatedNameFor,
 	RelationFor,
 	RelationKeysFor,
@@ -280,6 +281,28 @@ export type CursorInput<
 	Name extends TableKey<Schema>,
 > = Partial<Pick<SelectModelFor<Schema, Name>, ScalarKeysFor<Schema, Name>>>;
 
+export type LockMode = 'update' | 'share' | 'noKeyUpdate' | 'keyShare';
+
+export type LockTableName<Schema extends AnySchema> = Extract<
+	TableKey<Schema> | DbNameKey<Schema>,
+	string
+>;
+
+export type LockOption<Schema extends AnySchema = AnySchema> =
+	| 'update'
+	| 'share'
+	| {
+			mode: LockMode;
+			skipLocked?: boolean;
+			noWait?: boolean;
+			tables?: readonly LockTableName<Schema>[];
+	  };
+
+export interface BetterLockClientOptions {
+	/** When `true`, row locks are only allowed inside a transaction. */
+	transactionsOnly?: boolean;
+}
+
 /**
  * Arguments accepted by read operations (`findMany`, `findFirst`, `findOne`,
  * `findUnique`). Controls filtering, projection, ordering, pagination, and
@@ -331,6 +354,8 @@ export interface QueryArgs<
 	skip?: number;
 	/** Cursor position for cursor-based pagination. */
 	cursor?: CursorInput<Schema, Name>;
+	/** Row locking clause for supported dialects and query shapes. */
+	lock?: LockOption<Schema>;
 	/** Custom metadata forwarded to hooks. */
 	meta?: Meta;
 }

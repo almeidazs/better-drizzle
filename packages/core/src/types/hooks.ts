@@ -955,6 +955,8 @@ export interface BetterClientOptions<
 		/** How to handle dialect-unsupported transaction options. */
 		unsupportedOptions?: TransactionUnsupportedOptionsBehavior;
 	};
+	/** Optional row lock configuration. */
+	locks?: import('./query').BetterLockClientOptions;
 	/** Optional raw SQL configuration. */
 	raw?: RawClientOptions;
 	/** Optional lifecycle hooks. */

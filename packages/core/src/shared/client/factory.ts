@@ -732,6 +732,7 @@ const runBetterTransaction = async <
 		let attemptState: TransactionRuntime | null = null;
 
 		if (context.dialect === 'sqlite') {
+			getDrizzleTransactionConfig(context, options);
 			attemptState = createTransactionState(
 				context.transaction,
 				options,
@@ -1210,13 +1211,27 @@ export const createBoundClient = <
 		options?: TransactionOptions & { meta?: Meta },
 	) => runBetterTransaction(context, callback, options);
 
+	client.afterCommit = (callback: () => unknown | Promise<unknown>) => {
+		if (!context.transaction)
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.AfterCommitOutsideTransaction,
+				message: 'afterCommit() can only be used inside a transaction.',
+			});
+
+		context.transaction.afterCommit.push(callback);
+	};
+	client.afterRollback = (callback: () => unknown | Promise<unknown>) => {
+		if (!context.transaction)
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.AfterRollbackOutsideTransaction,
+				message:
+					'afterRollback() can only be used inside a transaction.',
+			});
+
+		context.transaction.afterRollback.push(callback);
+	};
+
 	if (context.transaction) {
-		client.afterCommit = (callback: () => unknown | Promise<unknown>) => {
-			context.transaction?.afterCommit.push(callback);
-		};
-		client.afterRollback = (callback: () => unknown | Promise<unknown>) => {
-			context.transaction?.afterRollback.push(callback);
-		};
 		client.rollback = (reason?: unknown) => {
 			throw new TransactionRollbackSignal(reason);
 		};

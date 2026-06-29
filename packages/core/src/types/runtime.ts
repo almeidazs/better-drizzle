@@ -74,6 +74,7 @@ export type DeleteBuilderLike = Promise<unknown> & {
  */
 export type SelectQueryLike = SQL &
 	Promise<Record<string, unknown>[]> & {
+		for?(strength: string, config?: unknown): SelectQueryLike;
 		innerJoin(table: Table, on: unknown): SelectQueryLike;
 		leftJoin(table: Table, on: unknown): SelectQueryLike;
 		limit(limit: number): SelectQueryLike;

@@ -40,6 +40,10 @@ Accepted by `findMany`, `findFirst`, `findOne`, and `findUnique`:
 			description: 'Cursor position (scalar column values) for cursor-style reads.',
 			type: 'CursorInput',
 		},
+		lock: {
+			description: 'Row lock clause for PostgreSQL/MySQL reads (`FOR UPDATE`, `FOR SHARE`, `SKIP LOCKED`, `NOWAIT`).',
+			type: 'LockOption',
+		},
 		meta: {
 			description: 'Custom metadata forwarded to hooks and plugins.',
 			type: 'Record<string, unknown>',
@@ -50,6 +54,26 @@ Accepted by `findMany`, `findFirst`, `findOne`, and `findUnique`:
 `count` and `exists` accept only `where`, `cursor`, and `meta`.
 
 `findUnique` is the strictest of the read helpers semantically, but it still accepts the same query-argument shape as the other reads. The main difference is intent: use it when the `where` clause targets a unique lookup.
+
+## Row locks
+
+```ts
+await client.transaction(async (tx) => {
+	return tx.users.findMany({
+		where: { id: { gt: 0 } },
+		lock: {
+			mode: 'update',
+			skipLocked: true,
+		},
+	});
+});
+```
+
+- Supported on PostgreSQL and MySQL read helpers only.
+- `count`, `exists`, and all write operations do not accept `lock`.
+- `skipLocked` and `noWait` are mutually exclusive.
+- `tables` is PostgreSQL-only.
+- General relation loading with `include` / relation `select` is intentionally rejected when `lock` is present.
 
 ## Filter operators
 

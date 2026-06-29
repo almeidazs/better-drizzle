@@ -100,3 +100,5 @@ export enum OrderType {
 	/** Descending order. */
 	Desc = 'desc',
 }
+
+export type { BetterLockClientOptions } from './query';

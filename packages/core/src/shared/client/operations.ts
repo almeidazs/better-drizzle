@@ -15,6 +15,7 @@ import type {
 	PaginationArgs,
 	QueryArgs,
 	RuntimeContext,
+	SelectQueryLike,
 	SkipDuplicatesOption,
 	TableRuntime,
 	UpdateArgs,
@@ -42,6 +43,22 @@ type ResolvedSkipDuplicates = {
 	enabled: boolean;
 	targets?: string[];
 };
+
+type LockStrength = 'update' | 'share' | 'no key update' | 'key share';
+
+type ResolvedLockOption = {
+	noWait?: true;
+	skipLocked?: true;
+	strength: LockStrength;
+	tables?: TableRuntime[];
+};
+
+const LOCK_STRENGTH_MAP = {
+	keyShare: 'key share',
+	noKeyUpdate: 'no key update',
+	share: 'share',
+	update: 'update',
+} as const satisfies Record<string, LockStrength>;
 
 const getSkipDuplicatesConfig = <Schema extends AnySchema>(
 	skipDuplicates?: SkipDuplicatesOption<Schema, BetterTableKey<Schema>>,
@@ -653,6 +670,216 @@ const buildReadState = <Schema extends AnySchema, Meta>(
 	};
 };
 
+const resolveLockTables = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	runtime: TableRuntime,
+	operation: string,
+	targets: readonly string[] | undefined,
+) => {
+	if (!targets?.length) return;
+
+	const resolved: TableRuntime[] = [];
+	const seen = new Set<string>();
+
+	for (const target of targets) {
+		let tableRuntime = context.tables[target];
+
+		if (!tableRuntime)
+			for (const key in context.tables)
+				if (context.tables[key]?.dbName === target) {
+					tableRuntime = context.tables[key];
+					break;
+				}
+
+		if (!tableRuntime)
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.OperationError,
+				details: { target },
+				message: `Invalid lock table "${target}" for table "${runtime.dbName}"`,
+				operation,
+				table: runtime.dbName,
+			});
+
+		if (seen.has(tableRuntime.dbName)) continue;
+
+		seen.add(tableRuntime.dbName);
+		resolved.push(tableRuntime);
+	}
+
+	return resolved;
+};
+
+const resolveReadLock = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	runtime: TableRuntime,
+	operation: string,
+	args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
+) => {
+	const lock = args?.lock;
+	if (!lock) return;
+
+	if (context.options.locks?.transactionsOnly && !context.transaction)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.LockRequiresTransaction,
+			details: {
+				lock,
+				transactionsOnly: true,
+			},
+			message: 'Row locks can only be used inside a transaction.',
+			operation,
+			table: runtime.dbName,
+		});
+
+	if (context.dialect === 'sqlite')
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.LockNotSupported,
+			details: { dialect: context.dialect, lock },
+			dialect: context.dialect,
+			message: 'Row locks are not supported on SQLite.',
+			operation,
+			table: runtime.dbName,
+		});
+
+	const normalized =
+		typeof lock === 'string'
+			? {
+					mode: lock,
+					noWait: undefined,
+					skipLocked: undefined,
+					tables: undefined,
+				}
+			: lock;
+
+	if (normalized.noWait && normalized.skipLocked)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			details: { lock },
+			message: 'lock cannot enable both noWait and skipLocked.',
+			operation,
+			table: runtime.dbName,
+		});
+
+	if (
+		context.dialect === 'mysql' &&
+		(normalized.mode === 'keyShare' || normalized.mode === 'noKeyUpdate')
+	)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.LockNotSupported,
+			details: { dialect: context.dialect, lock },
+			dialect: context.dialect,
+			message: `Lock mode "${normalized.mode}" is not supported on MySQL.`,
+			operation,
+			table: runtime.dbName,
+		});
+
+	if (normalized.tables?.length && context.dialect !== 'pg')
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.LockNotSupported,
+			details: { dialect: context.dialect, lock },
+			dialect: context.dialect,
+			message: 'lock.tables is only supported on PostgreSQL.',
+			operation,
+			table: runtime.dbName,
+		});
+
+	return {
+		noWait: normalized.noWait ? true : undefined,
+		skipLocked: normalized.skipLocked ? true : undefined,
+		strength: LOCK_STRENGTH_MAP[normalized.mode],
+		tables: resolveLockTables(
+			context,
+			runtime,
+			operation,
+			normalized.tables,
+		),
+	} satisfies ResolvedLockOption;
+};
+
+const applyReadLock = (
+	query: SelectQueryLike,
+	runtime: TableRuntime,
+	operation: string,
+	lock: ResolvedLockOption,
+) => {
+	if (typeof query.for !== 'function')
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.LockNotSupported,
+			details: { lock: lock.strength },
+			message:
+				'The current Drizzle select builder does not support row locks.',
+			operation,
+			table: runtime.dbName,
+		});
+
+	const config = Object.create(null) as Record<string, unknown>;
+	if (lock.noWait) config.noWait = true;
+	if (lock.skipLocked) config.skipLocked = true;
+	if (lock.tables?.length)
+		config.of = lock.tables.map((table) => table.table);
+
+	return query.for(
+		lock.strength,
+		Object.keys(config).length ? config : undefined,
+	);
+};
+
+const normalizeLockError = (
+	error: unknown,
+	runtime: TableRuntime,
+	operation: string,
+	lock: unknown,
+) => {
+	if (error instanceof BetterDrizzleError) return error;
+
+	const fields =
+		typeof error === 'object' && error !== null
+			? (error as {
+					code?: string | number;
+					errno?: string | number;
+					message?: string;
+					sqlState?: string;
+				})
+			: undefined;
+	const code = `${fields?.code ?? fields?.sqlState ?? ''}`.toLowerCase();
+	const errno = Number(fields?.errno);
+	const message = `${fields?.message ?? ''}`.toLowerCase();
+
+	if (
+		code === '55p03' ||
+		errno === 1205 ||
+		errno === 3572 ||
+		message.includes('lock timeout') ||
+		message.includes('could not obtain lock') ||
+		message.includes('could not be acquired immediately') ||
+		message.includes('nowait is set')
+	)
+		return BetterDrizzleError.from(error, {
+			code: BetterDrizzleErrorCode.LockTimeout,
+			details: { lock },
+			message:
+				error instanceof Error
+					? error.message
+					: 'Failed to acquire the requested row lock.',
+			operation,
+			table: runtime.dbName,
+		});
+
+	return error;
+};
+
+const executeReadQuery = async (
+	query: SelectQueryLike,
+	runtime: TableRuntime,
+	operation: string,
+	lock: unknown,
+) => {
+	try {
+		return await query;
+	} catch (error) {
+		throw normalizeLockError(error, runtime, operation, lock);
+	}
+};
+
 const buildDirectReadQuery = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
@@ -823,16 +1050,46 @@ const buildJoinedOneRelationQuery = <Schema extends AnySchema, Meta>(
  * @param args      - Query arguments (where, select, include, orderBy, take, skip, cursor).
  * @returns A promise resolving to an array of matching records.
  */
-export const findManyRecords = <Schema extends AnySchema, Meta>(
+export const findManyRecords = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
 	args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
+	operation = 'findMany',
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
 	const joinedQuery = buildJoinedOneRelationQuery(context, tableName, args);
-	if (joinedQuery) return joinedQuery;
-	if (canUseDirectRead(runtime, args))
-		return buildDirectReadQuery(context, tableName, args);
+	const lock = resolveReadLock(context, runtime, operation, args);
+	if (joinedQuery)
+		return lock
+			? executeReadQuery(
+					applyReadLock(joinedQuery, runtime, operation, lock),
+					runtime,
+					operation,
+					args?.lock,
+				)
+			: joinedQuery;
+	if (canUseDirectRead(runtime, args)) {
+		const query = buildDirectReadQuery(context, tableName, args);
+		return lock
+			? executeReadQuery(
+					applyReadLock(query, runtime, operation, lock),
+					runtime,
+					operation,
+					args?.lock,
+				)
+			: query;
+	}
+
+	if (lock)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.LockNotSupported,
+			details: { dialect: context.dialect, lock: args?.lock },
+			dialect: context.dialect,
+			message:
+				'Row locks are only supported on read queries without general relation loading.',
+			operation,
+			table: runtime.dbName,
+		});
 
 	return context.db.query[tableName].findMany(
 		buildQueryConfig(context, tableName, args),
@@ -855,26 +1112,54 @@ export const findFirstRecord = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
 	args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
+	operation = 'findFirst',
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
+	const lock = resolveReadLock(context, runtime, operation, args);
 	const joinedQuery = buildJoinedOneRelationQuery(context, tableName, {
 		...args,
 		take: args?.take ?? 1,
 	});
 
 	if (joinedQuery) {
-		const rows = await joinedQuery;
+		const rows = await (lock
+			? executeReadQuery(
+					applyReadLock(joinedQuery, runtime, operation, lock),
+					runtime,
+					operation,
+					args?.lock,
+				)
+			: joinedQuery);
 		return (rows[0] ?? null) as Record<string, unknown> | null;
 	}
 
 	if (canUseDirectRead(runtime, args)) {
-		const rows = await buildDirectReadQuery(context, tableName, {
+		const query = buildDirectReadQuery(context, tableName, {
 			...args,
 			take: args?.take ?? 1,
 		});
+		const rows = await (lock
+			? executeReadQuery(
+					applyReadLock(query, runtime, operation, lock),
+					runtime,
+					operation,
+					args?.lock,
+				)
+			: query);
 
 		return (rows[0] ?? null) as Record<string, unknown> | null;
 	}
+
+	if (lock)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.LockNotSupported,
+			details: { dialect: context.dialect, lock: args?.lock },
+			dialect: context.dialect,
+			message:
+				'Row locks are only supported on read queries without general relation loading.',
+			operation,
+			table: runtime.dbName,
+		});
 
 	if (context.db.query[tableName].findFirst) {
 		const row = await context.db.query[tableName].findFirst(
@@ -908,13 +1193,25 @@ export const findFirstRecord = async <Schema extends AnySchema, Meta>(
 export const existsRecord = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
-	args?: { where?: WhereArg<Schema, BetterTableKey<Schema>> },
+	args?: {
+		cursor?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>['cursor'];
+		where?: WhereArg<Schema, BetterTableKey<Schema>>;
+	},
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
 	const predicate = getPredicate(context, runtime, tableName, args?.where);
+	const cursorPredicate = compileCursorWhere(
+		{
+			...context,
+			runtime,
+			tableName: tableName as string,
+		},
+		args?.cursor,
+	);
 	let query = context.db.select({ one: sql`1` }).from(runtime.table);
 
-	if (predicate) query = query.where(predicate);
+	if (predicate || cursorPredicate)
+		query = query.where(and(predicate, cursorPredicate));
 
 	const rows = await query.limit(1);
 
@@ -1446,7 +1743,7 @@ export const paginateRecords = async <Schema extends AnySchema, Meta>(
 ) => {
 	const { take, query } = buildOffsetPaginationQuery(args);
 	const [data, total] = await Promise.all([
-		findManyRecords(context, tableName, query),
+		findManyRecords(context, tableName, query, 'paginate'),
 		countRows(context, tableName, args.where),
 	]);
 	const skip = query.skip ?? 0;
@@ -1536,7 +1833,12 @@ const hasCursorPage = async <Schema extends AnySchema, Meta>(
 			table: getTableRuntime(context, tableName as string).dbName,
 		});
 
-	const rows = await findManyRecords(context, tableName, result.query);
+	const rows = await findManyRecords(
+		context,
+		tableName,
+		result.query,
+		'cursor',
+	);
 	return rows.length > 0;
 };
 
@@ -1562,7 +1864,12 @@ export const cursorRecords = async <Schema extends AnySchema, Meta>(
 			table: runtime.dbName,
 		});
 
-	const rows = await findManyRecords(context, tableName, built.query);
+	const rows = await findManyRecords(
+		context,
+		tableName,
+		built.query,
+		'cursor',
+	);
 	const hasOverflow = rows.length > limit;
 	const slice = hasOverflow ? rows.slice(0, limit) : rows;
 	const data = built.direction === 'before' ? [...slice].reverse() : slice;

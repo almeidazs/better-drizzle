@@ -613,24 +613,28 @@ export const countRows = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
 	where?: WhereArg<Schema, BetterTableKey<Schema>>,
+	cursor?: CursorInput<Schema, BetterTableKey<Schema>>,
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
+	const whereContext = {
+		...context,
+		runtime,
+		tableName: tableName as string,
+	} as WhereCompilerContext<Schema, Meta>;
 	const predicate = compileWhereInput(
-		{
-			...context,
-			runtime,
-			tableName: tableName as string,
-		},
+		whereContext,
 		where as CompilableWhere | undefined,
 	);
+	const cursorPredicate = compileCursorWhere(whereContext, cursor);
+	const mergedPredicate = and(predicate, cursorPredicate);
 
 	if (typeof context.db.$count === 'function')
-		return context.db.$count(runtime.table, predicate);
+		return context.db.$count(runtime.table, mergedPredicate);
 
 	const result = await context.db
 		.select({ count: count() })
 		.from(runtime.table)
-		.where(predicate);
+		.where(mergedPredicate);
 
 	return Number(result[0]?.count ?? 0);
 };

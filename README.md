@@ -202,6 +202,33 @@ const user = await client.transaction(async (tx) => {
 });
 ```
 
+On PostgreSQL and MySQL, read helpers also accept `lock` for row-level locking:
+
+```ts
+await client.transaction(async (tx) => {
+	const jobs = await tx.posts.findMany({
+		where: { id: { gt: 0 } },
+		lock: {
+			mode: 'update',
+			skipLocked: true,
+		},
+	});
+
+	return jobs;
+});
+```
+
+If you want to enforce that locked reads only happen inside transactions, enable it once on the client:
+
+```ts
+const client = better(db, {
+	schema,
+	locks: {
+		transactionsOnly: true,
+	},
+});
+```
+
 <div align="center">
 
 ## Plugins

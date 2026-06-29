@@ -153,3 +153,30 @@ await client.transaction(async (tx) => {
 ```
 
 Plugins and hooks can read `transactionContext` and `isInTransaction` throughout.
+
+## Locked reads
+
+If you use row locks regularly, keep them inside transactions:
+
+```ts
+await client.transaction(async (tx) => {
+	return tx.posts.findMany({
+		where: { id: { gt: 0 } },
+		lock: {
+			mode: 'update',
+			skipLocked: true,
+		},
+	});
+});
+```
+
+You can enforce that rule at the client level:
+
+```ts
+const client = better(db, {
+	schema,
+	locks: {
+		transactionsOnly: true,
+	},
+});
+```

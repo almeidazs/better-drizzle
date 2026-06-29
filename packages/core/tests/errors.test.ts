@@ -108,6 +108,62 @@ describe('BetterDrizzleError', () => {
 			}),
 		);
 	});
+
+	test('withCause replaces the cause while preserving metadata', () => {
+		const original = new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			details: { operationId: 'op-1' },
+			message: 'boom',
+			operation: 'create',
+		});
+		const cause = new Error('root cause');
+		const wrapped = original.withCause(cause);
+
+		expect(wrapped).toBeInstanceOf(BetterDrizzleError);
+		expect(wrapped.cause).toBe(cause);
+		expect(wrapped.code).toBe(BetterDrizzleErrorCode.OperationError);
+		expect(wrapped.operation).toBe('create');
+		expect(wrapped.details).toEqual({ operationId: 'op-1' });
+	});
+
+	test('withDetails merges structured details', () => {
+		const original = new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			details: { attempt: 1, requestId: 'req-1' },
+			message: 'boom',
+		});
+		const merged = original.withDetails({
+			attempt: 2,
+			userId: 'user-1',
+		});
+
+		expect(merged.details).toEqual({
+			attempt: 2,
+			requestId: 'req-1',
+			userId: 'user-1',
+		});
+	});
+
+	test('from clones BetterDrizzleError instances with overrides', () => {
+		const original = new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			message: 'original',
+			operation: 'findMany',
+			table: 'users',
+		});
+		const cloned = BetterDrizzleError.from(original, {
+			code: BetterDrizzleErrorCode.ResultNotFound,
+			message: 'missing',
+			status: 404,
+		});
+
+		expect(cloned).not.toBe(original);
+		expect(cloned.code).toBe(BetterDrizzleErrorCode.ResultNotFound);
+		expect(cloned.message).toBe('missing');
+		expect(cloned.status).toBe(404);
+		expect(cloned.operation).toBe('findMany');
+		expect(cloned.table).toBe('users');
+	});
 });
 
 describe('getDatabaseErrorInfo', () => {

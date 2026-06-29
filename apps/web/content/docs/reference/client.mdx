@@ -37,6 +37,10 @@ const client = better(db, options);
 			description: 'Transaction configuration, e.g. how to handle dialect-unsupported options.',
 			type: '{ unsupportedOptions?: "warn" | "throw" | "ignore" }',
 		},
+		locks: {
+			description: 'Row lock configuration, e.g. requiring locked reads to run inside transactions.',
+			type: '{ transactionsOnly?: boolean }',
+		},
 	}}
 />
 

@@ -279,7 +279,12 @@ export const createModelDelegate = <
 					) as BeforeQueryHookContext<Schema, Meta, Plugins>,
 				kind: 'count',
 				operation: (resolvedArgs) =>
-					countRows(context, tableName, resolvedArgs.where),
+					countRows(
+						context,
+						tableName,
+						resolvedArgs.where,
+						resolvedArgs.cursor,
+					),
 			});
 		},
 		exists: (

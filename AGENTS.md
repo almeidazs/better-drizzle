@@ -97,6 +97,14 @@
   - `paginate()` is offset-only and returns `{ data, pagination: { type: "offset", page, perPage, total, pageCount, hasNext, hasPrevious } }`
   - `cursor()` is the cursor-based API and returns `{ data, pagination: { type: "cursor", hasNext, hasPrevious, nextCursor, previousCursor } }`
   - cursor pagination accepts `before` or `after`, never both, and returns raw cursor objects by default
+  - `count()` and `exists()` also honor `cursor` filters when provided, so helper queries stay aligned with cursor pagination semantics
+- **Row locks**:
+  - read helpers built on `QueryArgs` (`findMany`, `findFirst`, `findOne`, `findUnique`, `paginate`, `cursor`) accept `lock`
+  - `count`, `exists`, and write operations do not accept `lock`
+  - PostgreSQL and MySQL are supported; SQLite should fail fast with a lock-specific error
+  - `skipLocked` and `noWait` are mutually exclusive
+  - `locks.transactionsOnly` can enforce that locked reads only run inside transactions
+  - Drizzle's relational `db.query.*` path does not expose row-lock configuration, so v1 lock support intentionally rejects general relation loading (`include` / relation `select`) instead of silently dropping the lock
 - **Scoped metadata**:
   - `db.$withContext(meta)` returns a cloned client that merges default `meta` into every repository operation, raw SQL call, and transaction lifecycle payload
   - final operation metadata is a shallow merge: scoped context first, per-call `meta` second
@@ -104,6 +112,7 @@
 - **Transactions**:
   - `db.transaction(callback, options?)` is the official API
   - transaction clients are full Better Drizzle clients with `transaction`, `rollback`, `afterCommit`, and `afterRollback`
+  - root clients also expose `afterCommit` and `afterRollback`; calling them outside an active transaction throws the explicit Better Drizzle error instead of failing with a missing method
   - transaction context lives on the runtime context; operation/plugin hooks can read `isInTransaction`, `transaction`, `transactionContext`, and merged `meta`
   - nested transactions use savepoints; SQLite is handled with explicit `BEGIN`/`SAVEPOINT` SQL because Bun SQLite's native Drizzle transaction callback is synchronous
 - **Raw SQL**:

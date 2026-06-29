@@ -98,3 +98,13 @@ try {
 	}
 }
 ```
+
+## Lock-related error codes
+
+Locked reads throw normal `BetterDrizzleError` instances with specific codes:
+
+| Code | Meaning |
+| --- | --- |
+| `LOCK_NOT_SUPPORTED` | The dialect or query shape does not support the requested row lock. |
+| `LOCK_REQUIRES_TRANSACTION` | The client was configured with `locks.transactionsOnly: true` and the read ran outside a transaction. |
+| `LOCK_TIMEOUT` | The database could not acquire the requested lock in time, including `NOWAIT` failures. |
