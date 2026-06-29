@@ -2,10 +2,11 @@
 
 import { useDocsLayout } from 'fumadocs-ui/layouts/docs';
 import { useHomeLayout } from 'fumadocs-ui/layouts/home';
-import { Github, SidebarIcon } from 'lucide-react';
+import { SidebarIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { FaGithub } from 'react-icons/fa';
 import { Logo } from '@/components/logo';
 import { formatGithubStars } from '@/lib/github';
 import { cn } from '@/lib/utils';
@@ -56,7 +57,7 @@ function GithubStarsButton({ stars }: { stars: number }) {
 			aria-label="better-drizzle GitHub"
 			className="inline-flex h-9 items-center gap-2 rounded-lg border border-fd-border bg-fd-card px-3 text-sm font-semibold text-fd-foreground transition-colors hover:border-[#686868] hover:bg-white/[0.06]"
 		>
-			<Github className="size-4" />
+			<FaGithub className="size-4" />
 			<span>{formatGithubStars(stars)}</span>
 		</a>
 	);
@@ -71,7 +72,7 @@ function GithubStarsCompactButton({ stars }: { stars: number }) {
 			aria-label="better-drizzle GitHub"
 			className="inline-flex h-9 items-center gap-2 rounded-lg border border-fd-border bg-fd-card px-2.5 text-sm font-semibold text-fd-foreground transition-colors hover:border-[#686868] hover:bg-white/[0.06]"
 		>
-			<Github className="size-4" />
+			<FaGithub className="size-4" />
 			<span>{formatGithubStars(stars)}</span>
 		</a>
 	);
