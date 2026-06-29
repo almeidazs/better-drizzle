@@ -8,12 +8,14 @@ Plugins let you bundle behavior that would otherwise be scattered across service
 
 ```ts
 import { better } from 'better-drizzle';
+import { recommended, rules } from '@better-drizzle/rules';
 import { timestamps } from '@better-drizzle/timestamps';
 import { softDelete } from '@better-drizzle/soft-delete';
 
 const client = better(db, {
 	schema,
 	plugins: [
+		rules(recommended({ noRawUnsafe: true })),
 		timestamps({ createdAt: 'createdAt', updatedAt: 'updatedAt' }),
 		softDelete({ column: 'deletedAt' }),
 	],
@@ -27,6 +29,10 @@ await client.users.restore({ where: { id: 1 } }); // plugin-added method
 ## Official plugins
 
 <Cards>
+	<Card title="Rules" href="/docs/plugins/rules">
+		Add runtime guardrails for raw SQL, destructive writes, pagination,
+		locking, and request context policies.
+	</Card>
 	<Card title="Timestamps" href="/docs/plugins/timestamps">
 		Manage `createdAt` / `updatedAt` consistently on create, update, and
 		upsert — or stay out of the way when the database owns them.
@@ -39,6 +45,7 @@ await client.users.restore({ where: { id: 1 } }); // plugin-added method
 
 | Plugin | Good fit when | Main behavior |
 | --- | --- | --- |
+| Rules | you want runtime guardrails around repository usage | validates raw SQL, destructive writes, limits, lock usage, and context requirements |
 | Timestamps | you want managed `createdAt` / `updatedAt` | fills timestamp columns on writes |
 | Soft delete | rows should stay recoverable and hidden by default | rewrites deletes, filters reads, adds restore helpers |
 

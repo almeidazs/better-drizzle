@@ -50,6 +50,11 @@ jobs:
                       package_dir="packages/timestamps"
                       version="${tag#@better-drizzle/timestamps@}"
                       ;;
+                    @better-drizzle/rules@*)
+                      package_name="@better-drizzle/rules"
+                      package_dir="packages/rules"
+                      version="${tag#@better-drizzle/rules@}"
+                      ;;
                     @better-drizzle/soft-delete@*)
                       package_name="@better-drizzle/soft-delete"
                       package_dir="packages/soft-delete"
@@ -57,7 +62,7 @@ jobs:
                       ;;
                     *)
                       echo "::error::Unsupported release tag: $tag"
-                      echo "::error::Use the format better-drizzle@x.y.z, @better-drizzle/timestamps@x.y.z, or @better-drizzle/soft-delete@x.y.z"
+                      echo "::error::Use the format better-drizzle@x.y.z, @better-drizzle/rules@x.y.z, @better-drizzle/timestamps@x.y.z, or @better-drizzle/soft-delete@x.y.z"
                       exit 1
                       ;;
                   esac

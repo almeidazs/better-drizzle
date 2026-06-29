@@ -9,7 +9,7 @@ import {
 } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
-type PackageName = 'core' | 'soft-delete' | 'timestamps';
+type PackageName = 'core' | 'rules' | 'soft-delete' | 'timestamps';
 
 const rootDir = resolve(import.meta.dir, '..');
 
@@ -47,6 +47,19 @@ const packageConfigs: Record<
 		esmExports: ['softDelete', 'version'],
 		packageName: '@better-drizzle/soft-delete',
 	},
+	rules: {
+		dir: join(rootDir, 'packages/rules'),
+		defaultExport: 'rules',
+		esmExports: [
+			'mergeRules',
+			'recommended',
+			'rules',
+			'safe',
+			'strict',
+			'version',
+		],
+		packageName: '@better-drizzle/rules',
+	},
 	timestamps: {
 		dir: join(rootDir, 'packages/timestamps'),
 		defaultExport: 'timestamps',
@@ -62,7 +75,9 @@ const packages =
 		: (Object.keys(packageConfigs) as PackageName[]);
 const buildOrder = Array.from(
 	new Set(
-		packages.includes('soft-delete') || packages.includes('timestamps')
+		packages.includes('rules') ||
+			packages.includes('soft-delete') ||
+			packages.includes('timestamps')
 			? (['core', ...packages] as PackageName[])
 			: packages,
 	),

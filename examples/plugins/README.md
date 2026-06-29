@@ -12,6 +12,7 @@ They are where you add behavior once and keep repository calls small.
 | File | Focus |
 | --- | --- |
 | [`official-plugins.md`](./official-plugins.md) | What the maintained plugins solve |
+| [`rules.md`](./rules.md) | Runtime guardrails for raw SQL, destructive writes, pagination, locks, and tenant context |
 | [`timestamps.md`](./timestamps.md) | Automatic `createdAt` / `updatedAt` handling |
 | [`soft-delete.md`](./soft-delete.md) | Visibility filters, soft delete behavior, restore helpers |
 | [`plugin-lifecycle.md`](./plugin-lifecycle.md) | Order, setup, transforms, extensions, transaction hooks |

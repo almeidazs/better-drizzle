@@ -1,7 +1,8 @@
 # Official plugins
 
-The repository currently includes two official plugins:
+The repository currently includes three official plugins:
 
+- `@better-drizzle/rules`
 - `@better-drizzle/timestamps`
 - `@better-drizzle/soft-delete`
 
@@ -9,6 +10,7 @@ The repository currently includes two official plugins:
 
 | Plugin | Good fit when | Main behavior |
 | --- | --- | --- |
+| Rules | you want runtime guardrails around repository usage | validates raw SQL, destructive writes, limits, lock usage, and context requirements |
 | Timestamps | your app wants `createdAt` / `updatedAt` managed consistently | fills timestamp columns during create, update, updateEach, upsert, and upsertMany flows |
 | Soft delete | rows should stay recoverable and filtered by default | overrides deletes, filters reads, and adds restore helpers |
 
@@ -16,12 +18,18 @@ The repository currently includes two official plugins:
 
 ```ts
 import { better } from 'better-drizzle';
+import { rules, recommended } from '@better-drizzle/rules';
 import { timestamps } from '@better-drizzle/timestamps';
 import { softDelete } from '@better-drizzle/soft-delete';
 
 const client = better(db, {
 	schema,
 	plugins: [
+		rules(
+			recommended({
+				noRawUnsafe: true,
+			}),
+		),
 		timestamps({
 			createdAt: 'createdAt',
 			updatedAt: 'updatedAt',

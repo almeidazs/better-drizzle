@@ -1,0 +1,149 @@
+---
+title: Rules
+description: Runtime guardrails for raw SQL, destructive writes, pagination, locks, and tenant context.
+icon: Shield
+---
+
+`@better-drizzle/rules` is the first-party guardrails plugin for Better Drizzle. It validates operations at runtime through plugin hooks and turns unsafe patterns into warnings or errors without forcing you to wrap every repository call manually.
+
+## Install
+
+<Tabs items={['npm', 'pnpm', 'yarn', 'bun']}>
+
+<Tab value="npm">
+
+```bash
+npm install @better-drizzle/rules
+```
+
+</Tab>
+
+<Tab value="pnpm">
+
+```bash
+pnpm add @better-drizzle/rules
+```
+
+</Tab>
+
+<Tab value="yarn">
+
+```bash
+yarn add @better-drizzle/rules
+```
+
+</Tab>
+
+<Tab value="bun">
+
+```bash
+bun add @better-drizzle/rules
+```
+
+</Tab>
+
+</Tabs>
+
+## Usage
+
+```ts
+import { better } from 'better-drizzle';
+import { rules } from '@better-drizzle/rules';
+
+const client = better(db, {
+	schema,
+	plugins: [
+		rules({
+			noRawUnsafe: true,
+			noUpdateManyWithoutWhere: true,
+			requireOrderByForCursor: true,
+			maxLimit: {
+				level: 'warn',
+				value: 500,
+			},
+		}),
+	],
+});
+```
+
+## Rule levels
+
+Every rule accepts four shapes:
+
+- `true` => error
+- `false` => off
+- `'warn' | 'error' | 'off'`
+- an object with `level` plus rule-specific options
+
+```ts
+rules({
+	noRawUnsafe: true,
+	requireRawTimeout: {
+		level: 'error',
+		maxTimeoutMs: 30_000,
+	},
+	maxLimit: {
+		level: 'warn',
+		value: 500,
+	},
+});
+```
+
+## Presets
+
+The package exports three preset helpers:
+
+- `safe()`
+- `recommended()`
+- `strict()`
+
+```ts
+import { recommended, rules } from '@better-drizzle/rules';
+
+const client = better(db, {
+	schema,
+	plugins: [
+		rules(
+			recommended({
+				noRawUnsafe: true,
+			}),
+		),
+	],
+});
+```
+
+## What it can enforce
+
+Today the plugin can validate:
+
+- destructive writes without `where`
+- empty `where` clauses
+- unbounded `findMany()` calls
+- missing or oversized `limit` values
+- cursor and pagination order requirements
+- include depth and include relation-count limits
+- row lock guardrails like `skipLocked` prerequisites
+- raw SQL policies like `noRawUnsafe`, `requireRawComment`, `requireRawTimeout`, `noRawMutation`, and `noRawWithoutTransaction`
+- tenant-context checks based on `meta` and `$withContext(...)`
+- explicit selection of sensitive fields when those fields are visible in `select`
+
+## Reporting
+
+Warnings can be reported without throwing:
+
+```ts
+rules({
+	noRawUnsafe: 'warn',
+	reporter: {
+		warn(violation) {
+			console.warn(violation.rule, violation.operation, violation.model);
+		},
+	},
+});
+```
+
+For `error` rules, the plugin throws a `BetterDrizzleError` unless `throwOnError: false` is configured.
+
+## Current boundary
+
+The plugin is intentionally runtime-only and hook-driven. If the current Better Drizzle hook payload does not expose enough information to evaluate a rule safely, that rule is ignored instead of guessed.

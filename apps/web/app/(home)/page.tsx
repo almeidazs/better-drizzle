@@ -58,12 +58,14 @@ const BETTER_CODE = `const rows = await client.posts.findMany({
 });`;
 
 const PLUGINS_CODE = `import { better } from 'better-drizzle';
+import { recommended, rules } from '@better-drizzle/rules';
 import { timestamps } from '@better-drizzle/timestamps';
 import { softDelete } from '@better-drizzle/soft-delete';
 
 const client = better(db, {
   schema,
   plugins: [
+    rules(recommended({ noRawUnsafe: true })),
     timestamps(),
     softDelete({
       column: 'deletedAt',
@@ -99,7 +101,7 @@ const FEATURES = [
 	{
 		icon: Blocks,
 		title: 'First-class plugins',
-		body: 'Timestamps, soft delete, and your own — with transforms, lifecycle hooks, and typed operation args.',
+		body: 'Rules, timestamps, soft delete, and your own — with transforms, lifecycle hooks, and typed operation args.',
 	},
 	{
 		icon: Webhook,

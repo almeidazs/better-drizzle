@@ -270,12 +270,18 @@ Plugins can also extend the built-in operation args in a fully typed way through
 
 ```ts
 import { better } from 'better-drizzle';
+import { recommended, rules } from '@better-drizzle/rules';
 import { timestamps } from '@better-drizzle/timestamps';
 import { softDelete } from '@better-drizzle/soft-delete';
 
 const client = better(drizzle, {
 	schema,
 	plugins: [
+		rules(
+			recommended({
+				noRawUnsafe: true,
+			}),
+		),
 		timestamps({
 			createdAt: 'created_at',
 			updatedAt: 'updated_at',
@@ -306,7 +312,7 @@ await client.users.restore({
 
 <div align="center">
 
-Now you can soft delete rows easily and also have timestamps fields injected automatically.
+Now you can enforce repository guardrails, soft delete rows, and also have timestamps fields injected automatically.
 
 ## Hooks
 

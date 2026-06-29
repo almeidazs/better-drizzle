@@ -5,6 +5,7 @@
 - **Repository scope**: `better-drizzle` is a small Bun/TypeScript workspace focused on a single core package, `packages/core`, plus a benchmark suite used to measure API-parity performance and memory overhead against raw Drizzle ORM.
 - **Workspace layout**:
   - `packages/core`: the published library
+  - `packages/rules`: official runtime rules/guardrails plugin
   - `packages/soft-delete`: official soft delete plugin
   - `packages/timestamps`: official timestamps plugin
   - `benchmark`: Bun + SQLite benchmark suite
@@ -140,6 +141,8 @@
   - plugin hooks/transforms are the mutation layer
   - `upsertMany` is a create-oriented hook/transform kind, matching `upsert` rather than `updateMany`
   - `updateEach` is an update-oriented batch operation with its own plugin kind, but it still flows through `beforeUpdate` / `afterUpdate`
+  - `packages/rules` is intentionally runtime-only and hook-driven; it enforces only checks that can be inferred from current hook payloads and silently ignores unsupported rule types
+  - `packages/rules` accepts boolean rule settings as shorthand: `true` means `error`, `false` means `off`
 - **Batch updateEach API**:
   - `updateEach` is native-first and performance-sensitive
   - it accepts `by`, `data`, `update`, optional `where`, optional scalar `select`, and `onEmpty`
@@ -259,6 +262,7 @@
   - verify exports from `packages/core/src/index.ts`
   - update both READMEs if user-facing behavior changes
   - ensure examples still type-check conceptually against the current API
+  - if `packages/rules` changes, keep the root workspace scripts (`build`, `test`, `check`, `pack`) including it
 - **For performance changes**:
   - inspect hot-path allocations and branches
   - rerun both benchmark suites

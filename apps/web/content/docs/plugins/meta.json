@@ -1,5 +1,11 @@
 {
 	"title": "Plugins",
 	"icon": "Blocks",
-	"pages": ["overview", "timestamps", "soft-delete", "writing-plugins"]
+	"pages": [
+		"overview",
+		"rules",
+		"timestamps",
+		"soft-delete",
+		"writing-plugins"
+	]
 }

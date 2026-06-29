@@ -59,6 +59,7 @@ Key characteristics:
 ## Plugins
 
 - [Plugin Overview](${BASE}/docs/plugins/overview): How the plugin system works — setup, hooks, transforms, extensions, and operation args.
+- [Rules](${BASE}/docs/plugins/rules): Official rules plugin — runtime guardrails for raw SQL, destructive writes, pagination, locks, and request context.
 - [Soft Delete](${BASE}/docs/plugins/soft-delete): Official soft delete plugin — marks rows as deleted instead of removing them.
 - [Timestamps](${BASE}/docs/plugins/timestamps): Official timestamps plugin — auto-manages createdAt and updatedAt columns.
 - [Writing Plugins](${BASE}/docs/plugins/writing-plugins): Build your own plugin — extend clients, models, hooks, transforms, and operation args.
