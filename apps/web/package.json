@@ -11,7 +11,7 @@
 		"typecheck": "fumadocs-mdx && next typegen && tsc --noEmit"
 	},
 	"dependencies": {
-		"fumadocs-core": "16.10.6",
+		"fumadocs-core": "16.10.7",
 		"fumadocs-mdx": "15.0.13",
 		"fumadocs-ui": "16.10.5",
 		"lucide-react": "^1.22.0",
