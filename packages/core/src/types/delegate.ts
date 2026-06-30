@@ -950,7 +950,12 @@ export type BetterDrizzleModelDelegate<
 	Name extends TableKey<Schema>,
 	Meta = import('./query').BetterMeta,
 	Plugins extends readonly AnyPlugin[] = [],
-	ModelExtension extends Record<string, unknown> = ModelExtensionsOf<Plugins>,
+	ModelExtension extends Record<string, unknown> = ModelExtensionsOf<
+		Plugins,
+		Schema,
+		Name,
+		Meta
+	>,
 > = {
 	/**
 	 * Internal model metadata useful for plugins.

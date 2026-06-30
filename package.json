@@ -14,8 +14,9 @@
 		"build:rules": "bun run scripts/build.ts rules",
 		"build:timestamps": "bun run scripts/build.ts timestamps",
 		"build:soft-delete": "bun run scripts/build.ts soft-delete",
-		"check": "bun run check:types && bun run check:lint && bun run test && bun run pack:core && bun run pack:rules && bun run pack:eslint && bun run pack:timestamps && bun run pack:soft-delete",
-		"check:lint": "bunx @biomejs/biome check packages/core packages/rules packages/eslint packages/timestamps packages/soft-delete benchmark .github",
+		"build:zod": "bun run scripts/build.ts zod",
+		"check": "bun run check:types && bun run check:lint && bun run test && bun run pack:core && bun run pack:rules && bun run pack:eslint && bun run pack:timestamps && bun run pack:soft-delete && bun run pack:zod",
+		"check:lint": "bunx @biomejs/biome check packages/core packages/rules packages/eslint packages/timestamps packages/soft-delete packages/zod benchmark .github",
 		"check:types": "bunx tsc --noEmit",
 		"bench": "bun run benchmark/time.ts",
 		"bench:all": "bun run benchmark/time.ts && bun run benchmark/memory.ts",
@@ -27,7 +28,8 @@
 		"pack:rules": "bun run build:rules && cd packages/rules && npm pack --dry-run",
 		"pack:timestamps": "bun run build:timestamps && cd packages/timestamps && npm pack --dry-run",
 		"pack:soft-delete": "bun run build:soft-delete && cd packages/soft-delete && npm pack --dry-run",
-		"test": "bun test packages/core/tests packages/rules/tests packages/eslint/tests packages/timestamps/tests packages/soft-delete/tests"
+		"pack:zod": "bun run build:zod && cd packages/zod && npm pack --dry-run",
+		"test": "bun test packages/core/tests packages/rules/tests packages/eslint/tests packages/timestamps/tests packages/soft-delete/tests packages/zod/tests"
 	},
 	"devDependencies": {
 		"@types/estree": "^1.0.8",

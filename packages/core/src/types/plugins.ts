@@ -874,11 +874,13 @@ export type PluginSetupContext<
 export type PluginModelExtensionContext<
 	Schema extends AnySchema = AnySchema,
 	Meta = BetterMeta,
+	Name extends BetterTableKey<Schema> = BetterTableKey<Schema>,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
 > = {
-	client: BetterDrizzleModelDelegate<Schema, BetterTableKey<Schema>, Meta>;
+	client: BetterDrizzleModelDelegate<Schema, Name, Meta, Plugins>;
 	db: unknown;
 	dialect: PluginDialect;
-	model: PluginModelInfo<Schema, BetterTableKey<Schema>>;
+	model: PluginModelInfo<Schema, Name>;
 	plugin: PluginMeta;
 	schema: Schema;
 };
@@ -923,6 +925,7 @@ export interface Plugin<
 		never,
 		never
 	>,
+	ModelExtensionResolver = never,
 > extends PluginMeta<Options> {
 	/** Static configuration controlling dialect support and model requirements. */
 	config?: PluginConfig;
@@ -935,9 +938,23 @@ export interface Plugin<
 		context: PluginClientExtensionContext<Schema, Meta, Plugins>,
 	): ClientExtension | undefined;
 	/** Extends each model delegate with additional methods and properties. */
-	extendModel?<Schema extends AnySchema, Meta>(
-		context: PluginModelExtensionContext<Schema, Meta>,
-	): ModelExtension | undefined;
+	extendModel?<
+		Schema extends AnySchema,
+		Name extends BetterTableKey<Schema>,
+		Meta,
+		Plugins extends readonly AnyPlugin[],
+	>(
+		context: PluginModelExtensionContext<Schema, Meta, Name, Plugins>,
+	):
+		| ModelExtension
+		| ModelExtensionOfResolver<
+				ModelExtensionResolver,
+				Schema,
+				Name,
+				Meta,
+				Plugins
+		  >
+		| undefined;
 	/** Lifecycle hooks for intercepting CRUD, query, transaction, and raw operations. */
 	hooks?: PluginHooks<AnySchema, BetterMeta, State, NoInfer<OperationArgs>>;
 	/** Custom operation args fields added to every delegate method call. */
@@ -966,7 +983,7 @@ export interface Plugin<
  * any combination of plugins.
  */
 // biome-ignore lint/suspicious/noExplicitAny: intentionally erase plugin generics for constraints
-export type AnyPlugin = Plugin<any, any, any, any, any>;
+export type AnyPlugin = Plugin<any, any, any, any, any, any>;
 
 type PluginDefinition<
 	Options,
@@ -974,8 +991,16 @@ type PluginDefinition<
 	ModelExtension extends PluginExtension,
 	State extends PluginState,
 	OperationArgs extends Partial<PluginOperationArgsExtensionMap>,
+	ModelExtensionResolver,
 > = Omit<
-	Plugin<Options, ClientExtension, ModelExtension, State, OperationArgs>,
+	Plugin<
+		Options,
+		ClientExtension,
+		ModelExtension,
+		State,
+		OperationArgs,
+		ModelExtensionResolver
+	>,
 	'hooks' | 'operationArgs' | 'setup' | 'transform'
 > & {
 	hooks?: PluginHooks<AnySchema, BetterMeta, State, NoInfer<OperationArgs>>;
@@ -996,6 +1021,20 @@ type PluginDefinition<
 	>;
 };
 
+type ModelExtensionOfResolver<
+	Resolver,
+	Schema extends AnySchema,
+	Name extends BetterTableKey<Schema>,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+> = Resolver extends (
+	context: PluginModelExtensionContext<Schema, Meta, Name, Plugins>,
+) => infer Extension
+	? Extension extends Record<string, unknown>
+		? Extension
+		: Record<never, never>
+	: Record<never, never>;
+
 /**
  * Extracts the client-level extension type from a plugin definition.
  *
@@ -1003,11 +1042,12 @@ type PluginDefinition<
  */
 export type ClientExtensionOf<PluginDef> =
 	PluginDef extends Plugin<
-		unknown,
+		infer _Options,
 		infer Extension,
-		PluginExtension,
-		PluginState,
-		Partial<PluginOperationArgsExtensionMap>
+		infer _ModelExtension,
+		infer _State,
+		infer _OperationArgs,
+		infer _Resolver
 	>
 		? Extension
 		: Record<never, never>;
@@ -1017,15 +1057,25 @@ export type ClientExtensionOf<PluginDef> =
  *
  * @typeParam PluginDef - The plugin type to extract from.
  */
-export type ModelExtensionOf<PluginDef> =
+export type ModelExtensionOf<
+	PluginDef,
+	Schema extends AnySchema = AnySchema,
+	Name extends BetterTableKey<Schema> = BetterTableKey<Schema>,
+	Meta = BetterMeta,
+	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
+> =
 	PluginDef extends Plugin<
-		unknown,
-		PluginExtension,
+		infer _Options,
+		infer _ClientExtension,
 		infer Extension,
-		PluginState,
-		Partial<PluginOperationArgsExtensionMap>
+		infer _State,
+		infer _OperationArgs,
+		infer Resolver
 	>
-		? Extension
+		? (Extension extends Record<string, unknown>
+				? Extension
+				: Record<never, never>) &
+				ModelExtensionOfResolver<Resolver, Schema, Name, Meta, Plugins>
 		: Record<never, never>;
 
 /**
@@ -1037,10 +1087,10 @@ export type ModelExtensionOf<PluginDef> =
  */
 export type OperationArgsOf<PluginDef> =
 	PluginDef extends Plugin<
-		unknown,
-		PluginExtension,
-		PluginExtension,
-		PluginState,
+		infer _Options,
+		infer _ClientExtension,
+		infer _ModelExtension,
+		infer _State,
 		infer OperationArgs
 	>
 		? OperationArgs
@@ -1126,9 +1176,14 @@ export type OperationArgsWithPlugins<
  *
  * @typeParam Plugins - The plugin tuple.
  */
-export type ModelExtensionsOf<Plugins extends readonly AnyPlugin[]> =
+export type ModelExtensionsOf<
+	Plugins extends readonly AnyPlugin[],
+	Schema extends AnySchema = AnySchema,
+	Name extends BetterTableKey<Schema> = BetterTableKey<Schema>,
+	Meta = BetterMeta,
+> =
 	UnionToIntersection<
-		ModelExtensionOf<Plugins[number]>
+		ModelExtensionOf<Plugins[number], Schema, Name, Meta, Plugins>
 	> extends infer Extension
 		? Extension extends Record<string, unknown>
 			? Extension
@@ -1164,13 +1219,15 @@ export const definePlugin = <
 	const State extends PluginState = PluginState,
 	const OperationArgs extends
 		Partial<PluginOperationArgsExtensionMap> = Record<never, never>,
+	const ModelExtensionResolver = never,
 >(
 	plugin: PluginDefinition<
 		Options,
 		ClientExtension,
 		ModelExtension,
 		State,
-		OperationArgs
+		OperationArgs,
+		ModelExtensionResolver
 	>,
 ) =>
 	plugin as Plugin<
@@ -1178,5 +1235,6 @@ export const definePlugin = <
 		ClientExtension,
 		ModelExtension,
 		State,
-		OperationArgs
+		OperationArgs,
+		ModelExtensionResolver
 	>;

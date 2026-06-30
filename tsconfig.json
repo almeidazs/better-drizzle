@@ -11,6 +11,7 @@
 			"@better-drizzle/soft-delete": [
 				"packages/soft-delete/src/index.ts"
 			],
+			"@better-drizzle/zod": ["packages/zod/src/index.ts"],
 			"@better-drizzle/timestamps": ["packages/timestamps/src/index.ts"]
 		},
 		"resolveJsonModule": true,

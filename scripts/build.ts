@@ -9,7 +9,13 @@ import {
 } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
-type PackageName = 'core' | 'eslint' | 'rules' | 'soft-delete' | 'timestamps';
+type PackageName =
+	| 'core'
+	| 'eslint'
+	| 'rules'
+	| 'soft-delete'
+	| 'timestamps'
+	| 'zod';
 
 const rootDir = resolve(import.meta.dir, '..');
 
@@ -80,6 +86,12 @@ const packageConfigs: Record<
 		esmExports: ['timestamps', 'version'],
 		packageName: '@better-drizzle/timestamps',
 	},
+	zod: {
+		dir: join(rootDir, 'packages/zod'),
+		defaultExport: 'zod',
+		esmExports: ['version', 'zod'],
+		packageName: '@better-drizzle/zod',
+	},
 };
 
 const requested = process.argv.slice(2) as PackageName[];
@@ -92,7 +104,8 @@ const buildOrder = Array.from(
 		packages.includes('eslint') ||
 			packages.includes('rules') ||
 			packages.includes('soft-delete') ||
-			packages.includes('timestamps')
+			packages.includes('timestamps') ||
+			packages.includes('zod')
 			? (['core', 'rules', ...packages] as PackageName[])
 			: packages,
 	),

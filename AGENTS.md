@@ -9,6 +9,7 @@
   - `packages/eslint`: official ESLint plugin for static Better Drizzle guardrails
   - `packages/soft-delete`: official soft delete plugin
   - `packages/timestamps`: official timestamps plugin
+  - `packages/zod`: official Zod schema generation and validation plugin
   - `benchmark`: Bun + SQLite benchmark suite
   - `examples`: Markdown-only example catalog and usage guides
   - `apps/web`: Next.js + Fumadocs documentation/marketing site
@@ -256,6 +257,14 @@
 - **Guardrails split**:
   - `@better-drizzle/rules` is the runtime enforcement layer
   - `@better-drizzle/eslint` mirrors the statically-checkable subset for direct Better Drizzle callsites in IDEs and ESLint
+- **Schema plugin**:
+  - `@better-drizzle/zod` generates per-table Zod schemas and exposes them as `db.<table>.$zod`
+  - the public `$zod` surface currently includes `create`, `update`, `upsert`, `select`, `where`, `orderBy`, `pagination`, and `query`
+  - runtime validation is hook-driven and opt-out per call via plugin-provided `validate?: boolean`
+  - schema-only extension fields are allowed during validation, but the plugin strips non-column keys before returning payloads to Drizzle
+  - package internals are intentionally split with a minimal `src/shared/` layout: `validation.ts` for hook parsing/flags, `schema-builder.ts` for Zod shape builders, and `registry.ts` for Drizzle schema traversal plus registry assembly
+- **Plugin typing**:
+  - core plugin typing now supports table-specific model extensions through an optional model-extension resolver generic on `definePlugin(...)`; use this when an extension type depends on the current table
 - **Multi-agent surfaces**:
   - `AGENTS.md` remains the repo-wide source of truth for agent context
   - `CLAUDE.md` and `GEMINI.md` should stay as short adapters that point agents to `AGENTS.md` and the canonical skill pack
@@ -285,6 +294,7 @@
   - update both READMEs if user-facing behavior changes
   - ensure examples still type-check conceptually against the current API
   - if `packages/rules` changes, keep the root workspace scripts (`build`, `test`, `check`, `pack`) including it
+  - if `packages/zod` changes, keep the root workspace scripts (`build`, `test`, `check`, `pack`) including it
 - **For performance changes**:
   - inspect hot-path allocations and branches
   - rerun both benchmark suites

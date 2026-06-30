@@ -726,16 +726,12 @@ const assertExtensionKeys = (
 export const applyModelExtensions = <
 	Schema extends AnySchema,
 	Meta,
+	Name extends BetterTableKey<Schema>,
 	Plugins extends readonly AnyPlugin[],
 >(
 	context: RuntimeContext<Schema, Meta, Plugins>,
-	tableName: BetterTableKey<Schema>,
-	delegate: BetterDrizzleModelDelegate<
-		Schema,
-		BetterTableKey<Schema>,
-		Meta,
-		Plugins
-	>,
+	tableName: Name,
+	delegate: BetterDrizzleModelDelegate<Schema, Name, Meta, Plugins>,
 ) => {
 	const plugins = context.options.plugins ?? [];
 	const runtime = context.tables[tableName as string];
@@ -749,7 +745,7 @@ export const applyModelExtensions = <
 			model: runtime.model,
 			plugin: getPluginMeta(plugin),
 			schema: context.fullSchema,
-		});
+		} as never);
 		if (!extension) continue;
 
 		assertExtensionKeys(
