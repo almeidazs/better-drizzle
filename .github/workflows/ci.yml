@@ -73,3 +73,6 @@ jobs:
 
             - name: Validate soft-delete package tarball
               run: bun run pack:soft-delete
+
+            - name: Validate zod package tarball
+              run: bun run pack:zod

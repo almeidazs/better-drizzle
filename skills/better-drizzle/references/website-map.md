@@ -32,6 +32,7 @@ Read this file when you need canonical public links for explanations, docs updat
 - Plugin overview: `https://better-drizzle.com/docs/plugins/overview`
 - Writing plugins: `https://better-drizzle.com/docs/plugins/writing-plugins`
 - Rules: `https://better-drizzle.com/docs/plugins/rules`
+- Zod: `https://better-drizzle.com/docs/plugins/zod`
 - Soft delete: `https://better-drizzle.com/docs/plugins/soft-delete`
 - Timestamps: `https://better-drizzle.com/docs/plugins/timestamps`
 

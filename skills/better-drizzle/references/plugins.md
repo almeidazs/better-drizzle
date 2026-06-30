@@ -7,6 +7,7 @@ Public docs:
 - `https://better-drizzle.com/docs/plugins/overview`
 - `https://better-drizzle.com/docs/plugins/writing-plugins`
 - `https://better-drizzle.com/docs/plugins/rules`
+- `https://better-drizzle.com/docs/plugins/zod`
 - `https://better-drizzle.com/docs/plugins/soft-delete`
 - `https://better-drizzle.com/docs/plugins/timestamps`
 
@@ -24,8 +25,11 @@ Public docs:
 - `@better-drizzle/rules`
 - `@better-drizzle/soft-delete`
 - `@better-drizzle/timestamps`
+- `@better-drizzle/zod`
 
 `@better-drizzle/eslint` is the static/IDE surface. `@better-drizzle/rules` is the runtime surface. Do not describe them as equivalent; many rules depend on runtime state and only exist in the runtime plugin.
+
+`@better-drizzle/zod` is the runtime schema-generation and validation surface. It exposes generated schemas on `db.<table>.$zod` and can validate payloads, query args, and results through plugin hooks.
 
 ## Typed extension points
 
@@ -39,6 +43,8 @@ Public docs:
 **Official plugin stack**
 
 ```ts
+import { zod } from '@better-drizzle/zod';
+
 const client = better(db, {
 	schema,
 	plugins: [
@@ -50,6 +56,13 @@ const client = better(db, {
 		timestamps({
 			createdAt: 'created_at',
 			updatedAt: 'updated_at',
+		}),
+		zod({
+			validate: {
+				create: true,
+				update: true,
+				result: true,
+			},
 		}),
 		softDelete({
 			column: 'deletedAt',
@@ -74,6 +87,7 @@ await client.users.findMany({
 
 - confirm the plugin kind matches the operation being changed
 - do not describe `packages/rules` as compile-time or schema-migration based; it is runtime and hook-driven
+- when `@better-drizzle/zod` is involved, verify both runtime validation behavior and the exposed `$zod` typing surface
 - if plugin behavior changes user-facing docs, update docs and examples accordingly
 
 ## Anti-patterns

@@ -1,9 +1,10 @@
 # Official plugins
 
-The repository currently includes three runtime plugins plus one ESLint plugin:
+The repository currently includes four runtime plugins plus one ESLint plugin:
 
 - `@better-drizzle/eslint`
 - `@better-drizzle/rules`
+- `@better-drizzle/zod`
 - `@better-drizzle/timestamps`
 - `@better-drizzle/soft-delete`
 
@@ -13,6 +14,7 @@ The repository currently includes three runtime plugins plus one ESLint plugin:
 | --- | --- | --- |
 | ESLint | you want IDE and CI feedback before code runs | flags the statically-checkable subset of Better Drizzle guardrails on direct call sites |
 | Rules | you want runtime guardrails around repository usage | validates raw SQL, destructive writes, limits, lock usage, and context requirements |
+| Zod | you want one generated schema source for inputs and queries | builds per-table Zod schemas and validates payloads, query args, and results |
 | Timestamps | your app wants `createdAt` / `updatedAt` managed consistently | fills timestamp columns during create, update, updateEach, upsert, and upsertMany flows |
 | Soft delete | rows should stay recoverable and filtered by default | overrides deletes, filters reads, and adds restore helpers |
 
@@ -21,6 +23,7 @@ The repository currently includes three runtime plugins plus one ESLint plugin:
 ```ts
 import { better } from 'better-drizzle';
 import { rules, recommended } from '@better-drizzle/rules';
+import { zod as betterZod } from '@better-drizzle/zod';
 import { timestamps } from '@better-drizzle/timestamps';
 import { softDelete } from '@better-drizzle/soft-delete';
 
@@ -32,6 +35,13 @@ const client = better(db, {
 				noRawUnsafe: true,
 			}),
 		),
+		betterZod({
+			validate: {
+				create: true,
+				update: true,
+				result: true,
+			},
+		}),
 		timestamps({
 			createdAt: 'createdAt',
 			updatedAt: 'updatedAt',

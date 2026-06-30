@@ -51,7 +51,7 @@ Use this skill when the task involves `better-drizzle` APIs, docs, plugins, exam
 
 - User asks for query examples, filters, pagination, `include`, `select`, or `.explain()`: read `references/querying.md`
 - User asks for create/update/delete/upsert/transactions/meta/error handling: read `references/writing.md`
-- User asks for `rules`, `soft-delete`, `timestamps`, or custom plugins: read `references/plugins.md`
+- User asks for `rules`, `zod`, `soft-delete`, `timestamps`, or custom plugins: read `references/plugins.md`
 - User asks for overhead, performance claims, hot paths, or benchmarks: read `references/performance.md`
 - User asks for migration help, debugging, limits, or "why doesn't this work": read `references/troubleshooting.md`
 - User asks for agent safety, audits, prompts, secret handling, or raw SQL policy: read `references/security.md`
@@ -134,6 +134,13 @@ const client = better(db, {
 	schema,
 	plugins: [
 		rules(recommended({ noRawUnsafe: true })),
+		zod({
+			validate: {
+				create: true,
+				update: true,
+				result: true,
+			},
+		}),
 		timestamps({
 			createdAt: 'created_at',
 			updatedAt: 'updated_at',

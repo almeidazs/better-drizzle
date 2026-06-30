@@ -5,6 +5,7 @@
 		"overview",
 		"eslint",
 		"rules",
+		"zod",
 		"timestamps",
 		"soft-delete",
 		"writing-plugins"

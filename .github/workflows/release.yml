@@ -60,9 +60,14 @@ jobs:
                       package_dir="packages/soft-delete"
                       version="${tag#@better-drizzle/soft-delete@}"
                       ;;
+                    @better-drizzle/zod@*)
+                      package_name="@better-drizzle/zod"
+                      package_dir="packages/zod"
+                      version="${tag#@better-drizzle/zod@}"
+                      ;;
                     *)
                       echo "::error::Unsupported release tag: $tag"
-                      echo "::error::Use the format better-drizzle@x.y.z, @better-drizzle/rules@x.y.z, @better-drizzle/timestamps@x.y.z, or @better-drizzle/soft-delete@x.y.z"
+                      echo "::error::Use the format better-drizzle@x.y.z, @better-drizzle/rules@x.y.z, @better-drizzle/timestamps@x.y.z, @better-drizzle/soft-delete@x.y.z, or @better-drizzle/zod@x.y.z"
                       exit 1
                       ;;
                   esac

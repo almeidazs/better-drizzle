@@ -33,10 +33,11 @@ For the docs site version of this material, see:
 
 1. [`plugins/official-plugins.md`](./plugins/official-plugins.md)
 2. [`plugins/rules.md`](./plugins/rules.md)
-3. [`plugins/timestamps.md`](./plugins/timestamps.md)
-4. [`plugins/soft-delete.md`](./plugins/soft-delete.md)
-5. [`plugins/plugin-lifecycle.md`](./plugins/plugin-lifecycle.md)
-6. [`plugins/custom-plugin.md`](./plugins/custom-plugin.md)
+3. [`plugins/zod.md`](./plugins/zod.md)
+4. [`plugins/timestamps.md`](./plugins/timestamps.md)
+5. [`plugins/soft-delete.md`](./plugins/soft-delete.md)
+6. [`plugins/plugin-lifecycle.md`](./plugins/plugin-lifecycle.md)
+7. [`plugins/custom-plugin.md`](./plugins/custom-plugin.md)
 
 ### If you are comparing with raw Drizzle
 
@@ -74,6 +75,7 @@ For the docs site version of this material, see:
 | timestamps plugin | [`plugins/timestamps.md`](./plugins/timestamps.md) |
 | soft delete plugin | [`plugins/soft-delete.md`](./plugins/soft-delete.md) |
 | rules plugin | [`plugins/rules.md`](./plugins/rules.md) |
+| zod plugin | [`plugins/zod.md`](./plugins/zod.md) |
 | `definePlugin(...)` and plugin lifecycle | [`plugins/custom-plugin.md`](./plugins/custom-plugin.md), [`plugins/plugin-lifecycle.md`](./plugins/plugin-lifecycle.md) |
 
 ## Design notes for these examples

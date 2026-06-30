@@ -1,0 +1,167 @@
+---
+title: Zod
+description: Generate per-table Zod schemas from your Drizzle schema and validate Better Drizzle operations at runtime.
+icon: ShieldCheck
+---
+
+`@better-drizzle/zod` generates Zod schemas directly from your Better Drizzle schema and uses them to validate payloads, query args, and results through plugin hooks.
+
+## Install
+
+<Tabs items={['npm', 'pnpm', 'yarn', 'bun']}>
+
+<Tab value="npm">
+
+```bash
+npm install @better-drizzle/zod zod
+```
+
+</Tab>
+
+<Tab value="pnpm">
+
+```bash
+pnpm add @better-drizzle/zod zod
+```
+
+</Tab>
+
+<Tab value="yarn">
+
+```bash
+yarn add @better-drizzle/zod zod
+```
+
+</Tab>
+
+<Tab value="bun">
+
+```bash
+bun add @better-drizzle/zod zod
+```
+
+</Tab>
+
+</Tabs>
+
+## Usage
+
+```ts
+import { better } from 'better-drizzle';
+import { z } from 'zod';
+import { zod } from '@better-drizzle/zod';
+
+const client = better(db, {
+	schema,
+	plugins: [
+		zod({
+			validate: {
+				create: true,
+				update: true,
+				upsert: true,
+				result: true,
+			},
+			behavior: {
+				coerce: true,
+				unknownKeys: 'strip',
+			},
+			schemas: {
+				users: {
+					fields: {
+						email: (schema) => schema.email().toLowerCase(),
+						name: (schema) => schema.min(2),
+						passwordHash: false,
+					},
+					create: {
+						omit: ['id', 'passwordHash'],
+						extend: {
+							password: z.string().min(8),
+						},
+					},
+					update: {
+						omit: ['id', 'passwordHash'],
+						partial: true,
+					},
+					select: {
+						omit: ['passwordHash'],
+					},
+				},
+			},
+		}),
+	],
+});
+```
+
+## `$zod` on every delegate
+
+Each table delegate exposes generated schemas:
+
+```ts
+client.users.$zod.create;
+client.users.$zod.update;
+client.users.$zod.upsert;
+client.users.$zod.select;
+client.users.$zod.where;
+client.users.$zod.orderBy;
+client.users.$zod.pagination;
+client.users.$zod.query;
+```
+
+Use them directly when you want shared validation at the edges of your app:
+
+```ts
+const input = client.users.$zod.create.parse(req.body);
+```
+
+## Validation behavior
+
+The plugin can validate:
+
+- create and batch create payloads
+- update, updateMany, and updateEach payloads
+- upsert and upsertMany payloads
+- query args such as `where`, `orderBy`, `select`, `include`, `paginate`, and `cursor`
+- result shapes after writes and reads
+
+Per-call validation can be disabled with `validate: false`:
+
+```ts
+await client.users.create({
+	data: req.body,
+	validate: false,
+});
+```
+
+## Schema customization
+
+The plugin starts from database columns and then applies operation rules:
+
+- generated columns are omitted from write schemas
+- `notNull` without default becomes required on create
+- `notNull` with default becomes optional on create
+- nullable columns become `nullable().optional()` for create
+- update starts from the create schema and becomes partial
+
+Then your per-table overrides are applied:
+
+- `fields` customizes or removes individual column schemas
+- `create`, `update`, `select`, `where`, `query`, `orderBy`, `pagination`, and `upsert` can `omit`, `extend`, or `partial`
+
+## Coercion and unknown keys
+
+`behavior.coerce` enables input coercion for supported scalar types, and `behavior.unknownKeys` controls whether Zod strips, rejects, or passes through unknown keys.
+
+```ts
+zod({
+	behavior: {
+		coerce: true,
+		unknownKeys: 'strip',
+	},
+});
+```
+
+## Notes
+
+- The plugin strips non-column keys before handing write payloads to Drizzle.
+- Schema-only extension fields such as `password` are valid during parsing but are not forwarded to the database write.
+- `@better-drizzle/zod` is runtime validation. It complements, but does not replace, TypeScript types.

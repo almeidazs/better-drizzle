@@ -9,6 +9,7 @@ Plugins let you bundle behavior that would otherwise be scattered across service
 ```ts
 import { better } from 'better-drizzle';
 import { recommended, rules } from '@better-drizzle/rules';
+import { zod as betterZod } from '@better-drizzle/zod';
 import { timestamps } from '@better-drizzle/timestamps';
 import { softDelete } from '@better-drizzle/soft-delete';
 
@@ -16,6 +17,7 @@ const client = better(db, {
 	schema,
 	plugins: [
 		rules(recommended({ noRawUnsafe: true })),
+		betterZod({ validate: { create: true, update: true } }),
 		timestamps({ createdAt: 'createdAt', updatedAt: 'updatedAt' }),
 		softDelete({ column: 'deletedAt' }),
 	],
@@ -41,6 +43,10 @@ await client.users.restore({ where: { id: 1 } }); // plugin-added method
 		Manage `createdAt` / `updatedAt` consistently on create, update, and
 		upsert — or stay out of the way when the database owns them.
 	</Card>
+	<Card title="Zod" href="/docs/plugins/zod">
+		Generate per-table Zod schemas, expose them on `$zod`, and validate
+		payloads, query args, and results through plugin hooks.
+	</Card>
 	<Card title="Soft delete" href="/docs/plugins/soft-delete">
 		Turn `delete()` into a recoverable state change, filter deleted rows by
 		default, and add `restore()` helpers.
@@ -51,6 +57,7 @@ await client.users.restore({ where: { id: 1 } }); // plugin-added method
 | --- | --- | --- |
 | ESLint | you want IDE and CI feedback before code runs | flags the statically-checkable subset of Better Drizzle guardrails |
 | Rules | you want runtime guardrails around repository usage | validates raw SQL, destructive writes, limits, lock usage, and context requirements |
+| Zod | you want generated runtime schemas for inputs and results | builds per-table Zod schemas and validates Better Drizzle operations |
 | Timestamps | you want managed `createdAt` / `updatedAt` | fills timestamp columns on writes |
 | Soft delete | rows should stay recoverable and hidden by default | rewrites deletes, filters reads, adds restore helpers |
 
