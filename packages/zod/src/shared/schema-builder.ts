@@ -2,11 +2,7 @@ import type { AnySchema, BetterTableKey, TableKey } from 'better-drizzle';
 import type { AnyColumn, Table } from 'drizzle-orm';
 import { z } from 'zod';
 
-import type {
-	BetterDrizzleZodModelSchemas,
-	ZodPluginBehavior,
-	ZodPluginOptions,
-} from '../types';
+import type { ZodPluginBehavior, ZodPluginOptions } from '../types';
 
 export type RelationMeta = {
 	isMany: boolean;
@@ -19,13 +15,23 @@ export type TableSchemaEntry = {
 	dbName: string;
 	queryInputSchema: z.AnyZodObject;
 	relations: Record<string, RelationMeta>;
-	schemas: BetterDrizzleZodModelSchemas<any, any>;
+	schemas: RuntimeZodModelSchemas;
 	selectInputSchema: z.AnyZodObject;
 	table: Table;
 	tableName: string;
 };
 
 export type TableRegistry = Map<string, TableSchemaEntry>;
+export type RuntimeZodModelSchemas = {
+	create: z.AnyZodObject;
+	orderBy: z.ZodTypeAny;
+	pagination: z.AnyZodObject;
+	query: z.AnyZodObject;
+	select: z.AnyZodObject;
+	update: z.AnyZodObject;
+	upsert: z.AnyZodObject;
+	where: z.AnyZodObject;
+};
 
 type SchemaMode = 'create' | 'select' | 'update';
 type SchemaObjectBlock = {

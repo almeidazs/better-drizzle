@@ -3,24 +3,61 @@ import type {
 	AnySchema,
 	BetterTableKey,
 	CursorArgs,
+	InsertModelFor,
 	OrderType,
 	PaginationArgs,
 	PluginModelExtensionContext,
 	QueryArgs,
+	ScalarKeysFor,
 	SelectModelFor,
 	TableKey,
+	WhereInput,
 } from 'better-drizzle';
 import type { z } from 'zod';
+
+// biome-ignore lint/suspicious/noExplicitAny: local escape hatch for generic type extraction
+type Any = any;
 
 type ScalarFieldName<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 > = Extract<keyof SelectModelFor<Schema, Name>, string>;
 
-type FieldSchemaOverride =
+type Simplify<T> = {
+	[K in keyof T]: T[K];
+} & {};
+
+type RemoveIndexSignature<T> = {
+	[K in keyof T as string extends K
+		? never
+		: number extends K
+			? never
+			: symbol extends K
+				? never
+				: K]: T[K];
+};
+
+type InsertScalarShape<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = {
+	[K in Extract<
+		ScalarKeysFor<Schema, Name>,
+		keyof InsertModelFor<Schema, Name>
+	>]: InsertModelFor<Schema, Name>[K];
+};
+
+type SelectScalarShape<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = {
+	[K in ScalarKeysFor<Schema, Name>]: SelectModelFor<Schema, Name>[K];
+};
+
+type FieldSchemaOverride<SchemaType extends z.ZodTypeAny = z.ZodTypeAny> =
 	| false
 	| z.ZodTypeAny
-	| ((schema: z.ZodTypeAny) => z.ZodTypeAny);
+	| ((schema: SchemaType) => z.ZodTypeAny);
 
 type SchemaBlock<Schema extends AnySchema, Name extends TableKey<Schema>> = {
 	extend?: Record<string, z.ZodTypeAny>;
@@ -92,9 +129,11 @@ export type ZodPluginTableSchemasConfig<
 	Name extends TableKey<Schema>,
 > = {
 	create?: SchemaBlock<Schema, Name>;
-	fields?: Partial<
-		Record<ScalarFieldName<Schema, Name>, FieldSchemaOverride>
-	>;
+	fields?: Partial<{
+		[K in ScalarFieldName<Schema, Name>]: FieldSchemaOverride<
+			z.ZodType<SelectModelFor<Schema, Name>[K]>
+		>;
+	}>;
 	orderBy?: SchemaBlock<Schema, Name>;
 	pagination?: SchemaBlock<Schema, Name>;
 	query?: SchemaBlock<Schema, Name>;
@@ -121,6 +160,316 @@ export type ZodPluginOptions<Schema extends AnySchema = AnySchema> = {
 	validate?: ZodPluginValidateOptions;
 };
 
+type TableSchemaConfigFor<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema>,
+> = Name extends keyof NonNullable<Options['schemas']>
+	? NonNullable<Options['schemas']>[Name]
+	: never;
+
+type FieldsConfigFor<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema>,
+> =
+	TableSchemaConfigFor<Schema, Name, Options> extends {
+		fields?: infer Fields;
+	}
+		? NonNullable<Fields>
+		: never;
+
+type BlockConfigFor<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema>,
+	Key extends keyof ZodPluginTableSchemasConfig<Schema, Name>,
+> =
+	TableSchemaConfigFor<Schema, Name, Options> extends Record<Key, infer Block>
+		? NonNullable<Block>
+		: TableSchemaConfigFor<Schema, Name, Options> extends {
+					[K in Key]?: infer Block;
+				}
+			? NonNullable<Block>
+			: never;
+
+type ResolveOverrideOutput<Override, Base> = Override extends false
+	? never
+	: Override extends z.ZodTypeAny
+		? z.output<Override>
+		: Override extends (schema: Any) => infer Result
+			? Result extends z.ZodTypeAny
+				? z.output<Result>
+				: Base
+			: Base;
+
+type ResolveOverrideInput<Override, Base> = Override extends false
+	? never
+	: Override extends z.ZodTypeAny
+		? z.input<Override>
+		: Override extends (schema: Any) => infer Result
+			? Result extends z.ZodTypeAny
+				? z.input<Result>
+				: Base
+			: Base;
+
+type ApplyFieldOverridesOutput<
+	Shape extends Record<string, unknown>,
+	Overrides,
+> = Simplify<{
+	[K in keyof Shape as ResolveOverrideOutput<
+		K extends keyof NonNullable<Overrides>
+			? NonNullable<Overrides>[K]
+			: never,
+		Shape[K]
+	> extends never
+		? never
+		: K]: ResolveOverrideOutput<
+		K extends keyof NonNullable<Overrides>
+			? NonNullable<Overrides>[K]
+			: never,
+		Shape[K]
+	>;
+}>;
+
+type ApplyFieldOverridesInput<
+	Shape extends Record<string, unknown>,
+	Overrides,
+> = Simplify<{
+	[K in keyof Shape as ResolveOverrideInput<
+		K extends keyof NonNullable<Overrides>
+			? NonNullable<Overrides>[K]
+			: never,
+		Shape[K]
+	> extends never
+		? never
+		: K]: ResolveOverrideInput<
+		K extends keyof NonNullable<Overrides>
+			? NonNullable<Overrides>[K]
+			: never,
+		Shape[K]
+	>;
+}>;
+
+type ApplyOmit<Shape extends Record<string, unknown>, Block> = Block extends {
+	omit?: readonly PropertyKey[];
+}
+	? Omit<Shape, Extract<NonNullable<Block['omit']>[number], keyof Shape>>
+	: Shape;
+
+type ApplyExtendOutput<
+	Shape extends Record<string, unknown>,
+	Block,
+> = Block extends { extend?: infer Extends }
+	? Extends extends Record<string, z.ZodTypeAny>
+		? Simplify<Shape & { [K in keyof Extends]: z.output<Extends[K]> }>
+		: Shape
+	: Shape;
+
+type ApplyExtendInput<
+	Shape extends Record<string, unknown>,
+	Block,
+> = Block extends { extend?: infer Extends }
+	? Extends extends Record<string, z.ZodTypeAny>
+		? Simplify<Shape & { [K in keyof Extends]: z.input<Extends[K]> }>
+		: Shape
+	: Shape;
+
+type ApplyPartialFlag<
+	Shape extends Record<string, unknown>,
+	Block,
+> = Block extends { partial?: true } ? Partial<Shape> : Shape;
+
+type ApplyBlockOutput<
+	Shape extends Record<string, unknown>,
+	Block,
+> = ApplyPartialFlag<ApplyExtendOutput<ApplyOmit<Shape, Block>, Block>, Block>;
+
+type ApplyBlockInput<
+	Shape extends Record<string, unknown>,
+	Block,
+> = ApplyPartialFlag<ApplyExtendInput<ApplyOmit<Shape, Block>, Block>, Block>;
+
+type CreateBaseOutput<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema>,
+> = ApplyFieldOverridesOutput<
+	InsertScalarShape<Schema, Name>,
+	FieldsConfigFor<Schema, Name, Options>
+>;
+
+type CreateBaseInput<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema>,
+> = ApplyFieldOverridesInput<
+	InsertScalarShape<Schema, Name>,
+	FieldsConfigFor<Schema, Name, Options>
+>;
+
+type SelectBaseOutput<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema>,
+> = ApplyFieldOverridesOutput<
+	SelectScalarShape<Schema, Name>,
+	FieldsConfigFor<Schema, Name, Options>
+>;
+
+type SelectBaseInput<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema>,
+> = ApplyFieldOverridesInput<
+	SelectScalarShape<Schema, Name>,
+	FieldsConfigFor<Schema, Name, Options>
+>;
+
+type CreateOutput<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema>,
+> = ApplyBlockOutput<
+	CreateBaseOutput<Schema, Name, Options>,
+	BlockConfigFor<Schema, Name, Options, 'create'>
+>;
+
+type CreateInput<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema>,
+> = ApplyBlockInput<
+	CreateBaseInput<Schema, Name, Options>,
+	BlockConfigFor<Schema, Name, Options, 'create'>
+>;
+
+type UpdateOutput<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema>,
+> = ApplyBlockOutput<
+	Partial<CreateOutput<Schema, Name, Options>>,
+	BlockConfigFor<Schema, Name, Options, 'update'>
+>;
+
+type UpdateInput<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema>,
+> = ApplyBlockInput<
+	Partial<CreateInput<Schema, Name, Options>>,
+	BlockConfigFor<Schema, Name, Options, 'update'>
+>;
+
+type SelectOutput<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema>,
+> = ApplyBlockOutput<
+	SelectBaseOutput<Schema, Name, Options>,
+	BlockConfigFor<Schema, Name, Options, 'select'>
+>;
+
+type SelectInputShape<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema>,
+> = ApplyBlockInput<
+	SelectBaseInput<Schema, Name, Options>,
+	BlockConfigFor<Schema, Name, Options, 'select'>
+>;
+
+type WhereOutput<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema>,
+> = ApplyBlockOutput<
+	RemoveIndexSignature<WhereInput<Schema, Name>>,
+	BlockConfigFor<Schema, Name, Options, 'where'>
+>;
+
+type WhereInputShape<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema>,
+> = ApplyBlockInput<
+	RemoveIndexSignature<WhereInput<Schema, Name>>,
+	BlockConfigFor<Schema, Name, Options, 'where'>
+>;
+
+type QueryOutput<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema>,
+> = ApplyBlockOutput<
+	RemoveIndexSignature<ZodPluginQueryInput<Schema, Name>>,
+	BlockConfigFor<Schema, Name, Options, 'query'>
+>;
+
+type QueryInputShape<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema>,
+> = ApplyBlockInput<
+	RemoveIndexSignature<ZodPluginQueryInput<Schema, Name>>,
+	BlockConfigFor<Schema, Name, Options, 'query'>
+>;
+
+type PaginationOutput<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema>,
+> = ApplyBlockOutput<
+	RemoveIndexSignature<ZodPluginPaginationInput<Schema, Name>>,
+	BlockConfigFor<Schema, Name, Options, 'pagination'>
+>;
+
+type PaginationInputShape<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema>,
+> = ApplyBlockInput<
+	RemoveIndexSignature<ZodPluginPaginationInput<Schema, Name>>,
+	BlockConfigFor<Schema, Name, Options, 'pagination'>
+>;
+
+type OrderByOutput<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = ZodPluginOrderByInput<Schema, Name>;
+
+type OrderByInputShape<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = ZodPluginOrderByInput<Schema, Name>;
+
+type UpsertOutput<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema>,
+> = ApplyBlockOutput<
+	{
+		create: CreateOutput<Schema, Name, Options>;
+		update: UpdateOutput<Schema, Name, Options>;
+		where: WhereOutput<Schema, Name, Options>;
+	},
+	BlockConfigFor<Schema, Name, Options, 'upsert'>
+>;
+
+type UpsertInputShape<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema>,
+> = ApplyBlockInput<
+	{
+		create: CreateInput<Schema, Name, Options>;
+		update: UpdateInput<Schema, Name, Options>;
+		where: WhereInputShape<Schema, Name, Options>;
+	},
+	BlockConfigFor<Schema, Name, Options, 'upsert'>
+>;
+
 /**
  * The set of Zod schemas generated for a single table. Exposed on each model
  * as `db.<table>.$zod`.
@@ -130,16 +479,49 @@ export type ZodPluginOptions<Schema extends AnySchema = AnySchema> = {
  */
 export type BetterDrizzleZodModelSchemas<
 	Schema extends AnySchema,
-	_Name extends TableKey<Schema>,
+	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema> = ZodPluginOptions<Schema>,
 > = {
-	create: z.AnyZodObject;
-	orderBy: z.ZodTypeAny;
-	pagination: z.AnyZodObject;
-	query: z.AnyZodObject;
-	select: z.AnyZodObject;
-	update: z.AnyZodObject;
-	upsert: z.AnyZodObject;
-	where: z.AnyZodObject;
+	create: z.ZodType<
+		CreateOutput<Schema, Name, Options>,
+		z.ZodTypeDef,
+		CreateInput<Schema, Name, Options>
+	>;
+	orderBy: z.ZodType<
+		OrderByOutput<Schema, Name>,
+		z.ZodTypeDef,
+		OrderByInputShape<Schema, Name>
+	>;
+	pagination: z.ZodType<
+		PaginationOutput<Schema, Name, Options>,
+		z.ZodTypeDef,
+		PaginationInputShape<Schema, Name, Options>
+	>;
+	query: z.ZodType<
+		QueryOutput<Schema, Name, Options>,
+		z.ZodTypeDef,
+		QueryInputShape<Schema, Name, Options>
+	>;
+	select: z.ZodType<
+		SelectOutput<Schema, Name, Options>,
+		z.ZodTypeDef,
+		SelectInputShape<Schema, Name, Options>
+	>;
+	update: z.ZodType<
+		UpdateOutput<Schema, Name, Options>,
+		z.ZodTypeDef,
+		UpdateInput<Schema, Name, Options>
+	>;
+	upsert: z.ZodType<
+		UpsertOutput<Schema, Name, Options>,
+		z.ZodTypeDef,
+		UpsertInputShape<Schema, Name, Options>
+	>;
+	where: z.ZodType<
+		WhereOutput<Schema, Name, Options>,
+		z.ZodTypeDef,
+		WhereInputShape<Schema, Name, Options>
+	>;
 };
 
 /**
@@ -152,8 +534,9 @@ export type BetterDrizzleZodModelSchemas<
 export type BetterDrizzleZodModelExtension<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
+	Options extends ZodPluginOptions<Schema> = ZodPluginOptions<Schema>,
 > = {
-	$zod: BetterDrizzleZodModelSchemas<Schema, Name>;
+	$zod: BetterDrizzleZodModelSchemas<Schema, Name, Options>;
 };
 
 /**
@@ -161,14 +544,20 @@ export type BetterDrizzleZodModelExtension<
  * model extensions. The Zod plugin provides a resolver that attaches `$zod`
  * schemas to each table delegate.
  */
-export type BetterDrizzleZodModelExtensionResolver = <
+export type BetterDrizzleZodModelExtensionResolver<
+	Options extends ZodPluginOptions<AnySchema> = ZodPluginOptions<AnySchema>,
+> = <
 	Schema extends AnySchema,
 	Name extends BetterTableKey<Schema>,
 	Meta,
 	Plugins extends readonly AnyPlugin[],
 >(
 	context: PluginModelExtensionContext<Schema, Meta, Name, Plugins>,
-) => BetterDrizzleZodModelExtension<Schema, Name>;
+) => BetterDrizzleZodModelExtension<
+	Schema,
+	Name,
+	Extract<Options, ZodPluginOptions<Schema>>
+>;
 
 /**
  * Extracts the `orderBy` input type for a given table, excluding `meta`.

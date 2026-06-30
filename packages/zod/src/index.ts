@@ -13,16 +13,28 @@ import {
 	shouldValidate,
 	stripUnknownColumns,
 } from './shared/validation';
-import type {
-	BetterDrizzleZodModelExtension,
-	BetterDrizzleZodModelExtensionResolver,
-	ZodPluginOptions,
-} from './types';
+import type { BetterDrizzleZodModelExtension, ZodPluginOptions } from './types';
 import { version } from './version';
 
-export const zod = <Schema extends AnySchema>(
-	options: ZodPluginOptions<Schema> = {},
+export const zod = <
+	Schema extends AnySchema,
+	const Options extends ZodPluginOptions<Schema> = ZodPluginOptions<Schema>,
+>(
+	options: Options = {} as Options,
 ) => {
+	type ModelExtensionResolver = <
+		Name extends TableKey<Schema>,
+		Meta,
+		Plugins extends readonly import('better-drizzle').AnyPlugin[],
+	>(
+		context: import('better-drizzle').PluginModelExtensionContext<
+			Schema,
+			Meta,
+			Name,
+			Plugins
+		>,
+	) => BetterDrizzleZodModelExtension<Schema, Name, Options>;
+
 	let registry: ReturnType<typeof createZodSchemasRegistry<Schema>> | null =
 		null;
 
@@ -32,9 +44,9 @@ export const zod = <Schema extends AnySchema>(
 	};
 
 	return definePlugin<
-		ZodPluginOptions<Schema>,
+		Options,
 		Record<never, never>,
-		BetterDrizzleZodModelExtension<Schema, TableKey<Schema>>,
+		Record<never, never>,
 		Record<never, never>,
 		{
 			count: { validate?: boolean };
@@ -55,7 +67,7 @@ export const zod = <Schema extends AnySchema>(
 			upsert: { validate?: boolean };
 			upsertMany: { validate?: boolean };
 		},
-		BetterDrizzleZodModelExtensionResolver
+		ModelExtensionResolver
 	>({
 		description:
 			'Generates Zod schemas from Drizzle models and validates Better Drizzle operations.',
@@ -415,17 +427,21 @@ export const zod = <Schema extends AnySchema>(
 			const zodRegistry = getRegistry(
 				context.schema as unknown as Schema,
 			);
-			const tableName = String(context.model.name);
-			const entry = zodRegistry.get(tableName);
+			const tableName = context.model.name;
+			const entry = zodRegistry.get(String(tableName));
 			if (!entry)
 				throw new BetterDrizzleError({
 					code: BetterDrizzleErrorCode.TableRuntimeNotFound,
-					message: `No zod schema registry entry found for "${tableName}".`,
-					table: tableName,
+					message: `No zod schema registry entry found for "${String(tableName)}".`,
+					table: String(tableName),
 				});
 
 			return {
-				$zod: entry.schemas,
+				$zod: entry.schemas as unknown as BetterDrizzleZodModelExtension<
+					Schema,
+					typeof tableName & TableKey<Schema>,
+					Options
+				>['$zod'],
 			};
 		},
 		options,

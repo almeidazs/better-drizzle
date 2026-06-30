@@ -983,7 +983,8 @@ export interface Plugin<
  * any combination of plugins.
  */
 // biome-ignore lint/suspicious/noExplicitAny: intentionally erase plugin generics for constraints
-export type AnyPlugin = Plugin<any, any, any, any, any, any>;
+type Any = any;
+export type AnyPlugin = Plugin<Any, Any, Any, Any, Any, Any>;
 
 type PluginDefinition<
 	Options,
@@ -1027,13 +1028,21 @@ type ModelExtensionOfResolver<
 	Name extends BetterTableKey<Schema>,
 	Meta,
 	Plugins extends readonly AnyPlugin[],
-> = Resolver extends (
-	context: PluginModelExtensionContext<Schema, Meta, Name, Plugins>,
-) => infer Extension
-	? Extension extends Record<string, unknown>
-		? Extension
-		: Record<never, never>
-	: Record<never, never>;
+> =
+	Resolver extends <
+		TContext extends PluginModelExtensionContext<
+			Schema,
+			Meta,
+			Name,
+			Plugins
+		>,
+	>(
+		context: TContext,
+	) => infer Extension
+		? Extension extends Record<string, unknown>
+			? Extension
+			: Record<never, never>
+		: Record<never, never>;
 
 /**
  * Extracts the client-level extension type from a plugin definition.
