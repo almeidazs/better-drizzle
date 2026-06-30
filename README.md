@@ -314,6 +314,8 @@ await client.users.restore({
 
 Now you can enforce repository guardrails, soft delete rows, and also have timestamps fields injected automatically.
 
+For editor and CI feedback before runtime, pair the runtime guardrails with `@better-drizzle/eslint` and its flat-config presets. The ESLint package mirrors the statically-checkable subset of `@better-drizzle/rules` for direct Better Drizzle callsites.
+
 ## Hooks
 
 The client accepts optional hooks through `better(db, options)`. This is useful for auditing, tracing, metrics, authorization, and other cross-cutting concerns that you do not want duplicated in every repository call.

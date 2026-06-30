@@ -29,6 +29,10 @@ await client.users.restore({ where: { id: 1 } }); // plugin-added method
 ## Official plugins
 
 <Cards>
+	<Card title="ESLint" href="/docs/plugins/eslint">
+		Add static guardrails in the IDE and CI for direct Better Drizzle call
+		sites, with rules and options documented on the package page.
+	</Card>
 	<Card title="Rules" href="/docs/plugins/rules">
 		Add runtime guardrails for raw SQL, destructive writes, pagination,
 		locking, and request context policies.
@@ -45,9 +49,12 @@ await client.users.restore({ where: { id: 1 } }); // plugin-added method
 
 | Plugin | Good fit when | Main behavior |
 | --- | --- | --- |
+| ESLint | you want IDE and CI feedback before code runs | flags the statically-checkable subset of Better Drizzle guardrails |
 | Rules | you want runtime guardrails around repository usage | validates raw SQL, destructive writes, limits, lock usage, and context requirements |
 | Timestamps | you want managed `createdAt` / `updatedAt` | fills timestamp columns on writes |
 | Soft delete | rows should stay recoverable and hidden by default | rewrites deletes, filters reads, adds restore helpers |
+
+`@better-drizzle/eslint` is intentionally separate from the runtime plugin pipeline. It mirrors the statically-checkable subset of `@better-drizzle/rules` for direct call sites, while runtime-only concerns such as transaction state, merged `meta`, and dialect behavior stay in `@better-drizzle/rules`.
 
 ## What a plugin can do
 

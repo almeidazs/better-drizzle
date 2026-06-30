@@ -1,7 +1,8 @@
 # Official plugins
 
-The repository currently includes three official plugins:
+The repository currently includes three runtime plugins plus one ESLint plugin:
 
+- `@better-drizzle/eslint`
 - `@better-drizzle/rules`
 - `@better-drizzle/timestamps`
 - `@better-drizzle/soft-delete`
@@ -10,6 +11,7 @@ The repository currently includes three official plugins:
 
 | Plugin | Good fit when | Main behavior |
 | --- | --- | --- |
+| ESLint | you want IDE and CI feedback before code runs | flags the statically-checkable subset of Better Drizzle guardrails on direct call sites |
 | Rules | you want runtime guardrails around repository usage | validates raw SQL, destructive writes, limits, lock usage, and context requirements |
 | Timestamps | your app wants `createdAt` / `updatedAt` managed consistently | fills timestamp columns during create, update, updateEach, upsert, and upsertMany flows |
 | Soft delete | rows should stay recoverable and filtered by default | overrides deletes, filters reads, and adds restore helpers |
@@ -50,6 +52,8 @@ const client = better(db, {
 
 Plugins run in array order.
 If two plugins transform the same operation, the earlier plugin runs first.
+
+`@better-drizzle/eslint` is separate from that runtime pipeline. It runs in ESLint and mirrors only the statically-safe subset of `@better-drizzle/rules`.
 
 That matters when:
 

@@ -3,6 +3,7 @@
 	"icon": "Blocks",
 	"pages": [
 		"overview",
+		"eslint",
 		"rules",
 		"timestamps",
 		"soft-delete",

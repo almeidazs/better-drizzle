@@ -20,9 +20,12 @@ Public docs:
 
 ## Official packages
 
+- `@better-drizzle/eslint`
 - `@better-drizzle/rules`
 - `@better-drizzle/soft-delete`
 - `@better-drizzle/timestamps`
+
+`@better-drizzle/eslint` is the static/IDE surface. `@better-drizzle/rules` is the runtime surface. Do not describe them as equivalent; many rules depend on runtime state and only exist in the runtime plugin.
 
 ## Typed extension points
 

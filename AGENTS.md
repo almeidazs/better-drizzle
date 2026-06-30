@@ -6,6 +6,7 @@
 - **Workspace layout**:
   - `packages/core`: the published library
   - `packages/rules`: official runtime rules/guardrails plugin
+  - `packages/eslint`: official ESLint plugin for static Better Drizzle guardrails
   - `packages/soft-delete`: official soft delete plugin
   - `packages/timestamps`: official timestamps plugin
   - `benchmark`: Bun + SQLite benchmark suite
@@ -252,6 +253,9 @@
 ## Agent skills support
 
 - **Canonical skill pack**: the repository now ships a first-party agent skill at `skills/better-drizzle/`.
+- **Guardrails split**:
+  - `@better-drizzle/rules` is the runtime enforcement layer
+  - `@better-drizzle/eslint` mirrors the statically-checkable subset for direct Better Drizzle callsites in IDEs and ESLint
 - **Multi-agent surfaces**:
   - `AGENTS.md` remains the repo-wide source of truth for agent context
   - `CLAUDE.md` and `GEMINI.md` should stay as short adapters that point agents to `AGENTS.md` and the canonical skill pack

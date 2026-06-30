@@ -6,6 +6,7 @@
 		"baseUrl": ".",
 		"paths": {
 			"better-drizzle": ["packages/core/src/index.ts"],
+			"@better-drizzle/eslint": ["packages/eslint/src/index.ts"],
 			"@better-drizzle/rules": ["packages/rules/src/index.ts"],
 			"@better-drizzle/soft-delete": [
 				"packages/soft-delete/src/index.ts"

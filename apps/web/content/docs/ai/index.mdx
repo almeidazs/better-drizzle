@@ -28,6 +28,7 @@ The skill pack is designed for agents working on:
 - CRUD delegates, filters, selects, includes, pagination, and explainable reads
 - transactions, row locks, raw SQL, and scoped metadata
 - official plugins and custom plugin authoring
+- the split between static guardrails (`@better-drizzle/eslint`) and runtime guardrails (`@better-drizzle/rules`)
 - troubleshooting, migration from raw Drizzle, and API review
 - performance-sensitive changes in hot paths
 
@@ -61,6 +62,7 @@ This keeps the main skill concise while still giving the agent enough detail to 
 - "Review this `upsertMany` change for dialect limits and performance regressions."
 - "Explain when I should use `paginate()` vs `cursor()` and point me to the exact docs page."
 - "Wire `@better-drizzle/soft-delete` into this client and make sure the docs still match."
+- "Set up `@better-drizzle/eslint` with the recommended flat config and keep the runtime rules docs accurate."
 
 ## Why this shape
 
