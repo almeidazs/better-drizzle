@@ -174,6 +174,7 @@ export const createRuntimeContext = <
 
 	return {
 		client: null,
+		clientExtensions: [],
 		db: db as RuntimeContext<Schema, Meta, Plugins>['db'],
 		dialect: getDialect(db as RuntimeContext<Schema, Meta, Plugins>['db']),
 		hasHooks: Boolean(
@@ -216,6 +217,7 @@ export const createDerivedRuntimeContext = <
 	scopedMeta = context.scopedMeta,
 ): RuntimeContext<Schema, Meta, Plugins> => ({
 	client: null,
+	clientExtensions: context.clientExtensions,
 	db: db as RuntimeContext<Schema, Meta, Plugins>['db'],
 	dialect: context.dialect,
 	hasHooks: context.hasHooks,

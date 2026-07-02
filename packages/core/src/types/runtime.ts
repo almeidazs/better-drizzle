@@ -156,6 +156,14 @@ export type DrizzleLikeDatabase = {
 };
 
 /**
+ * Runtime callback used to build user-defined client extensions for a bound
+ * Better Drizzle client instance.
+ */
+export type RuntimeClientExtensionFactory = (
+	client: Record<string, unknown>,
+) => Record<string, unknown> | undefined;
+
+/**
  * Resolved relational schema configuration returned by Drizzle's
  * `extractTablesRelationalConfig`. Used internally to build the runtime
  * table metadata map.
@@ -361,6 +369,8 @@ export type RuntimeContext<
 	relational: RuntimeSchema;
 	/** Repository lookup map (TypeScript key and DB name -> delegate). */
 	repositories: Record<string, unknown>;
+	/** User-defined client extensions to reapply on derived clients. */
+	clientExtensions: RuntimeClientExtensionFactory[];
 	/** Precomputed per-table runtime metadata. */
 	tables: Record<string, TableRuntime>;
 	/** Active transaction state, or `null` outside a transaction. */

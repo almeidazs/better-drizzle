@@ -3,6 +3,7 @@
 	"icon": "Map",
 	"pages": [
 		"service-patterns",
+		"client-extensions",
 		"dynamic-repositories",
 		"migrating-from-drizzle",
 		"limitations",

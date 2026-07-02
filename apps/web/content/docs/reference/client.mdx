@@ -83,6 +83,7 @@ Beyond the per-table delegates, the client exposes:
 | --- | --- |
 | `client.<table>` | the [model delegate](/docs/reference/model-api) for each table |
 | `repository(name)` | resolve a delegate by schema key or DB table name |
+| `extends(objectOrFactory)` | attach app-specific helpers or values to the client |
 | `transaction(fn, options?)` | run `fn` in a [transaction](/docs/advanced/transactions) |
 | `$raw(...)` | run a [safe raw](/docs/advanced/raw-sql) read, returns rows |
 | `$executeRaw(...)` | run a safe raw write, returns `{ rowsAffected }` |
@@ -97,6 +98,18 @@ Beyond the per-table delegates, the client exposes:
 const usersByKey = client.repository('users');
 const usersByDbName = client.repository('app_users');
 ```
+
+`extends(...)` accepts either a plain object or a callback that receives the bound client:
+
+```ts
+const extended = client.extends((client) => ({
+	findById(id: number) {
+		return client.users.findFirst({ where: { id } });
+	},
+}));
+```
+
+See the full guide at [Client extensions](/docs/guides/client-extensions).
 
 `afterCommit()` and `afterRollback()` are useful when you're already holding a transaction-bound client deeper in your call stack and don't want to thread the callback registration through another abstraction.
 

@@ -1,0 +1,71 @@
+---
+title: Client extensions
+description: Attach app-specific helpers and shared values to a Better Drizzle client with extends().
+icon: Puzzle
+---
+
+`client.extends(...)` is the lightest way to add application-specific helpers or shared values to a Better Drizzle client.
+
+## Object form
+
+Use the object form for static values:
+
+```ts
+const client = better(db, { schema }).extends({
+	tenantScope: 'public',
+});
+
+console.log(client.tenantScope);
+```
+
+## Callback form
+
+Use the callback form when the helper needs the bound client instance:
+
+```ts
+const client = better(db, { schema }).extends((client) => ({
+	findByIdOrName(idOrName: number | string) {
+		return typeof idOrName === 'number'
+			? client.users.findFirst({ where: { id: idOrName } })
+			: client.users.findFirst({ where: { name: idOrName } });
+	},
+}));
+
+const user = await client.findByIdOrName('Alice');
+```
+
+The callback form is the safer default when the helper needs to call back into the client, because it closes over the already bound instance.
+
+## Derived clients keep the extension
+
+Extensions are reapplied to future `$withContext()` clones and transaction clients:
+
+```ts
+const base = client.extends((client) => ({
+	findById(id: number) {
+		return client.users.findFirst({ where: { id } });
+	},
+}));
+
+const scoped = base.$withContext({ requestId: 'req-1' });
+await scoped.findById(1);
+
+await base.transaction(async (tx) => {
+	await tx.findById(1);
+});
+```
+
+<Callout title="Conflicts fail fast">
+	`extends()` cannot override built-in client methods, table delegates, plugin
+	client extensions, or keys added by an earlier `extends()` call.
+</Callout>
+
+## When to use extends vs plugins
+
+Use `extends()` when:
+
+- the helper is app-specific
+- the behavior only needs client-level helpers or shared values
+- you do not need transforms, lifecycle hooks, or typed operation args
+
+Reach for a [plugin](/docs/plugins/writing-plugins) when the behavior needs to change repository operations globally, attach model-level helpers, or participate in hook/transform flow.

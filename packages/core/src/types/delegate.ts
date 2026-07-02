@@ -628,6 +628,14 @@ type RepositorySourceKey<
 		? Name
 		: SourceKeyFromDbName<Schema, Extract<Name, string>>;
 
+type BetterDrizzleClientExtensionShape = Record<string, unknown>;
+
+type BetterDrizzleExtendsMethod<Client> = <
+	Extension extends BetterDrizzleClientExtensionShape,
+>(
+	extension: Extension | ((client: Client) => Extension | undefined),
+) => Client & Extension;
+
 /**
  * The fully-typed client returned by {@link better}. Provides a delegate for
  * every table in the schema plus a unified `repository()` accessor.
@@ -664,6 +672,18 @@ export type BetterDrizzleClient<
 	Plugins extends readonly AnyPlugin[] = [],
 > = BetterDrizzleClientByTableWithPlugins<Schema, Meta, Plugins> &
 	ClientExtensionsOf<Plugins> & {
+		/**
+		 * Extends the current client with custom properties and helper methods.
+		 *
+		 * The same extension is reapplied to future `$withContext()` and
+		 * `transaction()` clients derived from this instance.
+		 *
+		 * Pass a plain object for static values, or a callback when the extension
+		 * needs to close over the bound client instance.
+		 */
+		extends: BetterDrizzleExtendsMethod<
+			BetterDrizzleClient<Schema, Meta, Plugins>
+		>;
 		/**
 		 * Returns a cloned client with default metadata merged into every
 		 * operation, raw query, and transaction created from it.

@@ -96,6 +96,9 @@
   - explicit column arrays map to schema column names; targeted duplicate-skip is intentionally dialect-sensitive
 - **Client-level lookup**:
   - `repository(name)` resolves by schema key or db table name
+  - `extends(objectOrFactory)` adds client-level helpers/properties and reapplies them to future `$withContext()` clones and transaction clients
+  - callback form is the safer default when an extension method needs to reference the bound client instance
+  - extensions must not override built-in or plugin-provided client keys; conflicts fail fast
 - **Pagination split**:
   - `paginate()` is offset-only and returns `{ data, pagination: { type: "offset", page, perPage, total, pageCount, hasNext, hasPrevious } }`
   - `cursor()` is the cursor-based API and returns `{ data, pagination: { type: "cursor", hasNext, hasPrevious, nextCursor, previousCursor } }`
