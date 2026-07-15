@@ -160,6 +160,15 @@ const makeJoinCondition = (
 	referencedTable: Parameters<DrizzleLikeDatabase['insert']>[0],
 ) => {
 	const referencedColumns = getTableColumns(referencedTable);
+	// getTableColumns() keys columns by their JS property name, while
+	// reference.name holds the database column name. Those differ for any mapped
+	// column (`authorId: integer('author_id')`), so resolve by database name too
+	// and fall back to the reference itself, which normalizeRelation() already
+	// resolved against this table. Dropping a condition here would silently emit
+	// an uncorrelated subquery and match unrelated rows.
+	const columnsByDatabaseName = new Map(
+		Object.values(referencedColumns).map((column) => [column.name, column]),
+	);
 	const conditions: SQL[] = [];
 
 	for (let index = 0; index < references.length; index += 1) {
@@ -167,12 +176,15 @@ const makeJoinCondition = (
 		const reference = references[index];
 		if (!sourceField || !reference) continue;
 
-		const referencedColumn = referencedColumns[reference.name];
-		if (referencedColumn)
-			conditions.push(eq(referencedColumn, sourceField));
+		const referencedColumn =
+			referencedColumns[reference.name] ??
+			columnsByDatabaseName.get(reference.name) ??
+			reference;
+
+		conditions.push(eq(referencedColumn, sourceField));
 	}
 
-	return and(...conditions);
+	return conditions.length ? and(...conditions) : undefined;
 };
 
 const compileRelationFilter = <Schema extends AnySchema, Meta>(
