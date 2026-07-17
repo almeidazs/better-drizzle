@@ -22,5 +22,27 @@ services:
             timeout: 3s
             retries: 5
 
+    mysql:
+        image: mysql:8
+        container_name: better-drizzle-mysql
+        restart: unless-stopped
+        ports:
+            - "${MYSQL_PORT:-3306}:3306"
+        environment:
+            MYSQL_DATABASE: ${MYSQL_DB:-better_drizzle}
+            MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-mysql}
+        volumes:
+            - mysql_data:/var/lib/mysql
+        healthcheck:
+            test:
+                [
+                    "CMD-SHELL",
+                    "mysqladmin ping -uroot -p${MYSQL_ROOT_PASSWORD:-mysql} --silent",
+                ]
+            interval: 5s
+            timeout: 3s
+            retries: 5
+
 volumes:
     postgres_data:
+    mysql_data:
