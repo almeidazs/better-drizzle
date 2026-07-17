@@ -266,6 +266,23 @@ describe('relation where - Many', () => {
 		});
 		expect(result.length).toBeLessThan(total);
 	});
+
+	test('relation filter correlates when the same relation is included', async () => {
+		// An include routes the query through the relational query builder, which
+		// aliases the base table (from "test_users" "users"). The filter's
+		// correlation must reference that alias; referencing the raw table name
+		// throws "no such column: test_users.id".
+		const result = await ctx.better.users.findMany({
+			include: { posts: true },
+			where: { posts: { some: { published: true } } },
+		});
+		expect(names(result)).toEqual(['Alice', 'Bob', 'Diana']);
+		// The include still loaded the relation.
+		const alice = result.find((row) => row.name === 'Alice') as
+			| { posts?: unknown[] }
+			| undefined;
+		expect(alice?.posts?.length).toBeGreaterThan(0);
+	});
 });
 
 describe('where with orderBy', () => {

@@ -65,4 +65,14 @@ describe.skipIf(!MYSQL_URL)('relation where - Many (mysql)', () => {
 		});
 		expect(result.length).toBeLessThan(total);
 	});
+
+	test('relation filter correlates when the same relation is included', async () => {
+		// An include routes through the relational query builder, which aliases
+		// the base table; the correlation must reference that alias.
+		const result = await ctx.better.users.findMany({
+			include: { posts: true },
+			where: { posts: { some: { published: true } } },
+		});
+		expect(names(result)).toEqual(['Alice', 'Bob', 'Diana']);
+	});
 });
