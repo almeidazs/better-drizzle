@@ -395,6 +395,13 @@ export type WhereCompilerContext<
 	runtime: TableRuntime;
 	/** The database table name. */
 	tableName: string;
+	/**
+	 * The alias the relational query builder gives the current table when the
+	 * same query eager-loads relations (its schema key). Set only on the path
+	 * that runs through `db.query[...]`, so a correlated relation filter can
+	 * reference the parent through the alias the builder actually uses.
+	 */
+	rootAlias?: string;
 };
 
 /**

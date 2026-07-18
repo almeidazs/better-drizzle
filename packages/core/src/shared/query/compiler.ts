@@ -1,5 +1,6 @@
 import type { AnyColumn, SQL } from 'drizzle-orm';
 import {
+	aliasedTableColumn,
 	and,
 	asc,
 	count,
@@ -160,6 +161,15 @@ const makeJoinCondition = (
 	referencedTable: Parameters<DrizzleLikeDatabase['insert']>[0],
 ) => {
 	const referencedColumns = getTableColumns(referencedTable);
+	// getTableColumns() keys columns by their JS property name, while
+	// reference.name holds the database column name. Those differ for any mapped
+	// column (`authorId: integer('author_id')`), so resolve by database name too
+	// and fall back to the reference itself, which normalizeRelation() already
+	// resolved against this table. Dropping a condition here would silently emit
+	// an uncorrelated subquery and match unrelated rows.
+	const columnsByDatabaseName = new Map(
+		Object.values(referencedColumns).map((column) => [column.name, column]),
+	);
 	const conditions: SQL[] = [];
 
 	for (let index = 0; index < references.length; index += 1) {
@@ -167,12 +177,15 @@ const makeJoinCondition = (
 		const reference = references[index];
 		if (!sourceField || !reference) continue;
 
-		const referencedColumn = referencedColumns[reference.name];
-		if (referencedColumn)
-			conditions.push(eq(referencedColumn, sourceField));
+		const referencedColumn =
+			referencedColumns[reference.name] ??
+			columnsByDatabaseName.get(reference.name) ??
+			reference;
+
+		conditions.push(eq(referencedColumn, sourceField));
 	}
 
-	return and(...conditions);
+	return conditions.length ? and(...conditions) : undefined;
 };
 
 const compileRelationFilter = <Schema extends AnySchema, Meta>(
@@ -186,8 +199,18 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 	if (!relationState) return;
 
 	const relationRuntime = getTableRuntime(context, relationState.tableName);
+	// Under the relational query builder the parent table is aliased to its
+	// schema key (from "users" "users_alias"). The builder rewrites top-level
+	// column references to that alias but not the ones inside this correlated
+	// subquery, so a parent column referenced by its real table name would not
+	// resolve. When rootAlias is set, reference the parent fields through it.
+	const fields = context.rootAlias
+		? relationState.fields.map((field) =>
+				aliasedTableColumn(field, context.rootAlias as string),
+			)
+		: relationState.fields;
 	const joinCondition = makeJoinCondition(
-		relationState.fields,
+		fields,
 		relationState.references,
 		relationRuntime.table,
 	);
@@ -200,13 +223,16 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 				...context,
 				runtime: relationRuntime,
 				tableName: relationState.tableName,
+				// The subquery's own table is referenced by its real name, and a
+				// deeper filter correlates against it, not the aliased root.
+				rootAlias: undefined,
 			},
 			nestedWhere,
 		);
 	const canUseMembershipFilter =
 		relationState.fields.length === 1 &&
 		relationState.references.length === 1;
-	const sourceField = relationState.fields[0];
+	const sourceField = fields[0];
 	const referenceField = relationState.references[0];
 	const buildMembershipFilter = (
 		nestedWhere: Record<string, unknown>,
@@ -502,6 +528,10 @@ export const buildQueryConfig = <Schema extends AnySchema, Meta>(
 		runtime,
 		tableName: tableName as string,
 		rootArgs: args,
+		// The relational query builder aliases this table to its schema key, which
+		// is the same key used for db.query[tableName]. A correlated relation
+		// filter reads this to reference the parent through that alias.
+		rootAlias: tableName as string,
 	};
 	const config = Object.create(null) as Record<string, unknown>;
 	const select = args?.select as Record<string, unknown> | undefined;
