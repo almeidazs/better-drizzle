@@ -317,4 +317,10 @@ await scoped.users.create({
 
 See the full benchmark suite and results in [`benchmark/README.md`](/benchmark). The suite covers reads, writes, and transactions (including nested savepoints) with fair API-parity comparisons against raw Drizzle.
 
+## Contributors
+
+<a href="https://github.com/almeidazs/better-drizzle/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=almeidazs/better-drizzle" />
+</a>
+
 </div>
