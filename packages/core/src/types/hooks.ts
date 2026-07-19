@@ -948,6 +948,20 @@ export interface BetterClientOptions<
 > {
 	/** The Drizzle schema object containing all table definitions. */
 	schema: Schema;
+	/** Optional many-to-many inference and ambiguity overrides. */
+	relations?: {
+		/** Infer simple junction-table relations. Defaults to `true`. */
+		inferManyToMany?: boolean;
+		/** Explicit junction relations used to resolve aliases or ambiguity. */
+		manyToMany?: readonly {
+			/** Schema key of the junction table. */
+			through: string;
+			/** First endpoint relation as declared on the junction table. */
+			left: { relation: string; name?: string };
+			/** Second endpoint relation as declared on the junction table. */
+			right: { relation: string; name?: string };
+		}[];
+	};
 	/** Optional plugins to extend the client. */
 	plugins?: Plugins;
 	/** Optional transaction configuration. */

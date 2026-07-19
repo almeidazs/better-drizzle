@@ -1,4 +1,5 @@
 import type { AnyColumn, SQL, TableRelationalConfig } from 'drizzle-orm';
+import type { Many } from 'drizzle-orm/relations';
 
 import type {
 	CursorPaginationResult,
@@ -34,6 +35,9 @@ import type {
 	AnySchema,
 	DbNameKey,
 	InsertModelFor,
+	RelatedNameFor,
+	RelationFor,
+	RelationKeysFor,
 	ScalarKeysFor,
 	SelectModelFor,
 	SourceKeyFromDbName,
@@ -41,6 +45,82 @@ import type {
 	TableFor,
 	TableKey,
 } from './utils';
+
+type RelationSelector<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	RelationName extends RelationKeysFor<Schema, Name>,
+> = Partial<SelectModelFor<Schema, RelatedNameFor<Schema, Name, RelationName>>>;
+
+type OneCreateRelationInput<Selector> = {
+	connect: Selector;
+};
+
+type ManyCreateRelationInput<Selector> = {
+	connect: Selector | readonly Selector[];
+};
+
+type OneUpdateRelationInput<Selector> =
+	| { connect: Selector; disconnect?: never; set?: never }
+	| { connect?: never; disconnect: true; set?: never }
+	| { connect?: never; disconnect?: never; set: Selector | null };
+
+type ManyUpdateRelationInput<Selector> =
+	| {
+			connect?: Selector | readonly Selector[];
+			disconnect?: Selector | readonly Selector[];
+			set?: never;
+	  }
+	| {
+			connect?: never;
+			disconnect?: never;
+			set: readonly Selector[];
+	  };
+
+type CreateRelationData<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = {
+	[K in RelationKeysFor<Schema, Name>]?: RelationFor<
+		Schema,
+		Name,
+		K
+	> extends Many<string>
+		? ManyCreateRelationInput<RelationSelector<Schema, Name, K>>
+		: OneCreateRelationInput<RelationSelector<Schema, Name, K>>;
+};
+
+type UpdateRelationData<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = {
+	[K in RelationKeysFor<Schema, Name>]?: RelationFor<
+		Schema,
+		Name,
+		K
+	> extends Many<string>
+		? ManyUpdateRelationInput<RelationSelector<Schema, Name, K>>
+		: OneUpdateRelationInput<RelationSelector<Schema, Name, K>>;
+};
+
+type AtLeastOne<T> = {
+	[K in keyof T]-?: Required<Pick<T, K>> & Partial<Omit<T, K>>;
+}[keyof T];
+
+/** Scalar insert data plus nested relation connect commands. */
+export type CreateDataInput<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> =
+	| InsertModelFor<Schema, Name>
+	| (Partial<InsertModelFor<Schema, Name>> &
+			AtLeastOne<CreateRelationData<Schema, Name>>);
+
+/** Partial scalar update data plus nested relation mutation commands. */
+export type UpdateDataInput<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = Partial<InsertModelFor<Schema, Name>> & UpdateRelationData<Schema, Name>;
 
 /**
  * A factory function that creates the error thrown when `.throw()` is invoked
@@ -166,7 +246,7 @@ export interface CreateArgs<
 	Meta = import('./query').BetterMeta,
 > {
 	/** The row data to insert. */
-	data: InsertModelFor<Schema, Name>;
+	data: CreateDataInput<Schema, Name>;
 	/** Optional duplicate-skip handling for unique / primary key violations. */
 	skipDuplicates?: SkipDuplicatesOption<Schema, Name>;
 	/** Optional column / relation projection for the returned row. */
@@ -201,7 +281,7 @@ export interface UpdateArgs<
 	/** Filter identifying which row to update. */
 	where: WhereArg<Schema, Name>;
 	/** Partial column values to apply. */
-	data: Partial<InsertModelFor<Schema, Name>>;
+	data: UpdateDataInput<Schema, Name>;
 	/** Optional column / relation projection for the returned row. */
 	select?: SelectInput<Schema, Name>;
 	/** Optional relation-only projection for the returned row. */
@@ -444,9 +524,9 @@ export interface UpsertArgs<
 	/** Filter that determines whether to insert or update. */
 	where: WhereArg<Schema, Name>;
 	/** Row data used when no matching record exists. */
-	create: InsertModelFor<Schema, Name>;
+	create: CreateDataInput<Schema, Name>;
 	/** Partial column values applied when a matching record exists. */
-	update: Partial<InsertModelFor<Schema, Name>>;
+	update: UpdateDataInput<Schema, Name>;
 	/** Optional column / relation projection for the returned row. */
 	select?: SelectInput<Schema, Name>;
 	/** Optional relation-only projection for the returned row. */

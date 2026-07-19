@@ -177,6 +177,8 @@ export type RuntimeSchema = ReturnType<
  * relation resolution, and plugin operations.
  */
 export type TableRuntime = {
+	/** Ambiguous inferred relation names and the junctions that caused them. */
+	ambiguousRelations: Record<string, string[]>;
 	/** Map of column name to Drizzle column instance. */
 	columns: Record<string, AnyColumn>;
 	/** The database table name. */
@@ -192,9 +194,16 @@ export type TableRuntime = {
 		string,
 		{
 			fields: AnyColumn[];
+			kind: 'many' | 'manyToMany' | 'one';
 			references: AnyColumn[];
-			relation: BetterRelationalConfig['relations'][string];
+			relation?: BetterRelationalConfig['relations'][string];
+			sourceOwnsForeignKey: boolean;
 			tableName: string;
+			through?: {
+				sourceFields: AnyColumn[];
+				tableName: string;
+				targetFields: AnyColumn[];
+			};
 		}
 	>;
 	/** Set of relation names defined on this table. */
