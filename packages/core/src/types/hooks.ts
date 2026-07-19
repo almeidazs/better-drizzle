@@ -1,4 +1,7 @@
-import type { PaginationResult } from './database';
+import type {
+	CursorPaginationResult,
+	OffsetPaginationResult,
+} from './database';
 import type {
 	BatchResult,
 	BetterDrizzleModelDelegate,
@@ -15,6 +18,7 @@ import type { AnyPlugin, OperationArgsWithPlugins } from './plugins';
 import type {
 	BetterMeta,
 	CountArgs,
+	CursorArgs,
 	ExistsArgs,
 	PaginationArgs,
 	PayloadForArgs,
@@ -28,7 +32,7 @@ import type {
 } from './transaction';
 import type { AnySchema, TableFor, TableKey } from './utils';
 
-/** Action names for query operations. */
+/** Action names for query (read) operations. */
 export type QueryHookAction =
 	| 'findMany'
 	| 'findFirst'
@@ -36,23 +40,24 @@ export type QueryHookAction =
 	| 'findUnique'
 	| 'count'
 	| 'exists'
-	| 'paginate';
+	| 'paginate'
+	| 'cursor';
 
-/** Action names for create operations. */
+/** Action names for create-oriented operations. */
 export type CreateHookAction =
 	| 'create'
 	| 'createMany'
 	| 'upsert'
 	| 'upsertMany';
-/** Action names for update operations. */
+/** Action names for update-oriented operations. */
 export type UpdateHookAction =
 	| 'update'
 	| 'updateEach'
 	| 'updateMany'
 	| 'upsert';
-/** Action names for delete operations. */
+/** Action names for delete-oriented operations. */
 export type DeleteHookAction = 'delete' | 'deleteMany';
-/** Union of all hook action names. */
+/** Union of all CRUD and query hook action names. */
 export type HookAction =
 	| QueryHookAction
 	| CreateHookAction
@@ -62,7 +67,7 @@ export type HookAction =
 /** Action names for raw SQL operations. */
 export type RawHookAction = 'raw' | 'executeRaw' | 'rawUnsafe';
 
-/** Stage within a hook lifecycle. */
+/** Lifecycle stage within a hook execution. */
 export type HookStage = 'beforeHook' | 'afterHook' | 'operation';
 
 type HookBaseContext<
@@ -282,17 +287,23 @@ type QueryHookArgsForAction<
 				Plugins,
 				'exists'
 			>
-		: Action extends 'paginate'
+		: Action extends 'cursor'
 			? OperationArgsWithPlugins<
-					PaginationArgs<Schema, Name, Meta>,
+					CursorArgs<Schema, Name, Meta>,
 					Plugins,
-					'paginate'
+					'cursor'
 				>
-			: OperationArgsWithPlugins<
-					QueryArgs<Schema, Name, Meta>,
-					Plugins,
-					Action
-				>;
+			: Action extends 'paginate'
+				? OperationArgsWithPlugins<
+						PaginationArgs<Schema, Name, Meta>,
+						Plugins,
+						'paginate'
+					>
+				: OperationArgsWithPlugins<
+						QueryArgs<Schema, Name, Meta>,
+						Plugins,
+						Action
+					>;
 
 type QueryHookResultForAction<
 	Schema extends AnySchema,
@@ -316,19 +327,33 @@ type QueryHookResultForAction<
 			? number
 			: Action extends 'exists'
 				? boolean
-				: PaginationResult<
-						PayloadForArgs<
-							Schema,
-							Name,
-							QueryHookArgsForAction<
+				: Action extends 'cursor'
+					? CursorPaginationResult<
+							PayloadForArgs<
 								Schema,
 								Name,
-								Meta,
-								Plugins,
-								Action
+								QueryHookArgsForAction<
+									Schema,
+									Name,
+									Meta,
+									Plugins,
+									Action
+								>
 							>
 						>
-					>;
+					: OffsetPaginationResult<
+							PayloadForArgs<
+								Schema,
+								Name,
+								QueryHookArgsForAction<
+									Schema,
+									Name,
+									Meta,
+									Plugins,
+									Action
+								>
+							>
+						>;
 
 type CreateHookContext<
 	Schema extends AnySchema,
@@ -708,6 +733,18 @@ export type BeforeQueryHookContext<
 					'paginate'
 				>,
 				'paginate'
+		  >
+		| HookBaseContext<
+				Schema,
+				Name,
+				Meta,
+				Plugins,
+				OperationArgsWithPlugins<
+					CursorArgs<Schema, Name, Meta>,
+					Plugins,
+					'cursor'
+				>,
+				'cursor'
 		  >;
 }[TableKey<Schema>];
 
@@ -728,6 +765,7 @@ export type AfterQueryHookContext<
 	| QueryHookContext<Schema, Meta, Plugins, 'findUnique'>
 	| QueryHookContext<Schema, Meta, Plugins, 'count'>
 	| QueryHookContext<Schema, Meta, Plugins, 'exists'>
+	| QueryHookContext<Schema, Meta, Plugins, 'cursor'>
 	| QueryHookContext<Schema, Meta, Plugins, 'paginate'>;
 
 /**
@@ -910,6 +948,20 @@ export interface BetterClientOptions<
 > {
 	/** The Drizzle schema object containing all table definitions. */
 	schema: Schema;
+	/** Optional many-to-many inference and ambiguity overrides. */
+	relations?: {
+		/** Infer simple junction-table relations. Defaults to `true`. */
+		inferManyToMany?: boolean;
+		/** Explicit junction relations used to resolve aliases or ambiguity. */
+		manyToMany?: readonly {
+			/** Schema key of the junction table. */
+			through: string;
+			/** First endpoint relation as declared on the junction table. */
+			left: { relation: string; name?: string };
+			/** Second endpoint relation as declared on the junction table. */
+			right: { relation: string; name?: string };
+		}[];
+	};
 	/** Optional plugins to extend the client. */
 	plugins?: Plugins;
 	/** Optional transaction configuration. */
@@ -917,6 +969,8 @@ export interface BetterClientOptions<
 		/** How to handle dialect-unsupported transaction options. */
 		unsupportedOptions?: TransactionUnsupportedOptionsBehavior;
 	};
+	/** Optional row lock configuration. */
+	locks?: import('./query').BetterLockClientOptions;
 	/** Optional raw SQL configuration. */
 	raw?: RawClientOptions;
 	/** Optional lifecycle hooks. */

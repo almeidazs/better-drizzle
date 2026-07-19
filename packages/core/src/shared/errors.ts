@@ -52,6 +52,12 @@ export enum BetterDrizzleErrorCode {
 	DialectInferenceFailed = 'DIALECT_INFERENCE_FAILED',
 	/** A lifecycle hook threw an error. */
 	HookError = 'HOOK_ERROR',
+	/** Row locking is not supported for the current dialect or query shape. */
+	LockNotSupported = 'LOCK_NOT_SUPPORTED',
+	/** Row locking is only allowed inside a transaction. */
+	LockRequiresTransaction = 'LOCK_REQUIRES_TRANSACTION',
+	/** Row locking failed because the lock could not be acquired in time. */
+	LockTimeout = 'LOCK_TIMEOUT',
 	/** An operation (CRUD, query, transaction) failed. */
 	OperationError = 'OPERATION_ERROR',
 	/** A plugin does not support the current SQL dialect. */
@@ -160,8 +166,11 @@ const getDefaultStatus = (code: BetterDrizzleErrorCode) => {
 		case BetterDrizzleErrorCode.RawInvalidQuery:
 		case BetterDrizzleErrorCode.RawUnsafePlaceholderMismatch:
 		case BetterDrizzleErrorCode.RawUnsupportedOption:
+		case BetterDrizzleErrorCode.LockNotSupported:
+		case BetterDrizzleErrorCode.LockRequiresTransaction:
 		case BetterDrizzleErrorCode.TransactionUnsupportedOption:
 			return 400;
+		case BetterDrizzleErrorCode.LockTimeout:
 		case BetterDrizzleErrorCode.TransactionRollback:
 			return 409;
 		case BetterDrizzleErrorCode.RawAborted:

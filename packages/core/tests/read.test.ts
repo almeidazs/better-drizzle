@@ -265,6 +265,14 @@ describe('count', () => {
 		const result = await ctx.better.comments.count();
 		expect(result).toBe(5);
 	});
+
+	test('count respects cursor filters', async () => {
+		const result = await ctx.better.users.count({
+			cursor: { id: 3 },
+		});
+
+		expect(result).toBe(2);
+	});
 });
 
 describe('exists', () => {
@@ -299,5 +307,17 @@ describe('exists', () => {
 
 		const result = await ctx.better.users.exists();
 		expect(result).toBe(false);
+	});
+
+	test('exists respects cursor filters', async () => {
+		const afterLast = await ctx.better.users.exists({
+			cursor: { id: 5 },
+		});
+		const afterThird = await ctx.better.users.exists({
+			cursor: { id: 3 },
+		});
+
+		expect(afterLast).toBe(false);
+		expect(afterThird).toBe(true);
 	});
 });

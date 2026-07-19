@@ -65,5 +65,14 @@ jobs:
             - name: Validate core package tarball
               run: bun run pack:core
 
+            - name: Validate rules package tarball
+              run: bun run pack:rules
+
             - name: Validate timestamps package tarball
               run: bun run pack:timestamps
+
+            - name: Validate soft-delete package tarball
+              run: bun run pack:soft-delete
+
+            - name: Validate zod package tarball
+              run: bun run pack:zod

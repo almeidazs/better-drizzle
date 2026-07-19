@@ -32,72 +32,83 @@ export interface DeleteResult {
 }
 
 /**
- * Paginated result wrapping a list of rows alongside navigation metadata.
+ * Result returned by the `paginate()` operation. Contains the page of data
+ * and offset-based pagination metadata.
  *
- * @typeParam Columns - The shape of each row in the result set.
+ * @typeParam Columns - The row type returned by the query.
  *
  * @example
  * ```ts
- * const page = await db.user.paginate({
- *   limit: 10,
- *   orderBy: { name: 'asc' },
- * });
- *
- * console.log(page.data);           // User[]
- * console.log(page.pagination.count); // total matching rows
- * console.log(page.pagination.hasNext); // true if more pages exist
+ * const page = await db.user.paginate({ limit: 10 });
+ * console.log(page.data);        // the rows
+ * console.log(page.pagination);  // { type: 'offset', page, perPage, total, ... }
  * ```
  */
-export interface PaginationResult<Columns extends Record<string, unknown>> {
-	/** The page of data. */
+export interface OffsetPaginationResult<
+	Columns extends Record<string, unknown>,
+> {
+	/** The page of rows matching the query. */
 	data: Columns[];
-	/** Pagination metadata. */
+	/** Offset-based pagination metadata. */
 	pagination: {
+		/** Always `'offset'` to distinguish from cursor pagination. */
+		type: 'offset';
+		/** Current page number (1-indexed). */
+		page: number;
+		/** Maximum rows per page. */
+		perPage: number;
 		/** Total number of matching rows across all pages. */
-		count: number;
-		/** Whether a subsequent page exists. */
+		total: number;
+		/** Total number of pages. */
+		pageCount: number;
+		/** `true` when a next page exists. */
 		hasNext: boolean;
-		/** Whether a preceding page exists. */
+		/** `true` when a previous page exists. */
 		hasPrevious: boolean;
 	};
 }
 
 /**
- * Strategy used for pagination.
+ * Result returned by the `cursor()` operation. Contains the page of data
+ * and cursor-based navigation metadata.
  *
- * - `PaginationType.Cursor` – cursor-based pagination using opaque boundary tokens.
- * - `PaginationType.Offset` – traditional offset-based (skip / limit) pagination.
+ * @typeParam Columns - The row type returned by the query.
  *
  * @example
  * ```ts
- * import { PaginationType } from 'better-drizzle';
- *
- * const page = await db.user.paginate({
- *   type: PaginationType.Cursor,
- *   limit: 10,
- *   after: lastCursor,
- * });
+ * const page = await db.user.cursor({ limit: 10 });
+ * console.log(page.data);        // the rows
+ * console.log(page.pagination);  // { type: 'cursor', hasNext, nextCursor, ... }
  * ```
  */
-export enum PaginationType {
-	/** Cursor-based pagination using opaque boundary tokens. */
-	Cursor = 1,
-	/** Traditional offset-based (skip / limit) pagination. */
-	Offset,
+export interface CursorPaginationResult<
+	Columns extends Record<string, unknown>,
+> {
+	/** The page of rows matching the query. */
+	data: Columns[];
+	/** Cursor-based pagination metadata. */
+	pagination: {
+		/** Always `'cursor'` to distinguish from offset pagination. */
+		type: 'cursor';
+		/** `true` when more rows exist after the current page. */
+		hasNext: boolean;
+		/** `true` when more rows exist before the current page. */
+		hasPrevious: boolean;
+		/** Cursor token for fetching the next page, or `null` if at the end. */
+		nextCursor: string | object | null;
+		/** Cursor token for fetching the previous page, or `null` if at the start. */
+		previousCursor: string | object | null;
+	};
 }
 
 /**
- * Base options shared by all pagination strategies.
+ * Options for offset-based pagination. Used by the `paginate()` operation.
  *
- * @typeParam Columns - The shape of each row in the result set.
- * @typeParam Type - The pagination type. Defaults to {@link PaginationType.Offset}.
+ * @typeParam Columns - The row type of the result set.
  */
-export interface BasePaginationOptions<
+export interface OffsetPaginationOptions<
 	Columns extends Record<string, unknown>,
-	Type extends PaginationType = PaginationType.Offset,
 > {
-	/** The pagination strategy to use. */
-	type?: Type;
 	/** Maximum number of rows to return per page. */
 	limit?: number;
 	/** Sort order for the result set. */
@@ -105,35 +116,23 @@ export interface BasePaginationOptions<
 }
 
 /**
- * Options for offset-based (skip / limit) pagination.
+ * Options for cursor-based pagination. Used by the `cursor()` operation.
+ * Accepts either `after` or `before`, but never both.
  *
- * @typeParam Columns - The shape of each row in the result set.
- */
-export type OffsetPaginationOptions<Columns extends Record<string, unknown>> =
-	BasePaginationOptions<Columns>;
-
-/**
- * Options for cursor-based pagination.
- *
- * @typeParam Columns - The shape of each row in the result set.
+ * @typeParam Columns - The row type of the result set.
  */
 export interface CursorPaginationOptions<
 	Columns extends Record<string, unknown>,
-> extends BasePaginationOptions<Columns, PaginationType.Cursor> {
+> {
+	/** Maximum number of rows to return per page. */
+	limit?: number;
+	/** Sort order for the result set. */
+	orderBy?: OrderBy<Columns>;
 	/** Cursor token pointing after which rows should be returned. */
-	after?: unknown;
+	after?: string | object;
 	/** Cursor token pointing before which rows should be returned. */
-	before?: unknown;
+	before?: string | object;
 }
-
-/**
- * Union of all supported pagination option shapes.
- *
- * @typeParam Columns - The shape of each row in the result set.
- */
-export type PaginationOptions<Columns extends Record<string, unknown>> =
-	| OffsetPaginationOptions<Columns>
-	| CursorPaginationOptions<Columns>;
 
 /**
  * Sort specification for a result set. Each key is a column name and the value
@@ -154,3 +153,5 @@ export enum OrderType {
 	/** Descending order. */
 	Desc = 'desc',
 }
+
+export type { BetterLockClientOptions } from './query';

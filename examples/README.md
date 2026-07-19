@@ -14,9 +14,9 @@ There are no demo apps here, only copyable examples, patterns, and feature cover
 
 For the docs site version of this material, see:
 
-- https://better-drizzle.vercel.app/docs
-- https://better-drizzle.vercel.app/docs/reference/support-matrix
-- https://better-drizzle.vercel.app/docs/guides/migrating-from-drizzle
+- https://better-drizzle.com/docs
+- https://better-drizzle.com/docs/reference/support-matrix
+- https://better-drizzle.com/docs/guides/migrating-from-drizzle
 
 </div>
 
@@ -32,10 +32,12 @@ For the docs site version of this material, see:
 ### If you care about plugins
 
 1. [`plugins/official-plugins.md`](./plugins/official-plugins.md)
-2. [`plugins/timestamps.md`](./plugins/timestamps.md)
-3. [`plugins/soft-delete.md`](./plugins/soft-delete.md)
-4. [`plugins/plugin-lifecycle.md`](./plugins/plugin-lifecycle.md)
-5. [`plugins/custom-plugin.md`](./plugins/custom-plugin.md)
+2. [`plugins/rules.md`](./plugins/rules.md)
+3. [`plugins/zod.md`](./plugins/zod.md)
+4. [`plugins/timestamps.md`](./plugins/timestamps.md)
+5. [`plugins/soft-delete.md`](./plugins/soft-delete.md)
+6. [`plugins/plugin-lifecycle.md`](./plugins/plugin-lifecycle.md)
+7. [`plugins/custom-plugin.md`](./plugins/custom-plugin.md)
 
 ### If you are comparing with raw Drizzle
 
@@ -63,13 +65,18 @@ For the docs site version of this material, see:
 | `select`, `include`, nested relation filters | [`basics/relations.md`](./basics/relations.md) |
 | `paginate`, offset, cursor, backwards navigation | [`basics/pagination.md`](./basics/pagination.md) |
 | `transaction`, nested savepoints, retries, rollback hooks | [`basics/transactions.md`](./basics/transactions.md) |
+| row locks: `FOR UPDATE`, `FOR SHARE`, `skipLocked`, `noWait`, `tables`, `transactionsOnly` | [`basics/locks.md`](./basics/locks.md) |
 | `$raw`, `$executeRaw`, `$rawUnsafe` | [`basics/raw-sql.md`](./basics/raw-sql.md) |
 | client hooks | [`basics/hooks.md`](./basics/hooks.md) |
 | `.throw()` helpers | [`basics/throwing-results.md`](./basics/throwing-results.md) |
+| `.explain()` query plans and options | [`basics/explain.md`](./basics/explain.md) |
 | `repository(name)` | [`cookbook/dynamic-repositories.md`](./cookbook/dynamic-repositories.md) |
+| `extends(...)` | [`cookbook/client-extensions.md`](./cookbook/client-extensions.md) |
 | `$withState` and `$withoutPlugins` | [`cookbook/plugin-bypass-and-state.md`](./cookbook/plugin-bypass-and-state.md) |
 | timestamps plugin | [`plugins/timestamps.md`](./plugins/timestamps.md) |
 | soft delete plugin | [`plugins/soft-delete.md`](./plugins/soft-delete.md) |
+| rules plugin | [`plugins/rules.md`](./plugins/rules.md) |
+| zod plugin | [`plugins/zod.md`](./plugins/zod.md) |
 | `definePlugin(...)` and plugin lifecycle | [`plugins/custom-plugin.md`](./plugins/custom-plugin.md), [`plugins/plugin-lifecycle.md`](./plugins/plugin-lifecycle.md) |
 
 ## Design notes for these examples

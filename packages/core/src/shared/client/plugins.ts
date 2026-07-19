@@ -7,6 +7,7 @@ import type {
 	CountArgs,
 	CreateArgs,
 	CreateManyArgs,
+	CursorArgs,
 	DeleteArgs,
 	DeleteManyArgs,
 	ExistsArgs,
@@ -79,6 +80,11 @@ type AnyArgs<
 			'exists'
 	  >
 	| OperationArgsWithPlugins<
+			CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
+			Plugins,
+			'cursor'
+	  >
+	| OperationArgsWithPlugins<
 			PaginationArgs<Schema, BetterTableKey<Schema>, Meta>,
 			Plugins,
 			'paginate'
@@ -145,6 +151,7 @@ const PLUGIN_HOOK_KINDS = {
 	afterDelete: ['delete', 'deleteMany'],
 	afterQuery: [
 		'count',
+		'cursor',
 		'exists',
 		'findFirst',
 		'findMany',
@@ -157,6 +164,7 @@ const PLUGIN_HOOK_KINDS = {
 	beforeDelete: ['delete', 'deleteMany'],
 	beforeQuery: [
 		'count',
+		'cursor',
 		'exists',
 		'findFirst',
 		'findMany',
@@ -718,16 +726,12 @@ const assertExtensionKeys = (
 export const applyModelExtensions = <
 	Schema extends AnySchema,
 	Meta,
+	Name extends BetterTableKey<Schema>,
 	Plugins extends readonly AnyPlugin[],
 >(
 	context: RuntimeContext<Schema, Meta, Plugins>,
-	tableName: BetterTableKey<Schema>,
-	delegate: BetterDrizzleModelDelegate<
-		Schema,
-		BetterTableKey<Schema>,
-		Meta,
-		Plugins
-	>,
+	tableName: Name,
+	delegate: BetterDrizzleModelDelegate<Schema, Name, Meta, Plugins>,
 ) => {
 	const plugins = context.options.plugins ?? [];
 	const runtime = context.tables[tableName as string];
@@ -741,7 +745,7 @@ export const applyModelExtensions = <
 			model: runtime.model,
 			plugin: getPluginMeta(plugin),
 			schema: context.fullSchema,
-		});
+		} as never);
 		if (!extension) continue;
 
 		assertExtensionKeys(

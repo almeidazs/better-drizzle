@@ -93,7 +93,7 @@ const page = await client.posts.findMany({
 - `take` caps the number of rows. A **negative** `take` reverses the order and takes from the end.
 - `skip` offsets from the start.
 
-For full pages with metadata (`count`, `hasNext`, `hasPrevious`), use [`paginate`](/docs/querying/pagination) instead of assembling it by hand.
+For full offset pages with totals, use [`paginate`](/docs/querying/pagination). For feed-style navigation with cursors, use [`cursor`](/docs/querying/pagination).
 
 ## Throwing when a row is required
 

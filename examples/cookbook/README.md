@@ -10,6 +10,7 @@ Practical patterns for service code, runtime lookup, plugin bypass, request meta
 
 | File | Focus |
 | --- | --- |
+| [`client-extensions.md`](./client-extensions.md) | Adding app-specific helpers with `extends()` |
 | [`dynamic-repositories.md`](./dynamic-repositories.md) | Using `repository(name)` safely |
 | [`select-include-and-where.md`](./select-include-and-where.md) | Choosing the right query shape |
 | [`error-handling.md`](./error-handling.md) | Nullable reads, `.throw()`, boundary mapping |

@@ -1,5 +1,6 @@
 import type { AnyColumn, SQL } from 'drizzle-orm';
 import {
+	aliasedTableColumn,
 	and,
 	asc,
 	count,
@@ -22,23 +23,23 @@ import {
 	or,
 	sql,
 } from 'drizzle-orm';
+import { mapColumnsInSQLToAlias } from 'drizzle-orm/alias';
 import { Many, One } from 'drizzle-orm/relations';
 import type {
 	AnySchema,
 	BetterTableKey,
 	CompilableWhere,
+	CursorArgs,
 	CursorInput,
 	DrizzleLikeDatabase,
 	OrderByInput,
 	PaginationArgs,
-	PaginationType,
 	QueryArgs,
 	RuntimeContext,
 	TableRuntime,
 	WhereArg,
 	WhereCompilerContext,
 } from '../../types';
-import { PaginationType as PaginationKind } from '../../types';
 import { getTableRuntime } from '../client/context';
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
@@ -69,6 +70,7 @@ const isScalarFilter = (value: unknown): value is Record<string, unknown> => {
 const compileSimpleWhere = (
 	runtime: TableRuntime,
 	where: Record<string, unknown>,
+	rootAlias?: string,
 ): SQL | undefined => {
 	const conditions: SQL[] = [];
 
@@ -79,7 +81,10 @@ const compileSimpleWhere = (
 		const column = runtime.columns[key];
 		if (!column || isScalarFilter(value) || isPlainObject(value)) return;
 
-		conditions.push(value === null ? isNull(column) : eq(column, value));
+		const field = rootAlias
+			? aliasedTableColumn(column, rootAlias)
+			: column;
+		conditions.push(value === null ? isNull(field) : eq(field, value));
 	}
 
 	return conditions.length ? and(...conditions) : undefined;
@@ -161,6 +166,15 @@ const makeJoinCondition = (
 	referencedTable: Parameters<DrizzleLikeDatabase['insert']>[0],
 ) => {
 	const referencedColumns = getTableColumns(referencedTable);
+	// getTableColumns() keys columns by their JS property name, while
+	// reference.name holds the database column name. Those differ for any mapped
+	// column (`authorId: integer('author_id')`), so resolve by database name too
+	// and fall back to the reference itself, which normalizeRelation() already
+	// resolved against this table. Dropping a condition here would silently emit
+	// an uncorrelated subquery and match unrelated rows.
+	const columnsByDatabaseName = new Map(
+		Object.values(referencedColumns).map((column) => [column.name, column]),
+	);
 	const conditions: SQL[] = [];
 
 	for (let index = 0; index < references.length; index += 1) {
@@ -168,12 +182,15 @@ const makeJoinCondition = (
 		const reference = references[index];
 		if (!sourceField || !reference) continue;
 
-		const referencedColumn = referencedColumns[reference.name];
-		if (referencedColumn)
-			conditions.push(eq(referencedColumn, sourceField));
+		const referencedColumn =
+			referencedColumns[reference.name] ??
+			columnsByDatabaseName.get(reference.name) ??
+			reference;
+
+		conditions.push(eq(referencedColumn, sourceField));
 	}
 
-	return and(...conditions);
+	return conditions.length ? and(...conditions) : undefined;
 };
 
 const compileRelationFilter = <Schema extends AnySchema, Meta>(
@@ -187,8 +204,18 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 	if (!relationState) return;
 
 	const relationRuntime = getTableRuntime(context, relationState.tableName);
+	// Under the relational query builder the parent table is aliased to its
+	// schema key (from "users" "users_alias"). The builder rewrites top-level
+	// column references to that alias but not the ones inside this correlated
+	// subquery, so a parent column referenced by its real table name would not
+	// resolve. When rootAlias is set, reference the parent fields through it.
+	const fields = context.rootAlias
+		? relationState.fields.map((field) =>
+				aliasedTableColumn(field, context.rootAlias as string),
+			)
+		: relationState.fields;
 	const joinCondition = makeJoinCondition(
-		relationState.fields,
+		fields,
 		relationState.references,
 		relationRuntime.table,
 	);
@@ -201,13 +228,16 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 				...context,
 				runtime: relationRuntime,
 				tableName: relationState.tableName,
+				// The subquery's own table is referenced by its real name, and a
+				// deeper filter correlates against it, not the aliased root.
+				rootAlias: undefined,
 			},
 			nestedWhere,
 		);
 	const canUseMembershipFilter =
 		relationState.fields.length === 1 &&
 		relationState.references.length === 1;
-	const sourceField = relationState.fields[0];
+	const sourceField = fields[0];
 	const referenceField = relationState.references[0];
 	const buildMembershipFilter = (
 		nestedWhere: Record<string, unknown>,
@@ -330,10 +360,19 @@ export const compileWhereInput = <Schema extends AnySchema, Meta>(
 	where?: CompilableWhere,
 ): SQL | undefined => {
 	if (!where) return;
-	if (isSQLWrapper(where)) return where.getSQL();
+	if (isSQLWrapper(where)) {
+		const query = where.getSQL();
+		return context.rootAlias
+			? mapColumnsInSQLToAlias(query, context.rootAlias)
+			: query;
+	}
 	if (!isPlainObject(where)) return;
 	if (!('AND' in where || 'OR' in where || 'NOT' in where)) {
-		const simple = compileSimpleWhere(context.runtime, where);
+		const simple = compileSimpleWhere(
+			context.runtime,
+			where,
+			context.rootAlias,
+		);
 
 		if (simple) return simple;
 	}
@@ -398,7 +437,12 @@ export const compileWhereInput = <Schema extends AnySchema, Meta>(
 		const column = context.runtime.columns[key];
 		if (!column) continue;
 
-		const scalarFilter = compileScalarFilter(column, value);
+		const scalarFilter = compileScalarFilter(
+			context.rootAlias
+				? aliasedTableColumn(column, context.rootAlias)
+				: column,
+			value,
+		);
 		if (scalarFilter) conditions.push(scalarFilter);
 	}
 
@@ -503,6 +547,10 @@ export const buildQueryConfig = <Schema extends AnySchema, Meta>(
 		runtime,
 		tableName: tableName as string,
 		rootArgs: args,
+		// The relational query builder aliases this table to its schema key, which
+		// is the same key used for db.query[tableName]. A correlated relation
+		// filter reads this to reference the parent through that alias.
+		rootAlias: tableName as string,
 	};
 	const config = Object.create(null) as Record<string, unknown>;
 	const select = args?.select as Record<string, unknown> | undefined;
@@ -610,92 +658,173 @@ export const buildQueryConfig = <Schema extends AnySchema, Meta>(
  * @param where     - Optional where-clause to filter by.
  * @returns A promise resolving to the row count.
  */
+export const buildCountQuery = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	where?: WhereArg<Schema, BetterTableKey<Schema>>,
+	cursor?: CursorInput<Schema, BetterTableKey<Schema>>,
+) => {
+	const runtime = getTableRuntime(context, tableName as string);
+	const whereContext = {
+		...context,
+		runtime,
+		tableName: tableName as string,
+	} as WhereCompilerContext<Schema, Meta>;
+	const predicate = compileWhereInput(
+		whereContext,
+		where as CompilableWhere | undefined,
+	);
+	const cursorPredicate = compileCursorWhere(whereContext, cursor);
+	const mergedPredicate = and(predicate, cursorPredicate);
+
+	return context.db
+		.select({ count: count() })
+		.from(runtime.table)
+		.where(mergedPredicate);
+};
+
 export const countRows = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
 	where?: WhereArg<Schema, BetterTableKey<Schema>>,
+	cursor?: CursorInput<Schema, BetterTableKey<Schema>>,
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
+	const whereContext = {
+		...context,
+		runtime,
+		tableName: tableName as string,
+	} as WhereCompilerContext<Schema, Meta>;
 	const predicate = compileWhereInput(
-		{
-			...context,
-			runtime,
-			tableName: tableName as string,
-		},
+		whereContext,
 		where as CompilableWhere | undefined,
 	);
+	const cursorPredicate = compileCursorWhere(whereContext, cursor);
+	const mergedPredicate = and(predicate, cursorPredicate);
 
 	if (typeof context.db.$count === 'function')
-		return context.db.$count(runtime.table, predicate);
+		return context.db.$count(runtime.table, mergedPredicate);
 
-	const result = await context.db
-		.select({ count: count() })
-		.from(runtime.table)
-		.where(predicate);
+	const result = await buildCountQuery(context, tableName, where, cursor);
 
 	return Number(result[0]?.count ?? 0);
 };
 
-/**
- * Builds the query arguments for a paginated request. Handles both
- * offset-based (skip/limit) and cursor-based (after/before) pagination.
- * For cursor pagination, the `before` cursor reverses the take direction.
- *
- * @typeParam Schema - The Drizzle schema type.
- * @typeParam Meta   - Custom metadata type.
- * @param args - The pagination arguments.
- * @returns An object with `take` and `query` ready for `findManyRecords`.
- */
-export const buildPaginationQuery = <Schema extends AnySchema, Meta>(
+export const buildOffsetPaginationQuery = <Schema extends AnySchema, Meta>(
 	args: PaginationArgs<Schema, BetterTableKey<Schema>, Meta>,
 ) => {
 	const limit = args.limit ?? args.take ?? 10;
 	const take = args.take ?? limit;
-	const cursorArgs = args as PaginationArgs<
-		Schema,
-		BetterTableKey<Schema>,
-		Meta
-	> & {
-		after?: unknown;
-		before?: unknown;
-		type?: PaginationType;
+	return {
+		take,
+		query: {
+			...args,
+			take,
+			skip: args.skip ?? 0,
+		},
 	};
+};
 
-	if (cursorArgs.type !== PaginationKind.Cursor)
-		return {
-			take,
-			query: {
-				...cursorArgs,
-				take,
-				skip: cursorArgs.skip ?? 0,
-			},
-		};
+const reverseOrderBy = <Schema extends AnySchema>(
+	orderBy?: OrderByInput<Schema, BetterTableKey<Schema>>,
+) => {
+	if (!orderBy) return;
 
-	if (cursorArgs.before && typeof cursorArgs.before === 'object')
+	const entries = Array.isArray(orderBy) ? orderBy : [orderBy];
+	const reversed = [];
+
+	for (const entry of entries) {
+		const reversedEntry = Object.create(null) as Record<
+			string,
+			'asc' | 'desc'
+		>;
+
+		for (const key in entry as Record<string, unknown>) {
+			const direction = (entry as Record<string, unknown>)[key];
+			if (direction !== 'asc' && direction !== 'desc') continue;
+			reversedEntry[key] = direction === 'asc' ? 'desc' : 'asc';
+		}
+
+		reversed.push(reversedEntry);
+	}
+
+	return Array.isArray(orderBy)
+		? (reversed as OrderByInput<Schema, BetterTableKey<Schema>>)
+		: reversed[0];
+};
+
+const inferCursorOrderBy = <Schema extends AnySchema>(
+	cursor: Record<string, unknown> | undefined,
+	direction: 'asc' | 'desc',
+) => {
+	if (!cursor) return;
+
+	const inferred = [];
+
+	for (const key in cursor)
+		inferred.push(
+			Object.assign(Object.create(null), {
+				[key]: direction,
+			}) as Record<string, 'asc' | 'desc'>,
+		);
+
+	return inferred.length
+		? (inferred as OrderByInput<Schema, BetterTableKey<Schema>>)
+		: undefined;
+};
+
+export const buildCursorPaginationQuery = <Schema extends AnySchema, Meta>(
+	args: CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
+	limit: number,
+) => {
+	if (args.before && args.after)
+		return { error: 'AMBIGUOUS_CURSOR' as const };
+
+	if (args.before && typeof args.before !== 'object')
+		return { error: 'INVALID_BEFORE_CURSOR' as const };
+	if (args.after && typeof args.after !== 'object')
+		return { error: 'INVALID_AFTER_CURSOR' as const };
+
+	const inferredBeforeOrderBy =
+		args.orderBy ??
+		inferCursorOrderBy<Schema>(
+			args.before as Record<string, unknown> | undefined,
+			'asc',
+		);
+	const inferredAfterOrderBy =
+		args.orderBy ??
+		inferCursorOrderBy<Schema>(
+			args.after as Record<string, unknown> | undefined,
+			'desc',
+		);
+
+	if (args.before)
 		return {
-			take,
+			direction: 'before' as const,
 			query: {
-				...cursorArgs,
-				cursor: cursorArgs.before as CursorInput<
+				...args,
+				after: undefined,
+				before: undefined,
+				cursor: args.before as CursorInput<
 					Schema,
 					BetterTableKey<Schema>
 				>,
-				take: -Math.abs(take),
+				orderBy: reverseOrderBy(inferredBeforeOrderBy),
+				take: limit,
 			},
 		};
 
-	if (cursorArgs.after && typeof cursorArgs.after === 'object')
-		return {
-			take,
-			query: {
-				...cursorArgs,
-				cursor: cursorArgs.after as CursorInput<
-					Schema,
-					BetterTableKey<Schema>
-				>,
-				take,
-			},
-		};
-
-	return { take, query: { ...cursorArgs, take } };
+	return {
+		direction: 'forward' as const,
+		query: {
+			...args,
+			after: undefined,
+			before: undefined,
+			cursor: args.after as
+				| CursorInput<Schema, BetterTableKey<Schema>>
+				| undefined,
+			orderBy: inferredAfterOrderBy,
+			take: limit,
+		},
+	};
 };

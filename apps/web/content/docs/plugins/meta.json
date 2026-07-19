@@ -1,5 +1,13 @@
 {
 	"title": "Plugins",
 	"icon": "Blocks",
-	"pages": ["overview", "timestamps", "soft-delete", "writing-plugins"]
+	"pages": [
+		"overview",
+		"eslint",
+		"rules",
+		"zod",
+		"timestamps",
+		"soft-delete",
+		"writing-plugins"
+	]
 }

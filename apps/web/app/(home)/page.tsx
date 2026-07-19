@@ -7,6 +7,7 @@ import {
 	Terminal,
 	Webhook,
 } from 'lucide-react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { FaDiscord, FaGithub } from 'react-icons/fa';
 import { SiPostgresql } from 'react-icons/si';
@@ -58,12 +59,14 @@ const BETTER_CODE = `const rows = await client.posts.findMany({
 });`;
 
 const PLUGINS_CODE = `import { better } from 'better-drizzle';
+import { recommended, rules } from '@better-drizzle/rules';
 import { timestamps } from '@better-drizzle/timestamps';
 import { softDelete } from '@better-drizzle/soft-delete';
 
 const client = better(db, {
   schema,
   plugins: [
+    rules(recommended({ noRawUnsafe: true })),
     timestamps(),
     softDelete({
       column: 'deletedAt',
@@ -89,7 +92,7 @@ const FEATURES = [
 	{
 		icon: BookOpenText,
 		title: 'One pagination shape',
-		body: 'Offset and cursor both return { data, pagination } with count, hasNext, and hasPrevious. Stop rebuilding it.',
+		body: 'Use paginate() for offset pages and cursor() for feed-style navigation. Both return { data, pagination } without rebuilding metadata by hand.',
 	},
 	{
 		icon: Layers,
@@ -99,7 +102,7 @@ const FEATURES = [
 	{
 		icon: Blocks,
 		title: 'First-class plugins',
-		body: 'Timestamps, soft delete, and your own — with transforms, lifecycle hooks, and typed operation args.',
+		body: 'Rules, timestamps, soft delete, and your own — with transforms, lifecycle hooks, and typed operation args.',
 	},
 	{
 		icon: Webhook,
@@ -290,10 +293,12 @@ export default function HomePage() {
 							OUR SPONSOR
 							<SponsorHeart className="size-3 fill-current stroke-current" />
 						</div>
-						<img
+						<Image
 							src="https://neon.com/brand/neon-logomark-dark-color.svg"
 							alt="Neon"
 							className="size-8 shrink-0"
+							width={32}
+							height={32}
 						/>
 						<div className="pr-12">
 							<p className="font-semibold">Neon</p>
@@ -410,10 +415,12 @@ export default function HomePage() {
 							rel="noreferrer"
 							className="group inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-6 py-4 transition-colors duration-200 hover:border-[#3cf2b2]/40 hover:bg-white/[0.06]"
 						>
-							<img
+							<Image
 								src="https://neon.com/brand/neon-logomark-dark-color.svg"
 								alt="Neon"
 								className="size-10 shrink-0"
+								width={40}
+								height={40}
 							/>
 							<span className="text-2xl font-semibold tracking-tight text-white">
 								Neon

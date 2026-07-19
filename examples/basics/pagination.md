@@ -1,21 +1,10 @@
 # Pagination
 
-`paginate()` wraps query execution and metadata in a single API.
-
-Every paginated result has this shape:
-
-```ts
-type PaginationResult<T> = {
-	data: T[];
-	pagination: {
-		count: number;
-		hasNext: boolean;
-		hasPrevious: boolean;
-	};
-};
-```
+`paginate()` is the offset-based helper. `cursor()` is the cursor-based helper.
 
 ## Offset pagination
+
+Offset pages return totals and page metadata:
 
 ```ts
 const page = await client.users.paginate({
@@ -28,7 +17,11 @@ const page = await client.users.paginate({
 });
 
 console.log(page.data);
-console.log(page.pagination.count);
+console.log(page.pagination.type); // "offset"
+console.log(page.pagination.page);
+console.log(page.pagination.perPage);
+console.log(page.pagination.total);
+console.log(page.pagination.pageCount);
 console.log(page.pagination.hasNext);
 console.log(page.pagination.hasPrevious);
 ```
@@ -44,44 +37,47 @@ const page = await client.users.paginate({
 
 ## Cursor pagination
 
-```ts
-import { PaginationType } from 'better-drizzle';
+Cursor pages return navigation cursors instead of totals:
 
-const first = await client.users.paginate({
+```ts
+const first = await client.users.cursor({
 	limit: 2,
 	orderBy: [{ id: 'asc' }],
-	type: PaginationType.Cursor,
 });
 
-const second = await client.users.paginate({
-	after: { id: first.data[first.data.length - 1]?.id },
+const second = await client.users.cursor({
+	after: first.pagination.nextCursor as { id: number },
 	limit: 2,
 	orderBy: [{ id: 'asc' }],
-	type: PaginationType.Cursor,
 });
 ```
 
 ## Backwards navigation
 
-```ts
-const last = await client.users.paginate({
-	limit: 2,
-	orderBy: [{ id: 'desc' }],
-	type: PaginationType.Cursor,
-});
+Pass `before` to move backwards. Only one of `before` or `after` is allowed.
 
-const previous = await client.users.paginate({
-	before: { id: last.data[last.data.length - 1]?.id },
+```ts
+const previous = await client.users.cursor({
+	before: { id: 4 },
 	limit: 2,
-	orderBy: [{ id: 'desc' }],
-	type: PaginationType.Cursor,
+	orderBy: [{ id: 'asc' }],
 });
 ```
 
 ## Pagination with projection
 
+Both helpers accept normal read projections:
+
 ```ts
 const page = await client.posts.paginate({
+	limit: 10,
+	orderBy: [{ id: 'desc' }],
+	include: {
+		author: true,
+	},
+});
+
+const feed = await client.posts.cursor({
 	limit: 10,
 	orderBy: [{ id: 'desc' }],
 	include: {
@@ -100,4 +96,4 @@ const page = await client.posts.paginate({
 ## Practical advice
 
 - Always use a stable `orderBy` when cursor pagination is involved.
-- If the consumer needs `count`, `hasNext`, and `hasPrevious`, `paginate()` is usually cleaner than rebuilding that shape manually in every service.
+- Make sure the cursor field is still selected when using custom `select`.

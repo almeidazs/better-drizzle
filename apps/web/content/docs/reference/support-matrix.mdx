@@ -11,8 +11,10 @@ This page is the practical compatibility matrix for `better-drizzle@0.1.x`.
 | Package | Version line |
 | --- | --- |
 | `better-drizzle` | `0.1.x` |
+| `@better-drizzle/rules` | `0.1.x` |
 | `@better-drizzle/soft-delete` | `0.1.x` |
 | `@better-drizzle/timestamps` | `0.1.x` |
+| `@better-drizzle/zod` | `0.1.x` |
 | `drizzle-orm` peer | `^0.30.0` |
 | `typescript` peer | `^5` |
 
@@ -21,7 +23,7 @@ This page is the practical compatibility matrix for `better-drizzle@0.1.x`.
 | Capability | PostgreSQL | SQLite | MySQL |
 | --- | --- | --- | --- |
 | `findMany`, `findFirst`, `findOne`, `findUnique` | Yes | Yes | Yes |
-| `count`, `exists`, `paginate` | Yes | Yes | Yes |
+| `count`, `exists`, `paginate`, `cursor` | Yes | Yes | Yes |
 | `create`, `update`, `delete`, `upsert` | Yes | Yes | Yes |
 | `createMany`, `updateMany`, `deleteMany` | Yes | Yes | Yes |
 | `repository(name)` | Yes | Yes | Yes |
@@ -70,12 +72,24 @@ This page is the practical compatibility matrix for `better-drizzle@0.1.x`.
 | `readOnly` | Yes | ignored | driver-dependent |
 | transaction `comment` | PostgreSQL-oriented | ignored | driver-dependent |
 
+## Row locks
+
+| Capability | PostgreSQL | SQLite | MySQL |
+| --- | --- | --- | --- |
+| `lock: 'update'` / `lock: 'share'` | Yes | rejected | Yes |
+| `lock: 'noKeyUpdate'` / `lock: 'keyShare'` | Yes | rejected | rejected |
+| `skipLocked` / `noWait` | Yes | N/A | Yes |
+| `tables` (lock specific tables) | Yes | rejected | rejected |
+| `locks.transactionsOnly` | Yes | Yes | Yes |
+
 ## Official plugins
 
 | Plugin | PostgreSQL | SQLite | MySQL |
 | --- | --- | --- | --- |
+| `@better-drizzle/rules` | Yes | Yes | Yes |
 | `@better-drizzle/timestamps` | Yes | Yes | Yes |
 | `@better-drizzle/soft-delete` | Yes | Yes | Yes |
+| `@better-drizzle/zod` | Yes | Yes | Yes |
 
 ## Policy
 

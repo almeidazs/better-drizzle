@@ -1,6 +1,15 @@
 import type { AnyColumn, SQL, TableRelationalConfig } from 'drizzle-orm';
+import type { Many } from 'drizzle-orm/relations';
 
-import type { PaginationResult } from './database';
+import type {
+	CursorPaginationResult,
+	OffsetPaginationResult,
+} from './database';
+import type {
+	ExplainableResult,
+	ExplainOptions,
+	ExplainResult,
+} from './explain';
 import type {
 	AnyPlugin,
 	ClientExtensionsOf,
@@ -9,6 +18,7 @@ import type {
 	PluginState,
 } from './plugins';
 import type {
+	CursorArgs,
 	IncludeInput,
 	PaginationArgs,
 	PayloadForArgs,
@@ -25,6 +35,9 @@ import type {
 	AnySchema,
 	DbNameKey,
 	InsertModelFor,
+	RelatedNameFor,
+	RelationFor,
+	RelationKeysFor,
 	ScalarKeysFor,
 	SelectModelFor,
 	SourceKeyFromDbName,
@@ -32,6 +45,82 @@ import type {
 	TableFor,
 	TableKey,
 } from './utils';
+
+type RelationSelector<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	RelationName extends RelationKeysFor<Schema, Name>,
+> = Partial<SelectModelFor<Schema, RelatedNameFor<Schema, Name, RelationName>>>;
+
+type OneCreateRelationInput<Selector> = {
+	connect: Selector;
+};
+
+type ManyCreateRelationInput<Selector> = {
+	connect: Selector | readonly Selector[];
+};
+
+type OneUpdateRelationInput<Selector> =
+	| { connect: Selector; disconnect?: never; set?: never }
+	| { connect?: never; disconnect: true; set?: never }
+	| { connect?: never; disconnect?: never; set: Selector | null };
+
+type ManyUpdateRelationInput<Selector> =
+	| {
+			connect?: Selector | readonly Selector[];
+			disconnect?: Selector | readonly Selector[];
+			set?: never;
+	  }
+	| {
+			connect?: never;
+			disconnect?: never;
+			set: readonly Selector[];
+	  };
+
+type CreateRelationData<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = {
+	[K in RelationKeysFor<Schema, Name>]?: RelationFor<
+		Schema,
+		Name,
+		K
+	> extends Many<string>
+		? ManyCreateRelationInput<RelationSelector<Schema, Name, K>>
+		: OneCreateRelationInput<RelationSelector<Schema, Name, K>>;
+};
+
+type UpdateRelationData<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = {
+	[K in RelationKeysFor<Schema, Name>]?: RelationFor<
+		Schema,
+		Name,
+		K
+	> extends Many<string>
+		? ManyUpdateRelationInput<RelationSelector<Schema, Name, K>>
+		: OneUpdateRelationInput<RelationSelector<Schema, Name, K>>;
+};
+
+type AtLeastOne<T> = {
+	[K in keyof T]-?: Required<Pick<T, K>> & Partial<Omit<T, K>>;
+}[keyof T];
+
+/** Scalar insert data plus nested relation connect commands. */
+export type CreateDataInput<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> =
+	| InsertModelFor<Schema, Name>
+	| (Partial<InsertModelFor<Schema, Name>> &
+			AtLeastOne<CreateRelationData<Schema, Name>>);
+
+/** Partial scalar update data plus nested relation mutation commands. */
+export type UpdateDataInput<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = Partial<InsertModelFor<Schema, Name>> & UpdateRelationData<Schema, Name>;
 
 /**
  * A factory function that creates the error thrown when `.throw()` is invoked
@@ -61,7 +150,7 @@ export type ThrowFactory = () => unknown;
  * );
  * ```
  */
-export type ThrowingResult<T> = Promise<T | null> & {
+export type ThrowingResult<T> = ExplainableResult<T | null> & {
 	/** Throws a `BetterDrizzleError` with code `RESULT_NOT_FOUND` when the result is `null`. */
 	throw(): Promise<import('./utils').NonNullish<T>>;
 	/**
@@ -71,6 +160,8 @@ export type ThrowingResult<T> = Promise<T | null> & {
 	 */
 	throw(factory: ThrowFactory): Promise<import('./utils').NonNullish<T>>;
 };
+
+export type { ExplainableResult, ExplainOptions, ExplainResult };
 
 /**
  * Result returned by batch operations (`createMany`, `updateMany`, `deleteMany`).
@@ -155,7 +246,7 @@ export interface CreateArgs<
 	Meta = import('./query').BetterMeta,
 > {
 	/** The row data to insert. */
-	data: InsertModelFor<Schema, Name>;
+	data: CreateDataInput<Schema, Name>;
 	/** Optional duplicate-skip handling for unique / primary key violations. */
 	skipDuplicates?: SkipDuplicatesOption<Schema, Name>;
 	/** Optional column / relation projection for the returned row. */
@@ -190,7 +281,7 @@ export interface UpdateArgs<
 	/** Filter identifying which row to update. */
 	where: WhereArg<Schema, Name>;
 	/** Partial column values to apply. */
-	data: Partial<InsertModelFor<Schema, Name>>;
+	data: UpdateDataInput<Schema, Name>;
 	/** Optional column / relation projection for the returned row. */
 	select?: SelectInput<Schema, Name>;
 	/** Optional relation-only projection for the returned row. */
@@ -433,9 +524,9 @@ export interface UpsertArgs<
 	/** Filter that determines whether to insert or update. */
 	where: WhereArg<Schema, Name>;
 	/** Row data used when no matching record exists. */
-	create: InsertModelFor<Schema, Name>;
+	create: CreateDataInput<Schema, Name>;
 	/** Partial column values applied when a matching record exists. */
-	update: Partial<InsertModelFor<Schema, Name>>;
+	update: UpdateDataInput<Schema, Name>;
 	/** Optional column / relation projection for the returned row. */
 	select?: SelectInput<Schema, Name>;
 	/** Optional relation-only projection for the returned row. */
@@ -617,6 +708,14 @@ type RepositorySourceKey<
 		? Name
 		: SourceKeyFromDbName<Schema, Extract<Name, string>>;
 
+type BetterDrizzleClientExtensionShape = Record<string, unknown>;
+
+type BetterDrizzleExtendsMethod<Client> = <
+	Extension extends BetterDrizzleClientExtensionShape,
+>(
+	extension: Extension | ((client: Client) => Extension | undefined),
+) => Client & Extension;
+
 /**
  * The fully-typed client returned by {@link better}. Provides a delegate for
  * every table in the schema plus a unified `repository()` accessor.
@@ -653,6 +752,18 @@ export type BetterDrizzleClient<
 	Plugins extends readonly AnyPlugin[] = [],
 > = BetterDrizzleClientByTableWithPlugins<Schema, Meta, Plugins> &
 	ClientExtensionsOf<Plugins> & {
+		/**
+		 * Extends the current client with custom properties and helper methods.
+		 *
+		 * The same extension is reapplied to future `$withContext()` and
+		 * `transaction()` clients derived from this instance.
+		 *
+		 * Pass a plain object for static values, or a callback when the extension
+		 * needs to close over the bound client instance.
+		 */
+		extends: BetterDrizzleExtendsMethod<
+			BetterDrizzleClient<Schema, Meta, Plugins>
+		>;
 		/**
 		 * Returns a cloned client with default metadata merged into every
 		 * operation, raw query, and transaction created from it.
@@ -939,7 +1050,12 @@ export type BetterDrizzleModelDelegate<
 	Name extends TableKey<Schema>,
 	Meta = import('./query').BetterMeta,
 	Plugins extends readonly AnyPlugin[] = [],
-	ModelExtension extends Record<string, unknown> = ModelExtensionsOf<Plugins>,
+	ModelExtension extends Record<string, unknown> = ModelExtensionsOf<
+		Plugins,
+		Schema,
+		Name,
+		Meta
+	>,
 > = {
 	/**
 	 * Internal model metadata useful for plugins.
@@ -1023,7 +1139,7 @@ export type BetterDrizzleModelDelegate<
 			Plugins,
 			'count'
 		>,
-	): Promise<number>;
+	): ExplainableResult<number>;
 	/**
 	 * Returns `true` when at least one matching row exists.
 	 *
@@ -1045,7 +1161,7 @@ export type BetterDrizzleModelDelegate<
 			Plugins,
 			'exists'
 		>,
-	): Promise<boolean>;
+	): ExplainableResult<boolean>;
 	/**
 	 * Inserts a single row and returns the created record.
 	 *
@@ -1236,7 +1352,7 @@ export type BetterDrizzleModelDelegate<
 			Plugins,
 			'findMany'
 		>,
-	>(args?: Args): Promise<PayloadForArgs<Schema, Name, Args>[]>;
+	>(args?: Args): ExplainableResult<PayloadForArgs<Schema, Name, Args>[]>;
 	/**
 	 * Updates a single matching row and returns the updated record.
 	 *
@@ -1414,12 +1530,9 @@ export type BetterDrizzleModelDelegate<
 		>,
 	>(args: Args): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	/**
-	 * Returns a paginated result set with total count and navigation metadata.
+	 * Returns an offset-based paginated result set with page metadata.
 	 *
-	 * Supports both offset-based and cursor-based pagination strategies.
-	 *
-	 * @param args - Pagination options including `limit`, `orderBy`, and
-	 *   optional `after`/`before` cursors.
+	 * @param args - Offset pagination options including `limit`, `skip`, and `orderBy`.
 	 * @returns A promise resolving to `{ data, pagination }`.
 	 *
 	 * @example
@@ -1430,15 +1543,7 @@ export type BetterDrizzleModelDelegate<
 	 *   orderBy: { name: 'asc' },
 	 * });
 	 * console.log(page.data);        // rows
-	 * console.log(page.pagination);  // { count, hasNext, hasPrevious }
-	 *
-	 * // Cursor pagination
-	 * const page = await db.user.paginate({
-	 *   type: PaginationType.Cursor,
-	 *   limit: 10,
-	 *   after: lastCursor,
-	 *   orderBy: { createdAt: 'desc' },
-	 * });
+	 * console.log(page.pagination);  // { type, page, perPage, total, pageCount, hasNext, hasPrevious }
 	 * ```
 	 */
 	paginate<
@@ -1449,7 +1554,25 @@ export type BetterDrizzleModelDelegate<
 		>,
 	>(
 		args: Args,
-	): Promise<PaginationResult<PayloadForArgs<Schema, Name, Args>>>;
+	): ExplainableResult<
+		OffsetPaginationResult<PayloadForArgs<Schema, Name, Args>>
+	>;
+	/**
+	 * Returns a cursor-based result set with navigation cursors.
+	 *
+	 * Accepts either `after` or `before`, but never both.
+	 */
+	cursor<
+		Args extends OperationArgsWithPlugins<
+			CursorArgs<Schema, Name, Meta>,
+			Plugins,
+			'cursor'
+		>,
+	>(
+		args: Args,
+	): ExplainableResult<
+		CursorPaginationResult<PayloadForArgs<Schema, Name, Args>>
+	>;
 	/**
 	 * Deletes a single matching row and returns the deleted record.
 	 *

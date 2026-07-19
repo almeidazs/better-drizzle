@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
-import { better, definePlugin } from '../src';
+import { BetterDrizzleErrorCode, better, definePlugin } from '../src';
 
 type Equal<A, B> =
 	(<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
@@ -149,6 +149,88 @@ describe('raw sql', () => {
 		ctx.close();
 	});
 
+	test('raw methods can be disabled at the client level', async () => {
+		const ctx = createContext({
+			raw: {
+				enabled: false,
+			},
+			schema,
+		});
+
+		await expect(
+			ctx.client.$raw(sql`select id from raw_users`),
+		).rejects.toMatchObject({
+			code: BetterDrizzleErrorCode.RawDisabled,
+		});
+
+		ctx.close();
+	});
+
+	test('requireComment enforces comments on raw queries', async () => {
+		const ctx = createContext({
+			raw: {
+				requireComment: true,
+			},
+			schema,
+		});
+
+		await expect(
+			ctx.client.$raw(sql`select id from raw_users`),
+		).rejects.toMatchObject({
+			code: BetterDrizzleErrorCode.RawCommentRequired,
+		});
+
+		const rows = await ctx.client.$raw<{ id: number }>(
+			sql`select id from raw_users order by id asc`,
+			{
+				comment: 'raw.users.required',
+			},
+		);
+
+		expect(rows).toEqual([{ id: 1 }, { id: 2 }]);
+		ctx.close();
+	});
+
+	test('invalid safe raw inputs are rejected', async () => {
+		const ctx = createContext();
+
+		await expect(
+			ctx.client.$raw('select id from raw_users' as never),
+		).rejects.toMatchObject({
+			code: BetterDrizzleErrorCode.RawInvalidQuery,
+		});
+
+		await expect(
+			ctx.client.$executeRaw(
+				'update raw_users set status = "x"' as never,
+			),
+		).rejects.toMatchObject({
+			code: BetterDrizzleErrorCode.RawInvalidQuery,
+		});
+
+		ctx.close();
+	});
+
+	test('$rawUnsafe validates placeholder counts', async () => {
+		const ctx = createContext({
+			raw: {
+				allowUnsafe: true,
+			},
+			schema,
+		});
+
+		await expect(
+			ctx.client.$rawUnsafe(
+				'select id from raw_users where id = ? and status = ?',
+				[1],
+			),
+		).rejects.toMatchObject({
+			code: BetterDrizzleErrorCode.RawUnsafePlaceholderMismatch,
+		});
+
+		ctx.close();
+	});
+
 	test('options are passed to hooks', async () => {
 		const seen: Array<Record<string, unknown>> = [];
 		const ctx = createContext({
@@ -254,6 +336,28 @@ describe('raw sql', () => {
 		).rejects.toThrow('aborted');
 
 		timedOut.close();
+	});
+
+	test('unsupported raw options can throw when configured', async () => {
+		const ctx = createContext({
+			raw: {
+				unsupportedOptions: 'throw',
+			},
+			schema,
+		});
+
+		await expect(
+			ctx.client.$raw(sql`select id from raw_users`, {
+				comment: 'raw.unsupported.comment',
+			}),
+		).rejects.toMatchObject({
+			code: BetterDrizzleErrorCode.RawUnsupportedOption,
+			details: {
+				option: 'comment',
+			},
+		});
+
+		ctx.close();
 	});
 
 	test('raw hooks run', async () => {

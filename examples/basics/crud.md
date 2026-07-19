@@ -213,11 +213,40 @@ const user = await client.users.create({
 });
 ```
 
+## Connect, disconnect, or replace relations
+
+Relation commands live inside `data` and use structured selectors:
+
+```ts
+const post = await client.posts.create({
+	data: {
+		author: { connect: { email: 'writer@example.com' } },
+		title: 'Connected post',
+	},
+});
+
+await client.users.update({
+	where: { id: 10 },
+	data: {
+		posts: {
+			connect: [{ id: 20 }, { id: 21 }],
+			disconnect: { id: 19 },
+		},
+		groups: {
+			set: [{ id: 1 }, { id: 2 }],
+		},
+	},
+});
+```
+
+`set` is exclusive for its relation. Every selector must match exactly one row. Better Drizzle wraps the root write and relation changes in an implicit transaction, so invalid selectors and required-FK disconnects roll everything back.
+
 ## Practical notes
 
 - `createMany()`, `updateMany()`, `updateEach()`, and `deleteMany()` return a batch summary.
 - `create()` returns `null` and `createMany()` returns a partial count when `skipDuplicates` is enabled and duplicates are skipped.
 - `updateEach()` rejects duplicate `by` values and supports `onEmpty: 'return' | 'throw'`.
 - `upsertMany()` is native-first and optimized for throughput. It supports `select`, but not relation `include`.
+- Relation commands are supported by `create()`, `update()`, and `upsert()`; batch write methods remain scalar-only.
 - `update()` and `delete()` are nullable by default because the target row may not exist.
 - `upsert()` is often cleaner than “find, then branch, then write” when the behavior is truly upsert-shaped.

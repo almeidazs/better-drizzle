@@ -210,4 +210,58 @@ describe('include - relations', () => {
 		const typed = result as unknown as UserWithPosts;
 		expect(typed.posts).toEqual([]);
 	});
+
+	test('applies filters ordering and pagination per parent', async () => {
+		const result = await ctx.better.users.findMany({
+			orderBy: { id: 'asc' },
+			where: { id: { in: [1, 2] } },
+			include: {
+				posts: {
+					orderBy: { score: 'desc' },
+					take: 1,
+					where: { published: true },
+				},
+			},
+		});
+
+		expect(result).toHaveLength(2);
+		expect(result[0]?.posts.map((post) => post.id)).toEqual([1]);
+		expect(result[1]?.posts.map((post) => post.id)).toEqual([4]);
+	});
+
+	test('hydrates nested relations without exposing linking columns', async () => {
+		const result = await ctx.better.users.findFirst({
+			where: { id: 1 },
+			select: {
+				name: true,
+				posts: {
+					orderBy: { id: 'asc' },
+					select: {
+						comments: { select: { body: true } },
+						title: true,
+					},
+				},
+			},
+		});
+
+		expect(result).toEqual({
+			name: 'Alice',
+			posts: [
+				{
+					comments: [{ body: 'Nice post!' }, { body: 'Thanks!' }],
+					title: 'First Post',
+				},
+				{ comments: [], title: 'Second Post' },
+			],
+		});
+	});
+
+	test('rejects select and include at the same level', async () => {
+		await expect(
+			ctx.better.users.findMany({
+				include: { posts: true },
+				select: { name: true },
+			} as never),
+		).rejects.toThrow('select and include cannot be used');
+	});
 });

@@ -47,6 +47,42 @@ const posts = await client.posts.findMany({
 - the response is going straight to an API boundary
 - you do not want to accidentally leak extra columns
 
+## Nested relation arguments
+
+Each relation node has its own filtering, ordering, pagination, and projection. `take` and `skip` are applied per parent in SQL, without N+1 queries:
+
+```ts
+const users = await client.users.findMany({
+	include: {
+		posts: {
+			where: { published: true },
+			orderBy: { score: 'desc' },
+			take: 3,
+			select: {
+				title: true,
+				comments: { select: { body: true } },
+			},
+		},
+	},
+});
+```
+
+Do not combine `select` and `include` at the same level. Better Drizzle automatically fetches and then removes hidden linking columns needed to hydrate deeper relations.
+
+## Inferred many-to-many relations
+
+Simple junction tables with two foreign keys are exposed directly under the target schema key:
+
+```ts
+const users = await client.users.findMany({
+	include: {
+		groups: { orderBy: { name: 'asc' } },
+	},
+});
+```
+
+Use `better(db, { relations: { manyToMany: [...] }, schema })` to identify the junction explicitly when multiple paths are possible. Ambiguous paths fail instead of being selected silently.
+
 ## Nested relation filters
 
 ### Filter posts by author data
@@ -128,3 +164,4 @@ const posts = await client.posts.findMany({
 - Use `where` to control which rows qualify.
 - Use `select` to control which fields survive.
 - Use `include` to keep the full row and attach relations.
+- Use `.explain()` to inspect the root statement and `deferredRelations` batch stages.

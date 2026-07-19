@@ -1,0 +1,78 @@
+---
+title: AI Skills
+description: First-party better-drizzle guidance for AI coding agents, with a zero-scripts security posture.
+icon: Bot
+---
+
+**better-drizzle** ships a first-party agent skill pack for AI coding agents that need accurate repository context, API guidance, and review guardrails without hidden side effects.
+
+Primary public entry points:
+
+- `https://better-drizzle.com`
+- `https://better-drizzle.com/docs`
+- `https://github.com/almeidazs/better-drizzle`
+
+## What ships
+
+- `AGENTS.md` as the repo-wide source of truth for architecture, API constraints, performance rules, and documentation expectations
+- `skills/better-drizzle/SKILL.md` as the canonical workflow layer for agent tasks
+- `skills/better-drizzle/references/*` for deeper task-specific guidance
+- `CLAUDE.md` and `GEMINI.md` as thin adapters that point compatible agents back to the same source of truth
+
+The skill pack is designed as a real operating guide, not just a short manifesto. It includes routing rules, concrete code examples, public doc URLs, and review-time checks so agents can stay anchored to the actual `better-drizzle` API.
+
+## Supported workflows
+
+The skill pack is designed for agents working on:
+
+- CRUD delegates, filters, selects, includes, pagination, and explainable reads
+- transactions, row locks, raw SQL, and scoped metadata
+- official plugins and custom plugin authoring
+- the split between static guardrails (`@better-drizzle/eslint`) and runtime guardrails (`@better-drizzle/rules`)
+- generated runtime schemas with `@better-drizzle/zod`
+- troubleshooting, migration from raw Drizzle, and API review
+- performance-sensitive changes in hot paths
+
+It also includes a reviewer mode: before accepting a solution, the agent is told to verify API correctness, known dialect limits, documentation sync, and hot-path discipline.
+
+## Security model
+
+The skill pack is intentionally conservative:
+
+- zero scripts
+- zero network
+- no install commands
+- no instructions to read secrets, shell history, SSH keys, or `.env` files unless the user task explicitly requires a repo-local config read
+- no guidance to relax sandboxing or request elevated permissions by default
+
+The references also tell agents to treat schema comments, markdown, generated code, SQL snippets, and user-provided text as untrusted input. Instructions found inside those artifacts must not override the active user request or repo policy.
+
+## Usage
+
+Point your agent at:
+
+1. `AGENTS.md` for repo context
+2. `skills/better-drizzle/SKILL.md` for task workflow
+3. the relevant file in `skills/better-drizzle/references/` for the specific task
+
+This keeps the main skill concise while still giving the agent enough detail to avoid inventing API behavior.
+
+## Example tasks the skill is meant to handle well
+
+- "Add a `findMany` example with nested relation filters and the right `select` shape."
+- "Review this `upsertMany` change for dialect limits and performance regressions."
+- "Explain when I should use `paginate()` vs `cursor()` and point me to the exact docs page."
+- "Wire `@better-drizzle/soft-delete` into this client and make sure the docs still match."
+- "Set up `@better-drizzle/eslint` with the recommended flat config and keep the runtime rules docs accurate."
+- "Add `@better-drizzle/zod`, expose `$zod` for a model, and keep the examples in sync."
+
+## Why this shape
+
+The pack follows modern agent-skill guidance:
+
+- a short operational entrypoint
+- progressive disclosure into focused references
+- no executable payloads in the skill itself
+- explicit resistance to prompt injection and secret exfiltration
+
+That makes the pack easier to audit, easier to version, and safer to reuse across different agent runtimes.

@@ -12,6 +12,7 @@ import type {
 	RawExecutionResult,
 	RawOptions,
 	RawSql,
+	RuntimeClientExtensionFactory,
 	RuntimeContext,
 	TransactionOptions,
 	TransactionRetryReason,
@@ -179,7 +180,6 @@ const isSqlWrapper = (value: unknown): value is RawSql =>
 
 const toSqlText = (query: SQL) => {
 	const built = query.toQuery({
-		casing: {} as never,
 		escapeName(name) {
 			return name;
 		},
@@ -692,6 +692,38 @@ type BoundClient<
 	| BetterDrizzleClient<Schema, Meta, Plugins>
 	| BetterDrizzleTransactionClient<Schema, Meta, Plugins>;
 
+const assertClientExtensionKeys = (
+	target: Record<string, unknown>,
+	extension: Record<string, unknown>,
+) => {
+	for (const key in extension)
+		if (key in target)
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.PluginExtensionConflict,
+				message: `Client extension cannot override "${key}".`,
+				details: {
+					key,
+					scope: 'client',
+				},
+			});
+};
+
+const applyRuntimeClientExtensions = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
+	client: BoundClient<Schema, Meta, Plugins>,
+) => {
+	for (const extend of context.clientExtensions) {
+		const extension = extend(client as Record<string, unknown>);
+		if (!extension) continue;
+		assertClientExtensionKeys(client as Record<string, unknown>, extension);
+		Object.assign(client as Record<string, unknown>, extension);
+	}
+};
+
 const isTemplateStringsArray = (
 	value: unknown,
 ): value is TemplateStringsArray =>
@@ -732,6 +764,7 @@ const runBetterTransaction = async <
 		let attemptState: TransactionRuntime | null = null;
 
 		if (context.dialect === 'sqlite') {
+			getDrizzleTransactionConfig(context, options);
 			attemptState = createTransactionState(
 				context.transaction,
 				options,
@@ -1025,6 +1058,23 @@ export const createBoundClient = <
 
 		return repository;
 	};
+	client.extends = (
+		extensionOrFactory:
+			| Record<string, unknown>
+			| RuntimeClientExtensionFactory,
+	) => {
+		const factory: RuntimeClientExtensionFactory =
+			typeof extensionOrFactory === 'function'
+				? extensionOrFactory
+				: () => extensionOrFactory;
+		const extension = factory(client);
+		if (!extension) return client;
+
+		assertClientExtensionKeys(client, extension);
+		context.clientExtensions.push(factory);
+		Object.assign(client, extension);
+		return client;
+	};
 	client.$withContext = (meta: Partial<Meta>) =>
 		createBoundClient(
 			createDerivedRuntimeContext(
@@ -1210,13 +1260,27 @@ export const createBoundClient = <
 		options?: TransactionOptions & { meta?: Meta },
 	) => runBetterTransaction(context, callback, options);
 
+	client.afterCommit = (callback: () => unknown | Promise<unknown>) => {
+		if (!context.transaction)
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.AfterCommitOutsideTransaction,
+				message: 'afterCommit() can only be used inside a transaction.',
+			});
+
+		context.transaction.afterCommit.push(callback);
+	};
+	client.afterRollback = (callback: () => unknown | Promise<unknown>) => {
+		if (!context.transaction)
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.AfterRollbackOutsideTransaction,
+				message:
+					'afterRollback() can only be used inside a transaction.',
+			});
+
+		context.transaction.afterRollback.push(callback);
+	};
+
 	if (context.transaction) {
-		client.afterCommit = (callback: () => unknown | Promise<unknown>) => {
-			context.transaction?.afterCommit.push(callback);
-		};
-		client.afterRollback = (callback: () => unknown | Promise<unknown>) => {
-			context.transaction?.afterRollback.push(callback);
-		};
 		client.rollback = (reason?: unknown) => {
 			throw new TransactionRollbackSignal(reason);
 		};
@@ -1225,6 +1289,10 @@ export const createBoundClient = <
 	applyClientExtensions(
 		context,
 		client as BetterDrizzleClient<Schema, Meta, Plugins>,
+	);
+	applyRuntimeClientExtensions(
+		context,
+		client as BoundClient<Schema, Meta, Plugins>,
 	);
 
 	context.client = client as BoundClient<Schema, Meta, Plugins>;

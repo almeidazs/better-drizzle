@@ -7,7 +7,8 @@ The repository has one hard benchmarking rule:
 ## Good parity comparisons
 
 - `findMany()` with `include` against a raw Drizzle query that also loads those relations
-- `paginate()` against a manual flow that returns rows plus `count`, `hasNext`, and `hasPrevious`
+- `paginate()` against a manual flow that returns rows plus offset pagination metadata
+- `cursor()` against a manual flow that returns rows plus cursor navigation metadata
 - soft delete plugin behavior against a manual implementation that performs the same visibility and delete rewrite logic
 
 ## Bad comparisons

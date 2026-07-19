@@ -5,6 +5,7 @@ import type {
 	InferSelectModel,
 	Table,
 } from 'drizzle-orm';
+import type { Many } from 'drizzle-orm/relations';
 
 /**
  * Represents any Drizzle schema object – a record mapping table names to their
@@ -127,7 +128,9 @@ export type TableFor<
 export type SelectModelFor<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
-> = InferSelectModel<TableFor<Schema, Name>>;
+> = [Name] extends [never]
+	? Record<string, unknown>
+	: InferSelectModel<TableFor<Schema, Name>>;
 /**
  * Infers the insert model for a specific table. This is the shape
  * accepted by create operations. Optional columns become optional here.
@@ -138,17 +141,71 @@ export type SelectModelFor<
 export type InsertModelFor<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
-> = InferInsertModel<TableFor<Schema, Name>>;
+> = [Name] extends [never]
+	? Record<string, unknown>
+	: InferInsertModel<TableFor<Schema, Name>>;
 /**
  * Union of all relation names defined on a specific table.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name   - The table key within the schema.
  */
-export type RelationKeysFor<
+export type PhysicalRelationKeysFor<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 > = SafeKeys<TableConfigFor<Schema, Name>['relations']>;
+
+type PhysicalRelatedNameFor<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	RelationName extends PhysicalRelationKeysFor<Schema, Name>,
+> = Extract<
+	FindTableByDBName<
+		TablesConfig<Schema>,
+		TableConfigFor<
+			Schema,
+			Name
+		>['relations'][RelationName]['referencedTableName']
+	>['tsName'],
+	TableKey<Schema>
+>;
+
+type VirtualRelationKeysFor<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = {
+	[K in PhysicalRelationKeysFor<Schema, Name>]: TableConfigFor<
+		Schema,
+		Name
+	>['relations'][K] extends Many<string>
+		? {
+				[P in PhysicalRelationKeysFor<
+					Schema,
+					PhysicalRelatedNameFor<Schema, Name, K>
+				>]: PhysicalRelatedNameFor<
+					Schema,
+					PhysicalRelatedNameFor<Schema, Name, K>,
+					P
+				> extends Name
+					? never
+					: PhysicalRelatedNameFor<
+							Schema,
+							PhysicalRelatedNameFor<Schema, Name, K>,
+							P
+						>;
+			}[PhysicalRelationKeysFor<
+				Schema,
+				PhysicalRelatedNameFor<Schema, Name, K>
+			>]
+		: never;
+}[PhysicalRelationKeysFor<Schema, Name>];
+
+export type RelationKeysFor<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> =
+	| PhysicalRelationKeysFor<Schema, Name>
+	| Extract<VirtualRelationKeysFor<Schema, Name>, string>;
 /**
  * Union of all scalar (non-relation) column keys for a specific table.
  * This is the set of keys available for filtering and ordering.
@@ -172,13 +229,18 @@ export type RelatedConfigFor<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 	RelationName extends RelationKeysFor<Schema, Name>,
-> = FindTableByDBName<
-	TablesConfig<Schema>,
-	TableConfigFor<
-		Schema,
-		Name
-	>['relations'][RelationName]['referencedTableName']
->;
+> =
+	RelationName extends PhysicalRelationKeysFor<Schema, Name>
+		? FindTableByDBName<
+				TablesConfig<Schema>,
+				TableConfigFor<
+					Schema,
+					Name
+				>['relations'][RelationName]['referencedTableName']
+			>
+		: RelationName extends TableKey<Schema>
+			? TableConfigFor<Schema, RelationName>
+			: never;
 /**
  * Resolves the TypeScript table key of the table referenced by a specific
  * relation on a table.
@@ -206,7 +268,10 @@ export type RelationFor<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 	RelationName extends RelationKeysFor<Schema, Name>,
-> = TableConfigFor<Schema, Name>['relations'][RelationName];
+> =
+	RelationName extends PhysicalRelationKeysFor<Schema, Name>
+		? TableConfigFor<Schema, Name>['relations'][RelationName]
+		: Many<Extract<RelationName, string>>;
 
 /**
  * Removes `null` and `undefined` from `T`.

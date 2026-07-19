@@ -3,7 +3,9 @@ import type {
 	AnySchema,
 	BetterClientHooks,
 	ErrorHookContext,
-	NullableResult,
+	ExplainableResult,
+	ExplainOptions,
+	ExplainResult,
 	RuntimeContext,
 	TableRuntime,
 	ThrowFactory,
@@ -316,7 +318,7 @@ export const attachThrow = <
 	Args,
 	T,
 >(
-	promise: NullableResult<T>,
+	promise: PromiseLike<T | null>,
 	context: RuntimeContext<Schema, Meta, Plugins>,
 	runtime: TableRuntime,
 	action: string,
@@ -362,4 +364,22 @@ export const attachThrow = <
 	};
 
 	return wrapped;
+};
+
+/**
+ * Wraps an operation result with an independent `.explain()` method.
+ *
+ * The returned value remains a native `Promise`, so existing await / test
+ * helper behavior (`expect(...).resolves`, `expect(...).rejects`) keeps
+ * working without special casing.
+ */
+export const attachExplain = <T>(
+	operation: () => Promise<T>,
+	explain: (options?: ExplainOptions) => Promise<ExplainResult>,
+) => {
+	const promise = Promise.resolve().then(operation) as ExplainableResult<T>;
+
+	promise.explain = explain;
+
+	return promise;
 };

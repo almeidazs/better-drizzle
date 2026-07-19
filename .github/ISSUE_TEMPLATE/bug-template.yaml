@@ -29,7 +29,7 @@ body:
       attributes:
           label: Other packages
           description: If this bug is related to one of the other first-party packages we maintain, please list them here alongside their version.
-          placeholder: better-drizzle/timestamps@0.0.0
+          placeholder: better-drizzle/zod@0.0.0
       validations:
           required: false
 

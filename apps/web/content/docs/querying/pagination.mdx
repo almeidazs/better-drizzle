@@ -1,27 +1,16 @@
 ---
 title: Pagination
-description: One paginate() API for offset and cursor pagination, returning a consistent data + metadata shape.
+description: Use paginate() for offset pages and cursor() for cursor navigation.
 icon: BookOpenText
 ---
 
-`paginate()` wraps query execution and navigation metadata in a single call. Every paginated result has the same shape:
-
-```ts
-type PaginationResult<T> = {
-	data: T[];
-	pagination: {
-		count: number;
-		hasNext: boolean;
-		hasPrevious: boolean;
-	};
-};
-```
-
-That consistency is the point: you stop rebuilding `count` / `hasNext` / `hasPrevious` in every service.
+`paginate()` is the offset helper. `cursor()` is the cursor helper. Both return
+`{ data, pagination }`, but the metadata is specific to the strategy.
 
 ## Offset pagination
 
-The default strategy. Use `limit` with `skip` (or `take`):
+Use `limit` with `skip` (or `take`) when the consumer needs totals and page
+numbers:
 
 ```ts
 const page = await client.users.paginate({
@@ -32,48 +21,42 @@ const page = await client.users.paginate({
 });
 
 page.data; // User[]
-page.pagination.count; // total matching rows
+page.pagination.type; // "offset"
+page.pagination.page;
+page.pagination.perPage;
+page.pagination.total;
+page.pagination.pageCount;
 page.pagination.hasNext;
 page.pagination.hasPrevious;
 ```
 
 ## Cursor pagination
 
-Pass `type: PaginationType.Cursor` and page with `after` / `before`:
+Use `cursor()` for feed-style navigation:
 
 ```ts
-import { PaginationType } from 'better-drizzle';
-
-const first = await client.users.paginate({
-	type: PaginationType.Cursor,
+const first = await client.users.cursor({
 	limit: 2,
 	orderBy: [{ id: 'asc' }],
 });
 
-const second = await client.users.paginate({
-	type: PaginationType.Cursor,
+const second = await client.users.cursor({
 	limit: 2,
 	orderBy: [{ id: 'asc' }],
-	after: { id: first.data.at(-1)?.id },
+	after: first.pagination.nextCursor as { id: number },
 });
 ```
 
 ### Navigating backwards
 
-Flip the order and use `before`:
+Pass `before` to move backwards. `cursor()` accepts `before` or `after`, never
+both.
 
 ```ts
-const last = await client.users.paginate({
-	type: PaginationType.Cursor,
+const previous = await client.users.cursor({
 	limit: 2,
-	orderBy: [{ id: 'desc' }],
-});
-
-const previous = await client.users.paginate({
-	type: PaginationType.Cursor,
-	limit: 2,
-	orderBy: [{ id: 'desc' }],
-	before: { id: last.data.at(-1)?.id },
+	orderBy: [{ id: 'asc' }],
+	before: { id: 4 },
 });
 ```
 
@@ -85,10 +68,16 @@ const previous = await client.users.paginate({
 
 ## Pagination with projection
 
-`paginate()` accepts the same `select` / `include` as a normal read:
+Both helpers accept the same `select` / `include` as a normal read:
 
 ```ts
 const page = await client.posts.paginate({
+	limit: 10,
+	orderBy: [{ id: 'desc' }],
+	include: { author: true },
+});
+
+const feed = await client.posts.cursor({
 	limit: 10,
 	orderBy: [{ id: 'desc' }],
 	include: { author: true },

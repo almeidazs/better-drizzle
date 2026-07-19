@@ -174,6 +174,37 @@ describe('transactions', () => {
 		ctx.close();
 	});
 
+	test('afterCommit and afterRollback fail outside transactions', async () => {
+		const ctx = createContext();
+
+		expect(() => ctx.client.afterCommit(() => {})).toThrow(
+			'afterCommit() can only be used inside a transaction.',
+		);
+		expect(() => ctx.client.afterRollback(() => {})).toThrow(
+			'afterRollback() can only be used inside a transaction.',
+		);
+
+		try {
+			ctx.client.afterCommit(() => {});
+		} catch (error) {
+			expect(error).toBeInstanceOf(BetterDrizzleError);
+			expect((error as BetterDrizzleError).code).toBe(
+				BetterDrizzleErrorCode.AfterCommitOutsideTransaction,
+			);
+		}
+
+		try {
+			ctx.client.afterRollback(() => {});
+		} catch (error) {
+			expect(error).toBeInstanceOf(BetterDrizzleError);
+			expect((error as BetterDrizzleError).code).toBe(
+				BetterDrizzleErrorCode.AfterRollbackOutsideTransaction,
+			);
+		}
+
+		ctx.close();
+	});
+
 	test('context inheritance and override', async () => {
 		const seen: Array<Record<string, unknown> | undefined> = [];
 		const ctx = createContext({
@@ -476,6 +507,47 @@ describe('transactions', () => {
 			'client-rollback',
 			'plugin-rollback',
 		]);
+		ctx.close();
+	});
+
+	test('unsupported transaction options can throw on sqlite', async () => {
+		const ctx = createContext({
+			schema,
+			transaction: {
+				unsupportedOptions: 'throw',
+			},
+		});
+
+		await expect(
+			ctx.client.transaction(async () => undefined, {
+				isolationLevel: 'serializable',
+			}),
+		).rejects.toMatchObject({
+			code: BetterDrizzleErrorCode.TransactionUnsupportedOption,
+			details: {
+				option: 'isolationLevel',
+			},
+		});
+
+		ctx.close();
+	});
+
+	test('unsupported transaction options can be ignored on sqlite', async () => {
+		const ctx = createContext({
+			schema,
+			transaction: {
+				unsupportedOptions: 'ignore',
+			},
+		});
+
+		await expect(
+			ctx.client.transaction(async () => 'ok', {
+				comment: 'ignored-on-sqlite',
+				isolationLevel: 'serializable',
+				readOnly: true,
+			}),
+		).resolves.toBe('ok');
+
 		ctx.close();
 	});
 

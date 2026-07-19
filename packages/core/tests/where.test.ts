@@ -223,18 +223,65 @@ describe('relation where - One', () => {
 });
 
 describe('relation where - Many', () => {
-	test('posts some - users with at least one post', async () => {
+	const names = (rows: { name: string }[]) =>
+		rows.map((row) => row.name).sort();
+
+	test('posts some - users with at least one published post', async () => {
 		const result = await ctx.better.users.findMany({
 			where: { posts: { some: { published: true } } },
 		});
-		expect(result.length).toBeGreaterThan(0);
+		// Alice (1 published, 1 draft), Bob (2 published), Diana (1 published).
+		// Charlie has only a draft and Eve has no posts.
+		expect(names(result)).toEqual(['Alice', 'Bob', 'Diana']);
 	});
 
-	test('posts none - users with no posts', async () => {
+	test('posts every - users whose posts are all published', async () => {
+		const result = await ctx.better.users.findMany({
+			where: { posts: { every: { published: true } } },
+		});
+		// Eve qualifies vacuously: she has no posts to violate the predicate.
+		expect(names(result)).toEqual(['Bob', 'Diana', 'Eve']);
+	});
+
+	test('posts none - users with no published post', async () => {
+		const result = await ctx.better.users.findMany({
+			where: { posts: { none: { published: true } } },
+		});
+		expect(names(result)).toEqual(['Charlie', 'Eve']);
+	});
+
+	test('posts none - users with no posts at all', async () => {
 		const result = await ctx.better.users.findMany({
 			where: { posts: { none: {} } },
 		});
-		expect(result.length).toBeGreaterThanOrEqual(0);
+		expect(names(result)).toEqual(['Eve']);
+	});
+
+	test('relation filters correlate on the parent row', async () => {
+		// A published post exists in the fixture, so an uncorrelated EXISTS would
+		// return every user instead of only those who own one.
+		const total = await ctx.better.users.count();
+		const result = await ctx.better.users.findMany({
+			where: { posts: { some: { published: true } } },
+		});
+		expect(result.length).toBeLessThan(total);
+	});
+
+	test('relation filter correlates when the same relation is included', async () => {
+		// An include routes the query through the relational query builder, which
+		// aliases the base table (from "test_users" "users"). The filter's
+		// correlation must reference that alias; referencing the raw table name
+		// throws "no such column: test_users.id".
+		const result = await ctx.better.users.findMany({
+			include: { posts: true },
+			where: { posts: { some: { published: true } } },
+		});
+		expect(names(result)).toEqual(['Alice', 'Bob', 'Diana']);
+		// The include still loaded the relation.
+		const alice = result.find((row) => row.name === 'Alice') as
+			| { posts?: unknown[] }
+			| undefined;
+		expect(alice?.posts?.length).toBeGreaterThan(0);
 	});
 });
 

@@ -15,11 +15,13 @@ If someone understands this folder, they can already use most of `better-drizzle
 | [`reads-and-filters.md`](./reads-and-filters.md) | `find*`, `count`, `exists`, scalar filters, logical operators |
 | [`crud.md`](./crud.md) | Create, update, delete, batch operations, updateEach, upsert, upsertMany |
 | [`relations.md`](./relations.md) | `select`, `include`, relation filters, payload shaping |
-| [`pagination.md`](./pagination.md) | Offset and cursor pagination with metadata |
+| [`pagination.md`](./pagination.md) | Offset `paginate()` plus cursor-based `cursor()` metadata |
 | [`transactions.md`](./transactions.md) | Nested transactions, retries, rollback, callbacks |
+| [`locks.md`](./locks.md) | Row locks: FOR UPDATE, FOR SHARE, skipLocked, noWait, table targets, transaction-only enforcement |
 | [`raw-sql.md`](./raw-sql.md) | Safe and unsafe raw SQL, row mapping, options |
 | [`hooks.md`](./hooks.md) | Client hooks across reads, writes, raw SQL, and transactions |
 | [`throwing-results.md`](./throwing-results.md) | `.throw()` helpers for nullable operations |
+| [`explain.md`](./explain.md) | `.explain()` query plans, options, cross-dialect behavior |
 
 ## Suggested order
 
@@ -28,7 +30,9 @@ If someone understands this folder, they can already use most of `better-drizzle
 3. `crud.md`
 4. `relations.md`
 5. `transactions.md`
-6. `hooks.md`
+6. `locks.md`
+7. `hooks.md`
+8. `explain.md`
 
 ## Mental model
 

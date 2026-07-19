@@ -12,7 +12,23 @@ Minimal, type-safe repository helpers for [Drizzle ORM](https://orm.drizzle.team
 
 [better-drizzle](https://npmjs.com/package/better-drizzle) wraps an existing Drizzle client and gives each table a small, consistent API for reads, writes, pagination, nested filters, relation loading, and optional hooks. The goal is simple: keep Drizzle's type-safety, remove repetitive query glue, and stay close enough to the metal that performance still matters.
 
-Website: https://better-drizzle.vercel.app/
+Website: https://better-drizzle.com/
+
+## Sponsors
+
+<p align="center">
+  <a href="https://neon.com">
+    <img src="https://neon.com/brand/neon-logomark-dark-color.svg" width="48" alt="Neon" />
+  </a>
+</p>
+
+<p align="center">
+  <strong>Sponsored by <a href="https://neon.com">Neon</a></strong>
+</p>
+
+<p align="center">
+  Neon is the serverless Postgres platform built for modern developer workflows.
+</p>
 
 ## Sponsors
 
@@ -47,7 +63,7 @@ It gets repetitive when every service ends up re-writing the same patterns:
 </div>
 
 - point lookups
-- relation includes
+- nested relation reads and writes
 - pagination payloads
 - existence checks
 - count helpers
@@ -64,12 +80,15 @@ It gets repetitive when every service ends up re-writing the same patterns:
 
 - Less repeated query code for common CRUD flows
 - Nested relation filters with Drizzle-backed typing
-- `include` and `select` support with typed payload inference
-- Unified pagination return shape
+- Batched nested `include` and `select` with typed payload inference
+- Atomic `connect`, `disconnect`, and `set` relation writes
+- Direct and inferred many-to-many relations through simple junction tables
+- Offset and cursor pagination helpers with typed metadata
+- Thenable `.explain()` on read helpers for query-plan inspection
 - Optional lifecycle hooks for cross-cutting behavior
 - First-class plugins with setup, transforms, and client/model extensions
 - Fast paths for simple reads and writes to reduce wrapper overhead
-- Consistent table delegates: `findMany`, `findFirst`, `create`, `update`, `updateEach`, `delete`, `paginate`, `count`, `exists`, `upsert`, `upsertMany`
+- Consistent table delegates: `findMany`, `findFirst`, `create`, `update`, `updateEach`, `delete`, `paginate`, `cursor`, `count`, `exists`, `upsert`, `upsertMany`
 
 <h2 align="center">Querying your database with Better client</h2>
 
@@ -100,7 +119,24 @@ const posts = await client.posts.findMany({
 	orderBy: [{ id: 'desc' }],
 	take: 20,
 });
+
+const users = await client.users.findMany({
+	include: {
+		_count: {
+			select: {
+				posts: { where: { published: true } },
+			},
+		},
+		posts: {
+			where: { published: true },
+			orderBy: { score: 'desc' },
+			take: 3,
+		},
+	},
+});
 ```
+
+`_count` uses correlated SQL subqueries, so relation counts do not add a query per row or a separate count round-trip.
 
 <div align="center">
 
@@ -118,7 +154,19 @@ const count = await client.users.count({
 		name: { contains: 'drizzle-orm' },
 	},
 });
+
+const plan = await client.users
+	.findMany({
+		where: { active: true },
+		orderBy: [{ id: 'asc' }],
+	})
+	.explain({
+		analyze: true,
+		comment: 'users.active.explain',
+	});
 ```
+
+`.explain()` is available on read helpers (`findMany`, `findFirst`, `findOne`, `findUnique`, `count`, `exists`, `paginate`, `cursor`). PostgreSQL returns the richest output, while MySQL and SQLite ignore unsupported explain options and return the plan shape their drivers support.
 
 <div align="center">
 
@@ -137,6 +185,10 @@ const someUser = await client.users.create({
 const user = await client.users.update({
 	data: {
 		name: 'better-drizzle',
+		posts: {
+			connect: { id: 456 },
+			disconnect: { id: 789 },
+		},
 	},
 	where: { id: someUser.id },
 });
@@ -218,6 +270,33 @@ const user = await client.transaction(async (tx) => {
 });
 ```
 
+On PostgreSQL and MySQL, read helpers also accept `lock` for row-level locking:
+
+```ts
+await client.transaction(async (tx) => {
+	const jobs = await tx.posts.findMany({
+		where: { id: { gt: 0 } },
+		lock: {
+			mode: 'update',
+			skipLocked: true,
+		},
+	});
+
+	return jobs;
+});
+```
+
+If you want to enforce that locked reads only happen inside transactions, enable it once on the client:
+
+```ts
+const client = better(db, {
+	schema,
+	locks: {
+		transactionsOnly: true,
+	},
+});
+```
+
 <div align="center">
 
 ## Plugins
@@ -230,15 +309,30 @@ Plugins can also extend the built-in operation args in a fully typed way through
 
 ```ts
 import { better } from 'better-drizzle';
-import { timestamps } from '@better-drizzle/timestamps';
+import { recommended, rules } from '@better-drizzle/rules';
 import { softDelete } from '@better-drizzle/soft-delete';
+import { timestamps } from '@better-drizzle/timestamps';
+import { zod } from '@better-drizzle/zod';
 
 const client = better(drizzle, {
 	schema,
 	plugins: [
+		rules(
+			recommended({
+				noRawUnsafe: true,
+			}),
+		),
 		timestamps({
 			createdAt: 'created_at',
 			updatedAt: 'updated_at',
+		}),
+		zod({
+			validate: {
+				create: true,
+				result: true,
+				update: true,
+				upsert: true,
+			},
 		}),
 		softDelete({
 			column: 'deletedAt',
@@ -266,7 +360,9 @@ await client.users.restore({
 
 <div align="center">
 
-Now you can soft delete rows easily and also have timestamps fields injected automatically.
+Now you can enforce repository guardrails, soft delete rows, auto-generate Zod schemas, and also have timestamps fields injected automatically.
+
+For editor and CI feedback before runtime, pair the runtime guardrails with `@better-drizzle/eslint` and its flat-config presets. The ESLint package mirrors the statically-checkable subset of `@better-drizzle/rules` for direct Better Drizzle callsites.
 
 ## Hooks
 
@@ -324,3 +420,18 @@ See the full benchmark suite and results in [`benchmark/README.md`](/benchmark).
 </a>
 
 </div>
+
+<div align="center">
+
+## AI Skills
+
+better-drizzle now ships a first-party agent skill pack under [`skills/better-drizzle`](/skills/better-drizzle) for AI coding agents that need accurate repository context, API guidance, and review guardrails.
+
+</div>
+
+- Canonical skill format: `SKILL.md` plus task-specific files in `references/`
+- Multi-agent support: `AGENTS.md` for repo context, `CLAUDE.md` and `GEMINI.md` as thin adapters, and the skill pack as the canonical workflow layer
+- Scope: querying, writes, transactions, plugins, performance-sensitive changes, and review-time checks for API correctness
+- Security posture: zero scripts, zero network, no secret-reading instructions, and explicit prompt-injection resistance guidance
+
+See the website AI page for installation notes, supported agent surfaces, and the security model: https://better-drizzle.com/docs/ai

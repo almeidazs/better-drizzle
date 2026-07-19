@@ -1,0 +1,163 @@
+---
+title: ESLint
+description: Static Better Drizzle guardrails for IDE and CI feedback.
+icon: ShieldAlert
+---
+
+`@better-drizzle/eslint` is the static surface for Better Drizzle guardrails. It mirrors the directly-checkable subset of `@better-drizzle/rules` and is meant for editor feedback and CI, not runtime enforcement.
+
+## Install
+
+<Tabs items={['npm', 'pnpm', 'yarn', 'bun']}>
+
+<Tab value="npm">
+
+```bash
+npm install -D eslint @typescript-eslint/parser @better-drizzle/eslint
+```
+
+</Tab>
+
+<Tab value="pnpm">
+
+```bash
+pnpm add -D eslint @typescript-eslint/parser @better-drizzle/eslint
+```
+
+</Tab>
+
+<Tab value="yarn">
+
+```bash
+yarn add -D eslint @typescript-eslint/parser @better-drizzle/eslint
+```
+
+</Tab>
+
+<Tab value="bun">
+
+```bash
+bun add -d eslint @typescript-eslint/parser @better-drizzle/eslint
+```
+
+</Tab>
+
+</Tabs>
+
+## Flat Config
+
+```ts
+import parser from '@typescript-eslint/parser';
+import betterDrizzle from '@better-drizzle/eslint';
+
+export default [
+	{
+		files: ['**/*.{ts,tsx,mts,cts}'],
+		languageOptions: {
+			parser,
+			sourceType: 'module',
+		},
+		plugins: {
+			'better-drizzle': betterDrizzle,
+		},
+		rules: {
+			...betterDrizzle.configs.recommended[0].rules,
+		},
+	},
+];
+```
+
+The package also exports `safe`, `recommended`, and `strict` flat-config arrays.
+
+## What It Checks
+
+The ESLint plugin only analyzes direct and obvious Better Drizzle call sites such as:
+
+- `client.users.findMany(...)`
+- `client.repository('users').updateMany(...)`
+- `client.$rawUnsafe(...)`
+- `client.users.$withoutPlugins().findMany(...)`
+
+It does not try to infer transaction state, runtime `meta`, dialect-specific behavior, or complex wrapper functions.
+
+## Supported Rules
+
+Every rule accepts the same boolean/severity shorthand as the runtime plugin where applicable:
+
+- `true` => error
+- `false` => off
+- `'warn' | 'error' | 'off'`
+- an object with `level` plus rule-specific options
+
+### Destructive Writes
+
+| Rule | Options |
+| --- | --- |
+| `noDeleteManyWithoutWhere` | none |
+| `noUpdateManyWithoutWhere` | none |
+| `noDeleteWithoutWhere` | none |
+| `noUpdateWithoutWhere` | none |
+| `noEmptyWhere` | `operations`, `treatUndefinedAsEmpty`, `treatEmptyAndOrAsEmpty` |
+
+### Reads and Pagination
+
+| Rule | Options |
+| --- | --- |
+| `noUnboundedFindMany` | `allowWithWhere`, `allowWithLimit`, `allowWithTake`, `allowSmallStaticModels` |
+| `requireExplicitLimit` | `operations` |
+| `maxLimit` | `value`, `applyTo` |
+| `requireOrderByForLimit` | none |
+| `requireOrderByForPagination` | none |
+| `requireOrderByForCursor` | none |
+| `requireStableOrderByForCursor` | `requirePrimaryKeyInOrderBy` |
+
+### Includes and Locks
+
+| Rule | Options |
+| --- | --- |
+| `maxIncludeDepth` | `value` |
+| `maxIncludeRelations` | `value` |
+| `noLockWithInclude` | none |
+| `noInvalidLockCombination` | none |
+| `requireOrderByForSkipLocked` | none |
+| `requireLimitForSkipLocked` | none |
+
+### Raw SQL
+
+| Rule | Options |
+| --- | --- |
+| `noRawUnsafe` | none |
+| `requireRawComment` | `minLength` |
+| `requireRawTimeout` | `defaultTimeoutMs`, `maxTimeoutMs` |
+| `noRawMutation` | `allow` |
+
+### Sensitive Fields and Plugin Bypass
+
+| Rule | Options |
+| --- | --- |
+| `noSensitiveSelect` | `allowWithSensitive`, `withSensitiveArg` |
+| `requireExplicitSensitiveAccessReason` | `withSensitiveArg`, `reasonArg` |
+| `noWithoutPlugins` | none |
+| `noPluginBypassWithoutReason` | `reasonArg` |
+
+## Presets
+
+- `safe`
+- `recommended`
+- `strict`
+
+These presets mirror the statically-safe subset of `@better-drizzle/rules`. Runtime-only rules such as tenant context, transaction state, and dialect handling remain in `@better-drizzle/rules`.
+
+## Example
+
+```ts
+import { recommended } from '@better-drizzle/eslint';
+
+export default [
+	...recommended,
+];
+```
+
+## Boundary
+
+Use `@better-drizzle/eslint` when you want immediate feedback in Zed, VS Code, or CI. Use `@better-drizzle/rules` when you need runtime enforcement inside the actual Better Drizzle client.

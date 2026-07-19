@@ -9,7 +9,13 @@ import {
 } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
-type PackageName = 'core' | 'soft-delete' | 'timestamps';
+type PackageName =
+	| 'core'
+	| 'eslint'
+	| 'rules'
+	| 'soft-delete'
+	| 'timestamps'
+	| 'zod';
 
 const rootDir = resolve(import.meta.dir, '..');
 
@@ -29,7 +35,6 @@ const packageConfigs: Record<
 			'BetterDrizzleErrorCode',
 			'BetterDrizzleTransactionRollbackError',
 			'OrderType',
-			'PaginationType',
 			'better',
 			'definePlugin',
 			'getDatabaseErrorInfo',
@@ -42,17 +47,50 @@ const packageConfigs: Record<
 		],
 		packageName: 'better-drizzle',
 	},
+	eslint: {
+		dir: join(rootDir, 'packages/eslint'),
+		defaultExport: 'plugin',
+		esmExports: [
+			'configs',
+			'plugin',
+			'recommended',
+			'rules',
+			'safe',
+			'strict',
+			'version',
+		],
+		packageName: '@better-drizzle/eslint',
+	},
 	'soft-delete': {
 		dir: join(rootDir, 'packages/soft-delete'),
 		defaultExport: 'softDelete',
 		esmExports: ['softDelete', 'version'],
 		packageName: '@better-drizzle/soft-delete',
 	},
+	rules: {
+		dir: join(rootDir, 'packages/rules'),
+		defaultExport: 'rules',
+		esmExports: [
+			'mergeRules',
+			'recommended',
+			'rules',
+			'safe',
+			'strict',
+			'version',
+		],
+		packageName: '@better-drizzle/rules',
+	},
 	timestamps: {
 		dir: join(rootDir, 'packages/timestamps'),
 		defaultExport: 'timestamps',
 		esmExports: ['timestamps', 'version'],
 		packageName: '@better-drizzle/timestamps',
+	},
+	zod: {
+		dir: join(rootDir, 'packages/zod'),
+		defaultExport: 'zod',
+		esmExports: ['version', 'zod'],
+		packageName: '@better-drizzle/zod',
 	},
 };
 
@@ -63,8 +101,12 @@ const packages =
 		: (Object.keys(packageConfigs) as PackageName[]);
 const buildOrder = Array.from(
 	new Set(
-		packages.includes('soft-delete') || packages.includes('timestamps')
-			? (['core', ...packages] as PackageName[])
+		packages.includes('eslint') ||
+			packages.includes('rules') ||
+			packages.includes('soft-delete') ||
+			packages.includes('timestamps') ||
+			packages.includes('zod')
+			? (['core', 'rules', ...packages] as PackageName[])
 			: packages,
 	),
 );

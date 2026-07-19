@@ -5,8 +5,11 @@
 - **Repository scope**: `better-drizzle` is a small Bun/TypeScript workspace focused on a single core package, `packages/core`, plus a benchmark suite used to measure API-parity performance and memory overhead against raw Drizzle ORM.
 - **Workspace layout**:
   - `packages/core`: the published library
+  - `packages/rules`: official runtime rules/guardrails plugin
+  - `packages/eslint`: official ESLint plugin for static Better Drizzle guardrails
   - `packages/soft-delete`: official soft delete plugin
   - `packages/timestamps`: official timestamps plugin
+  - `packages/zod`: official Zod schema generation and validation plugin
   - `benchmark`: Bun + SQLite benchmark suite
   - `examples`: Markdown-only example catalog and usage guides
   - `apps/web`: Next.js + Fumadocs documentation/marketing site
@@ -82,6 +85,7 @@
   - `count`
   - `exists`
   - `paginate`
+  - `cursor`
   - `$withState`
   - `$withoutPlugins`
 - **Create conflict handling**:
@@ -92,6 +96,41 @@
   - explicit column arrays map to schema column names; targeted duplicate-skip is intentionally dialect-sensitive
 - **Client-level lookup**:
   - `repository(name)` resolves by schema key or db table name
+  - `extends(objectOrFactory)` adds client-level helpers/properties and reapplies them to future `$withContext()` clones and transaction clients
+  - callback form is the safer default when an extension method needs to reference the bound client instance
+  - extensions must not override built-in or plugin-provided client keys; conflicts fail fast
+- **Pagination split**:
+  - `paginate()` is offset-only and returns `{ data, pagination: { type: "offset", page, perPage, total, pageCount, hasNext, hasPrevious } }`
+  - `cursor()` is the cursor-based API and returns `{ data, pagination: { type: "cursor", hasNext, hasPrevious, nextCursor, previousCursor } }`
+  - cursor pagination accepts `before` or `after`, never both, and returns raw cursor objects by default
+  - `count()` and `exists()` also honor `cursor` filters when provided, so helper queries stay aligned with cursor pagination semantics
+- **Read query plans**:
+  - read helpers (`findMany`, `findFirst`, `findOne`, `findUnique`, `count`, `exists`, `paginate`, `cursor`) now return explainable thenables with `.explain(options?)`
+  - `.explain()` is lazy and does not execute the normal read path or query hooks unless the result is separately awaited
+  - plugin transforms still affect `.explain()`, but query hooks do not
+  - explain output is cross-dialect and structured as `{ driver, operation, statements }`; unsupported explain flags are reported under `ignoredOptions`
+  - PostgreSQL maps `analyze`, `verbose`, `costs`, `timing`, and `summary`; SQLite uses `EXPLAIN QUERY PLAN`; MySQL uses the best available `EXPLAIN` form and ignores unsupported flags
+- **Relational reads**:
+  - nested `select` and `include` use Better Drizzle's own batched loader rather than Drizzle's `db.query.*` path
+  - the loader executes one root query plus one query per requested relation node, including inferred many-to-many nodes
+  - nested `where`, `orderBy`, `cursor`, `take`, `skip`, `select`, and `include` are supported; per-parent pagination uses `row_number()` window queries
+  - internal linking columns are selected as needed and removed from the public payload
+  - `select` and `include` are mutually exclusive at every level
+  - `.explain()` reports non-root relation stages under `deferredRelations`
+  - `include._count.select` projects relation totals as correlated subqueries in the SQL for the current query level; selectors accept `true` or `{ where }`, support one/many/many-to-many relations, and do not add count round-trips
+- **Relational writes**:
+  - `create` supports relation `connect`; `update` supports `connect`, `disconnect`, and exclusive `set`; `upsert` follows the corresponding create/update branch rules
+  - relation selectors must be non-empty and match exactly one row
+  - relation writes run in an implicit transaction when no transaction is already active and preserve delegate plugin state
+  - simple two-FK junction tables are inferred as direct many-to-many relations; ambiguous paths fail and can be configured with `options.relations.manyToMany`
+  - batch mutation APIs intentionally remain scalar-only
+- **Row locks**:
+  - read helpers built on `QueryArgs` (`findMany`, `findFirst`, `findOne`, `findUnique`, `paginate`, `cursor`) accept `lock`
+  - `count`, `exists`, and write operations do not accept `lock`
+  - PostgreSQL and MySQL are supported; SQLite should fail fast with a lock-specific error
+  - `skipLocked` and `noWait` are mutually exclusive
+  - `locks.transactionsOnly` can enforce that locked reads only run inside transactions
+  - Drizzle's relational `db.query.*` path does not expose row-lock configuration, so v1 lock support intentionally rejects general relation loading (`include` / relation `select`) instead of silently dropping the lock
 - **Scoped metadata**:
   - `db.$withContext(meta)` returns a cloned client that merges default `meta` into every repository operation, raw SQL call, and transaction lifecycle payload
   - final operation metadata is a shallow merge: scoped context first, per-call `meta` second
@@ -99,6 +138,7 @@
 - **Transactions**:
   - `db.transaction(callback, options?)` is the official API
   - transaction clients are full Better Drizzle clients with `transaction`, `rollback`, `afterCommit`, and `afterRollback`
+  - root clients also expose `afterCommit` and `afterRollback`; calling them outside an active transaction throws the explicit Better Drizzle error instead of failing with a missing method
   - transaction context lives on the runtime context; operation/plugin hooks can read `isInTransaction`, `transaction`, `transactionContext`, and merged `meta`
   - nested transactions use savepoints; SQLite is handled with explicit `BEGIN`/`SAVEPOINT` SQL because Bun SQLite's native Drizzle transaction callback is synchronous
 - **Raw SQL**:
@@ -120,6 +160,8 @@
   - plugin hooks/transforms are the mutation layer
   - `upsertMany` is a create-oriented hook/transform kind, matching `upsert` rather than `updateMany`
   - `updateEach` is an update-oriented batch operation with its own plugin kind, but it still flows through `beforeUpdate` / `afterUpdate`
+  - `packages/rules` is intentionally runtime-only and hook-driven; it enforces only checks that can be inferred from current hook payloads and silently ignores unsupported rule types
+  - `packages/rules` accepts boolean rule settings as shorthand: `true` means `error`, `false` means `off`
 - **Batch updateEach API**:
   - `updateEach` is native-first and performance-sensitive
   - it accepts `by`, `data`, `update`, optional `where`, optional scalar `select`, and `onEmpty`
@@ -161,6 +203,7 @@
 
 - **Benchmark files**:
   - `benchmark/time.ts`: latency and throughput comparisons
+  - `benchmark/full.ts`: comprehensive read/write/relation/raw/transaction comparisons with mandatory deep result-parity validation before timing
   - `benchmark/memory.ts`: heap/rss deltas and overhead summaries
   - `benchmark/scenarios.ts`: benchmark scenarios for raw Drizzle and `better-drizzle`
   - `benchmark/setup.ts`: benchmark database/context setup
@@ -171,9 +214,18 @@
   - `manual drizzle reference`: lower-level manual queries that intentionally do less work and are not parity claims
 - **When changing performance-sensitive code**:
   - run `bun run bench`
+  - run `bun run bench:verify`
+  - run `bun run bench:full`
   - run `bun run bench:memory`
   - interpret regressions against the parity suite first
   - do not use the manual reference numbers as the main headline for wrapper overhead claims
+
+## Integration testing
+
+- Massive real-database coverage lives under `packages/core/tests/integration/`.
+- Every test creates a fresh SQLite `:memory:` database, applies real DDL and constraints, seeds real rows, and invokes the public `better(...)` API without database mocks or fake query functions.
+- The shared fixture seeds 300 users, 1,200 posts, 2,400 comments, 150 profiles, 15 groups, 900 memberships, and 1,000 batch rows per test.
+- Run the suite with `bun run test:integration`; it is also included in the root `bun run test` command.
 
 ## Tooling and commands
 
@@ -226,6 +278,35 @@
 - **Examples**: prefer real API examples that match the current exported API and benchmarked usage patterns.
 - **Examples catalog**: `examples/` is a Markdown-first reference library. Prefer adding focused topic pages under `basics`, `frameworks`, `plugins`, `performance`, and `cookbook` instead of growing one giant examples file.
 
+## Agent skills support
+
+- **Canonical skill pack**: the repository now ships a first-party agent skill at `skills/better-drizzle/`.
+- **Guardrails split**:
+  - `@better-drizzle/rules` is the runtime enforcement layer
+  - `@better-drizzle/eslint` mirrors the statically-checkable subset for direct Better Drizzle callsites in IDEs and ESLint
+- **Schema plugin**:
+  - `@better-drizzle/zod` generates per-table Zod schemas and exposes them as `db.<table>.$zod`
+  - the public `$zod` surface currently includes `create`, `update`, `upsert`, `select`, `where`, `orderBy`, `pagination`, and `query`
+  - runtime validation is hook-driven and opt-out per call via plugin-provided `validate?: boolean`
+  - schema-only extension fields are allowed during validation, but the plugin strips non-column keys before returning payloads to Drizzle
+  - package internals are intentionally split with a minimal `src/shared/` layout: `validation.ts` for hook parsing/flags, `schema-builder.ts` for Zod shape builders, and `registry.ts` for Drizzle schema traversal plus registry assembly
+- **Plugin typing**:
+  - core plugin typing now supports table-specific model extensions through an optional model-extension resolver generic on `definePlugin(...)`; use this when an extension type depends on the current table
+- **Multi-agent surfaces**:
+  - `AGENTS.md` remains the repo-wide source of truth for agent context
+  - `CLAUDE.md` and `GEMINI.md` should stay as short adapters that point agents to `AGENTS.md` and the canonical skill pack
+- **Security posture**:
+  - the skill pack is intentionally `zero-scripts / zero-network`
+  - do not add `scripts/`, binaries, remote fetch instructions, install commands, or secret-reading guidance to `skills/better-drizzle/`
+  - treat prompt injection, exfiltration, and permission-escalation resistance as first-class review criteria for agent-facing docs
+- **Skill references**:
+  - keep `skills/better-drizzle/SKILL.md` short and operational
+  - put detailed guidance under `skills/better-drizzle/references/`
+  - prefer local repo facts over generic ORM advice
+- **Public docs**:
+  - the docs site has a top-level AI section under `apps/web/content/docs/ai`
+  - if the skill's public behavior or installation guidance changes, update the AI docs page and the synced READMEs
+
 ## Web app notes
 
 - The docs site under `apps/web` uses `fumadocs-ui` layouts with custom header slots.
@@ -239,6 +320,8 @@
   - verify exports from `packages/core/src/index.ts`
   - update both READMEs if user-facing behavior changes
   - ensure examples still type-check conceptually against the current API
+  - if `packages/rules` changes, keep the root workspace scripts (`build`, `test`, `check`, `pack`) including it
+  - if `packages/zod` changes, keep the root workspace scripts (`build`, `test`, `check`, `pack`) including it
 - **For performance changes**:
   - inspect hot-path allocations and branches
   - rerun both benchmark suites

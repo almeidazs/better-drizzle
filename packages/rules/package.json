@@ -1,0 +1,63 @@
+{
+	"name": "@better-drizzle/rules",
+	"version": "0.1.1",
+	"description": "Rules plugin for better-drizzle.",
+	"license": "Apache-2.0",
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": {
+				"types": "./dist/index.d.ts",
+				"default": "./dist/index.js"
+			},
+			"require": {
+				"types": "./dist/index.d.cts",
+				"default": "./dist/index.cjs"
+			},
+			"default": "./dist/index.js"
+		}
+	},
+	"files": [
+		"LICENSE",
+		"dist",
+		"README.md"
+	],
+	"keywords": [
+		"better-drizzle",
+		"drizzle",
+		"drizzle-orm",
+		"plugin",
+		"rules"
+	],
+	"homepage": "https://better-drizzle.com/",
+	"bugs": {
+		"url": "https://github.com/almeidazs/better-drizzle/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/almeidazs/better-drizzle.git",
+		"directory": "packages/rules"
+	},
+	"publishConfig": {
+		"access": "public",
+		"registry": "https://registry.npmjs.org/"
+	},
+	"scripts": {
+		"build": "bun run ../../scripts/build.ts rules"
+	},
+	"sideEffects": false,
+	"type": "module",
+	"engines": {
+		"node": ">=18"
+	},
+	"peerDependencies": {
+		"better-drizzle": "^0.1.1",
+		"drizzle-orm": "^0.30.0",
+		"typescript": "^5"
+	},
+	"devDependencies": {
+		"better-drizzle": "workspace:*"
+	}
+}
