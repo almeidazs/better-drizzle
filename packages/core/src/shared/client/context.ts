@@ -5,6 +5,7 @@ import {
 	isTable,
 	normalizeRelation,
 } from 'drizzle-orm';
+import { Many, One } from 'drizzle-orm/relations';
 
 import type {
 	AnyPlugin,
@@ -82,6 +83,150 @@ const createRawPluginBucket = (): PluginRuntimeRawBucket => ({
 	errorHooks: [],
 });
 
+const isSimpleJunction = (
+	runtime: TableRuntime,
+	leftFields: readonly { name: string }[],
+	rightFields: readonly { name: string }[],
+) => {
+	const foreignKeys = new Set([...leftFields, ...rightFields]);
+
+	for (const column of Object.values(runtime.columns))
+		if (!foreignKeys.has(column) && column.notNull && !column.hasDefault)
+			return false;
+
+	return true;
+};
+
+const addManyToManyRelation = (
+	tables: Record<string, TableRuntime>,
+	throughName: string,
+	leftRelationName: string,
+	rightRelationName: string,
+	leftName?: string,
+	rightName?: string,
+) => {
+	const through = tables[throughName];
+	const left = through?.relations[leftRelationName];
+	const right = through?.relations[rightRelationName];
+
+	if (
+		!through ||
+		!left ||
+		!right ||
+		left.kind !== 'one' ||
+		right.kind !== 'one' ||
+		!left.sourceOwnsForeignKey ||
+		!right.sourceOwnsForeignKey ||
+		left.tableName === right.tableName ||
+		!isSimpleJunction(through, left.fields, right.fields)
+	)
+		return false;
+
+	const leftRuntime = tables[left.tableName];
+	const rightRuntime = tables[right.tableName];
+	if (!leftRuntime || !rightRuntime) return false;
+
+	const register = (
+		source: TableRuntime,
+		target: TableRuntime,
+		name: string,
+		sourceRelation: typeof left,
+		targetRelation: typeof right,
+	) => {
+		const current = source.relations[name];
+		if (current && current.kind !== 'manyToMany') return;
+		if (current?.through && current.through.tableName !== throughName) {
+			const paths = source.ambiguousRelations[name] ?? [
+				current.through.tableName,
+			];
+			if (!paths.includes(throughName)) paths.push(throughName);
+			source.ambiguousRelations[name] = paths;
+			delete source.relations[name];
+			source.relationNames.delete(name);
+			return;
+		}
+
+		source.relations[name] = {
+			fields: sourceRelation.references,
+			kind: 'manyToMany',
+			references: targetRelation.references,
+			sourceOwnsForeignKey: false,
+			tableName: target.tableConfig.tsName,
+			through: {
+				sourceFields: sourceRelation.fields,
+				tableName: throughName,
+				targetFields: targetRelation.fields,
+			},
+		};
+		source.relationNames.add(name);
+		delete source.ambiguousRelations[name];
+	};
+
+	register(
+		leftRuntime,
+		rightRuntime,
+		leftName ?? rightRuntime.tableConfig.tsName,
+		left,
+		right,
+	);
+	register(
+		rightRuntime,
+		leftRuntime,
+		rightName ?? leftRuntime.tableConfig.tsName,
+		right,
+		left,
+	);
+	return true;
+};
+
+const buildManyToManyRelations = (
+	tables: Record<string, TableRuntime>,
+	options: {
+		relations?: {
+			inferManyToMany?: boolean;
+			manyToMany?: readonly {
+				through: string;
+				left: { relation: string; name?: string };
+				right: { relation: string; name?: string };
+			}[];
+		};
+	},
+) => {
+	if (options.relations?.inferManyToMany !== false)
+		for (const throughName in tables) {
+			const through = tables[throughName];
+			if (!through) continue;
+			const endpoints = Object.entries(through.relations).filter(
+				([, relation]) =>
+					relation.kind === 'one' && relation.sourceOwnsForeignKey,
+			);
+			if (endpoints.length !== 2) continue;
+
+			const left = endpoints[0];
+			const right = endpoints[1];
+			if (left && right)
+				addManyToManyRelation(tables, throughName, left[0], right[0]);
+		}
+
+	for (const relation of options.relations?.manyToMany ?? []) {
+		const added = addManyToManyRelation(
+			tables,
+			relation.through,
+			relation.left.relation,
+			relation.right.relation,
+			relation.left.name,
+			relation.right.name,
+		);
+		if (!added)
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.OperationError,
+				details: relation,
+				message: `Invalid many-to-many relation through "${relation.through}".`,
+				operation: 'bootstrap',
+			});
+	}
+};
+
 /**
  * Builds the internal runtime context used by every delegate and operation.
  * Extracts relational config, precomputes table metadata, and registers
@@ -133,8 +278,15 @@ export const createRuntimeContext = <
 
 			relations[relationName] = {
 				fields: normalized.fields,
+				kind: relation instanceof Many ? 'many' : 'one',
 				references: normalized.references,
 				relation,
+				sourceOwnsForeignKey:
+					relation instanceof One &&
+					Boolean(
+						(relation as { config?: { fields?: unknown } }).config
+							?.fields,
+					),
 				tableName:
 					relational.tableNamesMap[
 						`public.${relation.referencedTableName}`
@@ -143,6 +295,7 @@ export const createRuntimeContext = <
 		}
 
 		tables[tableName] = {
+			ambiguousRelations: Object.create(null),
 			columns,
 			dbName: tableConfig.dbName,
 			hasColumn(column: string) {
@@ -168,6 +321,8 @@ export const createRuntimeContext = <
 		if (!tableRuntime) continue;
 		models[tableName] = tableRuntime.model;
 	}
+
+	buildManyToManyRelations(tables, options);
 
 	const hooks = options.hooks;
 	const plugins = options.plugins ?? [];
