@@ -23,6 +23,7 @@ import {
 	or,
 	sql,
 } from 'drizzle-orm';
+import { mapColumnsInSQLToAlias } from 'drizzle-orm/alias';
 import { Many, One } from 'drizzle-orm/relations';
 import type {
 	AnySchema,
@@ -69,6 +70,7 @@ const isScalarFilter = (value: unknown): value is Record<string, unknown> => {
 const compileSimpleWhere = (
 	runtime: TableRuntime,
 	where: Record<string, unknown>,
+	rootAlias?: string,
 ): SQL | undefined => {
 	const conditions: SQL[] = [];
 
@@ -79,7 +81,10 @@ const compileSimpleWhere = (
 		const column = runtime.columns[key];
 		if (!column || isScalarFilter(value) || isPlainObject(value)) return;
 
-		conditions.push(value === null ? isNull(column) : eq(column, value));
+		const field = rootAlias
+			? aliasedTableColumn(column, rootAlias)
+			: column;
+		conditions.push(value === null ? isNull(field) : eq(field, value));
 	}
 
 	return conditions.length ? and(...conditions) : undefined;
@@ -355,10 +360,19 @@ export const compileWhereInput = <Schema extends AnySchema, Meta>(
 	where?: CompilableWhere,
 ): SQL | undefined => {
 	if (!where) return;
-	if (isSQLWrapper(where)) return where.getSQL();
+	if (isSQLWrapper(where)) {
+		const query = where.getSQL();
+		return context.rootAlias
+			? mapColumnsInSQLToAlias(query, context.rootAlias)
+			: query;
+	}
 	if (!isPlainObject(where)) return;
 	if (!('AND' in where || 'OR' in where || 'NOT' in where)) {
-		const simple = compileSimpleWhere(context.runtime, where);
+		const simple = compileSimpleWhere(
+			context.runtime,
+			where,
+			context.rootAlias,
+		);
 
 		if (simple) return simple;
 	}
@@ -423,7 +437,12 @@ export const compileWhereInput = <Schema extends AnySchema, Meta>(
 		const column = context.runtime.columns[key];
 		if (!column) continue;
 
-		const scalarFilter = compileScalarFilter(column, value);
+		const scalarFilter = compileScalarFilter(
+			context.rootAlias
+				? aliasedTableColumn(column, context.rootAlias)
+				: column,
+			value,
+		);
 		if (scalarFilter) conditions.push(scalarFilter);
 	}
 

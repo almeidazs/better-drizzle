@@ -10,6 +10,7 @@ import {
 	betterOffsetPaginate,
 	betterPointLookup,
 	betterReadOnlyTransaction,
+	betterRelationCounts,
 	betterRelationGraph,
 	betterSimpleTransaction,
 	betterUpdateAndLoad,
@@ -23,6 +24,7 @@ import {
 	rawOffsetPaginate,
 	rawPointLookup,
 	rawReadOnlyTransaction,
+	rawRelationCounts,
 	rawRelationGraph,
 	rawSimpleTransaction,
 	rawUpdateAndLoad,
@@ -185,6 +187,14 @@ const printSuite = (title: string, raw: SuiteResult, better: SuiteResult) => {
 
 const rawSingleRead = await runReadSuite('raw point', rawPointLookup);
 const betterSingleRead = await runReadSuite('better point', betterPointLookup);
+const rawRelationCountRead = await runReadSuite(
+	'raw relation counts',
+	rawRelationCounts,
+);
+const betterRelationCountRead = await runReadSuite(
+	'better relation counts',
+	betterRelationCounts,
+);
 
 const rawMixedReads = await runMixedReadSuite('raw mixed', {
 	activeCount: rawActiveCount,
@@ -230,6 +240,11 @@ const betterTransactions = await runTransactionSuite('better transactions', {
 
 console.log('Benchmark memory and overhead summary');
 printSuite('Single Read Batch', rawSingleRead, betterSingleRead);
+printSuite(
+	'Relation Count Batch',
+	rawRelationCountRead,
+	betterRelationCountRead,
+);
 printSuite('Mixed Read Batch', rawMixedReads, betterMixedReads);
 printSuite('Write Batch', rawWrites, betterWrites);
 printSuite('Transaction Batch', rawTransactions, betterTransactions);

@@ -42,6 +42,26 @@ const users = await client.users.findMany({
 
 `select` and `include` are mutually exclusive at the same query level. Linking columns needed by the loader are selected internally and removed from the returned payload unless you requested them.
 
+## Relation counts
+
+Use `_count` inside `include` to return counts without loading the related rows. A selected relation can be `true` or a `{ where }` filter. The result is available under `_count`; to-one relations return `0` or `1`.
+
+```ts
+const users = await client.users.findMany({
+	include: {
+		_count: {
+			select: {
+				posts: { where: { published: true } },
+				profile: true,
+			},
+		},
+	},
+});
+// { ..., _count: { posts: 3, profile: 1 } }
+```
+
+Counts are projected as correlated subqueries in the SQL that materializes that query level. They do not add a count query per parent row.
+
 ## Many-to-many relations
 
 A junction table with exactly two required foreign-key relations and no additional required columns is inferred automatically. The virtual relation uses the target schema key:

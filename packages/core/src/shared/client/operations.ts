@@ -40,6 +40,7 @@ import {
 import { getPrimaryKeyWhere, getTableRuntime, isSimpleRecord } from './context';
 import {
 	applyRelationWrites,
+	getRelationCountSelection,
 	hasRelationWrites,
 	hydrateRelations,
 	prepareRelationalRead,
@@ -581,19 +582,36 @@ const hasRelationSelection = (
 const getDirectSelection = (
 	runtime: TableRuntime,
 	select?: Record<string, unknown>,
+	context?: RuntimeContext<AnySchema, unknown>,
+	include?: unknown,
 ) => {
-	if (!select) return;
+	const counts = context
+		? getRelationCountSelection(context, runtime, { include })
+		: undefined;
+	if (!select && !counts) return;
 
 	const selection = Object.create(null) as Record<string, unknown>;
 	let hasSelection = false;
+	if (!select)
+		for (const key in runtime.columns) {
+			selection[key] = runtime.columns[key];
+			hasSelection = true;
+		}
 
-	for (const key in select) {
-		if (select[key] !== true || runtime.relationNames.has(key)) continue;
+	if (select)
+		for (const key in select) {
+			if (select[key] !== true || runtime.relationNames.has(key))
+				continue;
 
-		const column = runtime.columns[key];
-		if (!column) continue;
+			const column = runtime.columns[key];
+			if (!column) continue;
 
-		selection[key] = column;
+			selection[key] = column;
+			hasSelection = true;
+		}
+
+	if (counts) {
+		selection._count = counts;
 		hasSelection = true;
 	}
 
@@ -604,7 +622,10 @@ const canUseDirectRead = (
 	runtime: TableRuntime,
 	args?: { include?: unknown; select?: unknown },
 ) =>
-	!args?.include &&
+	(!args?.include ||
+		Object.keys(args.include as Record<string, unknown>).every(
+			(key) => key === '_count',
+		)) &&
 	!hasRelationSelection(
 		runtime,
 		args?.select as Record<string, unknown> | undefined,
@@ -672,6 +693,8 @@ const buildReadState = <Schema extends AnySchema, Meta>(
 		select: getDirectSelection(
 			runtime,
 			args?.select as Record<string, unknown> | undefined,
+			context as RuntimeContext<AnySchema, unknown>,
+			args?.include,
 		),
 		where: and(where, cursorWhere),
 	};

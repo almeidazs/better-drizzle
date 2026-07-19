@@ -28,13 +28,13 @@ Measures per-operation latency in microseconds for each API method. Benchmark co
 
 ### Full parity benchmark
 
-Validates every scenario with `deepStrictEqual` before timing it, then compares reads, writes, relations, raw SQL, and transactions. Both sides execute equivalent database work and return the same effective result shape.
+Validates every scenario with `deepStrictEqual` before timing it, then compares reads, writes, relations, relation-count projections, raw SQL, and transactions. Both sides execute equivalent database work and return the same effective result shape.
 
 Mutation scenarios use deterministic data pools or restore state between iterations. Relational comparisons use batched raw Drizzle queries instead of N+1 queries. When Drizzle's relational query builder cannot execute a supported nested shape consistently, the raw side performs the equivalent root, child, and grandchild queries and assembles the same nested payload.
 
 ### Memory benchmark
 
-Measures heap and RSS overhead across batches of operations. Uses 2000 single reads, 600 mixed reads (with relation loading), 1200 writes (create + delete roundtrips), and 800 transactions (simple, multi-operation, and read-only).
+Measures heap and RSS overhead across batches of operations. It includes 2000 relation-count reads over 100 real seeded users, each with filtered post and comment counts, alongside single/mixed reads, writes, and transactions.
 
 ## Comparison groups
 

@@ -142,6 +142,26 @@ type SelectRelationArg<
 	RelationName extends RelationKeysFor<Schema, Name>,
 > = true | QueryArgs<Schema, RelatedNameFor<Schema, Name, RelationName>>;
 
+type CountRelationArg<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	RelationName extends RelationKeysFor<Schema, Name>,
+> =
+	| true
+	| {
+			where?: WhereArg<
+				Schema,
+				RelatedNameFor<Schema, Name, RelationName>
+			>;
+	  };
+
+type CountSelectInput<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = {
+	[K in RelationKeysFor<Schema, Name>]?: CountRelationArg<Schema, Name, K>;
+};
+
 /**
  * Select projection for a query. Keys represent scalar columns (set to `true`
  * to include) or relations (set to `true` or a nested {@link QueryArgs}).
@@ -203,6 +223,8 @@ export type IncludeInput<
 	Name extends TableKey<Schema>,
 > = {
 	[K in RelationKeysFor<Schema, Name>]?: SelectRelationArg<Schema, Name, K>;
+} & {
+	_count?: { select: CountSelectInput<Schema, Name> };
 };
 
 type OrderByField<
@@ -564,6 +586,22 @@ type IncludedRelationPayload<
 		: RelationPayloadFromArg<Schema, Name, K, Include[K]> | null;
 };
 
+type IncludedCountPayload<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Include extends IncludeInput<Schema, Name>,
+> = Include extends { _count: { select: infer Count } }
+	? {
+			_count: {
+				[K in RelationKeysFor<Schema, Name> as K extends keyof Count
+					? Count[K] extends CountRelationArg<Schema, Name, K>
+						? K
+						: never
+					: never]: number;
+			};
+		}
+	: object;
+
 type DefaultPayload<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
@@ -586,5 +624,6 @@ export type PayloadForArgs<
 	? SelectedScalarPayload<Schema, Name, Select> &
 			SelectedRelationPayload<Schema, Name, Select>
 	: Args extends { include: infer Include extends IncludeInput<Schema, Name> }
-		? IncludedRelationPayload<Schema, Name, Include>
+		? IncludedRelationPayload<Schema, Name, Include> &
+				IncludedCountPayload<Schema, Name, Include>
 		: DefaultPayload<Schema, Name>;

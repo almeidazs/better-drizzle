@@ -13,6 +13,7 @@ import {
 	betterOffsetPaginate,
 	betterPointLookup,
 	betterReadOnlyTransaction,
+	betterRelationCounts,
 	betterRelationGraph,
 	betterSimpleTransaction,
 	rawActiveCount,
@@ -24,6 +25,7 @@ import {
 	rawOffsetPaginate,
 	rawPointLookup,
 	rawReadOnlyTransaction,
+	rawRelationCounts,
 	rawRelationGraph,
 	rawSimpleTransaction,
 } from './scenarios';
@@ -348,6 +350,11 @@ const readPairs = (raw: BenchmarkContext, better: BenchmarkContext) => {
 			'relation graph',
 			() => rawRelationGraph(raw),
 			() => betterRelationGraph(better),
+		],
+		[
+			'relation counts',
+			() => rawRelationCounts(raw),
+			() => betterRelationCounts(better),
 		],
 		[
 			'nested relation page',

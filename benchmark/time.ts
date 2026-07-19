@@ -12,6 +12,7 @@ import {
 	betterOffsetPaginate,
 	betterPointLookup,
 	betterReadOnlyTransaction,
+	betterRelationCounts,
 	betterRelationGraph,
 	betterSimpleTransaction,
 	betterUpdateAndLoad,
@@ -27,6 +28,7 @@ import {
 	rawOffsetPaginate,
 	rawPointLookup,
 	rawReadOnlyTransaction,
+	rawRelationCounts,
 	rawRelationGraph,
 	rawSimpleTransaction,
 	rawUpdateAndLoad,
@@ -57,6 +59,13 @@ group('api parity: reads', () => {
 		);
 		bench('better: relation graph', async () =>
 			do_not_optimize(await betterRelationGraph(betterContext)),
+		);
+
+		bench('drizzle: relation counts', async () =>
+			do_not_optimize(await rawRelationCounts(rawContext)),
+		);
+		bench('better: relation counts', async () =>
+			do_not_optimize(await betterRelationCounts(betterContext)),
 		);
 
 		bench('drizzle: active count', async () =>

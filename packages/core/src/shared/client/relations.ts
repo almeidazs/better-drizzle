@@ -1,5 +1,7 @@
 import {
 	type AnyColumn,
+	aliasedTable,
+	aliasedTableColumn,
 	and,
 	asc,
 	eq,
@@ -7,6 +9,7 @@ import {
 	inArray,
 	lte,
 	or,
+	type SQL,
 	type SQLWrapper,
 	sql,
 } from 'drizzle-orm';
@@ -29,6 +32,7 @@ import { getPrimaryKeyWhere, getTableRuntime, isSimpleRecord } from './context';
 
 type RelationArgs = QueryArgs<AnySchema, never, unknown>;
 type RelationState = TableRuntime['relations'][string];
+type CountSelection = Record<string, true | { where?: unknown }>;
 
 const columnKey = (runtime: TableRuntime, column: AnyColumn) => {
 	for (const key in runtime.columns)
@@ -84,6 +88,59 @@ const primaryKeyColumns = (runtime: TableRuntime) => {
 	return columns;
 };
 
+const getCountSelection = (
+	runtime: TableRuntime,
+	args: { include?: unknown } | undefined,
+) => {
+	const include = args?.include as Record<string, unknown> | undefined;
+	if (!include || !('_count' in include)) return;
+	const count = include._count;
+	if (!isSimpleRecord(count) || !isSimpleRecord(count.select))
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			message: '_count must contain a non-empty select object.',
+			operation: 'relation',
+			table: runtime.dbName,
+		});
+
+	const select = count.select as CountSelection;
+	let hasSelection = false;
+	for (const relationName in select) {
+		hasSelection = true;
+		if (!runtime.relationNames.has(relationName))
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.OperationError,
+				details: { relation: relationName },
+				message: `Unknown relation "${relationName}" in _count on "${runtime.dbName}".`,
+				operation: 'relation',
+				table: runtime.dbName,
+			});
+		const value = select[relationName];
+		if (value === true) continue;
+		if (
+			!isSimpleRecord(value) ||
+			Object.keys(value).some((key) => key !== 'where')
+		)
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.OperationError,
+				details: { relation: relationName },
+				message: `_count relation "${relationName}" must be true or contain only where.`,
+				operation: 'relation',
+				table: runtime.dbName,
+			});
+	}
+
+	if (!hasSelection)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			message: '_count.select must include at least one relation.',
+			operation: 'relation',
+			table: runtime.dbName,
+		});
+
+	return select;
+};
+
 const getRelationSource = (
 	runtime: TableRuntime,
 	args: { include?: unknown; select?: unknown } | undefined,
@@ -96,6 +153,7 @@ const getRelationSource = (
 			operation: 'relation',
 			table: runtime.dbName,
 		});
+	getCountSelection(runtime, args);
 
 	const source = (args?.select ?? args?.include) as
 		| Record<string, unknown>
@@ -105,6 +163,7 @@ const getRelationSource = (
 
 	let hasRelations = false;
 	for (const key in source) {
+		if (include && key === '_count') continue;
 		if (runtime.ambiguousRelations[key])
 			throw new BetterDrizzleError({
 				code: BetterDrizzleErrorCode.OperationError,
@@ -153,13 +212,16 @@ export const prepareRelationalRead = <Schema extends AnySchema, Meta>(
 	args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
+	const counts = getCountSelection(runtime, args);
 	const source = getRelationSource(runtime, args);
 	if (!source) return;
 
 	const select = args?.select as Record<string, unknown> | undefined;
 	if (!select)
 		return {
-			args: { ...args, include: undefined },
+			args: counts
+				? { ...args, include: { _count: { select: counts } } }
+				: { ...args, include: undefined },
 			source,
 		};
 
@@ -227,14 +289,108 @@ const buildLinkPredicate = (
 	return conditions.length ? or(...conditions) : undefined;
 };
 
-const getTargetSelection = (
+const buildRelationCount = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	parentRuntime: TableRuntime,
+	relationName: string,
+	value: true | { where?: unknown },
+) => {
+	const relation = parentRuntime.relations[relationName];
+	if (!relation) return;
+	const targetRuntime = getTableRuntime(context, relation.tableName);
+	const targetAlias = `__better_count_${relationName}`;
+	const targetTable = aliasedTable(targetRuntime.table, targetAlias);
+	const nestedWhere = compileWhereInput(
+		{
+			...context,
+			runtime: targetRuntime,
+			tableName: relation.tableName,
+			rootAlias: targetAlias,
+		} as WhereCompilerContext<Schema, Meta>,
+		value === true ? undefined : (value.where as never),
+	);
+
+	if (relation.kind !== 'manyToMany') {
+		const links: SQL[] = [];
+		for (let index = 0; index < relation.references.length; index += 1) {
+			const reference = relation.references[index];
+			const field = relation.fields[index];
+			if (reference && field)
+				links.push(
+					eq(aliasedTableColumn(reference, targetAlias), field),
+				);
+		}
+		const query = context.db
+			.select({ value: sql<number>`count(*)` })
+			.from(targetTable)
+			.where(and(...links, nestedWhere));
+		return sql<number>`(${query})`.mapWith(Number).as(relationName);
+	}
+
+	const through = relation.through;
+	if (!through) return;
+	const throughRuntime = getTableRuntime(context, through.tableName);
+	const throughAlias = `__better_count_${relationName}_through`;
+	const throughTable = aliasedTable(throughRuntime.table, throughAlias);
+	const joins: SQL[] = [];
+	const links: SQL[] = [];
+	for (let index = 0; index < relation.references.length; index += 1) {
+		const targetField = relation.references[index];
+		const throughTarget = through.targetFields[index];
+		if (targetField && throughTarget)
+			joins.push(
+				eq(
+					aliasedTableColumn(throughTarget, throughAlias),
+					aliasedTableColumn(targetField, targetAlias),
+				),
+			);
+		const sourceField = relation.fields[index];
+		const throughSource = through.sourceFields[index];
+		if (sourceField && throughSource)
+			links.push(
+				eq(
+					aliasedTableColumn(throughSource, throughAlias),
+					sourceField,
+				),
+			);
+	}
+	const query = context.db
+		.select({ value: sql<number>`count(*)` })
+		.from(throughTable)
+		.innerJoin(targetTable, and(...joins))
+		.where(and(...links, nestedWhere));
+	return sql<number>`(${query})`.mapWith(Number).as(relationName);
+};
+
+export const getRelationCountSelection = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	runtime: TableRuntime,
+	args: { include?: unknown } | undefined,
+) => {
+	const counts = getCountSelection(runtime, args);
+	if (!counts) return;
+	const selection = Object.create(null) as Record<string, SQLWrapper>;
+	for (const relationName in counts) {
+		const count = buildRelationCount(
+			context,
+			runtime,
+			relationName,
+			counts[relationName] as true | { where?: unknown },
+		);
+		if (count) selection[relationName] = count;
+	}
+	return selection;
+};
+
+const getTargetSelection = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
 	runtime: TableRuntime,
 	relation: RelationState,
 	args: Record<string, unknown> | undefined,
 ) => {
 	const select = args?.select as Record<string, unknown> | undefined;
 	const include = args?.include as Record<string, unknown> | undefined;
-	const selection = Object.create(null) as Record<string, AnyColumn>;
+	const selection = Object.create(null) as Record<string, unknown>;
 	const visible = new Set<string>();
 
 	if (!select) {
@@ -263,6 +419,11 @@ const getTargetSelection = (
 			for (const field of nestedRelation.fields)
 				selection[columnKey(runtime, field)] = field;
 		}
+	const counts = getRelationCountSelection(context, runtime, args);
+	if (counts) {
+		selection._count = counts;
+		visible.add('_count');
+	}
 	return { selection, visible };
 };
 
@@ -344,7 +505,7 @@ const loadRelation = async <Schema extends AnySchema, Meta>(
 			table: targetRuntime.dbName,
 		});
 
-	const target = getTargetSelection(targetRuntime, relation, args);
+	const target = getTargetSelection(context, targetRuntime, relation, args);
 	const whereContext = {
 		...context,
 		runtime: targetRuntime,

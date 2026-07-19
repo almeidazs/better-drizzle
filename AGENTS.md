@@ -117,6 +117,7 @@
   - internal linking columns are selected as needed and removed from the public payload
   - `select` and `include` are mutually exclusive at every level
   - `.explain()` reports non-root relation stages under `deferredRelations`
+  - `include._count.select` projects relation totals as correlated subqueries in the SQL for the current query level; selectors accept `true` or `{ where }`, support one/many/many-to-many relations, and do not add count round-trips
 - **Relational writes**:
   - `create` supports relation `connect`; `update` supports `connect`, `disconnect`, and exclusive `set`; `upsert` follows the corresponding create/update branch rules
   - relation selectors must be non-empty and match exactly one row

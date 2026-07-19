@@ -1,8 +1,8 @@
-import { and, asc, count, desc, eq, gte, like } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, like, sql } from 'drizzle-orm';
 
 import { OrderType } from '../packages/core/src';
 
-import { benchWrites, posts, users } from './schema';
+import { benchWrites, comments, posts, users } from './schema';
 import type { BenchmarkContext } from './setup';
 
 // biome-ignore lint/suspicious/noExplicitAny: benchmark type erasure
@@ -98,6 +98,48 @@ export const betterRelationGraph = async (context: BenchmarkContext) =>
 			},
 		},
 		take: context.ids.relationLimit,
+	});
+
+export const rawRelationCounts = async (context: BenchmarkContext) =>
+	context.raw
+		.select({
+			_count: {
+				comments: sql<number>`(
+					select count(*) from ${comments}
+					where ${comments.authorId} = ${sql.identifier('users')}.${sql.identifier('id')}
+				)`
+					.mapWith(Number)
+					.as('comments'),
+				posts: sql<number>`(
+					select count(*) from ${posts}
+					where ${posts.userId} = ${sql.identifier('users')}.${sql.identifier('id')}
+					and ${posts.published} = ${true}
+				)`
+					.mapWith(Number)
+					.as('posts'),
+			},
+			active: users.active,
+			age: users.age,
+			email: users.email,
+			id: users.id,
+			name: users.name,
+		})
+		.from(users)
+		.orderBy(asc(users.id))
+		.limit(100);
+
+export const betterRelationCounts = async (context: BenchmarkContext) =>
+	betterClient(context).users.findMany({
+		include: {
+			_count: {
+				select: {
+					comments: true,
+					posts: { where: { published: true } },
+				},
+			},
+		},
+		orderBy: { id: 'asc' },
+		take: 100,
 	});
 
 export const rawActiveCount = async (context: BenchmarkContext) =>

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { and, asc, count, eq, gte } from 'drizzle-orm';
+import { and, asc, count, eq, gte, sql } from 'drizzle-orm';
 
 import {
 	COMMENTS_PER_POST,
@@ -184,6 +184,110 @@ describe('massive sqlite reads', () => {
 		expect(user?.profile?.bio).toBe('Profile 1');
 		expect(withoutProfile?.profile).toBeNull();
 		expect(post?.author.id).toBe(1);
+	});
+
+	test('projects relation counts in the root query', async () => {
+		const database = ctx.sqlite as unknown as {
+			prepare: (query: string) => unknown;
+		};
+		const prepare = database.prepare.bind(database);
+		const statements: string[] = [];
+		database.prepare = (query) => {
+			statements.push(query);
+			return prepare(query);
+		};
+
+		try {
+			const user = await ctx.client.users.findFirst({
+				include: {
+					_count: {
+						select: {
+							groups: true,
+							posts: { where: { published: true } },
+							profile: true,
+						},
+					},
+				},
+				where: { id: 1 },
+			});
+
+			expect(user?._count).toEqual({ groups: 3, posts: 3, profile: 1 });
+			expect(statements).toHaveLength(1);
+			expect(statements[0]).toContain('count(*)');
+		} finally {
+			database.prepare = prepare;
+		}
+	});
+
+	test('projects filtered counts across the complete seeded dataset', async () => {
+		const users = await ctx.client.users.findMany({
+			include: {
+				_count: {
+					select: {
+						groups: true,
+						posts: { where: { published: true } },
+					},
+				},
+			},
+			orderBy: { id: 'asc' },
+		});
+
+		expect(users).toHaveLength(USER_COUNT);
+		for (const user of users) {
+			const firstPostId = (user.id - 1) * POSTS_PER_USER + 1;
+			let publishedPosts = 0;
+			for (let offset = 0; offset < POSTS_PER_USER; offset += 1)
+				if ((firstPostId + offset) % 3 !== 0) publishedPosts += 1;
+			expect(user._count.groups).toBe(3);
+			expect(user._count.posts).toBe(publishedPosts);
+		}
+	});
+
+	test('projects counts alongside nested relation loading', async () => {
+		const user = await ctx.client.users.findFirst({
+			include: {
+				_count: { select: { posts: true } },
+				posts: {
+					include: { _count: { select: { comments: true } } },
+					orderBy: { id: 'asc' },
+					take: 2,
+				},
+			},
+			where: { id: 1 },
+		});
+
+		expect(user?._count.posts).toBe(POSTS_PER_USER);
+		expect(user?.posts).toHaveLength(2);
+		for (const post of user?.posts ?? [])
+			expect(post._count.comments).toBe(COMMENTS_PER_POST);
+	});
+
+	test('aliases raw SQL relation count filters', async () => {
+		const user = await ctx.client.users.findFirst({
+			include: {
+				_count: {
+					select: {
+						posts: { where: sql`${posts.published} = ${true}` },
+					},
+				},
+			},
+			where: { id: 1 },
+		});
+
+		expect(user?._count.posts).toBe(3);
+	});
+
+	test('rejects invalid relation count selections', async () => {
+		await expect(
+			ctx.client.users.findMany({
+				include: { _count: { select: {} } },
+			} as never),
+		).rejects.toThrow('_count.select must include at least one relation');
+		await expect(
+			ctx.client.users.findMany({
+				include: { _count: { select: { missing: true } } },
+			} as never),
+		).rejects.toThrow('Unknown relation "missing" in _count');
 	});
 
 	test('hydrates a deep graph with per-parent filters and window pagination', async () => {

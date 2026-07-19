@@ -122,6 +122,11 @@ const posts = await client.posts.findMany({
 
 const users = await client.users.findMany({
 	include: {
+		_count: {
+			select: {
+				posts: { where: { published: true } },
+			},
+		},
 		posts: {
 			where: { published: true },
 			orderBy: { score: 'desc' },
@@ -130,6 +135,8 @@ const users = await client.users.findMany({
 	},
 });
 ```
+
+`_count` uses correlated SQL subqueries, so relation counts do not add a query per row or a separate count round-trip.
 
 <div align="center">
 

@@ -21,7 +21,7 @@ Accepted by `findMany`, `findFirst`, `findOne`, and `findUnique`:
 			type: 'SelectInput',
 		},
 		include: {
-			description: 'Keep all scalar columns and attach the listed relations.',
+			description: 'Keep all scalar columns, attach relations, and optionally project relation counts through `_count`.',
 			type: 'IncludeInput',
 		},
 		orderBy: {
@@ -101,6 +101,9 @@ Operators available inside `where`, by column type. A bare value means `equals`;
 
 // include — keeps all scalars, adds relations
 { include: { author: true } }
+
+// relation counts — available only in include
+{ include: { _count: { select: { comments: true } } } }
 ```
 
 A relation value can be `true` or a nested read-args object (with its own `where`, `select`, `orderBy`, `take`). See [selecting fields](/docs/querying/selecting-fields).
