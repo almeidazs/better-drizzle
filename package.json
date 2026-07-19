@@ -44,7 +44,8 @@
 		"commitlint": "^21.1.0",
 		"eslint": "^9.31.0",
 		"mitata": "^1.0.34",
-		"mysql2": "^3.23.0"
+		"mysql2": "^3.23.0",
+		"typescript": "^5.9.3"
 	},
 	"peerDependencies": {
 		"drizzle-orm": "^0.30.0",

@@ -97,6 +97,20 @@ const isSimpleJunction = (
 	return true;
 };
 
+const findRuntime = (tables: Record<string, TableRuntime>, name: string) => {
+	const runtime = tables[name];
+	if (runtime) return runtime;
+
+	for (const key in tables) {
+		const candidate = tables[key];
+		if (
+			candidate?.dbName === name ||
+			candidate?.tableConfig.tsName === name
+		)
+			return candidate;
+	}
+};
+
 const addManyToManyRelation = (
 	tables: Record<string, TableRuntime>,
 	throughName: string,
@@ -105,7 +119,7 @@ const addManyToManyRelation = (
 	leftName?: string,
 	rightName?: string,
 ) => {
-	const through = tables[throughName];
+	const through = findRuntime(tables, throughName);
 	const left = through?.relations[leftRelationName];
 	const right = through?.relations[rightRelationName];
 
@@ -122,8 +136,8 @@ const addManyToManyRelation = (
 	)
 		return false;
 
-	const leftRuntime = tables[left.tableName];
-	const rightRuntime = tables[right.tableName];
+	const leftRuntime = findRuntime(tables, left.tableName);
+	const rightRuntime = findRuntime(tables, right.tableName);
 	if (!leftRuntime || !rightRuntime) return false;
 
 	const register = (
@@ -403,7 +417,18 @@ export const getTableRuntime = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: string,
 ) => {
-	const runtime = context.tables[tableName];
+	let runtime = context.tables[tableName];
+	if (!runtime)
+		for (const key in context.tables) {
+			const candidate = context.tables[key];
+			if (
+				candidate?.dbName !== tableName &&
+				candidate?.tableConfig.tsName !== tableName
+			)
+				continue;
+			runtime = candidate;
+			break;
+		}
 
 	if (!runtime)
 		throw new BetterDrizzleError({

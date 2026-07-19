@@ -437,7 +437,7 @@ const buildQueryList = async <
 			const dataQuery = buildFindManyQuery(
 				context,
 				tableName,
-				built.query,
+				built.query as QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
 				'cursor',
 			);
 			const statements = [

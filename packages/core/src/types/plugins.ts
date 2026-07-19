@@ -35,6 +35,8 @@ import type {
 	TransactionOptions,
 } from './transaction';
 
+type MaybePromise<T> = T | Promise<T>;
+
 /**
  * Supported SQL dialects that plugins can target.
  * - `'pg'` — PostgreSQL
@@ -700,7 +702,7 @@ export type PluginHooks<
 			OperationArgs,
 			'create' | 'createMany' | 'upsert' | 'upsertMany'
 		>,
-	):
+	): MaybePromise<
 		| PluginBeforeHookContext<
 				Schema,
 				BetterTableKey<Schema>,
@@ -709,7 +711,8 @@ export type PluginHooks<
 				OperationArgs,
 				'create' | 'createMany' | 'upsert' | 'upsertMany'
 		  >['data']
-		| undefined;
+		| undefined
+	>;
 	beforeDelete?(
 		context: PluginBeforeHookContext<
 			Schema,
@@ -776,7 +779,7 @@ export type PluginHooks<
 			OperationArgs,
 			'update' | 'updateEach' | 'updateMany'
 		>,
-	):
+	): MaybePromise<
 		| PluginBeforeHookContext<
 				Schema,
 				BetterTableKey<Schema>,
@@ -785,7 +788,8 @@ export type PluginHooks<
 				OperationArgs,
 				'update' | 'updateEach' | 'updateMany'
 		  >['data']
-		| undefined;
+		| undefined
+	>;
 	onTransactionError?(
 		context: PluginTransactionErrorHookContext<
 			Schema,

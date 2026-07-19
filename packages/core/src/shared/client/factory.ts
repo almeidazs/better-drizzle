@@ -180,7 +180,6 @@ const isSqlWrapper = (value: unknown): value is RawSql =>
 
 const toSqlText = (query: SQL) => {
 	const built = query.toQuery({
-		casing: {} as never,
 		escapeName(name) {
 			return name;
 		},

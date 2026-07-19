@@ -1176,14 +1176,15 @@ export const rules = (options: RulesPluginOptions<string, string> = {}) =>
 	definePlugin({
 		description: 'Runtime rules plugin for better-drizzle operations.',
 		hooks: {
-			beforeCreate(context) {
-				return runRules(
+			async beforeCreate(context) {
+				await runRules(
 					options,
 					buildOperationContext(
 						context.kind,
 						context as unknown as HookOperationContext,
 					),
 				);
+				return undefined;
 			},
 			beforeDelete(context) {
 				return runRules(
@@ -1221,14 +1222,15 @@ export const rules = (options: RulesPluginOptions<string, string> = {}) =>
 					),
 				);
 			},
-			beforeUpdate(context) {
-				return runRules(
+			async beforeUpdate(context) {
+				await runRules(
 					options,
 					buildOperationContext(
 						context.kind,
 						context as unknown as HookOperationContext,
 					),
 				);
+				return undefined;
 			},
 		},
 		id: '@better-drizzle/rules',

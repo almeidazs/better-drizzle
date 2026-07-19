@@ -200,10 +200,12 @@ const applyFieldOverride = (
 const isGeneratedColumn = (column: AnyColumn) =>
 	('generated' in column &&
 		typeof column.generated === 'object' &&
-		column.generated?.type === 'always') ||
+		(column.generated as Record<string, unknown> | null)?.type ===
+			'always') ||
 	('generatedIdentity' in column &&
 		typeof column.generatedIdentity === 'object' &&
-		column.generatedIdentity?.type === 'always');
+		(column.generatedIdentity as Record<string, unknown> | null)?.type ===
+			'always');
 
 const getOptionality = (column: AnyColumn, mode: SchemaMode) => {
 	if (mode === 'select')

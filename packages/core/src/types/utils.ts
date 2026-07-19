@@ -128,7 +128,9 @@ export type TableFor<
 export type SelectModelFor<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
-> = InferSelectModel<TableFor<Schema, Name>>;
+> = [Name] extends [never]
+	? Record<string, unknown>
+	: InferSelectModel<TableFor<Schema, Name>>;
 /**
  * Infers the insert model for a specific table. This is the shape
  * accepted by create operations. Optional columns become optional here.
@@ -139,7 +141,9 @@ export type SelectModelFor<
 export type InsertModelFor<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
-> = InferInsertModel<TableFor<Schema, Name>>;
+> = [Name] extends [never]
+	? Record<string, unknown>
+	: InferInsertModel<TableFor<Schema, Name>>;
 /**
  * Union of all relation names defined on a specific table.
  *

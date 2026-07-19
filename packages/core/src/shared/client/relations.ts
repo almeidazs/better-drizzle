@@ -569,7 +569,8 @@ export const getDeferredRelationPlans = <Schema extends AnySchema, Meta>(
 				),
 				path,
 				sorted: Boolean(nested?.orderBy),
-				table: relation.tableName,
+				table: getTableRuntime(context, relation.tableName).tableConfig
+					.tsName,
 				through: relation.through?.tableName,
 			});
 			visit(getTableRuntime(context, relation.tableName), nested, path);

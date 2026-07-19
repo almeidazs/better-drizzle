@@ -138,7 +138,7 @@ const getTargetColumns = <Schema extends AnySchema, Meta>(
 
 	const columns = [];
 
-	for (const targetName of targets) {
+	for (const targetName of targets as readonly string[]) {
 		const column = runtime.columns[targetName];
 		if (column) {
 			columns.push(column);
@@ -2015,7 +2015,7 @@ const hasCursorPage = async <Schema extends AnySchema, Meta>(
 	const rows = await findManyRecords(
 		context,
 		tableName,
-		result.query,
+		result.query as QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
 		'cursor',
 	);
 	return rows.length > 0;
@@ -2066,43 +2066,47 @@ export const getCursorExplainProbes = async <Schema extends AnySchema, Meta>(
 		query: Promise<Record<string, unknown>[]>;
 	}> = [];
 
-	if (built.direction !== 'before' && args.after && previousToken)
+	if (built.direction !== 'before' && args.after && previousToken) {
+		const query = buildCursorPaginationQuery(
+			{
+				...args,
+				after: undefined,
+				before: previousToken,
+				limit: 1,
+			},
+			1,
+		).query as QueryArgs<Schema, BetterTableKey<Schema>, Meta>;
 		probes.push({
 			key: 'probe:hasPrevious',
 			query: buildFindManyQuery(
 				context,
 				tableName,
-				buildCursorPaginationQuery(
-					{
-						...args,
-						after: undefined,
-						before: previousToken,
-						limit: 1,
-					},
-					1,
-				).query,
+				query,
 				'cursor',
 			) as Promise<Record<string, unknown>[]>,
 		});
+	}
 
-	if (built.direction === 'before' && args.before && nextToken)
+	if (built.direction === 'before' && args.before && nextToken) {
+		const query = buildCursorPaginationQuery(
+			{
+				...args,
+				before: undefined,
+				after: nextToken,
+				limit: 1,
+			},
+			1,
+		).query as QueryArgs<Schema, BetterTableKey<Schema>, Meta>;
 		probes.push({
 			key: 'probe:hasNext',
 			query: buildFindManyQuery(
 				context,
 				tableName,
-				buildCursorPaginationQuery(
-					{
-						...args,
-						before: undefined,
-						after: nextToken,
-						limit: 1,
-					},
-					1,
-				).query,
+				query,
 				'cursor',
 			) as Promise<Record<string, unknown>[]>,
 		});
+	}
 
 	return probes;
 };
@@ -2132,7 +2136,7 @@ export const cursorRecords = async <Schema extends AnySchema, Meta>(
 	const rows = await findManyRecords(
 		context,
 		tableName,
-		built.query,
+		built.query as QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
 		'cursor',
 	);
 	const hasOverflow = rows.length > limit;

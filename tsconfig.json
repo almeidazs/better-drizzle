@@ -3,16 +3,15 @@
 		"target": "ES2022",
 		"module": "ES2022",
 		"moduleResolution": "bundler",
-		"baseUrl": ".",
 		"paths": {
-			"better-drizzle": ["packages/core/src/index.ts"],
-			"@better-drizzle/eslint": ["packages/eslint/src/index.ts"],
-			"@better-drizzle/rules": ["packages/rules/src/index.ts"],
+			"better-drizzle": ["./packages/core/src/index.ts"],
+			"@better-drizzle/eslint": ["./packages/eslint/src/index.ts"],
+			"@better-drizzle/rules": ["./packages/rules/src/index.ts"],
 			"@better-drizzle/soft-delete": [
-				"packages/soft-delete/src/index.ts"
+				"./packages/soft-delete/src/index.ts"
 			],
-			"@better-drizzle/zod": ["packages/zod/src/index.ts"],
-			"@better-drizzle/timestamps": ["packages/timestamps/src/index.ts"]
+			"@better-drizzle/zod": ["./packages/zod/src/index.ts"],
+			"@better-drizzle/timestamps": ["./packages/timestamps/src/index.ts"]
 		},
 		"resolveJsonModule": true,
 		"esModuleInterop": true,
