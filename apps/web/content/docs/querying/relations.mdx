@@ -6,6 +6,8 @@ icon: Workflow
 
 Relations are where better-drizzle saves the most repetition. Once your Drizzle relations are defined, you can load and filter by related rows with full type inference.
 
+Relation reads use a batch loader owned by better-drizzle: one root query plus one query per requested relation node. They do not issue one query per parent row.
+
 The examples below assume a `users → posts` schema with relations defined (see [getting started](/docs/getting-started)).
 
 ## Loading relations
@@ -19,6 +21,59 @@ const posts = await client.posts.findMany({
 	take: 10,
 });
 ```
+
+Every nested relation accepts its own `where`, `orderBy`, `take`, `skip`, `cursor`, `select`, and `include`. Pagination is applied per parent in SQL:
+
+```ts
+const users = await client.users.findMany({
+	include: {
+		posts: {
+			where: { published: true },
+			orderBy: { score: 'desc' },
+			take: 3,
+			select: {
+				title: true,
+				comments: { select: { body: true } },
+			},
+		},
+	},
+});
+```
+
+`select` and `include` are mutually exclusive at the same query level. Linking columns needed by the loader are selected internally and removed from the returned payload unless you requested them.
+
+## Many-to-many relations
+
+A junction table with exactly two required foreign-key relations and no additional required columns is inferred automatically. The virtual relation uses the target schema key:
+
+```ts
+const users = await client.users.findMany({
+	include: { groups: true },
+});
+```
+
+Disable inference or identify an explicit junction in `better()` when your schema has multiple possible paths:
+
+```ts
+const client = better(db, {
+	schema,
+	relations: {
+		manyToMany: [
+			{
+				through: 'userGroups',
+				left: { relation: 'user' },
+				right: { relation: 'group' },
+			},
+		],
+	},
+});
+```
+
+Ambiguous paths fail during use instead of choosing a junction silently. Set `relations.inferManyToMany` to `false` to require explicit configuration.
+
+## Explain plans
+
+`.explain()` executes the root dialect-specific explain and reports relation queries under `deferredRelations`, including each path, cardinality, target table, junction table, filtering, sorting, and pagination flags.
 
 Or `select` to also narrow the related fields:
 

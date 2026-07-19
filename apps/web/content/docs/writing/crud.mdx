@@ -66,6 +66,40 @@ if (!updated) {
 }
 ```
 
+## Relation writes
+
+Single-row `create`, `update`, and `upsert` accept relation commands inside their data payloads. Selectors must match exactly one related row:
+
+```ts
+const post = await client.posts.create({
+	data: {
+		author: { connect: { email: 'alice@example.com' } },
+		title: 'Connected post',
+	},
+});
+
+await client.users.update({
+	where: { id: 1 },
+	data: {
+		posts: {
+			connect: [{ id: 2 }, { id: 3 }],
+			disconnect: { id: 1 },
+		},
+	},
+});
+
+await client.users.update({
+	where: { id: 1 },
+	data: {
+		groups: { set: [{ id: 4 }, { id: 5 }] },
+	},
+});
+```
+
+`create` and the `upsert.create` branch support `connect`. `update` and the `upsert.update` branch support `connect`, `disconnect`, and `set`; `set` cannot be combined with the other commands for the same relation. To-one `set: null` disconnects an optional relation.
+
+The root mutation and every relation change run in one implicit transaction unless the call is already inside `client.transaction()`. Required foreign keys, missing selectors, non-unique selectors, and invalid commands fail the entire operation and roll back scalar changes. `createMany`, `updateMany`, `updateEach`, and `upsertMany` intentionally remain scalar batch APIs.
+
 ## `updateMany`
 
 Updates every matching row and returns the affected count:

@@ -47,7 +47,7 @@ It gets repetitive when every service ends up re-writing the same patterns:
 </div>
 
 - point lookups
-- relation includes
+- nested relation reads and writes
 - pagination payloads
 - existence checks
 - count helpers
@@ -64,7 +64,9 @@ It gets repetitive when every service ends up re-writing the same patterns:
 
 - Less repeated query code for common CRUD flows
 - Nested relation filters with Drizzle-backed typing
-- `include` and `select` support with typed payload inference
+- Batched nested `include` and `select` with typed payload inference
+- Atomic `connect`, `disconnect`, and `set` relation writes
+- Direct and inferred many-to-many relations through simple junction tables
 - Offset and cursor pagination helpers with typed metadata
 - Thenable `.explain()` on read helpers for query-plan inspection
 - Optional lifecycle hooks for cross-cutting behavior
@@ -100,6 +102,16 @@ const posts = await client.posts.findMany({
 	},
 	orderBy: [{ id: 'desc' }],
 	take: 20,
+});
+
+const users = await client.users.findMany({
+	include: {
+		posts: {
+			where: { published: true },
+			orderBy: { score: 'desc' },
+			take: 3,
+		},
+	},
 });
 ```
 
@@ -150,6 +162,10 @@ const someUser = await client.users.create({
 const user = await client.users.update({
 	data: {
 		name: 'better-drizzle',
+		posts: {
+			connect: { id: 456 },
+			disconnect: { id: 789 },
+		},
 	},
 	where: { id: someUser.id },
 });

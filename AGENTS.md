@@ -110,6 +110,19 @@
   - plugin transforms still affect `.explain()`, but query hooks do not
   - explain output is cross-dialect and structured as `{ driver, operation, statements }`; unsupported explain flags are reported under `ignoredOptions`
   - PostgreSQL maps `analyze`, `verbose`, `costs`, `timing`, and `summary`; SQLite uses `EXPLAIN QUERY PLAN`; MySQL uses the best available `EXPLAIN` form and ignores unsupported flags
+- **Relational reads**:
+  - nested `select` and `include` use Better Drizzle's own batched loader rather than Drizzle's `db.query.*` path
+  - the loader executes one root query plus one query per requested relation node, including inferred many-to-many nodes
+  - nested `where`, `orderBy`, `cursor`, `take`, `skip`, `select`, and `include` are supported; per-parent pagination uses `row_number()` window queries
+  - internal linking columns are selected as needed and removed from the public payload
+  - `select` and `include` are mutually exclusive at every level
+  - `.explain()` reports non-root relation stages under `deferredRelations`
+- **Relational writes**:
+  - `create` supports relation `connect`; `update` supports `connect`, `disconnect`, and exclusive `set`; `upsert` follows the corresponding create/update branch rules
+  - relation selectors must be non-empty and match exactly one row
+  - relation writes run in an implicit transaction when no transaction is already active and preserve delegate plugin state
+  - simple two-FK junction tables are inferred as direct many-to-many relations; ambiguous paths fail and can be configured with `options.relations.manyToMany`
+  - batch mutation APIs intentionally remain scalar-only
 - **Row locks**:
   - read helpers built on `QueryArgs` (`findMany`, `findFirst`, `findOne`, `findUnique`, `paginate`, `cursor`) accept `lock`
   - `count`, `exists`, and write operations do not accept `lock`
@@ -189,6 +202,7 @@
 
 - **Benchmark files**:
   - `benchmark/time.ts`: latency and throughput comparisons
+  - `benchmark/full.ts`: comprehensive read/write/relation/raw/transaction comparisons with mandatory deep result-parity validation before timing
   - `benchmark/memory.ts`: heap/rss deltas and overhead summaries
   - `benchmark/scenarios.ts`: benchmark scenarios for raw Drizzle and `better-drizzle`
   - `benchmark/setup.ts`: benchmark database/context setup
@@ -199,9 +213,18 @@
   - `manual drizzle reference`: lower-level manual queries that intentionally do less work and are not parity claims
 - **When changing performance-sensitive code**:
   - run `bun run bench`
+  - run `bun run bench:verify`
+  - run `bun run bench:full`
   - run `bun run bench:memory`
   - interpret regressions against the parity suite first
   - do not use the manual reference numbers as the main headline for wrapper overhead claims
+
+## Integration testing
+
+- Massive real-database coverage lives under `packages/core/tests/integration/`.
+- Every test creates a fresh SQLite `:memory:` database, applies real DDL and constraints, seeds real rows, and invokes the public `better(...)` API without database mocks or fake query functions.
+- The shared fixture seeds 300 users, 1,200 posts, 2,400 comments, 150 profiles, 15 groups, 900 memberships, and 1,000 batch rows per test.
+- Run the suite with `bun run test:integration`; it is also included in the root `bun run test` command.
 
 ## Tooling and commands
 
