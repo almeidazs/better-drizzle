@@ -218,6 +218,20 @@ export interface ExplainResult {
 	operation: ExplainOperation;
 
 	/**
+	 * Relation queries whose bindings depend on keys returned by the root
+	 * statement. They are described without executing the root read.
+	 */
+	deferredRelations: {
+		cardinality: 'many' | 'one';
+		filtered: boolean;
+		paginated: boolean;
+		path: string;
+		sorted: boolean;
+		table: string;
+		through?: string;
+	}[];
+
+	/**
 	 * The statements produced by the `EXPLAIN`. Most operations yield a
 	 * single statement; `paginate` yields two (`data` + `total`), and
 	 * `cursor` may yield additional probe statements.

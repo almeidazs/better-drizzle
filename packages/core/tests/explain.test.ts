@@ -211,6 +211,47 @@ describe('explain', () => {
 		ctx.close();
 	});
 
+	test('relation explain exposes deferred batch stages', async () => {
+		const ctx = createTestContext();
+
+		const result = await ctx.better.users
+			.findMany({
+				include: {
+					posts: {
+						include: { comments: true },
+						orderBy: { score: 'desc' },
+						take: 1,
+						where: { published: true },
+					},
+				},
+			})
+			.explain();
+
+		expect(result.statements).toHaveLength(1);
+		expect(result.deferredRelations).toEqual([
+			{
+				cardinality: 'many',
+				filtered: true,
+				paginated: true,
+				path: 'posts',
+				sorted: true,
+				table: 'posts',
+				through: undefined,
+			},
+			{
+				cardinality: 'many',
+				filtered: false,
+				paginated: false,
+				path: 'posts.comments',
+				sorted: false,
+				table: 'comments',
+				through: undefined,
+			},
+		]);
+
+		ctx.close();
+	});
+
 	test('explain reflects plugin transforms on read promises', async () => {
 		const ctx = createTestContext();
 		const beforeQueryCalls: string[] = [];

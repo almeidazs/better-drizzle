@@ -26,6 +26,7 @@ import {
 	buildFindManyQuery,
 	getCursorExplainProbes,
 } from './operations';
+import { getDeferredRelationPlans } from './relations';
 
 type ExplainableQuery = {
 	key: string;
@@ -535,6 +536,7 @@ export const explainOperation = async <
 	const queries = await buildQueryList(context, tableName, operation, args);
 
 	return {
+		deferredRelations: getDeferredRelationPlans(context, tableName, args),
 		driver: context.dialect,
 		operation,
 		statements: await Promise.all(
