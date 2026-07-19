@@ -363,11 +363,13 @@ export const rawSimpleTransaction = async (context: BenchmarkContext) =>
 			})
 			.returning();
 
-		return tx
+		const rows = await tx
 			.select()
 			.from(benchWrites)
 			.where(eq(benchWrites.id, id))
 			.limit(1);
+
+		return rows[0] ?? null;
 	});
 
 /**
@@ -446,11 +448,13 @@ export const rawMultiOpTransaction = async (context: BenchmarkContext) =>
 			.where(eq(benchWrites.id, baseId))
 			.returning();
 
-		return tx
+		const rows = await tx
 			.select()
 			.from(benchWrites)
 			.where(eq(benchWrites.id, baseId))
 			.limit(1);
+
+		return rows[0] ?? null;
 	});
 
 /**

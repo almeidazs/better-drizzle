@@ -15,14 +15,22 @@ This directory contains the benchmark suite for `better-drizzle`. The benchmarks
 | Command | Description |
 | --- | --- |
 | `bun run bench` | Run the latency benchmark (time per operation) |
+| `bun run bench:full` | Run the comprehensive validated parity benchmark |
+| `bun run bench:verify` | Validate deep result parity without timing |
 | `bun run bench:memory` | Run the memory benchmark (heap/rss deltas) |
-| `bun run bench:all` | Run both suites sequentially |
+| `bun run bench:all` | Run the latency, comprehensive, and memory suites sequentially |
 
 <div align="center">
 
 ### Time benchmark
 
-Measures per-operation latency in microseconds for each API method. Runs on SQLite in-memory to isolate wrapper overhead from I/O.
+Measures per-operation latency in microseconds for each API method. Benchmark contexts use isolated temporary SQLite databases configured with an in-memory journal, preventing shared-state contamination between raw Drizzle and Better Drizzle.
+
+### Full parity benchmark
+
+Validates every scenario with `deepStrictEqual` before timing it, then compares reads, writes, relations, raw SQL, and transactions. Both sides execute equivalent database work and return the same effective result shape.
+
+Mutation scenarios use deterministic data pools or restore state between iterations. Relational comparisons use batched raw Drizzle queries instead of N+1 queries. When Drizzle's relational query builder cannot execute a supported nested shape consistently, the raw side performs the equivalent root, child, and grandchild queries and assembles the same nested payload.
 
 ### Memory benchmark
 
@@ -112,10 +120,16 @@ bun install
 # Run latency benchmarks
 bun run bench
 
+# Validate result parity without timing
+bun run bench:verify
+
+# Run comprehensive parity benchmarks
+bun run bench:full
+
 # Run memory benchmarks
 bun run bench:memory
 
-# Run both
+# Run all suites
 bun run bench:all
 ```
 
@@ -128,6 +142,7 @@ bun run bench:all
 | File | Description |
 | --- | --- |
 | `time.ts` | Latency benchmark entry point |
+| `full.ts` | Comprehensive benchmark with mandatory deep parity validation |
 | `memory.ts` | Memory benchmark entry point |
 | `scenarios.ts` | Benchmark scenario definitions for both Drizzle and better-drizzle |
 | `setup.ts` | Database and context setup for benchmarks |
