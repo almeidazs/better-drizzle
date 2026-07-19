@@ -38,6 +38,13 @@ import {
 	countRows,
 } from '../query';
 import { getPrimaryKeyWhere, getTableRuntime, isSimpleRecord } from './context';
+import {
+	applyRelationWrites,
+	hasRelationWrites,
+	hydrateRelations,
+	prepareRelationalRead,
+	prepareRelationWrite,
+} from './relations';
 
 type ResolvedSkipDuplicates = {
 	enabled: boolean;
@@ -1055,17 +1062,34 @@ export const findManyRecords = async <Schema extends AnySchema, Meta>(
 	tableName: BetterTableKey<Schema>,
 	args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
 	operation = 'findMany',
-) => {
+): Promise<Record<string, unknown>[]> => {
+	const relational = prepareRelationalRead(context, tableName, args);
+	if (relational && !args?.lock) {
+		const rows = await buildDirectReadQuery(
+			context,
+			tableName,
+			relational.args as QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
+		);
+		return hydrateRelations(
+			context,
+			getTableRuntime(context, tableName as string),
+			rows,
+			args as QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
+			relational.source,
+		);
+	}
 	const query = buildFindManyQuery(context, tableName, args, operation);
 
-	return args?.lock
-		? executeReadQuery(
-				query as SelectQueryLike,
-				getTableRuntime(context, tableName as string),
-				operation,
-				args.lock,
-			)
-		: query;
+	return (
+		args?.lock
+			? executeReadQuery(
+					query as SelectQueryLike,
+					getTableRuntime(context, tableName as string),
+					operation,
+					args.lock,
+				)
+			: query
+	) as Promise<Record<string, unknown>[]>;
 };
 
 export const buildFindManyQuery = <Schema extends AnySchema, Meta>(
@@ -1075,6 +1099,13 @@ export const buildFindManyQuery = <Schema extends AnySchema, Meta>(
 	operation = 'findMany',
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
+	const relational = prepareRelationalRead(context, tableName, args);
+	if (relational && !args?.lock)
+		return buildDirectReadQuery(
+			context,
+			tableName,
+			relational.args as QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
+		);
 	const joinedQuery = buildJoinedOneRelationQuery(context, tableName, args);
 	const lock = resolveReadLock(context, runtime, operation, args);
 	if (joinedQuery)
@@ -1119,7 +1150,15 @@ export const findFirstRecord = async <Schema extends AnySchema, Meta>(
 	tableName: BetterTableKey<Schema>,
 	args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
 	operation = 'findFirst',
-) => {
+): Promise<Record<string, unknown> | null> => {
+	const relational = prepareRelationalRead(context, tableName, args);
+	if (relational && !args?.lock) {
+		const rows = await findManyRecords(context, tableName, {
+			...args,
+			take: args?.take ?? 1,
+		});
+		return rows[0] ?? null;
+	}
 	const query = buildFindFirstQuery(context, tableName, args, operation);
 	const runtime = getTableRuntime(context, tableName as string);
 	const rows = await (args?.lock
@@ -1144,6 +1183,12 @@ export const buildFindFirstQuery = <Schema extends AnySchema, Meta>(
 	operation = 'findFirst',
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
+	const relational = prepareRelationalRead(context, tableName, args);
+	if (relational && !args?.lock)
+		return buildDirectReadQuery(context, tableName, {
+			...relational.args,
+			take: args?.take ?? 1,
+		} as QueryArgs<Schema, BetterTableKey<Schema>, Meta>);
 	const lock = resolveReadLock(context, runtime, operation, args);
 	const joinedQuery = buildJoinedOneRelationQuery(context, tableName, {
 		...args,
@@ -1321,17 +1366,37 @@ export const createRecord = async <Schema extends AnySchema, Meta>(
 	args: CreateArgs<Schema, BetterTableKey<Schema>, Meta>,
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
+	const relational = hasRelationWrites(runtime, args.data);
+	const prepared = relational
+		? await prepareRelationWrite(
+				context,
+				runtime,
+				args.data as Record<string, unknown>,
+				true,
+			)
+		: undefined;
+	const writeArgs = prepared
+		? ({ ...args, data: prepared.scalar } as typeof args)
+		: args;
 	const { builder, skipDuplicates } = applyInsertOnConflict(
 		context,
 		runtime,
-		args,
+		writeArgs,
 	);
 
 	if (typeof builder.returning === 'function') {
 		const rows = await builder.returning();
 		const created = rows[0] ?? null;
 		if (!created) return null;
-		if (!hasProjection(args)) return created;
+		if (prepared)
+			await applyRelationWrites(
+				context,
+				runtime,
+				created,
+				prepared.relations,
+				true,
+			);
+		if (!hasProjection(args) && !prepared) return created;
 		return reloadRecord(context, tableName, created, args);
 	}
 
@@ -1339,12 +1404,23 @@ export const createRecord = async <Schema extends AnySchema, Meta>(
 	if (skipDuplicates.enabled && (getAffectedCount(result) ?? 0) === 0)
 		return null;
 
-	return reloadRecord(
+	const created = await reloadRecord(
 		context,
 		tableName,
-		args.data as Record<string, unknown>,
-		args,
+		writeArgs.data as Record<string, unknown>,
 	);
+	if (!created) return null;
+	if (prepared)
+		await applyRelationWrites(
+			context,
+			runtime,
+			created,
+			prepared.relations,
+			true,
+		);
+	return hasProjection(args) || prepared
+		? reloadRecord(context, tableName, created, args)
+		: created;
 };
 
 /**
@@ -1503,6 +1579,53 @@ export const updateRecord = async <Schema extends AnySchema, Meta>(
 	args: UpdateArgs<Schema, BetterTableKey<Schema>, Meta>,
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
+	if (hasRelationWrites(runtime, args.data)) {
+		const matches = await findManyRecords(context, tableName, {
+			take: 2,
+			where: args.where,
+		});
+		if (!matches.length) return null;
+		if (matches.length > 1)
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.OperationError,
+				details: { matches: matches.length },
+				message:
+					'Relational update requires where to identify exactly one record.',
+				operation: 'update',
+				table: runtime.dbName,
+			});
+		const prepared = await prepareRelationWrite(
+			context,
+			runtime,
+			args.data as Record<string, unknown>,
+			false,
+		);
+		let current = matches[0] as Record<string, unknown>;
+		if (Object.keys(prepared.scalar).length) {
+			const primaryWhere = getPrimaryKeyWhere(runtime, current);
+			const predicate = getPredicate(
+				context,
+				runtime,
+				tableName,
+				primaryWhere,
+			);
+			if (!predicate) return null;
+			await context.db
+				.update(runtime.table)
+				.set(prepared.scalar)
+				.where(predicate);
+			current =
+				(await reloadRecord(context, tableName, current)) ?? current;
+		}
+		await applyRelationWrites(
+			context,
+			runtime,
+			current,
+			prepared.relations,
+			false,
+		);
+		return reloadRecord(context, tableName, current, args);
+	}
 	const predicate = getPredicate(context, runtime, tableName, args.where);
 	if (!predicate) return null;
 
@@ -1689,6 +1812,41 @@ export const upsertRecord = async <Schema extends AnySchema, Meta>(
 	args: UpsertArgs<Schema, BetterTableKey<Schema>, Meta>,
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
+	if (
+		hasRelationWrites(runtime, args.create) ||
+		hasRelationWrites(runtime, args.update)
+	) {
+		const matches = await findManyRecords(context, tableName, {
+			take: 2,
+			where: args.where,
+		});
+		if (matches.length > 1)
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.OperationError,
+				details: { matches: matches.length },
+				message:
+					'Relational upsert requires where to identify at most one record.',
+				operation: 'upsert',
+				table: runtime.dbName,
+			});
+		if (matches.length)
+			return updateRecord(context, tableName, {
+				data: args.update,
+				include: args.include,
+				meta: args.meta,
+				select: args.select,
+				where: getPrimaryKeyWhere(
+					runtime,
+					matches[0] ?? {},
+				) as WhereArg<Schema, BetterTableKey<Schema>>,
+			});
+		return createRecord(context, tableName, {
+			data: args.create,
+			include: args.include,
+			meta: args.meta,
+			select: args.select,
+		} as CreateArgs<Schema, BetterTableKey<Schema>, Meta>);
+	}
 	const createData = args.create as Record<string, unknown>;
 	const updateData = args.update as Record<string, unknown>;
 	const insertBuilder = context.db.insert(runtime.table).values(createData);
@@ -1705,7 +1863,7 @@ export const upsertRecord = async <Schema extends AnySchema, Meta>(
 				include: args.include,
 				meta: args.meta,
 				select: args.select,
-			});
+			} as CreateArgs<Schema, BetterTableKey<Schema>, Meta>);
 
 		const builder = insertBuilder.onConflictDoUpdate({
 			set: updateData,
@@ -1742,7 +1900,7 @@ export const upsertRecord = async <Schema extends AnySchema, Meta>(
 		include: args.include,
 		meta: args.meta,
 		select: args.select,
-	});
+	} as CreateArgs<Schema, BetterTableKey<Schema>, Meta>);
 };
 
 /**

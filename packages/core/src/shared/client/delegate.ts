@@ -64,6 +64,7 @@ import {
 	shouldRunPlugins,
 	skipPluginsState,
 } from './plugins';
+import { hasRelationWrites } from './relations';
 
 /**
  * Creates a model delegate for a single table. The delegate exposes all
@@ -106,6 +107,33 @@ export const createModelDelegate = <
 		name: tableName,
 	};
 	const shouldApplyPlugins = shouldRunPlugins(context.hasPlugins, state);
+	const relationalWrite = <Args, Result>(
+		method: 'create' | 'update' | 'upsert',
+		args: Args,
+		data: readonly unknown[],
+		run: () => Promise<Result>,
+	) => {
+		if (
+			context.transaction ||
+			!data.some((value) => hasRelationWrites(runtime, value))
+		)
+			return run();
+		const client = context.client as Record<string, unknown>;
+		const transaction = client.transaction as (
+			callback: (tx: Record<string, unknown>) => Promise<Result>,
+		) => Promise<Result>;
+		return transaction(async (tx) => {
+			const repository = tx[name] as Record<string, unknown>;
+			const scopedRepository = (
+				repository.$withState as (
+					value: Record<string, unknown>,
+				) => Record<string, unknown>
+			)(state);
+			return (
+				scopedRepository[method] as (value: Args) => Promise<Result>
+			)(args);
+		});
+	};
 	const delegate = {
 		$model: baseModel,
 		$state: state,
@@ -643,26 +671,28 @@ export const createModelDelegate = <
 				'create'
 			>,
 		) =>
-			runOperation({
-				action: 'create',
-				args,
-				afterHookName: 'afterCreate',
-				afterPayload: (result, resolvedArgs) =>
-					({
-						...hookContext('create', resolvedArgs),
-						result,
-						row: result,
-					}) as AfterCreateHookContext<Schema, Meta, Plugins>,
-				beforeHookName: 'beforeCreate',
-				beforePayload: (resolvedArgs) =>
-					hookContext(
-						'create',
-						resolvedArgs,
-					) as BeforeCreateHookContext<Schema, Meta, Plugins>,
-				kind: 'create',
-				operation: (resolvedArgs) =>
-					createRecord(context, tableName, resolvedArgs),
-			}),
+			relationalWrite('create', args, [args.data], () =>
+				runOperation({
+					action: 'create',
+					args,
+					afterHookName: 'afterCreate',
+					afterPayload: (result, resolvedArgs) =>
+						({
+							...hookContext('create', resolvedArgs),
+							result,
+							row: result,
+						}) as AfterCreateHookContext<Schema, Meta, Plugins>,
+					beforeHookName: 'beforeCreate',
+					beforePayload: (resolvedArgs) =>
+						hookContext(
+							'create',
+							resolvedArgs,
+						) as BeforeCreateHookContext<Schema, Meta, Plugins>,
+					kind: 'create',
+					operation: (resolvedArgs) =>
+						createRecord(context, tableName, resolvedArgs),
+				}),
+			),
 		paginate: (
 			args: OperationArgsWithPlugins<
 				PaginationArgs<Schema, BetterTableKey<Schema>, Meta>,
@@ -733,33 +763,35 @@ export const createModelDelegate = <
 			>,
 		) =>
 			attachThrow(
-				runOperation<
-					OperationArgsWithPlugins<
-						UpdateArgs<Schema, BetterTableKey<Schema>, Meta>,
-						Plugins,
-						'update'
-					>,
-					Record<string, unknown> | null
-				>({
-					action: 'update',
-					args,
-					afterHookName: 'afterUpdate',
-					afterPayload: (result, resolvedArgs) =>
-						({
-							...hookContext('update', resolvedArgs),
-							result,
-							row: result,
-						}) as AfterUpdateHookContext<Schema, Meta, Plugins>,
-					beforeHookName: 'beforeUpdate',
-					beforePayload: (resolvedArgs) =>
-						hookContext(
-							'update',
-							resolvedArgs,
-						) as BeforeUpdateHookContext<Schema, Meta, Plugins>,
-					kind: 'update',
-					operation: (resolvedArgs) =>
-						updateRecord(context, tableName, resolvedArgs),
-				}),
+				relationalWrite('update', args, [args.data], () =>
+					runOperation<
+						OperationArgsWithPlugins<
+							UpdateArgs<Schema, BetterTableKey<Schema>, Meta>,
+							Plugins,
+							'update'
+						>,
+						Record<string, unknown> | null
+					>({
+						action: 'update',
+						args,
+						afterHookName: 'afterUpdate',
+						afterPayload: (result, resolvedArgs) =>
+							({
+								...hookContext('update', resolvedArgs),
+								result,
+								row: result,
+							}) as AfterUpdateHookContext<Schema, Meta, Plugins>,
+						beforeHookName: 'beforeUpdate',
+						beforePayload: (resolvedArgs) =>
+							hookContext(
+								'update',
+								resolvedArgs,
+							) as BeforeUpdateHookContext<Schema, Meta, Plugins>,
+						kind: 'update',
+						operation: (resolvedArgs) =>
+							updateRecord(context, tableName, resolvedArgs),
+					}),
+				),
 				context,
 				runtime,
 				'update',
@@ -894,26 +926,28 @@ export const createModelDelegate = <
 				'upsert'
 			>,
 		) =>
-			runOperation({
-				action: 'upsert',
-				args,
-				afterHookName: 'afterCreate',
-				afterPayload: (result, resolvedArgs) =>
-					({
-						...hookContext('upsert', resolvedArgs),
-						result,
-						row: result,
-					}) as AfterCreateHookContext<Schema, Meta, Plugins>,
-				beforeHookName: 'beforeCreate',
-				beforePayload: (resolvedArgs) =>
-					hookContext(
-						'upsert',
-						resolvedArgs,
-					) as BeforeCreateHookContext<Schema, Meta, Plugins>,
-				kind: 'upsert',
-				operation: (resolvedArgs) =>
-					upsertRecord(context, tableName, resolvedArgs),
-			}),
+			relationalWrite('upsert', args, [args.create, args.update], () =>
+				runOperation({
+					action: 'upsert',
+					args,
+					afterHookName: 'afterCreate',
+					afterPayload: (result, resolvedArgs) =>
+						({
+							...hookContext('upsert', resolvedArgs),
+							result,
+							row: result,
+						}) as AfterCreateHookContext<Schema, Meta, Plugins>,
+					beforeHookName: 'beforeCreate',
+					beforePayload: (resolvedArgs) =>
+						hookContext(
+							'upsert',
+							resolvedArgs,
+						) as BeforeCreateHookContext<Schema, Meta, Plugins>,
+					kind: 'upsert',
+					operation: (resolvedArgs) =>
+						upsertRecord(context, tableName, resolvedArgs),
+				}),
+			),
 		upsertMany: (
 			args: OperationArgsWithPlugins<
 				UpsertManyArgs<Schema, BetterTableKey<Schema>, Meta>,
