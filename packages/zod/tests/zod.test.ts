@@ -501,6 +501,21 @@ describe('@better-drizzle/zod - update validation', () => {
 		expect(updated.count).toBe(1);
 		ctx.close();
 	});
+
+	test('preserves relation commands after stripping unknown keys', async () => {
+		const ctx = createZodContext();
+
+		const updated = await ctx.client.users.update({
+			data: {
+				posts: { connect: { id: 3 } },
+			},
+			include: { posts: true },
+			where: { id: 5 },
+		});
+
+		expect(updated?.posts.map((post) => post.id)).toEqual([3]);
+		ctx.close();
+	});
 });
 
 describe('@better-drizzle/zod - upsert validation', () => {

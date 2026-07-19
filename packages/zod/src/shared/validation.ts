@@ -81,3 +81,34 @@ export const stripUnknownColumns = (
 
 	return next;
 };
+
+export const preserveRelationCommands = (
+	original: unknown,
+	parsed: unknown,
+	columns: Record<string, unknown>,
+) => {
+	const next = stripUnknownColumns(parsed, columns);
+	if (
+		!original ||
+		typeof original !== 'object' ||
+		Array.isArray(original) ||
+		!next ||
+		typeof next !== 'object' ||
+		Array.isArray(next)
+	)
+		return next;
+
+	for (const [key, value] of Object.entries(original)) {
+		if (
+			key in columns ||
+			!value ||
+			typeof value !== 'object' ||
+			Array.isArray(value)
+		)
+			continue;
+		if ('connect' in value || 'disconnect' in value || 'set' in value)
+			(next as Record<string, unknown>)[key] = value;
+	}
+
+	return next;
+};

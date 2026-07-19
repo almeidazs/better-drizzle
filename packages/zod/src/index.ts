@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { createZodSchemasRegistry } from './shared/registry';
 import {
 	parseOrThrow,
+	preserveRelationCommands,
 	shouldValidate,
 	stripUnknownColumns,
 } from './shared/validation';
@@ -107,7 +108,8 @@ export const zod = <
 					return context.data;
 
 				if (context.kind === 'create')
-					return stripUnknownColumns(
+					return preserveRelationCommands(
+						context.data,
 						parseOrThrow(
 							zodRegistry.get(context.table)?.schemas.create ??
 								z.unknown(),
@@ -155,11 +157,13 @@ export const zod = <
 					);
 
 					return {
-						create: stripUnknownColumns(
+						create: preserveRelationCommands(
+							context.data?.create,
 							parsed.create,
 							context.model.columns,
 						),
-						update: stripUnknownColumns(
+						update: preserveRelationCommands(
+							context.data?.update,
 							parsed.update,
 							context.model.columns,
 						),
@@ -307,7 +311,8 @@ export const zod = <
 						},
 					) as { data: typeof context.data };
 
-					return stripUnknownColumns(
+					return preserveRelationCommands(
+						context.data,
 						parsed.data,
 						context.model.columns,
 					) as typeof context.data;
