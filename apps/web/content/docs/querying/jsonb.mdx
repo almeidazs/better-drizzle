@@ -1,0 +1,62 @@
+---
+title: JSONB filters
+description: Type-safe PostgreSQL JSONB queries through dot-path predicates.
+icon: Braces
+---
+
+JSONB filters give typed access to scalar values inside a PostgreSQL `jsonb` column. Declare the JSON shape with Drizzle's `$type<T>()`, then use dot paths inside `where.<column>.json`.
+
+## Define the JSON shape
+
+`json` filters are available only when the JSONB column has a known TypeScript shape:
+
+```ts
+import { jsonb, pgTable } from 'drizzle-orm/pg-core';
+
+type Metadata = {
+	profile: {
+		age: number;
+		name: string;
+		active: boolean;
+	};
+};
+
+export const users = pgTable('users', {
+	id: integer('id').primaryKey(),
+	metadata: jsonb('metadata').$type<Metadata>().notNull(),
+});
+```
+
+## Query scalar paths
+
+Each scalar leaf becomes a typed dot path. The predicate accepts the same operators as its scalar type:
+
+```ts
+const users = await db.users.findMany({
+	where: {
+		metadata: {
+			json: {
+				'profile.age': { gte: 18 },
+				'profile.name': { startsWith: 'Ana' },
+				'profile.active': true,
+			},
+		},
+	},
+});
+```
+
+- string paths support `equals`, `contains`, `startsWith`, `endsWith`, and `not`;
+- number paths support `equals`, `lt`, `lte`, `gt`, `gte`, and `not`;
+- boolean paths support direct equality, `equals`, and `not`.
+
+The compiler guards each predicate with the matching PostgreSQL JSON type and uses bound parameters for paths and values.
+
+## Limits and dialect support
+
+This API is PostgreSQL-only. SQLite and MySQL reject it with `JSONB_QUERY_UNSUPPORTED` rather than silently changing semantics.
+
+Only scalar object paths are supported in this version. Arrays, object containment, PostgreSQL JSONPath strings, and JSON keys containing a dot are intentionally outside the structured API. Use a Drizzle `sql` expression in `where` for those cases.
+
+<Callout title="Untyped JSONB columns">
+	A plain `jsonb('metadata')` column has the type `unknown`, so it deliberately does not expose `json` path filters. Add `.$type<Metadata>()` to opt into typed paths.
+</Callout>

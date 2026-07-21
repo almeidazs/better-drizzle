@@ -116,6 +116,20 @@ await client.users.findMany({
 	conditions, or to express the same condition on a field twice.
 </Callout>
 
+## JSONB filters
+
+<Callout title="PostgreSQL only">
+	JSONB path filters are unavailable on SQLite and MySQL.
+</Callout>
+
+Typed paths inside PostgreSQL JSONB columns have their own API and limitations:
+
+<Cards>
+	<Card title="JSONB filters" href="/docs/querying/jsonb">
+		Filter typed scalar JSONB paths such as `'profile.age'`.
+	</Card>
+</Cards>
+
 ## Filtering by relations
 
 `where` also reaches across relations with `some` / `every` / `none` (to-many) and `is` / `isNot` (to-one). That has its own page:

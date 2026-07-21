@@ -29,6 +29,14 @@ This page is the practical compatibility matrix for `better-drizzle@0.1.x`.
 | `repository(name)` | Yes | Yes | Yes |
 | hooks and plugins | Yes | Yes | Yes |
 
+## JSONB filters
+
+| Capability | PostgreSQL | SQLite | MySQL |
+| --- | --- | --- | --- |
+| typed JSONB scalar paths | Yes | rejected | rejected |
+
+Typed JSONB filters require `jsonb(...).$type<T>()` and support scalar dot paths only.
+
 ## Conflict-handling features
 
 | Capability | PostgreSQL | SQLite | MySQL |

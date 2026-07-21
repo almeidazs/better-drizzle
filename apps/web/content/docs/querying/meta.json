@@ -4,6 +4,7 @@
 	"pages": [
 		"reads",
 		"filters",
+		"jsonb",
 		"selecting-fields",
 		"relations",
 		"pagination",
