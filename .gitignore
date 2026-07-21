@@ -34,3 +34,5 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .DS_Store
 
 videos
+# Added by code-review-graph
+.code-review-graph/
