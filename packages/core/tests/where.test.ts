@@ -308,3 +308,14 @@ describe('where with orderBy', () => {
 			expect(result[i]?.age).toBeLessThanOrEqual(result[i - 1]?.age ?? 0);
 	});
 });
+
+
+describe('JSONB where', () => {
+	test('rejects JSONB path filters outside PostgreSQL', async () => {
+		await expect(
+			ctx.better.users.findMany({
+				where: { name: { json: { 'profile.age': { gte: 18 } } } },
+			} as never),
+		).rejects.toMatchObject({ code: 'JSONB_QUERY_UNSUPPORTED', dialect: 'sqlite' });
+	});
+});

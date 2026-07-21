@@ -12,8 +12,22 @@ import type {
 	RelationKeysFor,
 	ScalarKeysFor,
 	SelectModelFor,
+	TableFor,
 	TableKey,
 } from './utils';
+
+type JsonbKeysFor<Schema extends AnySchema, Name extends TableKey<Schema>> = {
+	[K in ScalarKeysFor<Schema, Name>]: K extends keyof TableFor<Schema, Name>
+		? TableFor<Schema, Name>[K] extends { columnType: 'PgJsonb' }
+			? K
+			: never
+		: never;
+}[ScalarKeysFor<Schema, Name>];
+
+type JsonbWhereField<T> =
+	| T
+	| import('./utils').ScalarFilter<T>
+	| { json: import('./utils').JsonWhereInput<T> };
 
 type RelationWhereInput<
 	Schema extends AnySchema,
@@ -102,9 +116,9 @@ export type WhereInput<
 	/** Logical NOT – negates the sub-condition(s). */
 	NOT?: WhereInput<Schema, Name> | WhereInput<Schema, Name>[];
 } & {
-	[K in ScalarKeysFor<Schema, Name>]?: import('./utils').ScalarWhereField<
-		SelectModelFor<Schema, Name>[K]
-	>;
+	[K in ScalarKeysFor<Schema, Name>]?: K extends JsonbKeysFor<Schema, Name>
+		? JsonbWhereField<SelectModelFor<Schema, Name>[K]>
+		: import('./utils').ScalarWhereField<SelectModelFor<Schema, Name>[K]>;
 } & {
 	[K in RelationKeysFor<Schema, Name>]?: RelationWhereInput<Schema, Name, K>;
 };

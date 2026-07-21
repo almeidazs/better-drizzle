@@ -50,6 +50,8 @@ export enum BetterDrizzleErrorCode {
 	DatabaseError = 'DATABASE_ERROR',
 	/** The SQL dialect could not be inferred from the Drizzle client. */
 	DialectInferenceFailed = 'DIALECT_INFERENCE_FAILED',
+	/** JSONB path filters are only supported by PostgreSQL. */
+	JsonbQueryUnsupported = 'JSONB_QUERY_UNSUPPORTED',
 	/** A lifecycle hook threw an error. */
 	HookError = 'HOOK_ERROR',
 	/** Row locking is not supported for the current dialect or query shape. */
@@ -168,6 +170,7 @@ const getDefaultStatus = (code: BetterDrizzleErrorCode) => {
 		case BetterDrizzleErrorCode.RawUnsupportedOption:
 		case BetterDrizzleErrorCode.LockNotSupported:
 		case BetterDrizzleErrorCode.LockRequiresTransaction:
+		case BetterDrizzleErrorCode.JsonbQueryUnsupported:
 		case BetterDrizzleErrorCode.TransactionUnsupportedOption:
 			return 400;
 		case BetterDrizzleErrorCode.LockTimeout:

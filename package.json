@@ -33,18 +33,22 @@
 		"pack:zod": "bun run build:zod && cd packages/zod && npm pack --dry-run",
 		"test": "bun test packages/core/tests packages/rules/tests packages/eslint/tests packages/timestamps/tests packages/soft-delete/tests packages/zod/tests",
 		"test:mysql": "bun test packages/core/tests/where.mysql.test.ts",
-		"test:integration": "bun test packages/core/tests/integration"
+		"test:integration": "bun test packages/core/tests/integration",
+		"bench:jsonb": "DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required} bun run benchmark/jsonb.ts",
+		"test:jsonb": "bun test packages/core/tests/jsonb.pg.test.ts"
 	},
 	"devDependencies": {
-		"@types/estree": "^1.0.8",
-		"@typescript-eslint/parser": "^8.38.0",
 		"@biomejs/biome": "^2.5.1",
 		"@commitlint/config-conventional": "^21.1.0",
 		"@types/bun": "latest",
+		"@types/estree": "^1.0.8",
+		"@types/pg": "^8.20.0",
+		"@typescript-eslint/parser": "^8.38.0",
 		"commitlint": "^21.1.0",
 		"eslint": "^9.31.0",
 		"mitata": "^1.0.34",
 		"mysql2": "^3.23.0",
+		"pg": "^8.22.0",
 		"typescript": "^5.9.3"
 	},
 	"peerDependencies": {
