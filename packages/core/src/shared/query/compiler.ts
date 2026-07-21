@@ -161,22 +161,39 @@ const compileScalarFilter = (
 	return conditions.length ? and(...conditions) : undefined;
 };
 
-
-const isJsonWhereFilter = (value: unknown): value is { json: Record<string, unknown> } =>
+const isJsonWhereFilter = (
+	value: unknown,
+): value is { json: Record<string, unknown> } =>
 	isPlainObject(value) && isPlainObject(value.json);
 
-const compileJsonPathFilter = (column: AnyColumn, path: string, value: unknown) => {
+const compileJsonPathFilter = (
+	column: AnyColumn,
+	path: string,
+	value: unknown,
+) => {
 	if (value === undefined) return;
 	const parts = path.split('.');
-	const pathSql = sql`ARRAY[${sql.join(parts.map((part) => sql`${part}`), sql`, `)}]::text[]`;
+	const pathSql = sql`ARRAY[${sql.join(
+		parts.map((part) => sql`${part}`),
+		sql`, `,
+	)}]::text[]`;
 	const jsonValue = sql`${column} #> ${pathSql}`;
 	const textValue = sql`${column} #>> ${pathSql}`;
 	const jsonType = sql`jsonb_typeof(${jsonValue})`;
 	const compare = (entry: unknown): SQL | undefined => {
 		if (entry === null) return eq(jsonType, 'null');
-		if (typeof entry === 'string') return and(eq(jsonType, 'string'), eq(textValue, entry));
-		if (typeof entry === 'boolean') return and(eq(jsonType, 'boolean'), eq(sql`(${textValue})::boolean`, entry));
-		if (typeof entry === 'number' || typeof entry === 'bigint') return and(eq(jsonType, 'number'), eq(sql`(${textValue})::numeric`, entry));
+		if (typeof entry === 'string')
+			return and(eq(jsonType, 'string'), eq(textValue, entry));
+		if (typeof entry === 'boolean')
+			return and(
+				eq(jsonType, 'boolean'),
+				eq(sql`(${textValue})::boolean`, entry),
+			);
+		if (typeof entry === 'number' || typeof entry === 'bigint')
+			return and(
+				eq(jsonType, 'number'),
+				eq(sql`(${textValue})::numeric`, entry),
+			);
 	};
 	if (!isScalarFilter(value)) return compare(value);
 	const conditions: SQL[] = [];
@@ -185,13 +202,43 @@ const compileJsonPathFilter = (column: AnyColumn, path: string, value: unknown) 
 		if (condition) conditions.push(condition);
 	}
 	const numeric = sql`(${textValue})::numeric`;
-	if (typeof value.lt === 'number') conditions.push(and(eq(jsonType, 'number'), lt(numeric, value.lt)) as SQL);
-	if (typeof value.lte === 'number') conditions.push(and(eq(jsonType, 'number'), lte(numeric, value.lte)) as SQL);
-	if (typeof value.gt === 'number') conditions.push(and(eq(jsonType, 'number'), gt(numeric, value.gt)) as SQL);
-	if (typeof value.gte === 'number') conditions.push(and(eq(jsonType, 'number'), gte(numeric, value.gte)) as SQL);
-	if (typeof value.contains === 'string') conditions.push(and(eq(jsonType, 'string'), like(textValue as unknown as AnyColumn, `%${value.contains}%`)) as SQL);
-	if (typeof value.startsWith === 'string') conditions.push(and(eq(jsonType, 'string'), like(textValue as unknown as AnyColumn, `${value.startsWith}%`)) as SQL);
-	if (typeof value.endsWith === 'string') conditions.push(and(eq(jsonType, 'string'), like(textValue as unknown as AnyColumn, `%${value.endsWith}`)) as SQL);
+	if (typeof value.lt === 'number')
+		conditions.push(
+			and(eq(jsonType, 'number'), lt(numeric, value.lt)) as SQL,
+		);
+	if (typeof value.lte === 'number')
+		conditions.push(
+			and(eq(jsonType, 'number'), lte(numeric, value.lte)) as SQL,
+		);
+	if (typeof value.gt === 'number')
+		conditions.push(
+			and(eq(jsonType, 'number'), gt(numeric, value.gt)) as SQL,
+		);
+	if (typeof value.gte === 'number')
+		conditions.push(
+			and(eq(jsonType, 'number'), gte(numeric, value.gte)) as SQL,
+		);
+	if (typeof value.contains === 'string')
+		conditions.push(
+			and(
+				eq(jsonType, 'string'),
+				like(textValue as unknown as AnyColumn, `%${value.contains}%`),
+			) as SQL,
+		);
+	if (typeof value.startsWith === 'string')
+		conditions.push(
+			and(
+				eq(jsonType, 'string'),
+				like(textValue as unknown as AnyColumn, `${value.startsWith}%`),
+			) as SQL,
+		);
+	if (typeof value.endsWith === 'string')
+		conditions.push(
+			and(
+				eq(jsonType, 'string'),
+				like(textValue as unknown as AnyColumn, `%${value.endsWith}`),
+			) as SQL,
+		);
 	if ('not' in value) {
 		const nested = compileJsonPathFilter(column, path, value.not);
 		if (nested) conditions.push(not(nested));
@@ -486,11 +533,16 @@ export const compileWhereInput = <Schema extends AnySchema, Meta>(
 					code: BetterDrizzleErrorCode.JsonbQueryUnsupported,
 					column: key,
 					dialect: context.dialect,
-					message: 'JSONB path filters are only supported by PostgreSQL.',
+					message:
+						'JSONB path filters are only supported by PostgreSQL.',
 					table: context.tableName,
 				});
 			for (const path in value.json) {
-				const clause = compileJsonPathFilter(field, path, value.json[path]);
+				const clause = compileJsonPathFilter(
+					field,
+					path,
+					value.json[path],
+				);
 				if (clause) conditions.push(clause);
 			}
 			continue;

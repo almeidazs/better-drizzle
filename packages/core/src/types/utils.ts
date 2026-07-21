@@ -460,29 +460,35 @@ type IsUnknown<T> = unknown extends T
 		: false
 	: false;
 
-type JsonPathPrefix<Prefix extends string, Key extends string> =
-	Prefix extends '' ? Key : `${Prefix}.${Key}`;
+type JsonPathPrefix<
+	Prefix extends string,
+	Key extends string,
+> = Prefix extends '' ? Key : `${Prefix}.${Key}`;
 
-export type JsonScalarPath<T, Prefix extends string = ''> = IsUnknown<T> extends true
-	? never
-	: NonNullish<T> extends readonly unknown[]
+export type JsonScalarPath<T, Prefix extends string = ''> =
+	IsUnknown<T> extends true
 		? never
-		: NonNullish<T> extends object
-			? {
-					[K in Extract<keyof NonNullish<T>, string>]: NonNullish<
-						NonNullish<T>[K]
-					> extends readonly unknown[]
-						? never
-						: NonNullish<NonNullish<T>[K]> extends object
-							? JsonScalarPath<
-									NonNullish<T>[K],
-									JsonPathPrefix<Prefix, K>
-								>
-							: JsonPathPrefix<Prefix, K>;
-				}[Extract<keyof NonNullish<T>, string>]
-			: never;
+		: NonNullish<T> extends readonly unknown[]
+			? never
+			: NonNullish<T> extends object
+				? {
+						[K in Extract<keyof NonNullish<T>, string>]: NonNullish<
+							NonNullish<T>[K]
+						> extends readonly unknown[]
+							? never
+							: NonNullish<NonNullish<T>[K]> extends object
+								? JsonScalarPath<
+										NonNullish<T>[K],
+										JsonPathPrefix<Prefix, K>
+									>
+								: JsonPathPrefix<Prefix, K>;
+					}[Extract<keyof NonNullish<T>, string>]
+				: never;
 
-type JsonPathValue<T, Path extends string> = Path extends `${infer Key}.${infer Rest}`
+type JsonPathValue<
+	T,
+	Path extends string,
+> = Path extends `${infer Key}.${infer Rest}`
 	? Key extends keyof NonNullish<T>
 		? JsonPathValue<NonNullish<T>[Key], Rest>
 		: never
@@ -490,10 +496,11 @@ type JsonPathValue<T, Path extends string> = Path extends `${infer Key}.${infer 
 		? NonNullish<T>[Path]
 		: never;
 
-export type JsonWhereInput<T> = IsUnknown<T> extends true
-	? never
-	: {
-			[Path in JsonScalarPath<T>]?: ScalarWhereField<
-				JsonPathValue<T, Path>
-			>;
-		};
+export type JsonWhereInput<T> =
+	IsUnknown<T> extends true
+		? never
+		: {
+				[Path in JsonScalarPath<T>]?: ScalarWhereField<
+					JsonPathValue<T, Path>
+				>;
+			};
