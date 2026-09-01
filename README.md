@@ -10,25 +10,7 @@
 
 Minimal, type-safe repository helpers for [Drizzle ORM](https://orm.drizzle.team).
 
-[better-drizzle](https://npmjs.com/package/better-drizzle) wraps an existing Drizzle client and gives each table a small, consistent API for reads, writes, pagination, nested filters, relation loading, and optional hooks. The goal is simple: keep Drizzle's type-safety, remove repetitive query glue, and stay close enough to the metal that performance still matters.
-
-Website: https://better-drizzle.com/
-
-## Sponsors
-
-<p align="center">
-  <a href="https://neon.com">
-    <img src="https://neon.com/brand/neon-logomark-dark-color.svg" width="48" alt="Neon" />
-  </a>
-</p>
-
-<p align="center">
-  <strong>Sponsored by <a href="https://neon.com">Neon</a></strong>
-</p>
-
-<p align="center">
-  Neon is the serverless Postgres platform built for modern developer workflows.
-</p>
+[better-drizzle](https://better-drizzle.com/) wraps an existing Drizzle client and gives each table a small, consistent API for reads, writes, pagination, nested filters, relation loading, and optional hooks. The goal is simple: keep Drizzle's type-safety, remove repetitive query glue, and stay close enough to the metal that performance still matters.
 
 ## Sponsors
 
