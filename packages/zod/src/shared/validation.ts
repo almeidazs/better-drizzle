@@ -1,5 +1,5 @@
 import { BetterDrizzleError, BetterDrizzleErrorCode } from 'better-drizzle';
-import type { ZodError, ZodTypeAny } from 'zod';
+import type { ZodError, ZodTypeAny, z } from 'zod';
 
 import type { ZodPluginValidateOptions } from '../types';
 
@@ -43,14 +43,14 @@ const formatZodError = (error: ZodError) =>
 		path: issue.path.join('.'),
 	}));
 
-export const parseOrThrow = (
-	schema: ZodTypeAny,
+export const parseOrThrow = <Schema extends ZodTypeAny>(
+	schema: Schema,
 	value: unknown,
 	context: {
 		operation: string;
 		table: string;
 	},
-) => {
+): z.output<Schema> => {
 	const result = schema.safeParse(value);
 	if (result.success) return result.data;
 

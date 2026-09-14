@@ -31,15 +31,15 @@ import {
 export type ZodSchemasRegistry = {
 	get(tableName: string): TableSchemaEntry | undefined;
 	getBatchResultSchema(tableName: string, args: unknown): z.ZodTypeAny;
-	getCountArgsSchema(tableName: string): z.AnyZodObject;
-	getCreateArgsSchema(tableName: string): z.AnyZodObject;
-	getCreateManyArgsSchema(tableName: string): z.AnyZodObject;
-	getCursorArgsSchema(tableName: string): z.AnyZodObject;
-	getDeleteArgsSchema(tableName: string): z.AnyZodObject;
-	getDeleteManyArgsSchema(tableName: string): z.AnyZodObject;
-	getExistsArgsSchema(tableName: string): z.AnyZodObject;
-	getPaginationArgsSchema(tableName: string): z.AnyZodObject;
-	getQueryArgsSchema(tableName: string): z.AnyZodObject;
+	getCountArgsSchema(tableName: string): z.ZodObject;
+	getCreateArgsSchema(tableName: string): z.ZodObject;
+	getCreateManyArgsSchema(tableName: string): z.ZodObject;
+	getCursorArgsSchema(tableName: string): z.ZodObject;
+	getDeleteArgsSchema(tableName: string): z.ZodObject;
+	getDeleteManyArgsSchema(tableName: string): z.ZodObject;
+	getExistsArgsSchema(tableName: string): z.ZodObject;
+	getPaginationArgsSchema(tableName: string): z.ZodObject;
+	getQueryArgsSchema(tableName: string): z.ZodObject;
 	getQueryResultSchema(
 		tableName: string,
 		args: unknown,
@@ -52,11 +52,11 @@ export type ZodSchemasRegistry = {
 			| 'paginate',
 	): z.ZodTypeAny;
 	getSingleResultSchema(tableName: string, args: unknown): z.ZodTypeAny;
-	getUpdateArgsSchema(tableName: string): z.AnyZodObject;
-	getUpdateEachArgsSchema(tableName: string): z.AnyZodObject;
-	getUpdateManyArgsSchema(tableName: string): z.AnyZodObject;
-	getUpsertArgsSchema(tableName: string): z.AnyZodObject;
-	getUpsertManyArgsSchema(tableName: string): z.AnyZodObject;
+	getUpdateArgsSchema(tableName: string): z.ZodObject;
+	getUpdateEachArgsSchema(tableName: string): z.ZodObject;
+	getUpdateManyArgsSchema(tableName: string): z.ZodObject;
+	getUpsertArgsSchema(tableName: string): z.ZodObject;
+	getUpsertManyArgsSchema(tableName: string): z.ZodObject;
 };
 
 export const createZodSchemasRegistry = <Schema extends AnySchema>(

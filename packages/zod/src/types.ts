@@ -18,6 +18,13 @@ import type { z } from 'zod';
 // biome-ignore lint/suspicious/noExplicitAny: local escape hatch for generic type extraction
 type Any = any;
 
+// Zod 3 and 4 use incompatible `ZodType` generic signatures. Keeping the
+// input marker separate preserves the Zod 3 input type while remaining valid
+// for both peer versions.
+type TypedZodSchema<Output, Input> = z.ZodType<Output> & {
+	_input: Input;
+};
+
 type ScalarFieldName<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
@@ -482,44 +489,36 @@ export type BetterDrizzleZodModelSchemas<
 	Name extends TableKey<Schema>,
 	Options extends ZodPluginOptions<Schema> = ZodPluginOptions<Schema>,
 > = {
-	create: z.ZodType<
+	create: TypedZodSchema<
 		CreateOutput<Schema, Name, Options>,
-		z.ZodTypeDef,
 		CreateInput<Schema, Name, Options>
 	>;
-	orderBy: z.ZodType<
+	orderBy: TypedZodSchema<
 		OrderByOutput<Schema, Name>,
-		z.ZodTypeDef,
 		OrderByInputShape<Schema, Name>
 	>;
-	pagination: z.ZodType<
+	pagination: TypedZodSchema<
 		PaginationOutput<Schema, Name, Options>,
-		z.ZodTypeDef,
 		PaginationInputShape<Schema, Name, Options>
 	>;
-	query: z.ZodType<
+	query: TypedZodSchema<
 		QueryOutput<Schema, Name, Options>,
-		z.ZodTypeDef,
 		QueryInputShape<Schema, Name, Options>
 	>;
-	select: z.ZodType<
+	select: TypedZodSchema<
 		SelectOutput<Schema, Name, Options>,
-		z.ZodTypeDef,
 		SelectInputShape<Schema, Name, Options>
 	>;
-	update: z.ZodType<
+	update: TypedZodSchema<
 		UpdateOutput<Schema, Name, Options>,
-		z.ZodTypeDef,
 		UpdateInput<Schema, Name, Options>
 	>;
-	upsert: z.ZodType<
+	upsert: TypedZodSchema<
 		UpsertOutput<Schema, Name, Options>,
-		z.ZodTypeDef,
 		UpsertInputShape<Schema, Name, Options>
 	>;
-	where: z.ZodType<
+	where: TypedZodSchema<
 		WhereOutput<Schema, Name, Options>,
-		z.ZodTypeDef,
 		WhereInputShape<Schema, Name, Options>
 	>;
 };

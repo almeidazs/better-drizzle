@@ -286,6 +286,7 @@
   - `@better-drizzle/eslint` mirrors the statically-checkable subset for direct Better Drizzle callsites in IDEs and ESLint
 - **Schema plugin**:
   - `@better-drizzle/zod` generates per-table Zod schemas and exposes them as `db.<table>.$zod`
+  - its declared Zod 3/4 peer range requires Zod 4-compatible runtime schema types (`ZodObject` rather than removed `AnyZodObject`) and a version-agnostic public `ZodType` facade
   - the public `$zod` surface currently includes `create`, `update`, `upsert`, `select`, `where`, `orderBy`, `pagination`, and `query`
   - runtime validation is hook-driven and opt-out per call via plugin-provided `validate?: boolean`
   - schema-only extension fields are allowed during validation, but the plugin strips non-column keys before returning payloads to Drizzle

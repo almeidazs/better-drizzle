@@ -186,7 +186,7 @@ export const zod = <
 							operation: 'upsertMany payload',
 							table: context.table,
 						},
-					) as { data: typeof context.data };
+					) as unknown as { data: typeof context.data };
 
 					return stripUnknownColumns(
 						parsed.data,
@@ -309,7 +309,7 @@ export const zod = <
 							operation: `${context.kind} payload`,
 							table: context.table,
 						},
-					) as { data: typeof context.data };
+					) as unknown as { data: typeof context.data };
 
 					return preserveRelationCommands(
 						context.data,
@@ -334,7 +334,7 @@ export const zod = <
 							operation: 'updateEach payload',
 							table: context.table,
 						},
-					) as { data: typeof context.data }
+					) as unknown as { data: typeof context.data }
 				).data;
 			},
 			afterCreate(context) {

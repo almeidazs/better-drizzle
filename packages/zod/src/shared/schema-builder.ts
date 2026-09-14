@@ -13,24 +13,24 @@ export type RelationMeta = {
 export type TableSchemaEntry = {
 	columns: Record<string, AnyColumn>;
 	dbName: string;
-	queryInputSchema: z.AnyZodObject;
+	queryInputSchema: z.ZodObject;
 	relations: Record<string, RelationMeta>;
 	schemas: RuntimeZodModelSchemas;
-	selectInputSchema: z.AnyZodObject;
+	selectInputSchema: z.ZodObject;
 	table: Table;
 	tableName: string;
 };
 
 export type TableRegistry = Map<string, TableSchemaEntry>;
 export type RuntimeZodModelSchemas = {
-	create: z.AnyZodObject;
+	create: z.ZodObject;
 	orderBy: z.ZodTypeAny;
-	pagination: z.AnyZodObject;
-	query: z.AnyZodObject;
-	select: z.AnyZodObject;
-	update: z.AnyZodObject;
-	upsert: z.AnyZodObject;
-	where: z.AnyZodObject;
+	pagination: z.ZodObject;
+	query: z.ZodObject;
+	select: z.ZodObject;
+	update: z.ZodObject;
+	upsert: z.ZodObject;
+	where: z.ZodObject;
 };
 
 type SchemaMode = 'create' | 'select' | 'update';
@@ -76,11 +76,16 @@ const baseStringSchema = (
 	column: AnyColumn,
 	behavior: ZodPluginBehavior | undefined,
 ) => {
+	if (sqlTypeIncludes(column, 'uuid')) {
+		const uuid = z.string().uuid();
+		return hasCoerce(behavior, 'string')
+			? z.coerce.string().pipe(uuid)
+			: uuid;
+	}
+
 	const schema = hasCoerce(behavior, 'string')
 		? z.coerce.string()
 		: z.string();
-
-	if (sqlTypeIncludes(column, 'uuid')) return schema.uuid();
 
 	return schema;
 };
@@ -351,17 +356,17 @@ const createScalarWhereSchema = (columnSchema: z.ZodTypeAny) => {
 			: directValue;
 
 	if (nullableValue instanceof z.ZodString)
-		return createStringFilterSchema(directValue);
+		return createStringFilterSchema(directValue as z.ZodTypeAny);
 	if (
 		nullableValue instanceof z.ZodNumber ||
 		nullableValue instanceof z.ZodBigInt ||
 		nullableValue instanceof z.ZodDate
 	)
-		return createComparableFilterSchema(directValue);
+		return createComparableFilterSchema(directValue as z.ZodTypeAny);
 	if (nullableValue instanceof z.ZodBoolean)
-		return createBooleanFilterSchema(directValue);
+		return createBooleanFilterSchema(directValue as z.ZodTypeAny);
 
-	return createDefaultFilterSchema(directValue);
+	return createDefaultFilterSchema(directValue as z.ZodTypeAny);
 };
 
 export const createOrderBySchema = (
@@ -395,7 +400,7 @@ export const createLockSchema = () =>
 
 export const createSelectInputSchema = (
 	entry: TableSchemaEntry,
-	getQueryArgsSchema: (entry: TableSchemaEntry) => z.AnyZodObject,
+	getQueryArgsSchema: (entry: TableSchemaEntry) => z.ZodObject,
 	behavior: ZodPluginBehavior | undefined,
 	registry: TableRegistry,
 ) => {
@@ -417,7 +422,7 @@ export const createSelectInputSchema = (
 
 export const createIncludeInputSchema = (
 	entry: TableSchemaEntry,
-	getQueryArgsSchema: (entry: TableSchemaEntry) => z.AnyZodObject,
+	getQueryArgsSchema: (entry: TableSchemaEntry) => z.ZodObject,
 	behavior: ZodPluginBehavior | undefined,
 	registry: TableRegistry,
 ) => {
@@ -493,9 +498,9 @@ export const createQueryArgsSchema = <Schema extends AnySchema>(
 	entry: TableSchemaEntry,
 	behavior: ZodPluginBehavior | undefined,
 	options: ZodPluginOptions<Schema>,
-	getCursorSchema: (entry: TableSchemaEntry) => z.AnyZodObject,
-	getIncludeInputSchema: (entry: TableSchemaEntry) => z.AnyZodObject,
-	getSelectInputSchema: (entry: TableSchemaEntry) => z.AnyZodObject,
+	getCursorSchema: (entry: TableSchemaEntry) => z.ZodObject,
+	getIncludeInputSchema: (entry: TableSchemaEntry) => z.ZodObject,
+	getSelectInputSchema: (entry: TableSchemaEntry) => z.ZodObject,
 ) =>
 	applySchemaBlock(
 		applyUnknownKeys(
@@ -524,9 +529,9 @@ export const createPaginationSchema = <Schema extends AnySchema>(
 	entry: TableSchemaEntry,
 	behavior: ZodPluginBehavior | undefined,
 	options: ZodPluginOptions<Schema>,
-	getCursorSchema: (entry: TableSchemaEntry) => z.AnyZodObject,
-	getIncludeInputSchema: (entry: TableSchemaEntry) => z.AnyZodObject,
-	getSelectInputSchema: (entry: TableSchemaEntry) => z.AnyZodObject,
+	getCursorSchema: (entry: TableSchemaEntry) => z.ZodObject,
+	getIncludeInputSchema: (entry: TableSchemaEntry) => z.ZodObject,
+	getSelectInputSchema: (entry: TableSchemaEntry) => z.ZodObject,
 ) =>
 	applySchemaBlock(
 		applyUnknownKeys(
