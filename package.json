@@ -1,22 +1,26 @@
 {
-	"name": "better-drizzle-workspace",
-	"private": true,
+	"name": "better-drizzle",
+	"version": "0.2.0",
+	"description": "Minimal, type-safe repository helpers for Drizzle ORM.",
+	"homepage": "https://better-drizzle.com/",
+	"license": "Apache-2.0",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/almeidazs/better-drizzle.git"
+	},
 	"workspaces": [
-		"packages/*",
 		"apps/*"
+	],
+	"files": [
+		"LICENSE",
+		"dist",
+		"README.md"
 	],
 	"type": "module",
 	"scripts": {
 		"prepare": "lefthook install",
-		"build": "bun run build:packages",
-		"build:packages": "bun run build:core && bun run build:rules && bun run build:eslint && bun run build:timestamps && bun run build:soft-delete && bun run build:zod",
-		"build:core": "bun run --filter better-drizzle build",
-		"build:eslint": "bun run --filter @better-drizzle/eslint build",
-		"build:rules": "bun run --filter @better-drizzle/rules build",
-		"build:timestamps": "bun run --filter @better-drizzle/timestamps build",
-		"build:soft-delete": "bun run --filter @better-drizzle/soft-delete build",
-		"build:zod": "bun run --filter @better-drizzle/zod build",
-		"check": "bun run check:types && bun run check:lint && bun run test && bun run pack:core && bun run pack:rules && bun run pack:eslint && bun run pack:timestamps && bun run pack:soft-delete && bun run pack:zod",
+		"build": "tsdown --config tsdown.config.ts",
+		"check": "bun run check:types && bun run check:lint && bun run test && bun run pack",
 		"check:lint": "NODE_OPTIONS=--import=tsx oxfmt --config oxfmt.config.ts --check . '!**/*.{md,mdx}' && NODE_OPTIONS=--import=tsx oxlint --config oxlint.config.ts .",
 		"fix": "NODE_OPTIONS=--import=tsx oxlint --config oxlint.config.ts --fix . && NODE_OPTIONS=--import=tsx oxfmt --config oxfmt.config.ts --write . '!**/*.{md,mdx}'",
 		"check:types": "bunx tsc --noEmit",
@@ -28,12 +32,7 @@
 		"bench:verify": "BENCH_VERIFY_ONLY=1 bun run benchmark/full.ts",
 		"docs:dev": "bun run --filter @better-drizzle/web dev",
 		"docs:build": "bun run --filter @better-drizzle/web build",
-		"pack:core": "bun run build:core && cd packages/core && npm pack --dry-run",
-		"pack:eslint": "bun run build:eslint && cd packages/eslint && npm pack --dry-run",
-		"pack:rules": "bun run build:rules && cd packages/rules && npm pack --dry-run",
-		"pack:timestamps": "bun run build:timestamps && cd packages/timestamps && npm pack --dry-run",
-		"pack:soft-delete": "bun run build:soft-delete && cd packages/soft-delete && npm pack --dry-run",
-		"pack:zod": "bun run build:zod && cd packages/zod && npm pack --dry-run",
+		"pack": "bun run build && npm pack --dry-run",
 		"test": "bun test tests/core tests/rules tests/eslint tests/timestamps tests/soft-delete tests/zod",
 		"test:mysql": "bun test tests/core/where.mysql.test.ts",
 		"test:integration": "bun test tests/core/integration",

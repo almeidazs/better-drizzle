@@ -6,13 +6,12 @@
 		"paths": {
 			"better-drizzle": ["./src/index.ts"],
 			"better-drizzle/rules": ["./src/packages/rules/index.ts"],
-			"@better-drizzle/eslint": ["./packages/eslint/src/index.ts"],
-			"@better-drizzle/rules": ["./packages/rules/src/index.ts"],
-			"@better-drizzle/soft-delete": [
-				"./packages/soft-delete/src/index.ts"
+			"better-drizzle/soft-delete": [
+				"./src/packages/soft-delete/index.ts"
 			],
-			"@better-drizzle/zod": ["./packages/zod/src/index.ts"],
-			"@better-drizzle/timestamps": ["./packages/timestamps/src/index.ts"]
+			"better-drizzle/timestamps": ["./src/packages/timestamps/index.ts"],
+			"better-drizzle/zod": ["./src/packages/zod/index.ts"],
+			"better-drizzle/eslint": ["./src/packages/eslint/index.ts"]
 		},
 		"resolveJsonModule": true,
 		"esModuleInterop": true,
@@ -24,7 +23,6 @@
 		"benchmark/**/*.ts",
 		"commitlint.config.ts",
 		"tsdown.config.ts",
-		"packages/*/src/**/*.ts",
 		"src/**/*.ts"
 	]
 }

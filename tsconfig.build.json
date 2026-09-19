@@ -1,14 +1,11 @@
 {
-	"extends": "../../tsconfig.json",
+	"extends": "./tsconfig.json",
 	"compilerOptions": {
 		"declaration": true,
 		"declarationMap": false,
 		"emitDeclarationOnly": true,
 		"outDir": "./dist",
 		"rootDir": "./src",
-		"paths": {
-			"better-drizzle": ["../core/dist/index.d.ts"]
-		},
 		"stripInternal": true
 	},
 	"include": ["src/**/*.ts"]

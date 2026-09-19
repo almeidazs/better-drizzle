@@ -54,79 +54,6 @@
         "typescript": "^5.9.3",
       },
     },
-    "packages/core": {
-      "name": "better-drizzle",
-      "version": "0.1.1",
-      "peerDependencies": {
-        "drizzle-orm": "^0.30.0",
-        "typescript": "^5",
-      },
-    },
-    "packages/eslint": {
-      "name": "@better-drizzle/eslint",
-      "version": "0.1.1",
-      "dependencies": {
-        "@better-drizzle/rules": "^0.1.1",
-      },
-      "devDependencies": {
-        "@better-drizzle/rules": "workspace:*",
-      },
-      "peerDependencies": {
-        "@typescript-eslint/parser": "^8",
-        "eslint": "^9",
-        "typescript": "^5",
-      },
-    },
-    "packages/rules": {
-      "name": "@better-drizzle/rules",
-      "version": "0.1.1",
-      "devDependencies": {
-        "better-drizzle": "workspace:*",
-      },
-      "peerDependencies": {
-        "better-drizzle": "^0.1.1",
-        "drizzle-orm": "^0.30.0",
-        "typescript": "^5",
-      },
-    },
-    "packages/soft-delete": {
-      "name": "@better-drizzle/soft-delete",
-      "version": "0.1.1",
-      "devDependencies": {
-        "better-drizzle": "workspace:*",
-      },
-      "peerDependencies": {
-        "better-drizzle": "^0.1.1",
-        "drizzle-orm": "^0.30.0",
-        "typescript": "^5",
-      },
-    },
-    "packages/timestamps": {
-      "name": "@better-drizzle/timestamps",
-      "version": "0.1.1",
-      "devDependencies": {
-        "better-drizzle": "workspace:*",
-      },
-      "peerDependencies": {
-        "better-drizzle": "^0.1.1",
-        "drizzle-orm": "^0.30.0",
-        "typescript": "^5",
-      },
-    },
-    "packages/zod": {
-      "name": "@better-drizzle/zod",
-      "version": "0.1.1",
-      "devDependencies": {
-        "better-drizzle": "workspace:*",
-        "zod": "^4.4.3",
-      },
-      "peerDependencies": {
-        "better-drizzle": "^0.1.1",
-        "drizzle-orm": "^0.30.0",
-        "typescript": "^5",
-        "zod": "^3.25.0 || ^4.0.0",
-      },
-    },
   },
   "packages": {
     "@alloc/quick-lru": ["@alloc/quick-lru@5.2.0", "", {}, "sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw=="],
@@ -141,17 +68,7 @@
 
     "@babel/types": ["@babel/types@7.29.8", "", { "dependencies": { "@babel/helper-string-parser": "^7.29.7", "@babel/helper-validator-identifier": "^7.29.7" } }, "sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg=="],
 
-    "@better-drizzle/eslint": ["@better-drizzle/eslint@workspace:packages/eslint"],
-
-    "@better-drizzle/rules": ["@better-drizzle/rules@workspace:packages/rules"],
-
-    "@better-drizzle/soft-delete": ["@better-drizzle/soft-delete@workspace:packages/soft-delete"],
-
-    "@better-drizzle/timestamps": ["@better-drizzle/timestamps@workspace:packages/timestamps"],
-
     "@better-drizzle/web": ["@better-drizzle/web@workspace:apps/web"],
-
-    "@better-drizzle/zod": ["@better-drizzle/zod@workspace:packages/zod"],
 
     "@clack/core": ["@clack/core@1.5.1", "", { "dependencies": { "fast-wrap-ansi": "^0.2.0", "sisteransi": "^1.0.5" } }, "sha512-iHTrHA8MtVuLl2TfZySmcKv1qO2PoyC9Z7pfSDozEuV5vtY3/wcOPKJXlqJ5Oq2Cx5DDGQGAMVx6HZfRRoVEbQ=="],
 
@@ -736,8 +653,6 @@
     "balanced-match": ["balanced-match@1.0.2", "", {}, "sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw=="],
 
     "baseline-browser-mapping": ["baseline-browser-mapping@2.10.43", "", { "bin": { "baseline-browser-mapping": "dist/cli.cjs" } }, "sha512-AjYpR78kDWAY3Efj+cDTFH9t9SCoL7OoTp1BOb0mQV7S+6CiLwnWM3FyxhJtdPufDFKzmCSFoUncKjWgJEZTCQ=="],
-
-    "better-drizzle": ["better-drizzle@workspace:packages/core"],
 
     "brace-expansion": ["brace-expansion@1.1.16", "", { "dependencies": { "balanced-match": "^1.0.0", "concat-map": "0.0.1" } }, "sha512-IDw48K2/2kRkg9LdJxurvq3lV3aBgq0REY89duEqFRthjlPdXHKMj7EnQOXVckxzgisinf3nHfrcE2FufFLXMw=="],
 

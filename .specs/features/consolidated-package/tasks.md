@@ -101,6 +101,7 @@ T6 → T7 → T8
 
 ### T6: Remove plugin package manifests and adjust workspace commands
 
+**Status**: Done
 **What**: Delete standalone plugin manifests and replace workspace-filtered scripts with unified root commands.
 **Where**: unified package manifest boundary
 **Depends on**: T2, T3, T4, T5
