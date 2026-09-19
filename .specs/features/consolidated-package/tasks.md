@@ -90,6 +90,7 @@ T6 → T7 → T8
 
 ### T5: Relocate the ESLint integration
 
+**Status**: Done
 **What**: Move ESLint source and tests to the unified tree and point its rules dependency at `better-drizzle/rules`.
 **Where**: `packages/eslint`, `src/packages/eslint`, `tests/eslint`
 **Depends on**: T2

@@ -5,6 +5,7 @@
 		"moduleResolution": "bundler",
 		"paths": {
 			"better-drizzle": ["./src/index.ts"],
+			"better-drizzle/rules": ["./src/packages/rules/index.ts"],
 			"@better-drizzle/eslint": ["./packages/eslint/src/index.ts"],
 			"@better-drizzle/rules": ["./packages/rules/src/index.ts"],
 			"@better-drizzle/soft-delete": [

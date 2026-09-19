@@ -1,9 +1,9 @@
+import parser from '@typescript-eslint/parser';
 import {
 	recommended as runtimeRecommended,
 	safe as runtimeSafe,
 	strict as runtimeStrict,
-} from '@better-drizzle/rules';
-import parser from '@typescript-eslint/parser';
+} from 'better-drizzle/rules';
 
 import { ruleIdByRuntimeKey, SUPPORTED_RUNTIME_RULE_KEYS } from './names';
 

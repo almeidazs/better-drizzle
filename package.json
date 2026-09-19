@@ -34,7 +34,7 @@
 		"pack:timestamps": "bun run build:timestamps && cd packages/timestamps && npm pack --dry-run",
 		"pack:soft-delete": "bun run build:soft-delete && cd packages/soft-delete && npm pack --dry-run",
 		"pack:zod": "bun run build:zod && cd packages/zod && npm pack --dry-run",
-		"test": "bun test tests/core tests/rules packages/eslint/tests tests/timestamps tests/soft-delete tests/zod",
+		"test": "bun test tests/core tests/rules tests/eslint tests/timestamps tests/soft-delete tests/zod",
 		"test:mysql": "bun test tests/core/where.mysql.test.ts",
 		"test:integration": "bun test tests/core/integration",
 		"bench:jsonb": "DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required} bun run benchmark/jsonb.ts",

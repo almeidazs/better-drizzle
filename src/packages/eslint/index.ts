@@ -79,7 +79,7 @@ export const rules = ruleModules;
 
 const generatedConfigs = createConfigs({
 	meta: {
-		name: '@better-drizzle/eslint',
+		name: 'better-drizzle/eslint',
 		version,
 	},
 	rules,
@@ -93,7 +93,7 @@ export const strict = generatedConfigs.strict;
 const plugin = {
 	configs,
 	meta: {
-		name: '@better-drizzle/eslint',
+		name: 'better-drizzle/eslint',
 		version,
 	},
 	rules,

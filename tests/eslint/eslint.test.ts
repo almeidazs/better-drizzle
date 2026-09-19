@@ -3,7 +3,7 @@ import { describe } from 'bun:test';
 import parser from '@typescript-eslint/parser';
 import { RuleTester } from 'eslint';
 
-import plugin from '../src';
+import plugin from '../../src/packages/eslint';
 
 const tester = new RuleTester({
 	languageOptions: {
@@ -13,7 +13,7 @@ const tester = new RuleTester({
 	},
 });
 
-describe('@better-drizzle/eslint', () => {
+describe('better-drizzle/eslint', () => {
 	tester.run(
 		'no-update-many-without-where',
 		plugin.rules['no-update-many-without-where'],
