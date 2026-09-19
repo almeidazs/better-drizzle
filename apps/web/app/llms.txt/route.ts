@@ -91,7 +91,6 @@ Key characteristics:
 
 - [GitHub Repository](https://github.com/almeidazs/better-drizzle): Source code, issues, and contributions.
 - [npm Package](https://www.npmjs.com/package/better-drizzle): Install better-drizzle from npm.
-- [Examples](https://github.com/almeidazs/better-drizzle/tree/main/examples): Markdown-first example catalog covering basics, frameworks, plugins, and performance.
 `;
 
 	return new Response(body, {

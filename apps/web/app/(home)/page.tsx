@@ -537,12 +537,6 @@ export default function HomePage() {
 								>
 									npm
 								</a>
-								<Link
-									href="/docs/examples"
-									className="hover:text-fd-foreground"
-								>
-									Examples
-								</Link>
 							</div>
 						</div>
 						<div>
