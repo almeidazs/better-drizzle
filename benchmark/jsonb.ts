@@ -4,7 +4,7 @@ import { integer, jsonb, pgTable } from 'drizzle-orm/pg-core';
 import { bench, do_not_optimize, run } from 'mitata';
 import { Client } from 'pg';
 
-import { better } from '../packages/core/src';
+import { better } from '../src';
 
 type Metadata = { profile: { age: number; active: boolean; name: string } };
 const events = pgTable('better_drizzle_jsonb_benchmark_events', {

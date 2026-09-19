@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
-import { BetterDrizzleErrorCode, better, definePlugin } from '../src';
+import { BetterDrizzleErrorCode, better, definePlugin } from '../../src';
 
 type Equal<A, B> =
 	(<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2

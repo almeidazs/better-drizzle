@@ -9,7 +9,7 @@ import {
 	BetterDrizzleErrorCode,
 	better,
 	definePlugin,
-} from '../src';
+} from '../../src';
 
 const users = sqliteTable('client_users', {
 	id: integer('id').primaryKey(),

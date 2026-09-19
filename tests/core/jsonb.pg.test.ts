@@ -5,7 +5,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { integer, jsonb, pgTable } from 'drizzle-orm/pg-core';
 import { Client } from 'pg';
 
-import { better } from '../src';
+import { better } from '../../src';
 
 type Metadata = { profile: { active: boolean; age: number; name: string } };
 const events = pgTable('better_drizzle_jsonb_test_events', {

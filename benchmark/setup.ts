@@ -5,8 +5,8 @@ import { join } from 'node:path';
 
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 
-import type { BetterDrizzleClient } from '../packages/core/src';
-import { better } from '../packages/core/src';
+import type { BetterDrizzleClient } from '../src';
+import { better } from '../src';
 import type { BenchmarkSchema } from './schema';
 import { createTablesSql, schema } from './schema';
 

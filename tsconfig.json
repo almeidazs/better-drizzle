@@ -4,7 +4,7 @@
 		"module": "ES2022",
 		"moduleResolution": "bundler",
 		"paths": {
-			"better-drizzle": ["./packages/core/src/index.ts"],
+			"better-drizzle": ["./src/index.ts"],
 			"@better-drizzle/eslint": ["./packages/eslint/src/index.ts"],
 			"@better-drizzle/rules": ["./packages/rules/src/index.ts"],
 			"@better-drizzle/soft-delete": [
@@ -23,6 +23,7 @@
 		"benchmark/**/*.ts",
 		"commitlint.config.ts",
 		"tsdown.config.ts",
-		"packages/*/src/**/*.ts"
+		"packages/*/src/**/*.ts",
+		"src/**/*.ts"
 	]
 }

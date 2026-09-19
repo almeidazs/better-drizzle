@@ -3,7 +3,7 @@ import { boolean, int, mysqlTable, varchar } from 'drizzle-orm/mysql-core';
 import { drizzle } from 'drizzle-orm/mysql2';
 import mysql from 'mysql2/promise';
 
-import { better } from '../src';
+import { better } from '../../src';
 
 // A live-MySQL mirror of ./setup.ts. Same tables, same relations, same seed, so
 // the identity assertions in where.mysql.test.ts read exactly like the SQLite

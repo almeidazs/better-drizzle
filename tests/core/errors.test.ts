@@ -9,7 +9,7 @@ import {
 	isForeignKeyViolation,
 	isNotNullViolation,
 	isUniqueViolation,
-} from '../src';
+} from '../../src';
 
 describe('isDatabaseError', () => {
 	test('returns true for error-like objects with message', () => {

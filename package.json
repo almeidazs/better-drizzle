@@ -34,11 +34,11 @@
 		"pack:timestamps": "bun run build:timestamps && cd packages/timestamps && npm pack --dry-run",
 		"pack:soft-delete": "bun run build:soft-delete && cd packages/soft-delete && npm pack --dry-run",
 		"pack:zod": "bun run build:zod && cd packages/zod && npm pack --dry-run",
-		"test": "bun test packages/core/tests packages/rules/tests packages/eslint/tests packages/timestamps/tests packages/soft-delete/tests packages/zod/tests",
-		"test:mysql": "bun test packages/core/tests/where.mysql.test.ts",
-		"test:integration": "bun test packages/core/tests/integration",
+		"test": "bun test tests/core packages/rules/tests packages/eslint/tests packages/timestamps/tests packages/soft-delete/tests packages/zod/tests",
+		"test:mysql": "bun test tests/core/where.mysql.test.ts",
+		"test:integration": "bun test tests/core/integration",
 		"bench:jsonb": "DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required} bun run benchmark/jsonb.ts",
-		"test:jsonb": "bun test packages/core/tests/jsonb.pg.test.ts"
+		"test:jsonb": "bun test tests/core/jsonb.pg.test.ts"
 	},
 	"devDependencies": {
 		"@commitlint/config-conventional": "^21.1.0",

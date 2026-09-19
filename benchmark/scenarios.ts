@@ -1,6 +1,6 @@
 import { and, asc, count, desc, eq, gte, like, sql } from 'drizzle-orm';
 
-import { OrderType } from '../packages/core/src';
+import { OrderType } from '../src';
 import { benchWrites, comments, posts, users } from './schema';
 import type { BenchmarkContext } from './setup';
 

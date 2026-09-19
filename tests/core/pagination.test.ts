@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
-import { BetterDrizzleError } from '../src';
+import { BetterDrizzleError } from '../../src';
 import { createTestContext, type TestContext } from './setup';
 
 let ctx: TestContext;

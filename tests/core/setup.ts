@@ -4,7 +4,7 @@ import { relations } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
-import { better } from '../src';
+import { better } from '../../src';
 
 const users = sqliteTable('test_users', {
 	id: integer('id').primaryKey(),

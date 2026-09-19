@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import { sql } from 'drizzle-orm';
 
-import { better, definePlugin } from '../../src';
+import { better, definePlugin } from '../../../src';
 import {
 	createMassiveContext,
 	ENTRY_COUNT,

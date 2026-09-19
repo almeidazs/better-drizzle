@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { relations } from 'drizzle-orm';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
-import { BetterDrizzleErrorCode, better } from '../src';
+import { BetterDrizzleErrorCode, better } from '../../src';
 import { createTestContext } from './setup';
 
 const users = sqliteTable('lock_users', {

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import { sql } from 'drizzle-orm';
 
-import { BetterDrizzleErrorCode } from '../src';
+import { BetterDrizzleErrorCode } from '../../src';
 import { createTestContext, type TestContext } from './setup';
 
 let ctx: TestContext;

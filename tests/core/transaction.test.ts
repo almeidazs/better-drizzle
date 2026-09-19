@@ -10,7 +10,7 @@ import {
 	BetterDrizzleTransactionRollbackError,
 	better,
 	definePlugin,
-} from '../src';
+} from '../../src';
 
 type Equal<A, B> =
 	(<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2

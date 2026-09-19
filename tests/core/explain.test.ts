@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
-import { better, definePlugin } from '../src';
+import { better, definePlugin } from '../../src';
 import { createTestContext } from './setup';
 
 const explainUsers = sqliteTable('explain_users', {

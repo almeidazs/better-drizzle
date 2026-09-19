@@ -9,7 +9,7 @@ import {
 	text,
 } from 'drizzle-orm/sqlite-core';
 
-import { better } from '../../src';
+import { better } from '../../../src';
 
 export const USER_COUNT = 300;
 export const POSTS_PER_USER = 4;

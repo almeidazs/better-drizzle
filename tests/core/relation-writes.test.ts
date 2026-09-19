@@ -10,7 +10,7 @@ import {
 	text,
 } from 'drizzle-orm/sqlite-core';
 
-import { better, definePlugin } from '../src';
+import { better, definePlugin } from '../../src';
 import { createTestContext, type TestContext } from './setup';
 
 describe('direct relation writes', () => {
