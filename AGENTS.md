@@ -11,7 +11,6 @@
   - `packages/timestamps`: official timestamps plugin
   - `packages/zod`: official Zod schema generation and validation plugin
   - `benchmark`: Bun + SQLite benchmark suite
-  - `examples`: Markdown-only example catalog and usage guides
   - `apps/web`: Next.js + Fumadocs documentation/marketing site
   - `README.md`: project-level documentation
   - `packages/core/README.md`: package-level documentation, currently intentionally kept in sync with the root README
@@ -19,11 +18,12 @@
 - **Package publishing/build**:
   - all published workspace libraries now build to `dist/`
   - each package emits `dist/index.js` (ESM), `dist/index.cjs` (CommonJS), and `dist/index.d.ts`
-  - root build entrypoint is `scripts/build.ts`, powered by `Bun.build` plus `tsc` declaration emit
-  - keep package bundle minification disabled in `scripts/build.ts`; the published 0.1.0 minified Bun build produced broken export footers (`dist/index.js`/`dist/index.cjs`) with unresolved symbols at import time
+  - package builds use the shared root `tsdown.config.ts`, invoked from each package manifest
+  - builds emit minified, tree-shaken dual ESM/CJS bundles and declaration files; keep `fixedExtension: false` so the published `type: module` packages retain `dist/index.js` and `dist/index.cjs`
+  - tsdown's minifier is explicitly enabled after validating every package's ESM/CJS import paths, the core package tarball, typecheck, and test suite; repeat that validation before changing minification settings
   - package manifests publish only `dist`, `README.md`, and `LICENSE`
   - published package manifests now use conditional type exports: ESM reads `dist/index.d.ts` and CJS reads `dist/index.d.cts`
-  - `scripts/build.ts` post-processes emitted declarations after all package builds: relative specifiers are rewritten for NodeNext compatibility (directory imports become `.../index.js`), `.d.cts` copies are generated, and declaration-only internal modules get tiny ESM stub `.js` files so TypeScript can resolve the declaration graph from published tarballs
+  - tsdown bundles declarations for both module formats, emitting `dist/index.d.ts` and `dist/index.d.cts` without custom post-processing
 - **Top-level scripts**:
   - `bun run bench`: run the time benchmark suite
   - `bun run bench:memory`: run the memory/overhead benchmark suite
@@ -276,7 +276,7 @@
 - **README sync**: the root `README.md` and `packages/core/README.md` are intended to stay aligned. If one changes, update the other unless there is a clear package-specific reason not to.
 - **Performance claims**: tie claims to benchmark shape and avoid vague “faster” language without context.
 - **Examples**: prefer real API examples that match the current exported API and benchmarked usage patterns.
-- **Examples catalog**: `examples/` is a Markdown-first reference library. Prefer adding focused topic pages under `basics`, `frameworks`, `plugins`, `performance`, and `cookbook` instead of growing one giant examples file.
+- **Documentation**: add focused pages under `apps/web/content/docs` instead of duplicating API guidance in a separate catalog.
 
 ## Agent skills support
 

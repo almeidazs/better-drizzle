@@ -48,7 +48,7 @@
 		"registry": "https://registry.npmjs.org/"
 	},
 	"scripts": {
-		"build": "bun run ../../scripts/build.ts core"
+		"build": "bunx tsdown --config ../../tsdown.config.ts"
 	},
 	"sideEffects": false,
 	"type": "module",

@@ -45,7 +45,7 @@
 		"registry": "https://registry.npmjs.org/"
 	},
 	"scripts": {
-		"build": "bun run ../../scripts/build.ts timestamps"
+		"build": "bunx tsdown --config ../../tsdown.config.ts"
 	},
 	"sideEffects": false,
 	"type": "module",
