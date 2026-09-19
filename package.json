@@ -17,10 +17,77 @@
 		"README.md"
 	],
 	"type": "module",
+	"sideEffects": false,
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": {
+				"types": "./dist/index.d.ts",
+				"default": "./dist/index.js"
+			},
+			"require": {
+				"types": "./dist/index.d.cts",
+				"default": "./dist/index.cjs"
+			}
+		},
+		"./eslint": {
+			"import": {
+				"types": "./dist/eslint.d.ts",
+				"default": "./dist/eslint.js"
+			},
+			"require": {
+				"types": "./dist/eslint.d.cts",
+				"default": "./dist/eslint.cjs"
+			}
+		},
+		"./rules": {
+			"import": {
+				"types": "./dist/rules.d.ts",
+				"default": "./dist/rules.js"
+			},
+			"require": {
+				"types": "./dist/rules.d.cts",
+				"default": "./dist/rules.cjs"
+			}
+		},
+		"./soft-delete": {
+			"import": {
+				"types": "./dist/soft-delete.d.ts",
+				"default": "./dist/soft-delete.js"
+			},
+			"require": {
+				"types": "./dist/soft-delete.d.cts",
+				"default": "./dist/soft-delete.cjs"
+			}
+		},
+		"./timestamps": {
+			"import": {
+				"types": "./dist/timestamps.d.ts",
+				"default": "./dist/timestamps.js"
+			},
+			"require": {
+				"types": "./dist/timestamps.d.cts",
+				"default": "./dist/timestamps.cjs"
+			}
+		},
+		"./zod": {
+			"import": {
+				"types": "./dist/zod.d.ts",
+				"default": "./dist/zod.js"
+			},
+			"require": {
+				"types": "./dist/zod.d.cts",
+				"default": "./dist/zod.cjs"
+			}
+		}
+	},
 	"scripts": {
 		"prepare": "lefthook install",
 		"build": "tsdown --config tsdown.config.ts",
 		"check": "bun run check:types && bun run check:lint && bun run test && bun run pack",
+		"check:exports": "node --input-type=module --eval \"await Promise.all(['better-drizzle', 'better-drizzle/eslint', 'better-drizzle/rules', 'better-drizzle/soft-delete', 'better-drizzle/timestamps', 'better-drizzle/zod'].map((entry) => import(entry)))\" && node --eval \"for (const entry of ['better-drizzle', 'better-drizzle/eslint', 'better-drizzle/rules', 'better-drizzle/soft-delete', 'better-drizzle/timestamps', 'better-drizzle/zod']) require(entry)\"",
 		"check:lint": "NODE_OPTIONS=--import=tsx oxfmt --config oxfmt.config.ts --check . '!**/*.{md,mdx}' && NODE_OPTIONS=--import=tsx oxlint --config oxlint.config.ts .",
 		"fix": "NODE_OPTIONS=--import=tsx oxlint --config oxlint.config.ts --fix . && NODE_OPTIONS=--import=tsx oxfmt --config oxfmt.config.ts --write . '!**/*.{md,mdx}'",
 		"check:types": "bunx tsc --noEmit",
@@ -32,7 +99,7 @@
 		"bench:verify": "BENCH_VERIFY_ONLY=1 bun run benchmark/full.ts",
 		"docs:dev": "bun run --filter @better-drizzle/web dev",
 		"docs:build": "bun run --filter @better-drizzle/web build",
-		"pack": "bun run build && npm pack --dry-run",
+		"pack": "bun run build && bun run check:exports && npm pack --dry-run --ignore-scripts",
 		"test": "bun test tests/core tests/rules tests/eslint tests/timestamps tests/soft-delete tests/zod",
 		"test:mysql": "bun test tests/core/where.mysql.test.ts",
 		"test:integration": "bun test tests/core/integration",
@@ -61,7 +128,21 @@
 		"zod": "^4.4.3"
 	},
 	"peerDependencies": {
+		"@typescript-eslint/parser": "^8",
 		"drizzle-orm": "^0.30.0",
-		"typescript": "^5"
+		"eslint": "^9",
+		"typescript": "^5",
+		"zod": "^3.25.0 || ^4.0.0"
+	},
+	"peerDependenciesMeta": {
+		"zod": {
+			"optional": true
+		},
+		"eslint": {
+			"optional": true
+		},
+		"@typescript-eslint/parser": {
+			"optional": true
+		}
 	}
 }

@@ -112,6 +112,7 @@ T6 → T7 → T8
 
 ### T7: Emit and validate root subpath exports
 
+**Status**: Done
 **What**: Configure tsdown and root exports for every public entrypoint, then add packed-tarball export validation.
 **Where**: unified distribution boundary
 **Depends on**: T6
