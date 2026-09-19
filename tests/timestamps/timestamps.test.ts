@@ -4,8 +4,8 @@ import { describe, expect, test } from 'bun:test';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
-import { better } from '../../core/src';
-import { timestamps } from '../src';
+import { better } from '../../src';
+import { timestamps } from '../../src/packages/timestamps';
 
 const records = sqliteTable('timestamp_records', {
 	createdAt: integer('created_at', { mode: 'timestamp' }),
@@ -47,7 +47,7 @@ const createContext = () => {
 	};
 };
 
-describe('@better-drizzle/timestamps', () => {
+describe('better-drizzle/timestamps', () => {
 	test('sets createdAt and updatedAt on create in app mode', async () => {
 		const ctx = createContext();
 		const client = better(ctx.db, {

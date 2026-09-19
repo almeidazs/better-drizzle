@@ -60,7 +60,7 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 
 	return definePlugin({
 		description: 'Automatically manages createdAt and updatedAt fields.',
-		id: '@better-drizzle/timestamps',
+		id: 'better-drizzle/timestamps',
 		name: 'Timestamps',
 		options,
 		hooks:

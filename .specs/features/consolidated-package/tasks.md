@@ -68,6 +68,7 @@ T6 → T7 → T8
 
 ### T3: Relocate soft-delete and timestamps integrations
 
+**Status**: Done
 **What**: Move both dependency-free runtime integrations and their tests to unified plugin subtrees.
 **Where**: `packages/soft-delete`, `packages/timestamps`, `src/packages/{soft-delete,timestamps}`, `tests/{soft-delete,timestamps}`
 **Depends on**: T1

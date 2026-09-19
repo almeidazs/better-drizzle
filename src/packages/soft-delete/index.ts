@@ -106,7 +106,7 @@ export const softDelete = (options: SoftDeleteOptions = {}) => {
 	>({
 		description:
 			'Adds soft delete visibility filters and delete overrides.',
-		id: '@better-drizzle/soft-delete',
+		id: 'better-drizzle/soft-delete',
 		name: 'Soft Delete',
 		operationArgs: {
 			count: {

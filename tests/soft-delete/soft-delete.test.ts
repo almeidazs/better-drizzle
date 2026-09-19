@@ -4,8 +4,8 @@ import { describe, expect, test } from 'bun:test';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
-import { better } from '../../core/src';
-import { softDelete } from '../src';
+import { better } from '../../src';
+import { softDelete } from '../../src/packages/soft-delete';
 
 const records = sqliteTable('soft_delete_records', {
 	deletedAt: integer('deleted_at', { mode: 'timestamp' }),
@@ -49,7 +49,7 @@ const createContext = () => {
 	};
 };
 
-describe('@better-drizzle/soft-delete', () => {
+describe('better-drizzle/soft-delete', () => {
 	test('filters deleted rows by default and supports visibility overrides', async () => {
 		const ctx = createContext();
 		const client = better(ctx.db, {
