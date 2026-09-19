@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test';
 
 import { better } from 'better-drizzle';
 
-import { createTestContext } from '../../../packages/core/tests/setup';
-import { rules } from '../src';
+import { rules } from '../../src/packages/rules';
+import { createTestContext } from '../core/setup';
 
 const createRulesContext = (pluginOptions: Parameters<typeof rules>[0]) => {
 	const base = createTestContext();
@@ -21,7 +21,7 @@ const createRulesContext = (pluginOptions: Parameters<typeof rules>[0]) => {
 	};
 };
 
-describe('@better-drizzle/rules', () => {
+describe('better-drizzle/rules', () => {
 	test('boolean rules normalize true to error', async () => {
 		const ctx = createRulesContext({
 			noRawUnsafe: true,

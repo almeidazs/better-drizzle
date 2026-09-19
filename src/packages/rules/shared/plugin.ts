@@ -1133,7 +1133,7 @@ const runRules = async (
 };
 
 /**
- * Creates the `@better-drizzle/rules` plugin.
+ * Creates the `@betterbetter-drizzle/rules` plugin.
  *
  * The plugin hooks into every read, write, raw, and transaction operation
  * and evaluates the configured rules before execution. Violations are
@@ -1151,7 +1151,7 @@ const runRules = async (
  * @example
  * ```ts
  * import { better } from 'better-drizzle';
- * import { rules, safe } from '@better-drizzle/rules';
+ * import { rules, safe } from '@betterbetter-drizzle/rules';
  *
  * const db = better(drizzleDb, {
  *   schema,
@@ -1164,7 +1164,7 @@ const runRules = async (
  * @example
  * ```ts
  * // With overrides
- * import { rules, recommended } from '@better-drizzle/rules';
+ * import { rules, recommended } from '@betterbetter-drizzle/rules';
  *
  * const plugin = rules(recommended({
  *   maxLimit: { level: 'error', value: 200 },
@@ -1233,7 +1233,7 @@ export const rules = (options: RulesPluginOptions<string, string> = {}) =>
 				return undefined;
 			},
 		},
-		id: '@better-drizzle/rules',
+		id: '@betterbetter-drizzle/rules',
 		name: 'Rules',
 		options,
 		version,

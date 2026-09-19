@@ -171,7 +171,7 @@ export type ModelRuleScope<TModel extends string = string> = {
 };
 
 /**
- * Configuration options for the `@better-drizzle/rules` plugin.
+ * Configuration options for the `better-drizzle/rules` plugin.
  *
  * Every rule is optional. When omitted the rule is disabled. Rules can be
  * set to `true` (error), `false`/`'off'` (disabled), `'warn'`, `'error'`,
@@ -184,7 +184,7 @@ export type ModelRuleScope<TModel extends string = string> = {
  *
  * @example
  * ```ts
- * import { rules, safe } from '@better-drizzle/rules';
+ * import { rules, safe } from 'better-drizzle/rules';
  *
  * const plugin = rules({
  *   ...safe(),

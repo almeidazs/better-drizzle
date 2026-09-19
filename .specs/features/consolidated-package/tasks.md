@@ -57,6 +57,7 @@ T6 → T7 → T8
 
 ### T2: Relocate the rules integration
 
+**Status**: Done
 **What**: Move rules source and tests to the unified tree and change imports to `better-drizzle/rules`.
 **Where**: `packages/rules`, `src/packages/rules`, `tests/rules`
 **Depends on**: T1
