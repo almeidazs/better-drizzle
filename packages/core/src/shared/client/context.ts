@@ -348,13 +348,13 @@ export const createRuntimeContext = <
 		dialect: getDialect(db as RuntimeContext<Schema, Meta, Plugins>['db']),
 		hasHooks: Boolean(
 			hooks?.beforeCreate ||
-				hooks?.afterCreate ||
-				hooks?.beforeUpdate ||
-				hooks?.afterUpdate ||
-				hooks?.beforeDelete ||
-				hooks?.afterDelete ||
-				hooks?.beforeQuery ||
-				hooks?.afterQuery,
+			hooks?.afterCreate ||
+			hooks?.beforeUpdate ||
+			hooks?.afterUpdate ||
+			hooks?.beforeDelete ||
+			hooks?.afterDelete ||
+			hooks?.beforeQuery ||
+			hooks?.afterQuery,
 		),
 		hasOnError: Boolean(hooks?.onError),
 		hasPlugins: plugins.length > 0,

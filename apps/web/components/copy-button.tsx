@@ -2,6 +2,7 @@
 
 import { Check, Copy } from 'lucide-react';
 import { useState } from 'react';
+
 import { cn } from '@/lib/utils';
 
 export function CopyButton({
@@ -31,12 +32,12 @@ export function CopyButton({
 			onClick={copy}
 			aria-label={copied ? 'Copied' : label}
 			className={cn(
-				'inline-flex size-8 items-center justify-center rounded-md text-fd-muted-foreground transition-colors hover:bg-fd-accent hover:text-fd-accent-foreground',
+				'text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-accent-foreground inline-flex size-8 items-center justify-center rounded-md transition-colors',
 				className,
 			)}
 		>
 			{copied ? (
-				<Check className="size-4 text-brand" />
+				<Check className="text-brand size-4" />
 			) : (
 				<Copy className="size-4" />
 			)}

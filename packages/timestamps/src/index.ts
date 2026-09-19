@@ -1,4 +1,5 @@
 import { definePlugin } from 'better-drizzle';
+
 import type { TimestampsOptions } from './types';
 import { version } from './version';
 

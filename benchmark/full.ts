@@ -34,7 +34,7 @@ import { type BenchmarkContext, createBenchmarkContext } from './setup';
 
 type Operation = () => Promise<unknown>;
 
-// biome-ignore lint/suspicious/noExplicitAny: benchmark type erasure
+// oxlint-disable-next-line typescript/no-explicit-any -- Benchmark type erasure.
 type Any = any;
 
 const betterClient = (context: BenchmarkContext) =>
@@ -481,11 +481,9 @@ const registerPairs = (
 		summary(() => {
 			for (const [scenario, raw, better] of pairs) {
 				bench(`drizzle: ${scenario}`, async () =>
-					do_not_optimize(await raw()),
-				);
+					do_not_optimize(await raw()));
 				bench(`better: ${scenario}`, async () =>
-					do_not_optimize(await better()),
-				);
+					do_not_optimize(await better()));
 			}
 		});
 	});

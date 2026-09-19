@@ -986,7 +986,7 @@ export interface Plugin<
  * generics are widened to `any` so that `readonly AnyPlugin[]` accepts
  * any combination of plugins.
  */
-// biome-ignore lint/suspicious/noExplicitAny: intentionally erase plugin generics for constraints
+// oxlint-disable-next-line typescript/no-explicit-any -- Intentionally erase plugin generics for constraints.
 type Any = any;
 export type AnyPlugin = Plugin<Any, Any, Any, Any, Any, Any>;
 
@@ -1116,9 +1116,7 @@ export type OperationArgsOf<PluginDef> =
  * @typeParam Value - The union type to convert.
  */
 export type UnionToIntersection<Value> = (
-	Value extends unknown
-		? (input: Value) => void
-		: never
+	Value extends unknown ? (input: Value) => void : never
 ) extends (input: infer Intersection) => void
 	? Intersection
 	: never;
@@ -1230,8 +1228,8 @@ export const definePlugin = <
 	const ClientExtension extends PluginExtension = Record<never, never>,
 	const ModelExtension extends PluginExtension = Record<never, never>,
 	const State extends PluginState = PluginState,
-	const OperationArgs extends
-		Partial<PluginOperationArgsExtensionMap> = Record<never, never>,
+	const OperationArgs extends Partial<PluginOperationArgsExtensionMap> =
+		Record<never, never>,
 	const ModelExtensionResolver = never,
 >(
 	plugin: PluginDefinition<

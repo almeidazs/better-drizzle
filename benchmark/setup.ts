@@ -2,7 +2,9 @@ import { Database } from 'bun:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
 import { drizzle } from 'drizzle-orm/bun-sqlite';
+
 import type { BetterDrizzleClient } from '../packages/core/src';
 import { better } from '../packages/core/src';
 import type { BenchmarkSchema } from './schema';

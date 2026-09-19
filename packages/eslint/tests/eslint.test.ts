@@ -1,4 +1,5 @@
 import { describe } from 'bun:test';
+
 import parser from '@typescript-eslint/parser';
 import { RuleTester } from 'eslint';
 

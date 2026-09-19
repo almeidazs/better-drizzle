@@ -1,4 +1,5 @@
 import { integer, jsonb, pgTable } from 'drizzle-orm/pg-core';
+
 import type { BetterDrizzleClient } from './delegate';
 
 type Metadata = {

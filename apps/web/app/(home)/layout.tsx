@@ -1,5 +1,6 @@
 import { HomeLayout } from 'fumadocs-ui/layouts/home';
 import type { ReactNode } from 'react';
+
 import { HomeSiteHeader } from '@/components/site-header';
 import { baseOptions } from '@/lib/layout.shared';
 

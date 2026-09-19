@@ -561,11 +561,13 @@ type SelectedScalarPayload<
 	Name extends TableKey<Schema>,
 	Select extends SelectInput<Schema, Name>,
 > = {
-	[K in keyof SelectModelFor<Schema, Name> as K extends keyof Select
-		? Select[K] extends true
-			? K
+	[
+		K in keyof SelectModelFor<Schema, Name> as K extends keyof Select
+			? Select[K] extends true
+				? K
+				: never
 			: never
-		: never]: SelectModelFor<Schema, Name>[K];
+	]: SelectModelFor<Schema, Name>[K];
 };
 
 type SelectedRelationPayload<
@@ -573,13 +575,15 @@ type SelectedRelationPayload<
 	Name extends TableKey<Schema>,
 	Select extends SelectInput<Schema, Name>,
 > = {
-	[K in RelationKeysFor<Schema, Name> as K extends keyof Select
-		? Select[K] extends
-				| true
-				| QueryArgs<Schema, RelatedNameFor<Schema, Name, K>>
-			? K
+	[
+		K in RelationKeysFor<Schema, Name> as K extends keyof Select
+			? Select[K] extends
+					| true
+					| QueryArgs<Schema, RelatedNameFor<Schema, Name, K>>
+				? K
+				: never
 			: never
-		: never]: RelationFor<Schema, Name, K> extends Many<string>
+	]: RelationFor<Schema, Name, K> extends Many<string>
 		? RelationPayloadFromArg<Schema, Name, K, Select[K]>[]
 		: RelationPayloadFromArg<Schema, Name, K, Select[K]> | null;
 };
@@ -589,13 +593,15 @@ type IncludedRelationPayload<
 	Name extends TableKey<Schema>,
 	Include extends IncludeInput<Schema, Name>,
 > = SelectModelFor<Schema, Name> & {
-	[K in RelationKeysFor<Schema, Name> as K extends keyof Include
-		? Include[K] extends
-				| true
-				| QueryArgs<Schema, RelatedNameFor<Schema, Name, K>>
-			? K
+	[
+		K in RelationKeysFor<Schema, Name> as K extends keyof Include
+			? Include[K] extends
+					| true
+					| QueryArgs<Schema, RelatedNameFor<Schema, Name, K>>
+				? K
+				: never
 			: never
-		: never]: RelationFor<Schema, Name, K> extends Many<string>
+	]: RelationFor<Schema, Name, K> extends Many<string>
 		? RelationPayloadFromArg<Schema, Name, K, Include[K]>[]
 		: RelationPayloadFromArg<Schema, Name, K, Include[K]> | null;
 };
@@ -607,11 +613,13 @@ type IncludedCountPayload<
 > = Include extends { _count: { select: infer Count } }
 	? {
 			_count: {
-				[K in RelationKeysFor<Schema, Name> as K extends keyof Count
-					? Count[K] extends CountRelationArg<Schema, Name, K>
-						? K
+				[
+					K in RelationKeysFor<Schema, Name> as K extends keyof Count
+						? Count[K] extends CountRelationArg<Schema, Name, K>
+							? K
+							: never
 						: never
-					: never]: number;
+				]: number;
 			};
 		}
 	: object;

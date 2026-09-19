@@ -1205,7 +1205,9 @@ export type BetterDrizzleModelDelegate<
 			Plugins,
 			'create'
 		>,
-	>(args: Args): Promise<PayloadForArgs<Schema, Name, Args>>;
+	>(
+		args: Args,
+	): Promise<PayloadForArgs<Schema, Name, Args>>;
 	/**
 	 * Inserts multiple rows in a single statement.
 	 *
@@ -1239,7 +1241,9 @@ export type BetterDrizzleModelDelegate<
 			Plugins,
 			'createMany'
 		>,
-	>(args: Args): Promise<BatchResult<PayloadForArgs<Schema, Name, Args>>>;
+	>(
+		args: Args,
+	): Promise<BatchResult<PayloadForArgs<Schema, Name, Args>>>;
 	/**
 	 * Inserts a row if no match is found, otherwise updates it.
 	 *
@@ -1273,7 +1277,9 @@ export type BetterDrizzleModelDelegate<
 			Plugins,
 			'upsert'
 		>,
-	>(args: Args): Promise<PayloadForArgs<Schema, Name, Args>>;
+	>(
+		args: Args,
+	): Promise<PayloadForArgs<Schema, Name, Args>>;
 	/**
 	 * Performs a native batch upsert against an explicit conflict target.
 	 *
@@ -1310,7 +1316,9 @@ export type BetterDrizzleModelDelegate<
 			Plugins,
 			'upsertMany'
 		>,
-	>(args: Args): Promise<BatchResult<PayloadForArgs<Schema, Name, Args>>>;
+	>(
+		args: Args,
+	): Promise<BatchResult<PayloadForArgs<Schema, Name, Args>>>;
 	/**
 	 * Returns all matching rows.
 	 *
@@ -1352,7 +1360,9 @@ export type BetterDrizzleModelDelegate<
 			Plugins,
 			'findMany'
 		>,
-	>(args?: Args): ExplainableResult<PayloadForArgs<Schema, Name, Args>[]>;
+	>(
+		args?: Args,
+	): ExplainableResult<PayloadForArgs<Schema, Name, Args>[]>;
 	/**
 	 * Updates a single matching row and returns the updated record.
 	 *
@@ -1391,7 +1401,9 @@ export type BetterDrizzleModelDelegate<
 			Plugins,
 			'update'
 		>,
-	>(args: Args): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	>(
+		args: Args,
+	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	/**
 	 * Updates all matching rows and returns the affected count.
 	 *
@@ -1438,7 +1450,9 @@ export type BetterDrizzleModelDelegate<
 			Plugins,
 			'updateEach'
 		>,
-	>(args: Args): Promise<BatchResult<PayloadForArgs<Schema, Name, Args>>>;
+	>(
+		args: Args,
+	): Promise<BatchResult<PayloadForArgs<Schema, Name, Args>>>;
 	/**
 	 * Returns the first matching row (alias for {@link findFirst}).
 	 *
@@ -1465,7 +1479,9 @@ export type BetterDrizzleModelDelegate<
 			Plugins,
 			'findOne'
 		>,
-	>(args?: Args): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	>(
+		args?: Args,
+	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	/**
 	 * Returns the first matching row.
 	 *
@@ -1493,7 +1509,9 @@ export type BetterDrizzleModelDelegate<
 			Plugins,
 			'findFirst'
 		>,
-	>(args?: Args): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	>(
+		args?: Args,
+	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	/**
 	 * Returns exactly one matching row; throws if not found.
 	 *
@@ -1528,7 +1546,9 @@ export type BetterDrizzleModelDelegate<
 			Plugins,
 			'findUnique'
 		>,
-	>(args: Args): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	>(
+		args: Args,
+	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	/**
 	 * Returns an offset-based paginated result set with page metadata.
 	 *
@@ -1606,7 +1626,9 @@ export type BetterDrizzleModelDelegate<
 			Plugins,
 			'delete'
 		>,
-	>(args: Args): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	>(
+		args: Args,
+	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	/**
 	 * Deletes all matching rows and returns the affected count.
 	 *

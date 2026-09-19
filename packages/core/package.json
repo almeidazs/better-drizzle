@@ -2,7 +2,33 @@
 	"name": "better-drizzle",
 	"version": "0.1.1",
 	"description": "Minimal, type-safe repository helpers for Drizzle ORM.",
+	"keywords": [
+		"drizzle",
+		"drizzle-orm",
+		"mysql",
+		"orm",
+		"postgres",
+		"repository",
+		"sqlite",
+		"typescript"
+	],
+	"homepage": "https://better-drizzle.com/",
+	"bugs": {
+		"url": "https://github.com/almeidazs/better-drizzle/issues"
+	},
 	"license": "Apache-2.0",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/almeidazs/better-drizzle.git",
+		"directory": "packages/core"
+	},
+	"files": [
+		"LICENSE",
+		"dist",
+		"README.md"
+	],
+	"type": "module",
+	"sideEffects": false,
 	"main": "./dist/index.cjs",
 	"module": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -19,30 +45,6 @@
 			"default": "./dist/index.js"
 		}
 	},
-	"files": [
-		"LICENSE",
-		"dist",
-		"README.md"
-	],
-	"keywords": [
-		"drizzle",
-		"drizzle-orm",
-		"orm",
-		"typescript",
-		"repository",
-		"sqlite",
-		"postgres",
-		"mysql"
-	],
-	"homepage": "https://better-drizzle.com/",
-	"bugs": {
-		"url": "https://github.com/almeidazs/better-drizzle/issues"
-	},
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/almeidazs/better-drizzle.git",
-		"directory": "packages/core"
-	},
 	"publishConfig": {
 		"access": "public",
 		"registry": "https://registry.npmjs.org/"
@@ -50,13 +52,11 @@
 	"scripts": {
 		"build": "bunx tsdown --config ../../tsdown.config.ts"
 	},
-	"sideEffects": false,
-	"type": "module",
-	"engines": {
-		"node": ">=18"
-	},
 	"peerDependencies": {
 		"drizzle-orm": "^0.30.0",
 		"typescript": "^5"
+	},
+	"engines": {
+		"node": ">=18"
 	}
 }

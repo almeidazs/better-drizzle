@@ -41,138 +41,103 @@ const betterContext = createBenchmarkContext();
 group('api parity: reads', () => {
 	summary(() => {
 		bench('drizzle: point lookup', async () =>
-			do_not_optimize(await rawPointLookup(rawContext)),
-		);
+			do_not_optimize(await rawPointLookup(rawContext)));
 		bench('better: point lookup', async () =>
-			do_not_optimize(await betterPointLookup(betterContext)),
-		);
+			do_not_optimize(await betterPointLookup(betterContext)));
 
 		bench('drizzle: filtered list', async () =>
-			do_not_optimize(await rawFilteredList(rawContext)),
-		);
+			do_not_optimize(await rawFilteredList(rawContext)));
 		bench('better: filtered list', async () =>
-			do_not_optimize(await betterFilteredList(betterContext)),
-		);
+			do_not_optimize(await betterFilteredList(betterContext)));
 
 		bench('drizzle: relation graph', async () =>
-			do_not_optimize(await rawRelationGraph(rawContext)),
-		);
+			do_not_optimize(await rawRelationGraph(rawContext)));
 		bench('better: relation graph', async () =>
-			do_not_optimize(await betterRelationGraph(betterContext)),
-		);
+			do_not_optimize(await betterRelationGraph(betterContext)));
 
 		bench('drizzle: relation counts', async () =>
-			do_not_optimize(await rawRelationCounts(rawContext)),
-		);
+			do_not_optimize(await rawRelationCounts(rawContext)));
 		bench('better: relation counts', async () =>
-			do_not_optimize(await betterRelationCounts(betterContext)),
-		);
+			do_not_optimize(await betterRelationCounts(betterContext)));
 
 		bench('drizzle: active count', async () =>
-			do_not_optimize(await rawActiveCount(rawContext)),
-		);
+			do_not_optimize(await rawActiveCount(rawContext)));
 		bench('better: active count', async () =>
-			do_not_optimize(await betterActiveCount(betterContext)),
-		);
+			do_not_optimize(await betterActiveCount(betterContext)));
 
 		bench('drizzle: exists', async () =>
-			do_not_optimize(await rawExists(rawContext)),
-		);
+			do_not_optimize(await rawExists(rawContext)));
 		bench('better: exists', async () =>
-			do_not_optimize(await betterExists(betterContext)),
-		);
+			do_not_optimize(await betterExists(betterContext)));
 
 		bench('drizzle: offset pagination', async () =>
-			do_not_optimize(await rawOffsetPaginate(rawContext)),
-		);
+			do_not_optimize(await rawOffsetPaginate(rawContext)));
 		bench('better: offset pagination', async () =>
-			do_not_optimize(await betterOffsetPaginate(betterContext)),
-		);
+			do_not_optimize(await betterOffsetPaginate(betterContext)));
 
 		bench('drizzle: cursor pagination', async () =>
-			do_not_optimize(await rawCursorPaginate(rawContext)),
-		);
+			do_not_optimize(await rawCursorPaginate(rawContext)));
 		bench('better: cursor pagination', async () =>
-			do_not_optimize(await betterCursorPaginate(betterContext)),
-		);
+			do_not_optimize(await betterCursorPaginate(betterContext)));
 
 		bench('drizzle: complex relation filter', async () =>
-			do_not_optimize(await rawComplexRelationFilter(rawContext)),
-		);
+			do_not_optimize(await rawComplexRelationFilter(rawContext)));
 		bench('better: complex relation filter', async () =>
-			do_not_optimize(await betterComplexJoinEquivalent(betterContext)),
-		);
+			do_not_optimize(await betterComplexJoinEquivalent(betterContext)));
 	});
 });
 
 group('api parity: writes', () => {
 	summary(() => {
 		bench('drizzle: create + delete roundtrip', async () =>
-			do_not_optimize(await rawCreateDeleteRoundtrip(rawContext)),
-		);
+			do_not_optimize(await rawCreateDeleteRoundtrip(rawContext)));
 		bench('better: create + delete roundtrip', async () =>
-			do_not_optimize(await betterCreateDeleteRoundtrip(betterContext)),
-		);
+			do_not_optimize(await betterCreateDeleteRoundtrip(betterContext)));
 
 		bench('drizzle: update + reload', async () =>
-			do_not_optimize(await rawUpdateAndLoad(rawContext)),
-		);
+			do_not_optimize(await rawUpdateAndLoad(rawContext)));
 		bench('better: update + reload', async () =>
-			do_not_optimize(await betterUpdateAndLoad(betterContext)),
-		);
+			do_not_optimize(await betterUpdateAndLoad(betterContext)));
 	});
 });
 
 group('api parity: transactions', () => {
 	summary(() => {
 		bench('drizzle: simple transaction', async () =>
-			do_not_optimize(await rawSimpleTransaction(rawContext)),
-		);
+			do_not_optimize(await rawSimpleTransaction(rawContext)));
 		bench('better: simple transaction', async () =>
-			do_not_optimize(await betterSimpleTransaction(betterContext)),
-		);
+			do_not_optimize(await betterSimpleTransaction(betterContext)));
 
 		bench('drizzle: multi-op transaction', async () =>
-			do_not_optimize(await rawMultiOpTransaction(rawContext)),
-		);
+			do_not_optimize(await rawMultiOpTransaction(rawContext)));
 		bench('better: multi-op transaction', async () =>
-			do_not_optimize(await betterMultiOpTransaction(betterContext)),
-		);
+			do_not_optimize(await betterMultiOpTransaction(betterContext)));
 
 		bench('drizzle: read-only transaction', async () =>
-			do_not_optimize(await rawReadOnlyTransaction(rawContext)),
-		);
+			do_not_optimize(await rawReadOnlyTransaction(rawContext)));
 		bench('better: read-only transaction', async () =>
-			do_not_optimize(await betterReadOnlyTransaction(betterContext)),
-		);
+			do_not_optimize(await betterReadOnlyTransaction(betterContext)));
 
 		bench('better: nested transaction (savepoint)', async () =>
-			do_not_optimize(await betterNestedTransaction(betterContext)),
-		);
+			do_not_optimize(await betterNestedTransaction(betterContext)));
 	});
 });
 
 group('manual drizzle reference', () => {
 	summary(() => {
 		bench('drizzle manual: complex join flat', async () =>
-			do_not_optimize(await rawComplexJoinFlat(rawContext)),
-		);
+			do_not_optimize(await rawComplexJoinFlat(rawContext)));
 		bench('drizzle parity: complex relation filter', async () =>
-			do_not_optimize(await rawComplexRelationFilter(rawContext)),
-		);
+			do_not_optimize(await rawComplexRelationFilter(rawContext)));
 		bench('better: complex relation filter', async () =>
-			do_not_optimize(await betterComplexJoinEquivalent(betterContext)),
-		);
+			do_not_optimize(await betterComplexJoinEquivalent(betterContext)));
 
 		bench('drizzle parity: create + delete roundtrip', async () =>
-			do_not_optimize(await rawCreateDeleteRoundtrip(rawContext)),
-		);
+			do_not_optimize(await rawCreateDeleteRoundtrip(rawContext)));
 		bench('better: create + delete roundtrip', async () =>
-			do_not_optimize(await betterCreateDeleteRoundtrip(betterContext)),
-		);
+			do_not_optimize(await betterCreateDeleteRoundtrip(betterContext)));
 		bench('drizzle manual: create + delete bare', async () =>
-			do_not_optimize(await rawCreateDeleteBare(rawContext)),
-		);
+			do_not_optimize(await rawCreateDeleteBare(rawContext)));
 	});
 });
 

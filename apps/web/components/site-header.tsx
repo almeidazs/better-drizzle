@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { FaGithub } from 'react-icons/fa';
+
 import { Logo } from '@/components/logo';
 import { formatGithubStars } from '@/lib/github';
 import { cn } from '@/lib/utils';
@@ -55,7 +56,7 @@ function GithubStarsButton({ stars }: { stars: number }) {
 			target="_blank"
 			rel="noreferrer"
 			aria-label="better-drizzle GitHub"
-			className="inline-flex h-9 items-center gap-2 rounded-lg border border-fd-border bg-fd-card px-3 text-sm font-semibold text-fd-foreground transition-colors hover:border-[#686868] hover:bg-white/[0.06]"
+			className="border-fd-border bg-fd-card text-fd-foreground inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-sm font-semibold transition-colors hover:border-[#686868] hover:bg-white/[0.06]"
 		>
 			<FaGithub className="size-4" />
 			<span>{formatGithubStars(stars)}</span>
@@ -70,7 +71,7 @@ function GithubStarsCompactButton({ stars }: { stars: number }) {
 			target="_blank"
 			rel="noreferrer"
 			aria-label="better-drizzle GitHub"
-			className="inline-flex h-9 items-center gap-2 rounded-lg border border-fd-border bg-fd-card px-2.5 text-sm font-semibold text-fd-foreground transition-colors hover:border-[#686868] hover:bg-white/[0.06]"
+			className="border-fd-border bg-fd-card text-fd-foreground inline-flex h-9 items-center gap-2 rounded-lg border px-2.5 text-sm font-semibold transition-colors hover:border-[#686868] hover:bg-white/[0.06]"
 		>
 			<FaGithub className="size-4" />
 			<span>{formatGithubStars(stars)}</span>
@@ -116,11 +117,11 @@ function HeaderShell({
 	return (
 		<header
 			className={cn(
-				'sticky top-0 z-40 min-w-0 border-b border-fd-border/70 bg-fd-background/80 backdrop-blur-lg',
+				'border-fd-border/70 bg-fd-background/80 sticky top-0 z-40 min-w-0 border-b backdrop-blur-lg',
 				className,
 			)}
 		>
-			<div className="mx-auto flex h-14 min-w-0 max-w-6xl items-center gap-3 px-4 sm:px-6">
+			<div className="mx-auto flex h-14 max-w-6xl min-w-0 items-center gap-3 px-4 sm:px-6">
 				<Link href="/" className="shrink-0">
 					<Logo className="w-28 sm:w-32" />
 				</Link>
@@ -186,7 +187,7 @@ export function DocsSiteHeader() {
 								className="p-2"
 							/>
 						)}
-						<slots.sidebar.trigger className="inline-flex size-9 items-center justify-center rounded-md text-fd-muted-foreground transition-colors hover:bg-fd-accent hover:text-fd-foreground">
+						<slots.sidebar.trigger className="text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-foreground inline-flex size-9 items-center justify-center rounded-md transition-colors">
 							<SidebarIcon className="size-5" />
 						</slots.sidebar.trigger>
 					</div>

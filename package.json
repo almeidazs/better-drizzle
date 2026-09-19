@@ -1,11 +1,11 @@
 {
 	"name": "better-drizzle-workspace",
 	"private": true,
-	"type": "module",
 	"workspaces": [
 		"packages/*",
 		"apps/*"
 	],
+	"type": "module",
 	"scripts": {
 		"prepare": "lefthook install",
 		"build": "bun run build:packages",
@@ -17,7 +17,8 @@
 		"build:soft-delete": "bun run --filter @better-drizzle/soft-delete build",
 		"build:zod": "bun run --filter @better-drizzle/zod build",
 		"check": "bun run check:types && bun run check:lint && bun run test && bun run pack:core && bun run pack:rules && bun run pack:eslint && bun run pack:timestamps && bun run pack:soft-delete && bun run pack:zod",
-		"check:lint": "bunx @biomejs/biome check packages/core packages/rules packages/eslint packages/timestamps packages/soft-delete packages/zod benchmark .github",
+		"check:lint": "NODE_OPTIONS=--import=tsx oxfmt --config oxfmt.config.ts --check . '!**/*.{md,mdx}' && NODE_OPTIONS=--import=tsx oxlint --config oxlint.config.ts .",
+		"fix": "NODE_OPTIONS=--import=tsx oxlint --config oxlint.config.ts --fix . && NODE_OPTIONS=--import=tsx oxfmt --config oxfmt.config.ts --write . '!**/*.{md,mdx}'",
 		"check:types": "bunx tsc --noEmit",
 		"lint:commit": "commitlint",
 		"bench": "bun run benchmark/time.ts",
@@ -40,7 +41,6 @@
 		"test:jsonb": "bun test packages/core/tests/jsonb.pg.test.ts"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.5.1",
 		"@commitlint/config-conventional": "^21.1.0",
 		"@types/bun": "latest",
 		"@types/estree": "^1.0.8",
@@ -51,9 +51,13 @@
 		"lefthook": "^2.0.0",
 		"mitata": "^1.0.34",
 		"mysql2": "^3.23.0",
+		"oxfmt": "^0.68.0",
+		"oxlint": "^1.83.0",
 		"pg": "^8.22.0",
 		"tsdown": "^0.23.0",
+		"tsx": "^4.23.13",
 		"typescript": "^5.9.3",
+		"ultracite": "^7.12.0",
 		"unrun": "^0.3.1"
 	},
 	"peerDependencies": {

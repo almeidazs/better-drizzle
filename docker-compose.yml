@@ -4,7 +4,7 @@ services:
         container_name: better-drizzle-postgres
         restart: unless-stopped
         ports:
-            - "${POSTGRES_PORT:-5432}:5432"
+            - '${POSTGRES_PORT:-5432}:5432'
         environment:
             POSTGRES_DB: ${POSTGRES_DB:-better_drizzle}
             POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -15,8 +15,8 @@ services:
         healthcheck:
             test:
                 [
-                    "CMD-SHELL",
-                    "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-better_drizzle}",
+                    'CMD-SHELL',
+                    'pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-better_drizzle}',
                 ]
             interval: 5s
             timeout: 3s
@@ -27,7 +27,7 @@ services:
         container_name: better-drizzle-mysql
         restart: unless-stopped
         ports:
-            - "${MYSQL_PORT:-3306}:3306"
+            - '${MYSQL_PORT:-3306}:3306'
         environment:
             MYSQL_DATABASE: ${MYSQL_DB:-better_drizzle}
             MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-mysql}
@@ -36,8 +36,8 @@ services:
         healthcheck:
             test:
                 [
-                    "CMD-SHELL",
-                    "mysqladmin ping -uroot -p${MYSQL_ROOT_PASSWORD:-mysql} --silent",
+                    'CMD-SHELL',
+                    'mysqladmin ping -uroot -p${MYSQL_ROOT_PASSWORD:-mysql} --silent',
                 ]
             interval: 5s
             timeout: 3s

@@ -1,7 +1,7 @@
-name: "Documentation Enhancement"
+name: 'Documentation Enhancement'
 description: Suggest documentation improvements
-title: "[DOCS]:"
-labels: ["docs"]
+title: '[DOCS]:'
+labels: ['docs']
 
 body:
     - type: checkboxes

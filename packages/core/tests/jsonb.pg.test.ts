@@ -1,8 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+
 import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { integer, jsonb, pgTable } from 'drizzle-orm/pg-core';
 import { Client } from 'pg';
+
 import { better } from '../src';
 
 type Metadata = { profile: { active: boolean; age: number; name: string } };

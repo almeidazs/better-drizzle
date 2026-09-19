@@ -2,6 +2,7 @@
 
 import { Check, Copy } from 'lucide-react';
 import { useState } from 'react';
+
 import { cn } from '@/lib/utils';
 
 const MANAGERS = {
@@ -28,8 +29,8 @@ export function InstallCommand() {
 	}
 
 	return (
-		<div className="flex w-full max-w-md items-center gap-2 rounded-xl border border-fd-border bg-fd-card/60 px-3 py-2 font-mono text-sm backdrop-blur">
-			<div className="flex items-center gap-1 border-r border-fd-border pr-2">
+		<div className="border-fd-border bg-fd-card/60 flex w-full max-w-md items-center gap-2 rounded-xl border px-3 py-2 font-mono text-sm backdrop-blur">
+			<div className="border-fd-border flex items-center gap-1 border-r pr-2">
 				{(Object.keys(MANAGERS) as Manager[]).map((key) => (
 					<button
 						key={key}
@@ -46,18 +47,18 @@ export function InstallCommand() {
 					</button>
 				))}
 			</div>
-			<code className="flex-1 truncate text-fd-foreground">
-				<span className="select-none text-fd-muted-foreground">$ </span>
+			<code className="text-fd-foreground flex-1 truncate">
+				<span className="text-fd-muted-foreground select-none">$ </span>
 				{command}
 			</code>
 			<button
 				type="button"
 				onClick={copy}
 				aria-label={copied ? 'Copied' : 'Copy install command'}
-				className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-fd-muted-foreground transition-colors hover:bg-fd-accent hover:text-fd-accent-foreground"
+				className="text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-accent-foreground inline-flex size-7 shrink-0 items-center justify-center rounded-md transition-colors"
 			>
 				{copied ? (
-					<Check className="size-4 text-brand" />
+					<Check className="text-brand size-4" />
 				) : (
 					<Copy className="size-4" />
 				)}

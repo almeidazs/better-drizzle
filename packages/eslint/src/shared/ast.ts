@@ -214,11 +214,11 @@ export const hasOwnProperties = (value: unknown) => {
 	const node = unwrapExpression(value);
 	return Boolean(
 		node &&
-			node.type === 'ObjectExpression' &&
-			Array.isArray(node.properties) &&
-			node.properties.some(
-				(property) => asNode(property)?.type === 'Property',
-			),
+		node.type === 'ObjectExpression' &&
+		Array.isArray(node.properties) &&
+		node.properties.some(
+			(property) => asNode(property)?.type === 'Property',
+		),
 	);
 };
 

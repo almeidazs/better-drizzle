@@ -2,7 +2,30 @@
 	"name": "@better-drizzle/eslint",
 	"version": "0.1.1",
 	"description": "ESLint plugin for Better Drizzle guardrails.",
+	"keywords": [
+		"better-drizzle",
+		"drizzle",
+		"drizzle-orm",
+		"eslint",
+		"plugin"
+	],
+	"homepage": "https://better-drizzle.com/",
+	"bugs": {
+		"url": "https://github.com/almeidazs/better-drizzle/issues"
+	},
 	"license": "Apache-2.0",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/almeidazs/better-drizzle.git",
+		"directory": "packages/eslint"
+	},
+	"files": [
+		"LICENSE",
+		"dist",
+		"README.md"
+	],
+	"type": "module",
+	"sideEffects": false,
 	"main": "./dist/index.cjs",
 	"module": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -19,27 +42,6 @@
 			"default": "./dist/index.js"
 		}
 	},
-	"files": [
-		"LICENSE",
-		"dist",
-		"README.md"
-	],
-	"keywords": [
-		"better-drizzle",
-		"drizzle",
-		"drizzle-orm",
-		"eslint",
-		"plugin"
-	],
-	"homepage": "https://better-drizzle.com/",
-	"bugs": {
-		"url": "https://github.com/almeidazs/better-drizzle/issues"
-	},
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/almeidazs/better-drizzle.git",
-		"directory": "packages/eslint"
-	},
 	"publishConfig": {
 		"access": "public",
 		"registry": "https://registry.npmjs.org/"
@@ -47,20 +49,18 @@
 	"scripts": {
 		"build": "bunx tsdown --config ../../tsdown.config.ts"
 	},
-	"sideEffects": false,
-	"type": "module",
-	"engines": {
-		"node": ">=18"
-	},
 	"dependencies": {
 		"@better-drizzle/rules": "^0.1.1"
+	},
+	"devDependencies": {
+		"@better-drizzle/rules": "workspace:*"
 	},
 	"peerDependencies": {
 		"@typescript-eslint/parser": "^8",
 		"eslint": "^9",
 		"typescript": "^5"
 	},
-	"devDependencies": {
-		"@better-drizzle/rules": "workspace:*"
+	"engines": {
+		"node": ">=18"
 	}
 }

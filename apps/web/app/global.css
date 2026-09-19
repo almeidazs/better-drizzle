@@ -1,6 +1,6 @@
-@import "tailwindcss";
-@import "fumadocs-ui/css/neutral.css";
-@import "fumadocs-ui/css/preset.css";
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
 
 @source "../components/**/*.{ts,tsx}";
 @source "../app/**/*.{ts,tsx}";
@@ -108,7 +108,7 @@ body {
 }
 
 .bd-strike::after {
-	content: "";
+	content: '';
 	position: absolute;
 	left: -0.08em;
 	right: -0.08em;
@@ -139,8 +139,8 @@ body {
 @media (max-width: 767px) {
 	#nd-docs-layout {
 		grid-template:
-			"header"
-			"toc-popover"
-			"main" 1fr / minmax(0, 1fr);
+			'header'
+			'toc-popover'
+			'main' 1fr / minmax(0, 1fr);
 	}
 }

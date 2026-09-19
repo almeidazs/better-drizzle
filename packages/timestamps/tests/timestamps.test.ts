@@ -1,9 +1,10 @@
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
-import { better } from '../../core/src';
 
+import { better } from '../../core/src';
 import { timestamps } from '../src';
 
 const records = sqliteTable('timestamp_records', {

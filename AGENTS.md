@@ -32,7 +32,7 @@
   - `drizzle-orm` as a peer dependency
   - `typescript` as a peer dependency
   - `mitata` for benchmarking
-  - `@biomejs/biome` for formatting and linting
+  - Ultracite presets with `oxfmt` and `oxlint` for formatting and linting
   - the published compatibility floor is `drizzle-orm@^0.30.0`; `0.29.5` failed the workspace typecheck, while `0.30.0` passed typecheck plus the core/plugin test suites
 
 ## Architecture
@@ -233,11 +233,14 @@
   - `bunx tsc --noEmit`
   - web app: `cd apps/web && bun run typecheck`
 - **Format and lint**:
-  - `bunx @biomejs/biome check packages/core/src benchmark --write`
+  - `bun run check:lint`
+  - `NODE_OPTIONS=--import=tsx bunx oxfmt --config oxfmt.config.ts --write <files>` for targeted formatting
 - **Recent style/tooling facts**:
   - TypeScript is `strict`
   - module resolution is `bundler`
-  - formatting uses tabs, single quotes, trailing commas
+  - Oxfmt uses tabs, single quotes, and trailing commas
+  - `oxfmt.config.ts` and `oxlint.config.ts` import Ultracite presets; the commands load them through `tsx` because the local Node build cannot execute TypeScript config files natively
+  - Oxfmt intentionally excludes Markdown and MDX from the workspace-wide check to avoid reflowing documentation
 
 ## Local development database
 

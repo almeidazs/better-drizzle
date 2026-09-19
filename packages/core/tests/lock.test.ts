@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+
 import { relations } from 'drizzle-orm';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
@@ -74,7 +75,7 @@ const createFakeSelectQuery = (
 	};
 
 	return Object.assign(query, {
-		// biome-ignore lint/suspicious/noThenProperty: test double intentionally mimics Drizzle's awaitable query builder.
+		// oxlint-disable-next-line unicorn/no-thenable -- Test double intentionally mimics Drizzle's awaitable query builder.
 		then<TResult1 = Record<string, unknown>[], TResult2 = never>(
 			onfulfilled?:
 				| ((

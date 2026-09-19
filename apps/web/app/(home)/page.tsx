@@ -11,6 +11,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { FaDiscord, FaGithub } from 'react-icons/fa';
 import { SiPostgresql } from 'react-icons/si';
+
 import { CodeWindow } from '@/components/landing/code-window';
 import { SponsorHeart } from '@/components/landing/database-logos';
 import { InstallCommand } from '@/components/landing/install-command';
@@ -130,15 +131,15 @@ export default function HomePage() {
 				<div className="bd-grid pointer-events-none absolute inset-0" />
 				<div className="relative mx-auto grid max-w-6xl items-center gap-12 px-6 py-20 lg:grid-cols-2 lg:py-28">
 					<div className="bd-rise flex flex-col items-start">
-						<span className="inline-flex items-center gap-2 rounded-full border border-fd-border bg-fd-card/60 px-3 py-1 text-xs font-medium text-fd-muted-foreground backdrop-blur">
+						<span className="border-fd-border bg-fd-card/60 text-fd-muted-foreground inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium backdrop-blur">
 							<Logo className="w-10" />
 							Drizzle ORM, but better
 						</span>
-						<h1 className="mt-6 text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
+						<h1 className="mt-6 text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
 							Type-safe repository helpers for{' '}
 							<span className="text-brand">Drizzle</span>.
 						</h1>
-						<p className="mt-5 max-w-xl text-pretty text-lg text-fd-muted-foreground">
+						<p className="text-fd-muted-foreground mt-5 max-w-xl text-lg text-pretty">
 							Keep Drizzle&rsquo;s type-safety. Drop the
 							repetitive query glue. better-drizzle wraps your
 							client and gives every table reads, writes, relation
@@ -151,7 +152,7 @@ export default function HomePage() {
 						<div className="mt-6 flex flex-wrap items-center gap-3">
 							<Link
 								href="/docs"
-								className="inline-flex items-center gap-2 rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-brand-contrast transition-opacity hover:opacity-90"
+								className="bg-brand text-brand-contrast inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold transition-opacity hover:opacity-90"
 							>
 								Get started
 								<ArrowRight className="size-4" />
@@ -160,7 +161,7 @@ export default function HomePage() {
 								href="https://github.com/almeidazs/better-drizzle"
 								target="_blank"
 								rel="noreferrer"
-								className="inline-flex items-center gap-2 rounded-lg border border-fd-border px-5 py-2.5 text-sm font-semibold transition-colors hover:bg-fd-accent hover:text-fd-accent-foreground"
+								className="border-fd-border hover:bg-fd-accent hover:text-fd-accent-foreground inline-flex items-center gap-2 rounded-lg border px-5 py-2.5 text-sm font-semibold transition-colors"
 							>
 								<FaGithub className="size-4" />
 								Star on GitHub
@@ -182,7 +183,7 @@ export default function HomePage() {
 					<h2 className="text-3xl font-semibold tracking-tight">
 						The same query, without the glue
 					</h2>
-					<p className="mt-4 text-fd-muted-foreground">
+					<p className="text-fd-muted-foreground mt-4">
 						Both are fully typed. The difference is the dozens of
 						these you write across a codebase — and which one
 						you&rsquo;d rather read.
@@ -190,13 +191,13 @@ export default function HomePage() {
 				</div>
 				<div className="mt-12 grid items-start gap-6 lg:grid-cols-2">
 					<div className="flex flex-col gap-3">
-						<span className="text-sm font-medium text-fd-muted-foreground">
+						<span className="text-fd-muted-foreground text-sm font-medium">
 							Raw Drizzle
 						</span>
 						<CodeWindow code={RAW_CODE} title="raw-drizzle.ts" />
 					</div>
 					<div className="flex flex-col gap-3">
-						<span className="text-sm font-medium text-brand">
+						<span className="text-brand text-sm font-medium">
 							better-drizzle
 						</span>
 						<CodeWindow
@@ -214,23 +215,23 @@ export default function HomePage() {
 						<h2 className="text-3xl font-semibold tracking-tight">
 							Everything you rewrite, once
 						</h2>
-						<p className="mt-4 text-fd-muted-foreground">
+						<p className="text-fd-muted-foreground mt-4">
 							A consistent repository API per table — the patterns
 							every service ends up re-implementing, generated
 							from your schema and kept typed.
 						</p>
 					</div>
-					<div className="mt-12 grid gap-px overflow-hidden rounded-xl border border-fd-border bg-fd-border sm:grid-cols-2 lg:grid-cols-3">
+					<div className="border-fd-border bg-fd-border mt-12 grid gap-px overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-3">
 						{FEATURES.map((feature) => (
 							<div
 								key={feature.title}
-								className="flex flex-col gap-3 bg-fd-background p-6"
+								className="bg-fd-background flex flex-col gap-3 p-6"
 							>
-								<feature.icon className="size-5 text-brand" />
+								<feature.icon className="text-brand size-5" />
 								<h3 className="font-semibold">
 									{feature.title}
 								</h3>
-								<p className="text-sm text-fd-muted-foreground">
+								<p className="text-fd-muted-foreground text-sm">
 									{feature.body}
 								</p>
 							</div>
@@ -244,33 +245,33 @@ export default function HomePage() {
 					<h2 className="text-3xl font-semibold tracking-tight">
 						Close to the metal
 					</h2>
-					<p className="mt-4 text-fd-muted-foreground">
+					<p className="text-fd-muted-foreground mt-4">
 						Measured against raw Drizzle with fair, API-parity
 						comparisons. Reads are often <em>faster</em> through the
 						wrapper — and use less memory.
 					</p>
 				</div>
-				<div className="mt-12 grid gap-px overflow-hidden rounded-xl border border-fd-border bg-fd-border sm:grid-cols-2 lg:grid-cols-4">
+				<div className="border-fd-border bg-fd-border mt-12 grid gap-px overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-4">
 					{STATS.map((stat) => (
 						<div
 							key={stat.label}
-							className="flex flex-col gap-2 bg-fd-background p-6 text-center"
+							className="bg-fd-background flex flex-col gap-2 p-6 text-center"
 						>
-							<span className="text-3xl font-semibold tracking-tight text-brand">
+							<span className="text-brand text-3xl font-semibold tracking-tight">
 								{stat.value}
 							</span>
-							<span className="text-sm text-fd-muted-foreground">
+							<span className="text-fd-muted-foreground text-sm">
 								{stat.label}
 							</span>
 						</div>
 					))}
 				</div>
-				<p className="mt-6 text-center text-sm text-fd-muted-foreground">
+				<p className="text-fd-muted-foreground mt-6 text-center text-sm">
 					Numbers from the repository&rsquo;s suite (SQLite
 					in-memory).{' '}
 					<Link
 						href="/docs/performance/benchmarks"
-						className="font-medium text-brand hover:underline"
+						className="text-brand font-medium hover:underline"
 					>
 						See the full benchmarks →
 					</Link>
@@ -282,14 +283,14 @@ export default function HomePage() {
 					<h2 className="text-3xl font-semibold tracking-tight">
 						Works with your existing database
 					</h2>
-					<p className="mt-4 text-fd-muted-foreground">
+					<p className="text-fd-muted-foreground mt-4">
 						better-drizzle stays on top of Drizzle, so your driver
 						choice does not change.
 					</p>
 				</div>
-				<div className="mt-10 grid gap-px overflow-hidden rounded-xl border border-fd-border bg-fd-border sm:grid-cols-2 lg:grid-cols-4">
-					<div className="relative flex items-center gap-4 bg-fd-background p-6">
-						<div className="absolute right-4 top-3 inline-flex items-center gap-1 rounded-full border border-rose-200/70 bg-rose-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200">
+				<div className="border-fd-border bg-fd-border mt-10 grid gap-px overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-4">
+					<div className="bg-fd-background relative flex items-center gap-4 p-6">
+						<div className="absolute top-3 right-4 inline-flex items-center gap-1 rounded-full border border-rose-200/70 bg-rose-50 px-2 py-1 text-[10px] font-semibold tracking-[0.16em] text-rose-700 uppercase dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200">
 							OUR SPONSOR
 							<SponsorHeart className="size-3 fill-current stroke-current" />
 						</div>
@@ -302,22 +303,22 @@ export default function HomePage() {
 						/>
 						<div className="pr-12">
 							<p className="font-semibold">Neon</p>
-							<p className="text-sm text-fd-muted-foreground">
+							<p className="text-fd-muted-foreground text-sm">
 								Serverless Postgres for modern Drizzle
 								workflows.
 							</p>
 						</div>
 					</div>
-					<div className="flex items-center gap-4 bg-fd-background p-6">
+					<div className="bg-fd-background flex items-center gap-4 p-6">
 						<SiPostgresql className="size-8 text-[#336791]" />
 						<div>
 							<p className="font-semibold">PostgreSQL</p>
-							<p className="text-sm text-fd-muted-foreground">
+							<p className="text-fd-muted-foreground text-sm">
 								Typed delegates on top of the Drizzle pg stack.
 							</p>
 						</div>
 					</div>
-					<div className="flex items-center gap-4 bg-fd-background p-6">
+					<div className="bg-fd-background flex items-center gap-4 p-6">
 						<svg
 							viewBox="0 0 170 170"
 							className="size-8 shrink-0"
@@ -338,13 +339,13 @@ export default function HomePage() {
 						</svg>
 						<div>
 							<p className="font-semibold">SQLite</p>
-							<p className="text-sm text-fd-muted-foreground">
+							<p className="text-fd-muted-foreground text-sm">
 								Fast local dev and benchmark-friendly in-memory
 								setups.
 							</p>
 						</div>
 					</div>
-					<div className="flex items-center gap-4 bg-fd-background p-6">
+					<div className="bg-fd-background flex items-center gap-4 p-6">
 						<svg
 							viewBox="0 0 256 252"
 							className="size-8 shrink-0 text-[#00546B] dark:text-[#F0F0F0]"
@@ -356,7 +357,7 @@ export default function HomePage() {
 						</svg>
 						<div>
 							<p className="font-semibold">MySQL</p>
-							<p className="text-sm text-fd-muted-foreground">
+							<p className="text-fd-muted-foreground text-sm">
 								Same API surface on top of mysql-backed Drizzle
 								clients.
 							</p>
@@ -371,7 +372,7 @@ export default function HomePage() {
 						<h2 className="text-3xl font-semibold tracking-tight">
 							Plugins do the cross-cutting work
 						</h2>
-						<p className="mt-4 text-fd-muted-foreground">
+						<p className="text-fd-muted-foreground mt-4">
 							Timestamps and soft delete ship as official plugins.
 							They add typed arguments, rewrite operations, and
 							extend delegates — so behavior lives in one place
@@ -380,14 +381,14 @@ export default function HomePage() {
 						<div className="mt-6 flex flex-wrap gap-3">
 							<Link
 								href="/docs/plugins/overview"
-								className="inline-flex items-center gap-2 rounded-lg border border-fd-border px-4 py-2 text-sm font-semibold transition-colors hover:bg-fd-accent hover:text-fd-accent-foreground"
+								className="border-fd-border hover:bg-fd-accent hover:text-fd-accent-foreground inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold transition-colors"
 							>
 								Browse plugins
 								<ArrowRight className="size-4" />
 							</Link>
 							<Link
 								href="/docs/plugins/writing-plugins"
-								className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-brand hover:underline"
+								className="text-brand inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold hover:underline"
 							>
 								Write your own
 							</Link>
@@ -444,16 +445,16 @@ export default function HomePage() {
 				<div className="mx-auto grid max-w-7xl gap-12 px-6 py-14 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
 					<div>
 						<Logo className="w-28" />
-						<p className="mt-5 max-w-xs text-sm text-fd-muted-foreground">
+						<p className="text-fd-muted-foreground mt-5 max-w-xs text-sm">
 							ORM, but better.
 						</p>
-						<nav className="mt-6 flex items-center gap-5 text-fd-muted-foreground">
+						<nav className="text-fd-muted-foreground mt-6 flex items-center gap-5">
 							<a
 								href="https://github.com/almeidazs/better-drizzle"
 								target="_blank"
 								rel="noreferrer"
 								aria-label="GitHub"
-								className="transition-colors hover:text-fd-foreground"
+								className="hover:text-fd-foreground transition-colors"
 							>
 								<FaGithub className="size-6" />
 							</a>
@@ -462,7 +463,7 @@ export default function HomePage() {
 								target="_blank"
 								rel="noreferrer"
 								aria-label="Discord"
-								className="transition-colors hover:text-fd-foreground"
+								className="hover:text-fd-foreground transition-colors"
 							>
 								<FaDiscord className="size-6" />
 							</a>
@@ -470,7 +471,7 @@ export default function HomePage() {
 								href="https://x.com/drizzleorm"
 								target="_blank"
 								rel="noreferrer"
-								className="transition-colors hover:text-fd-foreground"
+								className="hover:text-fd-foreground transition-colors"
 							>
 								<svg
 									viewBox="0 0 24 24"
@@ -486,10 +487,10 @@ export default function HomePage() {
 					</div>
 					<div className="grid gap-10 sm:grid-cols-3">
 						<div>
-							<h3 className="text-lg font-semibold text-fd-foreground">
+							<h3 className="text-fd-foreground text-lg font-semibold">
 								Documentation
 							</h3>
-							<div className="mt-5 flex flex-col gap-3 text-sm text-fd-muted-foreground">
+							<div className="text-fd-muted-foreground mt-5 flex flex-col gap-3 text-sm">
 								<Link
 									href="/docs/getting-started"
 									className="hover:text-fd-foreground"
@@ -517,10 +518,10 @@ export default function HomePage() {
 							</div>
 						</div>
 						<div>
-							<h3 className="text-lg font-semibold text-fd-foreground">
+							<h3 className="text-fd-foreground text-lg font-semibold">
 								Resources
 							</h3>
-							<div className="mt-5 flex flex-col gap-3 text-sm text-fd-muted-foreground">
+							<div className="text-fd-muted-foreground mt-5 flex flex-col gap-3 text-sm">
 								<a
 									href="https://github.com/almeidazs/better-drizzle"
 									target="_blank"
@@ -540,10 +541,10 @@ export default function HomePage() {
 							</div>
 						</div>
 						<div>
-							<h3 className="text-lg font-semibold text-fd-foreground">
+							<h3 className="text-fd-foreground text-lg font-semibold">
 								Learn
 							</h3>
-							<div className="mt-5 flex flex-col gap-3 text-sm text-fd-muted-foreground">
+							<div className="text-fd-muted-foreground mt-5 flex flex-col gap-3 text-sm">
 								<Link
 									href="/docs/queries"
 									className="hover:text-fd-foreground"

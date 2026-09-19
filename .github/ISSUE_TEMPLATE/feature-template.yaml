@@ -1,7 +1,7 @@
-name: "Feature Request"
+name: 'Feature Request'
 description: Suggest new feature
-title: "[FEATURE]:"
-labels: ["enhancement"]
+title: '[FEATURE]:'
+labels: ['enhancement']
 
 body:
     - type: checkboxes

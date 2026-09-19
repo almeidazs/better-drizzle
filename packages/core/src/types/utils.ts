@@ -179,10 +179,12 @@ type VirtualRelationKeysFor<
 		Name
 	>['relations'][K] extends Many<string>
 		? {
-				[P in PhysicalRelationKeysFor<
-					Schema,
-					PhysicalRelatedNameFor<Schema, Name, K>
-				>]: PhysicalRelatedNameFor<
+				[
+					P in PhysicalRelationKeysFor<
+						Schema,
+						PhysicalRelatedNameFor<Schema, Name, K>
+					>
+				]: PhysicalRelatedNameFor<
 					Schema,
 					PhysicalRelatedNameFor<Schema, Name, K>,
 					P

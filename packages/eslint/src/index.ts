@@ -1,4 +1,5 @@
 import type { Rule } from 'eslint';
+
 import {
 	noDeleteManyWithoutWhere,
 	noDeleteWithoutWhere,

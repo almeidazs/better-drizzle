@@ -15,7 +15,7 @@ import type {
 } from 'better-drizzle';
 import type { z } from 'zod';
 
-// biome-ignore lint/suspicious/noExplicitAny: local escape hatch for generic type extraction
+// oxlint-disable-next-line typescript/no-explicit-any -- Local escape hatch for generic type extraction.
 type Any = any;
 
 // Zod 3 and 4 use incompatible `ZodType` generic signatures. Keeping the
@@ -35,23 +35,27 @@ type Simplify<T> = {
 } & {};
 
 type RemoveIndexSignature<T> = {
-	[K in keyof T as string extends K
-		? never
-		: number extends K
+	[
+		K in keyof T as string extends K
 			? never
-			: symbol extends K
+			: number extends K
 				? never
-				: K]: T[K];
+				: symbol extends K
+					? never
+					: K
+	]: T[K];
 };
 
 type InsertScalarShape<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 > = {
-	[K in Extract<
-		ScalarKeysFor<Schema, Name>,
-		keyof InsertModelFor<Schema, Name>
-	>]: InsertModelFor<Schema, Name>[K];
+	[
+		K in Extract<
+			ScalarKeysFor<Schema, Name>,
+			keyof InsertModelFor<Schema, Name>
+		>
+	]: InsertModelFor<Schema, Name>[K];
 };
 
 type SelectScalarShape<
@@ -196,7 +200,7 @@ type BlockConfigFor<
 		? NonNullable<Block>
 		: TableSchemaConfigFor<Schema, Name, Options> extends {
 					[K in Key]?: infer Block;
-				}
+			  }
 			? NonNullable<Block>
 			: never;
 
@@ -224,14 +228,16 @@ type ApplyFieldOverridesOutput<
 	Shape extends Record<string, unknown>,
 	Overrides,
 > = Simplify<{
-	[K in keyof Shape as ResolveOverrideOutput<
-		K extends keyof NonNullable<Overrides>
-			? NonNullable<Overrides>[K]
-			: never,
-		Shape[K]
-	> extends never
-		? never
-		: K]: ResolveOverrideOutput<
+	[
+		K in keyof Shape as ResolveOverrideOutput<
+			K extends keyof NonNullable<Overrides>
+				? NonNullable<Overrides>[K]
+				: never,
+			Shape[K]
+		> extends never
+			? never
+			: K
+	]: ResolveOverrideOutput<
 		K extends keyof NonNullable<Overrides>
 			? NonNullable<Overrides>[K]
 			: never,
@@ -243,14 +249,16 @@ type ApplyFieldOverridesInput<
 	Shape extends Record<string, unknown>,
 	Overrides,
 > = Simplify<{
-	[K in keyof Shape as ResolveOverrideInput<
-		K extends keyof NonNullable<Overrides>
-			? NonNullable<Overrides>[K]
-			: never,
-		Shape[K]
-	> extends never
-		? never
-		: K]: ResolveOverrideInput<
+	[
+		K in keyof Shape as ResolveOverrideInput<
+			K extends keyof NonNullable<Overrides>
+				? NonNullable<Overrides>[K]
+				: never,
+			Shape[K]
+		> extends never
+			? never
+			: K
+	]: ResolveOverrideInput<
 		K extends keyof NonNullable<Overrides>
 			? NonNullable<Overrides>[K]
 			: never,

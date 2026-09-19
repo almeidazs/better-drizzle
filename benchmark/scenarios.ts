@@ -1,11 +1,10 @@
 import { and, asc, count, desc, eq, gte, like, sql } from 'drizzle-orm';
 
 import { OrderType } from '../packages/core/src';
-
 import { benchWrites, comments, posts, users } from './schema';
 import type { BenchmarkContext } from './setup';
 
-// biome-ignore lint/suspicious/noExplicitAny: benchmark type erasure
+// oxlint-disable-next-line typescript/no-explicit-any -- Benchmark type erasure.
 type Any = any;
 
 const nextWriteId = (context: BenchmarkContext) => {

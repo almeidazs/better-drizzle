@@ -25,29 +25,29 @@ export async function CodeWindow({
 	return (
 		<div
 			className={cn(
-				'overflow-hidden rounded-xl border bg-fd-card shadow-sm',
+				'bg-fd-card overflow-hidden rounded-xl border shadow-sm',
 				accent
-					? 'border-brand/40 ring-1 ring-brand/10'
+					? 'border-brand/40 ring-brand/10 ring-1'
 					: 'border-fd-border',
 				className,
 			)}
 		>
-			<div className="flex items-center gap-2 border-b border-fd-border/80 px-4 py-2.5">
+			<div className="border-fd-border/80 flex items-center gap-2 border-b px-4 py-2.5">
 				<span className="size-3 rounded-full bg-red-400/80" />
 				<span className="size-3 rounded-full bg-yellow-400/80" />
 				<span className="size-3 rounded-full bg-green-400/80" />
 				{title ? (
-					<span className="ml-2 font-mono text-xs text-fd-muted-foreground">
+					<span className="text-fd-muted-foreground ml-2 font-mono text-xs">
 						{title}
 					</span>
 				) : null}
-				<span className="ml-auto -mr-1">
+				<span className="-mr-1 ml-auto">
 					<CopyButton value={code} />
 				</span>
 			</div>
 			<div
 				className="overflow-x-auto px-4 py-4 [&_pre]:!bg-transparent"
-				// biome-ignore lint/security/noDangerouslySetInnerHtml: trusted, build-time Shiki output
+				// oxlint-disable-next-line react/no-danger -- Trusted, build-time Shiki output.
 				dangerouslySetInnerHTML={{ __html: html }}
 			/>
 		</div>
