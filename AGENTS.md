@@ -2,28 +2,23 @@
 
 > Meta note: This is the primary agent knowledge base file for this repository. When learning something about the codebase that will help with future tasks, update this file directly.
 
-- **Repository scope**: `better-drizzle` is a small Bun/TypeScript workspace focused on a single core package, `packages/core`, plus a benchmark suite used to measure API-parity performance and memory overhead against raw Drizzle ORM.
+- **Repository scope**: `better-drizzle` is a small Bun/TypeScript workspace that publishes one package, plus a benchmark suite used to measure API-parity performance and memory overhead against raw Drizzle ORM.
 - **Workspace layout**:
-  - `packages/core`: the published library
-  - `packages/rules`: official runtime rules/guardrails plugin
-  - `packages/eslint`: official ESLint plugin for static Better Drizzle guardrails
-  - `packages/soft-delete`: official soft delete plugin
-  - `packages/timestamps`: official timestamps plugin
-  - `packages/zod`: official Zod schema generation and validation plugin
+  - `src`: the published library
+  - `src/packages/rules`: official runtime rules/guardrails plugin
+  - `src/packages/eslint`: official ESLint plugin for static Better Drizzle guardrails
+  - `src/packages/soft-delete`: official soft delete plugin
+  - `src/packages/timestamps`: official timestamps plugin
+  - `src/packages/zod`: official Zod schema generation and validation plugin
   - `benchmark`: Bun + SQLite benchmark suite
   - `apps/web`: Next.js + Fumadocs documentation/marketing site
-  - `README.md`: project-level documentation
-  - `packages/core/README.md`: package-level documentation, currently intentionally kept in sync with the root README
+  - `README.md`: package documentation
 - **Package manager and runtime**: Bun is the primary runtime for local commands and benchmarks. The workspace is configured as a TypeScript ESM monorepo.
 - **Package publishing/build**:
-  - all published workspace libraries now build to `dist/`
-  - each package emits `dist/index.js` (ESM), `dist/index.cjs` (CommonJS), and `dist/index.d.ts`
-  - package builds use the shared root `tsdown.config.ts`, invoked from each package manifest
-  - builds emit minified, tree-shaken dual ESM/CJS bundles and declaration files; keep `fixedExtension: false` so the published `type: module` packages retain `dist/index.js` and `dist/index.cjs`
-  - tsdown's minifier is explicitly enabled after validating every package's ESM/CJS import paths, the core package tarball, typecheck, and test suite; repeat that validation before changing minification settings
-  - package manifests publish only `dist`, `README.md`, and `LICENSE`
-  - published package manifests now use conditional type exports: ESM reads `dist/index.d.ts` and CJS reads `dist/index.d.cts`
-  - tsdown bundles declarations for both module formats, emitting `dist/index.d.ts` and `dist/index.d.cts` without custom post-processing
+  - the root `package.json` is the only publishable manifest
+  - tsdown emits minified, tree-shaken ESM, CommonJS, and declaration files for the root and each plugin subpath
+  - public APIs are limited to `better-drizzle` plus `better-drizzle/{eslint,rules,soft-delete,timestamps,zod}` through conditional exports
+  - `bun run pack` builds, checks every ESM/CJS export, then inspects the root tarball
 - **Top-level scripts**:
   - `bun run bench`: run the time benchmark suite
   - `bun run bench:memory`: run the memory/overhead benchmark suite
@@ -37,25 +32,25 @@
 
 ## Architecture
 
-- **Entry point**: `packages/core/src/index.ts`
+- **Entry point**: `src/index.ts`
   - Exports `better(...)`
   - Exports `definePlugin(...)`
-  - Delegates root/transaction client binding to `packages/core/src/shared/client/factory.ts`
+  - Delegates root/transaction client binding to `src/shared/client/factory.ts`
   - Builds a base runtime context once
   - Initializes plugins once during bootstrap
   - Re-binds delegates/extensions per bound client (`db` or `tx`) without re-running plugin setup
   - Registers repositories by TypeScript table key and database table name
 - **Runtime layout**:
-  - `packages/core/src/shared/client/context.ts`: builds the runtime context and precomputed table metadata
-  - `packages/core/src/shared/client/delegate.ts`: exposes the delegate methods for each table
-  - `packages/core/src/shared/client/factory.ts`: binds root and transaction clients, retries, nested savepoints, and transaction lifecycle hooks
-  - `packages/core/src/shared/client/operations.ts`: main query and mutation execution paths; this is the hottest file for performance work
-  - `packages/core/src/shared/client/hooks.ts`: optional hook execution
-  - `packages/core/src/shared/client/plugins.ts`: plugin initialization, validation, transform pipeline, and extension application
-  - `packages/core/src/shared/query/compiler.ts`: compiles typed `where`, `select`, `include`, `orderBy`, and pagination inputs into Drizzle-compatible query pieces
-  - `packages/core/src/shared/errors.ts`: shared error helpers
-  - `packages/core/src/types/*`: public type surface
-- **No internal runtime package**: the old `packages/core/src/internal/runtime.ts` was removed. Runtime logic now lives under `shared/client` and `shared/query`.
+  - `src/shared/client/context.ts`: builds the runtime context and precomputed table metadata
+  - `src/shared/client/delegate.ts`: exposes the delegate methods for each table
+  - `src/shared/client/factory.ts`: binds root and transaction clients, retries, nested savepoints, and transaction lifecycle hooks
+  - `src/shared/client/operations.ts`: main query and mutation execution paths; this is the hottest file for performance work
+  - `src/shared/client/hooks.ts`: optional hook execution
+  - `src/shared/client/plugins.ts`: plugin initialization, validation, transform pipeline, and extension application
+  - `src/shared/query/compiler.ts`: compiles typed `where`, `select`, `include`, `orderBy`, and pagination inputs into Drizzle-compatible query pieces
+  - `src/shared/errors.ts`: shared error helpers
+  - `src/types/*`: public type surface
+- **No internal runtime package**: the old `src/internal/runtime.ts` was removed. Runtime logic now lives under `shared/client` and `shared/query`.
 
 ## Design intent
 
@@ -160,8 +155,8 @@
   - plugin hooks/transforms are the mutation layer
   - `upsertMany` is a create-oriented hook/transform kind, matching `upsert` rather than `updateMany`
   - `updateEach` is an update-oriented batch operation with its own plugin kind, but it still flows through `beforeUpdate` / `afterUpdate`
-  - `packages/rules` is intentionally runtime-only and hook-driven; it enforces only checks that can be inferred from current hook payloads and silently ignores unsupported rule types
-  - `packages/rules` accepts boolean rule settings as shorthand: `true` means `error`, `false` means `off`
+  - `src/packages/rules` is intentionally runtime-only and hook-driven; it enforces only checks that can be inferred from current hook payloads and silently ignores unsupported rule types
+  - `src/packages/rules` accepts boolean rule settings as shorthand: `true` means `error`, `false` means `off`
 - **Batch updateEach API**:
   - `updateEach` is native-first and performance-sensitive
   - it accepts `by`, `data`, `update`, optional `where`, optional scalar `select`, and `onEmpty`
@@ -173,7 +168,7 @@
   - it intentionally supports `select` but not relation `include`
   - unsupported dialect/feature combinations should fail fast instead of degrading to slow userland loops
 - **Error model**:
-  - runtime-thrown library errors should use `BetterDrizzleError` from `packages/core/src/shared/errors.ts`
+  - runtime-thrown library errors should use `BetterDrizzleError` from `src/shared/errors.ts`
   - `BetterDrizzleError` carries `message`, `status`, `code`, `driver`, and structured metadata such as `table`, `column`, `constraint`, `operation`, and `details`
   - `BetterDrizzleTransactionRollbackError` extends `BetterDrizzleError` and is the canonical rollback error shape
   - when normalizing external/database failures, prefer `BetterDrizzleError.from(...)` or `BetterDrizzleError.fromDatabaseError(...)` instead of throwing raw `Error`
@@ -182,9 +177,9 @@
 
 - **Performance matters here**: this repo explicitly benchmarks wrapper overhead. Do not add helpers, branching, abstractions, or allocations unless they clearly pay for themselves.
 - **Hot files**:
-  - `packages/core/src/shared/client/operations.ts`
-  - `packages/core/src/shared/query/compiler.ts`
-  - `packages/core/src/shared/client/context.ts`
+  - `src/shared/client/operations.ts`
+  - `src/shared/query/compiler.ts`
+  - `src/shared/client/context.ts`
 - **Current optimization strategy**:
   - direct fast paths for simple reads
   - direct fast paths for simple writes
@@ -222,7 +217,7 @@
 
 ## Integration testing
 
-- Massive real-database coverage lives under `packages/core/tests/integration/`.
+- Massive real-database coverage lives under `src/tests/integration/`.
 - Every test creates a fresh SQLite `:memory:` database, applies real DDL and constraints, seeds real rows, and invokes the public `better(...)` API without database mocks or fake query functions.
 - The shared fixture seeds 300 users, 1,200 posts, 2,400 comments, 150 profiles, 15 groups, 900 memberships, and 1,000 batch rows per test.
 - Run the suite with `bun run test:integration`; it is also included in the root `bun run test` command.
@@ -276,7 +271,7 @@
 
 ## Documentation rules
 
-- **README sync**: the root `README.md` and `packages/core/README.md` are intended to stay aligned. If one changes, update the other unless there is a clear package-specific reason not to.
+- **README sync**: the root `README.md` and `README.md` are intended to stay aligned. If one changes, update the other unless there is a clear package-specific reason not to.
 - **Performance claims**: tie claims to benchmark shape and avoid vague “faster” language without context.
 - **Examples**: prefer real API examples that match the current exported API and benchmarked usage patterns.
 - **Documentation**: add focused pages under `apps/web/content/docs` instead of duplicating API guidance in a separate catalog.
@@ -285,10 +280,10 @@
 
 - **Canonical skill pack**: the repository now ships a first-party agent skill at `skills/better-drizzle/`.
 - **Guardrails split**:
-  - `@better-drizzle/rules` is the runtime enforcement layer
-  - `@better-drizzle/eslint` mirrors the statically-checkable subset for direct Better Drizzle callsites in IDEs and ESLint
+  - `better-drizzle/rules` is the runtime enforcement layer
+  - `better-drizzle/eslint` mirrors the statically-checkable subset for direct Better Drizzle callsites in IDEs and ESLint
 - **Schema plugin**:
-  - `@better-drizzle/zod` generates per-table Zod schemas and exposes them as `db.<table>.$zod`
+  - `better-drizzle/zod` generates per-table Zod schemas and exposes them as `db.<table>.$zod`
   - its declared Zod 3/4 peer range requires Zod 4-compatible runtime schema types (`ZodObject` rather than removed `AnyZodObject`) and a version-agnostic public `ZodType` facade
   - the public `$zod` surface currently includes `create`, `update`, `upsert`, `select`, `where`, `orderBy`, `pagination`, and `query`
   - runtime validation is hook-driven and opt-out per call via plugin-provided `validate?: boolean`
@@ -320,12 +315,12 @@
 ## Change checklist
 
 - **For API changes**:
-  - update public types under `packages/core/src/types`
-  - verify exports from `packages/core/src/index.ts`
+  - update public types under `src/types`
+  - verify exports from `src/index.ts`
   - update both READMEs if user-facing behavior changes
   - ensure examples still type-check conceptually against the current API
-  - if `packages/rules` changes, keep the root workspace scripts (`build`, `test`, `check`, `pack`) including it
-  - if `packages/zod` changes, keep the root workspace scripts (`build`, `test`, `check`, `pack`) including it
+  - if `src/packages/rules` changes, keep the root workspace scripts (`build`, `test`, `check`, `pack`) including it
+  - if `src/packages/zod` changes, keep the root workspace scripts (`build`, `test`, `check`, `pack`) including it
 - **For performance changes**:
   - inspect hot-path allocations and branches
   - rerun both benchmark suites

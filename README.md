@@ -291,10 +291,10 @@ Plugins can also extend the built-in operation args in a fully typed way through
 
 ```ts
 import { better } from 'better-drizzle';
-import { recommended, rules } from '@better-drizzle/rules';
-import { softDelete } from '@better-drizzle/soft-delete';
-import { timestamps } from '@better-drizzle/timestamps';
-import { zod } from '@better-drizzle/zod';
+import { recommended, rules } from 'better-drizzle/rules';
+import { softDelete } from 'better-drizzle/soft-delete';
+import { timestamps } from 'better-drizzle/timestamps';
+import { zod } from 'better-drizzle/zod';
 
 const client = better(drizzle, {
 	schema,
@@ -344,7 +344,7 @@ await client.users.restore({
 
 Now you can enforce repository guardrails, soft delete rows, auto-generate Zod schemas, and also have timestamps fields injected automatically.
 
-For editor and CI feedback before runtime, pair the runtime guardrails with `@better-drizzle/eslint` and its flat-config presets. The ESLint package mirrors the statically-checkable subset of `@better-drizzle/rules` for direct Better Drizzle callsites.
+For editor and CI feedback before runtime, pair the runtime guardrails with `better-drizzle/eslint` and its flat-config presets. The ESLint package mirrors the statically-checkable subset of `better-drizzle/rules` for direct Better Drizzle callsites.
 
 ## Hooks
 

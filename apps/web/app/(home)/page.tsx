@@ -60,9 +60,9 @@ const BETTER_CODE = `const rows = await client.posts.findMany({
 });`;
 
 const PLUGINS_CODE = `import { better } from 'better-drizzle';
-import { recommended, rules } from '@better-drizzle/rules';
-import { timestamps } from '@better-drizzle/timestamps';
-import { softDelete } from '@better-drizzle/soft-delete';
+import { recommended, rules } from 'better-drizzle/rules';
+import { timestamps } from 'better-drizzle/timestamps';
+import { softDelete } from 'better-drizzle/soft-delete';
 
 const client = better(db, {
   schema,

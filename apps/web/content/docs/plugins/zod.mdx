@@ -4,7 +4,7 @@ description: Generate per-table Zod schemas from your Drizzle schema and validat
 icon: ShieldCheck
 ---
 
-`@better-drizzle/zod` generates Zod schemas directly from your Better Drizzle schema and uses them to validate payloads, query args, and results through plugin hooks.
+`better-drizzle/zod` generates Zod schemas directly from your Better Drizzle schema and uses them to validate payloads, query args, and results through plugin hooks.
 
 ## Install
 
@@ -13,7 +13,7 @@ icon: ShieldCheck
 <Tab value="npm">
 
 ```bash
-npm install @better-drizzle/zod zod
+npm install better-drizzle zod
 ```
 
 </Tab>
@@ -21,7 +21,7 @@ npm install @better-drizzle/zod zod
 <Tab value="pnpm">
 
 ```bash
-pnpm add @better-drizzle/zod zod
+pnpm add better-drizzle zod
 ```
 
 </Tab>
@@ -29,7 +29,7 @@ pnpm add @better-drizzle/zod zod
 <Tab value="yarn">
 
 ```bash
-yarn add @better-drizzle/zod zod
+yarn add better-drizzle zod
 ```
 
 </Tab>
@@ -37,7 +37,7 @@ yarn add @better-drizzle/zod zod
 <Tab value="bun">
 
 ```bash
-bun add @better-drizzle/zod zod
+bun add better-drizzle zod
 ```
 
 </Tab>
@@ -49,7 +49,7 @@ bun add @better-drizzle/zod zod
 ```ts
 import { better } from 'better-drizzle';
 import { z } from 'zod';
-import { zod } from '@better-drizzle/zod';
+import { zod } from 'better-drizzle/zod';
 
 const client = better(db, {
 	schema,
@@ -164,4 +164,4 @@ zod({
 
 - The plugin strips non-column keys before handing write payloads to Drizzle.
 - Schema-only extension fields such as `password` are valid during parsing but are not forwarded to the database write.
-- `@better-drizzle/zod` is runtime validation. It complements, but does not replace, TypeScript types.
+- `better-drizzle/zod` is runtime validation. It complements, but does not replace, TypeScript types.

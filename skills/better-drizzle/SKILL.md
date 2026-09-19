@@ -43,7 +43,7 @@ Use this skill when the task involves `better-drizzle` APIs, docs, plugins, exam
 
 - Do not invent API methods, option names, or dialect support.
 - Prefer the smallest solution that matches existing repo patterns.
-- Keep root `README.md` and `packages/core/README.md` in sync when user-facing behavior changes.
+- Keep root `README.md` and `README.md` in sync when user-facing behavior changes.
 - If a task changes performance-sensitive code, review hot-path allocations and rerun the benchmark suites.
 - If a task changes public types or exported behavior, verify the type surface and docs.
 
@@ -180,4 +180,4 @@ Before you finalize work, check:
 - suggesting `include` on locked reads
 - forgetting that `upsertMany` supports `select` but not relation `include`
 - adding helpers or abstractions in hot files without measurable value
-- updating user-facing behavior without syncing `README.md`, `packages/core/README.md`, and the docs site when needed
+- updating user-facing behavior without syncing `README.md`, `README.md`, and the docs site when needed

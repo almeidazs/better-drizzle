@@ -79,7 +79,7 @@ const createZodContext = () => {
 	};
 };
 
-describe('@better-drizzle/zod - typing', () => {
+describe('better-drizzle/zod - typing', () => {
 	test('exposes typed $zod schemas on delegates', () => {
 		const ctx = createZodContext();
 
@@ -119,7 +119,7 @@ describe('@better-drizzle/zod - typing', () => {
 	});
 });
 
-describe('@better-drizzle/zod - generated schemas', () => {
+describe('better-drizzle/zod - generated schemas', () => {
 	test('create schema applies omit, extend, transform and strip', () => {
 		const ctx = createZodContext();
 
@@ -300,7 +300,7 @@ describe('@better-drizzle/zod - generated schemas', () => {
 	});
 });
 
-describe('@better-drizzle/zod - create validation', () => {
+describe('better-drizzle/zod - create validation', () => {
 	test('validates and coerces create payloads', async () => {
 		const ctx = createZodContext();
 
@@ -423,7 +423,7 @@ describe('@better-drizzle/zod - create validation', () => {
 	});
 });
 
-describe('@better-drizzle/zod - update validation', () => {
+describe('better-drizzle/zod - update validation', () => {
 	test('validates updates with partial create rules', async () => {
 		const ctx = createZodContext();
 
@@ -519,7 +519,7 @@ describe('@better-drizzle/zod - update validation', () => {
 	});
 });
 
-describe('@better-drizzle/zod - upsert validation', () => {
+describe('better-drizzle/zod - upsert validation', () => {
 	test('validates upsert create update and where', async () => {
 		const ctx = createZodContext();
 
@@ -608,7 +608,7 @@ describe('@better-drizzle/zod - upsert validation', () => {
 	});
 });
 
-describe('@better-drizzle/zod - query arg validation', () => {
+describe('better-drizzle/zod - query arg validation', () => {
 	test('validates findMany query args', async () => {
 		const ctx = createZodContext();
 
@@ -749,7 +749,7 @@ describe('@better-drizzle/zod - query arg validation', () => {
 	});
 });
 
-describe('@better-drizzle/zod - delete validation', () => {
+describe('better-drizzle/zod - delete validation', () => {
 	test('validates delete args', async () => {
 		const ctx = createZodContext();
 
@@ -794,7 +794,7 @@ describe('@better-drizzle/zod - delete validation', () => {
 	});
 });
 
-describe('@better-drizzle/zod - result validation', () => {
+describe('better-drizzle/zod - result validation', () => {
 	test('validates createMany result shape', async () => {
 		const ctx = createZodContext();
 

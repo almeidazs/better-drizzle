@@ -4,7 +4,7 @@ description: Runtime guardrails for raw SQL, destructive writes, pagination, loc
 icon: Shield
 ---
 
-`@better-drizzle/rules` is the first-party guardrails plugin for Better Drizzle. It validates operations at runtime through plugin hooks and turns unsafe patterns into warnings or errors without forcing you to wrap every repository call manually.
+`better-drizzle/rules` is the first-party guardrails plugin for Better Drizzle. It validates operations at runtime through plugin hooks and turns unsafe patterns into warnings or errors without forcing you to wrap every repository call manually.
 
 ## Install
 
@@ -13,7 +13,7 @@ icon: Shield
 <Tab value="npm">
 
 ```bash
-npm install @better-drizzle/rules
+npm install better-drizzle
 ```
 
 </Tab>
@@ -21,7 +21,7 @@ npm install @better-drizzle/rules
 <Tab value="pnpm">
 
 ```bash
-pnpm add @better-drizzle/rules
+pnpm add better-drizzle
 ```
 
 </Tab>
@@ -29,7 +29,7 @@ pnpm add @better-drizzle/rules
 <Tab value="yarn">
 
 ```bash
-yarn add @better-drizzle/rules
+yarn add better-drizzle
 ```
 
 </Tab>
@@ -37,7 +37,7 @@ yarn add @better-drizzle/rules
 <Tab value="bun">
 
 ```bash
-bun add @better-drizzle/rules
+bun add better-drizzle
 ```
 
 </Tab>
@@ -48,7 +48,7 @@ bun add @better-drizzle/rules
 
 ```ts
 import { better } from 'better-drizzle';
-import { rules } from '@better-drizzle/rules';
+import { rules } from 'better-drizzle/rules';
 
 const client = better(db, {
 	schema,
@@ -98,7 +98,7 @@ The package exports three preset helpers:
 - `strict()`
 
 ```ts
-import { recommended, rules } from '@better-drizzle/rules';
+import { recommended, rules } from 'better-drizzle/rules';
 
 const client = better(db, {
 	schema,

@@ -4,7 +4,7 @@ description: Turn delete() into a recoverable state change, filter deleted rows 
 icon: Trash2
 ---
 
-`@better-drizzle/soft-delete` extends the built-in methods with typed soft-delete controls, default visibility filtering, and restore helpers.
+`better-drizzle/soft-delete` extends the built-in methods with typed soft-delete controls, default visibility filtering, and restore helpers.
 
 ## Install
 
@@ -13,7 +13,7 @@ icon: Trash2
 <Tab value="npm">
 
 ```bash
-npm install @better-drizzle/soft-delete
+npm install better-drizzle
 ```
 
 </Tab>
@@ -21,7 +21,7 @@ npm install @better-drizzle/soft-delete
 <Tab value="pnpm">
 
 ```bash
-pnpm add @better-drizzle/soft-delete
+pnpm add better-drizzle
 ```
 
 </Tab>
@@ -29,7 +29,7 @@ pnpm add @better-drizzle/soft-delete
 <Tab value="yarn">
 
 ```bash
-yarn add @better-drizzle/soft-delete
+yarn add better-drizzle
 ```
 
 </Tab>
@@ -37,7 +37,7 @@ yarn add @better-drizzle/soft-delete
 <Tab value="bun">
 
 ```bash
-bun add @better-drizzle/soft-delete
+bun add better-drizzle
 ```
 
 </Tab>
@@ -48,7 +48,7 @@ bun add @better-drizzle/soft-delete
 
 ```ts
 import { better } from 'better-drizzle';
-import { softDelete } from '@better-drizzle/soft-delete';
+import { softDelete } from 'better-drizzle/soft-delete';
 
 const client = better(db, {
 	schema,

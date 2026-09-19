@@ -8,7 +8,7 @@ import { createMysqlTestContext, type MysqlTestContext } from './setup.mysql';
 // noted was not exercised. It needs a live database, so it is gated on MYSQL_URL
 // and skips when unset, e.g.
 //   MYSQL_URL=mysql://root:root@127.0.0.1:3306/better_drizzle \
-//     bun test packages/core/tests/where.mysql.test.ts
+//     bun test tests/core/where.mysql.test.ts
 const MYSQL_URL = process.env.MYSQL_URL;
 
 describe.skipIf(!MYSQL_URL)('relation where - Many (mysql)', () => {

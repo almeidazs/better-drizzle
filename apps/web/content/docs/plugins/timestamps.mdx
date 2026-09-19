@@ -4,7 +4,7 @@ description: Automatic createdAt / updatedAt management for better-drizzle, with
 icon: Clock
 ---
 
-`@better-drizzle/timestamps` keeps timestamp handling out of your services. It can manage timestamps in application code, or stay out of the way when your database already owns them via defaults, generated columns, or triggers.
+`better-drizzle/timestamps` keeps timestamp handling out of your services. It can manage timestamps in application code, or stay out of the way when your database already owns them via defaults, generated columns, or triggers.
 
 ## Install
 
@@ -13,7 +13,7 @@ icon: Clock
 <Tab value="npm">
 
 ```bash
-npm install @better-drizzle/timestamps
+npm install better-drizzle
 ```
 
 </Tab>
@@ -21,7 +21,7 @@ npm install @better-drizzle/timestamps
 <Tab value="pnpm">
 
 ```bash
-pnpm add @better-drizzle/timestamps
+pnpm add better-drizzle
 ```
 
 </Tab>
@@ -29,7 +29,7 @@ pnpm add @better-drizzle/timestamps
 <Tab value="yarn">
 
 ```bash
-yarn add @better-drizzle/timestamps
+yarn add better-drizzle
 ```
 
 </Tab>
@@ -37,7 +37,7 @@ yarn add @better-drizzle/timestamps
 <Tab value="bun">
 
 ```bash
-bun add @better-drizzle/timestamps
+bun add better-drizzle
 ```
 
 </Tab>
@@ -48,7 +48,7 @@ bun add @better-drizzle/timestamps
 
 ```ts
 import { better } from 'better-drizzle';
-import { timestamps } from '@better-drizzle/timestamps';
+import { timestamps } from 'better-drizzle/timestamps';
 
 const client = better(db, {
 	schema,

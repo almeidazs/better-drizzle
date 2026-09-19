@@ -8,10 +8,10 @@ Plugins let you bundle behavior that would otherwise be scattered across service
 
 ```ts
 import { better } from 'better-drizzle';
-import { recommended, rules } from '@better-drizzle/rules';
-import { zod as betterZod } from '@better-drizzle/zod';
-import { timestamps } from '@better-drizzle/timestamps';
-import { softDelete } from '@better-drizzle/soft-delete';
+import { recommended, rules } from 'better-drizzle/rules';
+import { zod as betterZod } from 'better-drizzle/zod';
+import { timestamps } from 'better-drizzle/timestamps';
+import { softDelete } from 'better-drizzle/soft-delete';
 
 const client = better(db, {
 	schema,
@@ -61,7 +61,7 @@ await client.users.restore({ where: { id: 1 } }); // plugin-added method
 | Timestamps | you want managed `createdAt` / `updatedAt` | fills timestamp columns on writes |
 | Soft delete | rows should stay recoverable and hidden by default | rewrites deletes, filters reads, adds restore helpers |
 
-`@better-drizzle/eslint` is intentionally separate from the runtime plugin pipeline. It mirrors the statically-checkable subset of `@better-drizzle/rules` for direct call sites, while runtime-only concerns such as transaction state, merged `meta`, and dialect behavior stay in `@better-drizzle/rules`.
+`better-drizzle/eslint` is intentionally separate from the runtime plugin pipeline. It mirrors the statically-checkable subset of `better-drizzle/rules` for direct call sites, while runtime-only concerns such as transaction state, merged `meta`, and dialect behavior stay in `better-drizzle/rules`.
 
 ## What a plugin can do
 

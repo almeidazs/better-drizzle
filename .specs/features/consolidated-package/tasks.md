@@ -123,6 +123,7 @@ T6 → T7 → T8
 
 ### T8: Migrate public documentation and agent guidance
 
+**Status**: Done
 **What**: Replace first-party scoped package installation/import references with root subpaths and update repository field notes.
 **Where**: public documentation surface
 **Depends on**: T7

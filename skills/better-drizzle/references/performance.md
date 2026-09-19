@@ -4,9 +4,9 @@ Read this file for any change that touches hot paths, benchmarks, or public perf
 
 ## Hot files
 
-- `packages/core/src/shared/client/operations.ts`
-- `packages/core/src/shared/query/compiler.ts`
-- `packages/core/src/shared/client/context.ts`
+- `src/shared/client/operations.ts`
+- `src/shared/query/compiler.ts`
+- `src/shared/client/context.ts`
 
 ## Repo bias
 

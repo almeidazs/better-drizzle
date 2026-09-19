@@ -1,6 +1,6 @@
 # Overview
 
-`better-drizzle` is a small Bun/TypeScript workspace centered on `packages/core`, with official plugins, examples, benchmarks, and a Fumadocs site.
+`better-drizzle` is a small Bun/TypeScript workspace centered on `src`, with official plugins, examples, benchmarks, and a Fumadocs site.
 
 Public docs live at `https://better-drizzle.com/docs`.
 
