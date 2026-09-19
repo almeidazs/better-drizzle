@@ -17,7 +17,7 @@
 - **Package publishing/build**:
   - the root `package.json` is the only publishable manifest
   - tsdown emits minified, tree-shaken ESM, CommonJS, and declaration files for the root and each plugin subpath
-  - public APIs are limited to `better-drizzle` plus `better-drizzle/{eslint,rules,soft-delete,timestamps,zod}` through conditional exports
+  - public APIs are limited to `better-drizzle` plus `better-drizzle/{plugins,eslint,rules,soft-delete,timestamps,zod}` through conditional exports
   - `bun run pack` builds, checks every ESM/CJS export, then inspects the root tarball
 - **Top-level scripts**:
   - `bun run bench`: run the time benchmark suite

@@ -9,6 +9,7 @@ export default defineConfig({
 	dts: true,
 	entry: {
 		index: 'src/index.ts',
+		plugins: 'src/plugins/index.ts',
 		eslint: 'src/plugins/eslint/index.ts',
 		rules: 'src/plugins/rules/index.ts',
 		'soft-delete': 'src/plugins/soft-delete/index.ts',

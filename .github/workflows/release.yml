@@ -15,7 +15,6 @@ jobs:
         runs-on: ubuntu-latest
         env:
             NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-            NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
         steps:
             - name: Checkout
@@ -32,7 +31,7 @@ jobs:
                   node-version: 24
                   registry-url: https://registry.npmjs.org
 
-            - name: Resolve release target
+            - name: Validate release version
               id: release
               shell: bash
               run: |
@@ -40,34 +39,12 @@ jobs:
                   is_prerelease="${{ github.event.release.prerelease }}"
 
                   case "$tag" in
-                    better-drizzle@*)
-                      package_name="better-drizzle"
-                      package_dir="packages/core"
-                      version="${tag#better-drizzle@}"
-                      ;;
-                    @better-drizzle/timestamps@*)
-                      package_name="@better-drizzle/timestamps"
-                      package_dir="packages/timestamps"
-                      version="${tag#@better-drizzle/timestamps@}"
-                      ;;
-                    @better-drizzle/rules@*)
-                      package_name="@better-drizzle/rules"
-                      package_dir="packages/rules"
-                      version="${tag#@better-drizzle/rules@}"
-                      ;;
-                    @better-drizzle/soft-delete@*)
-                      package_name="@better-drizzle/soft-delete"
-                      package_dir="packages/soft-delete"
-                      version="${tag#@better-drizzle/soft-delete@}"
-                      ;;
-                    @better-drizzle/zod@*)
-                      package_name="@better-drizzle/zod"
-                      package_dir="packages/zod"
-                      version="${tag#@better-drizzle/zod@}"
+                    v*)
+                      version="${tag#v}"
                       ;;
                     *)
                       echo "::error::Unsupported release tag: $tag"
-                      echo "::error::Use the format better-drizzle@x.y.z, @better-drizzle/rules@x.y.z, @better-drizzle/timestamps@x.y.z, @better-drizzle/soft-delete@x.y.z, or @better-drizzle/zod@x.y.z"
+                      echo "::error::Use the format vX.Y.Z"
                       exit 1
                       ;;
                   esac
@@ -80,30 +57,26 @@ jobs:
                   {
                     echo "tag=$tag"
                     echo "version=$version"
-                    echo "package_name=$package_name"
-                    echo "package_dir=$package_dir"
                     echo "dist_tag=$dist_tag"
                   } >> "$GITHUB_OUTPUT"
 
             - name: Install dependencies
               run: bun install --frozen-lockfile
 
-            - name: Validate release metadata
+            - name: Validate package metadata
               shell: bash
               run: |
-                  package_dir="${{ steps.release.outputs.package_dir }}"
-                  package_name="${{ steps.release.outputs.package_name }}"
                   release_version="${{ steps.release.outputs.version }}"
-                  package_version="$(node -p "require('./${package_dir}/package.json').version")"
-                  package_json_name="$(node -p "require('./${package_dir}/package.json').name")"
+                  package_version="$(node -p "require('./package.json').version")"
+                  package_name="$(node -p "require('./package.json').name")"
 
-                  if [[ "$package_json_name" != "$package_name" ]]; then
-                    echo "::error::Package name mismatch. Expected $package_name but found $package_json_name"
+                  if [[ "$package_name" != "better-drizzle" ]]; then
+                    echo "::error::Package name must be better-drizzle, found $package_name"
                     exit 1
                   fi
 
                   if [[ "$package_version" != "$release_version" ]]; then
-                    echo "::error::Release tag version $release_version does not match ${package_dir}/package.json version $package_version"
+                    echo "::error::Release tag version $release_version does not match package.json version $package_version"
                     exit 1
                   fi
 
@@ -128,17 +101,15 @@ jobs:
 
             - name: Publish to npm
               if: steps.published.outputs.already_published != 'true'
-              working-directory: ${{ steps.release.outputs.package_dir }}
               shell: bash
               run: |
-                  package_name="${{ steps.release.outputs.package_name }}"
                   version="${{ steps.release.outputs.version }}"
                   dist_tag="${{ steps.release.outputs.dist_tag }}"
 
                   npm publish --provenance --access public --tag "$dist_tag"
 
                   {
-                    echo "Published \`${package_name}@${version}\`"
+                    echo "Published \`better-drizzle@${version}\`"
                     echo ""
                     echo "- npm dist-tag: \`${dist_tag}\`"
                     echo "- release tag: \`${{ steps.release.outputs.tag }}\`"

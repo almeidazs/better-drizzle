@@ -7,7 +7,7 @@ icon: Wrench
 `definePlugin(...)` is the entry point for reusable behavior. It gives you full type inference for hooks, transforms, extensions, and state.
 
 ```ts
-import { definePlugin } from 'better-drizzle';
+import { definePlugin } from 'better-drizzle/plugins';
 
 export const myPlugin = definePlugin({
 	id: '@example/my-plugin',
@@ -61,7 +61,7 @@ For each call, registered transforms and hooks run against the bound delegate (o
 This plugin adds a typed `traceId` arg to `findMany`, a `withDeleted()` state toggle, a `forceDelete()` helper that bypasses plugins, and a transform that hides soft-deleted rows:
 
 ```ts
-import { definePlugin } from 'better-drizzle';
+import { definePlugin } from 'better-drizzle/plugins';
 
 export const traceAndVisibility = definePlugin({
 	id: '@example/trace-and-visibility',

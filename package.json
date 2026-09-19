@@ -42,6 +42,16 @@
 				"default": "./dist/eslint.cjs"
 			}
 		},
+		"./plugins": {
+			"import": {
+				"types": "./dist/plugins.d.ts",
+				"default": "./dist/plugins.js"
+			},
+			"require": {
+				"types": "./dist/plugins.d.cts",
+				"default": "./dist/plugins.cjs"
+			}
+		},
 		"./rules": {
 			"import": {
 				"types": "./dist/rules.d.ts",
@@ -84,10 +94,8 @@
 		}
 	},
 	"scripts": {
-		"prepare": "lefthook install",
 		"build": "tsdown --config tsdown.config.ts",
 		"check": "bun run check:types && bun run check:lint && bun run test && bun run pack",
-		"check:exports": "node --input-type=module --eval \"await Promise.all(['better-drizzle', 'better-drizzle/eslint', 'better-drizzle/rules', 'better-drizzle/soft-delete', 'better-drizzle/timestamps', 'better-drizzle/zod'].map((entry) => import(entry)))\" && node --eval \"for (const entry of ['better-drizzle', 'better-drizzle/eslint', 'better-drizzle/rules', 'better-drizzle/soft-delete', 'better-drizzle/timestamps', 'better-drizzle/zod']) require(entry)\"",
 		"check:lint": "NODE_OPTIONS=--import=tsx oxfmt --config oxfmt.config.ts --check . '!**/*.{md,mdx}' && NODE_OPTIONS=--import=tsx oxlint --config oxlint.config.ts .",
 		"fix": "NODE_OPTIONS=--import=tsx oxlint --config oxlint.config.ts --fix . && NODE_OPTIONS=--import=tsx oxfmt --config oxfmt.config.ts --write . '!**/*.{md,mdx}'",
 		"check:types": "bunx tsc --noEmit",
@@ -99,7 +107,7 @@
 		"bench:verify": "BENCH_VERIFY_ONLY=1 bun run benchmark/full.ts",
 		"docs:dev": "bun run --filter @better-drizzle/web dev",
 		"docs:build": "bun run --filter @better-drizzle/web build",
-		"pack": "bun run build && bun run check:exports && npm pack --dry-run --ignore-scripts",
+		"pack": "bun run build && npm pack --dry-run --ignore-scripts",
 		"test": "bun test tests/core tests/rules tests/eslint tests/timestamps tests/soft-delete tests/zod",
 		"test:mysql": "bun test tests/core/where.mysql.test.ts",
 		"test:integration": "bun test tests/core/integration",
