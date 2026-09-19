@@ -5,7 +5,7 @@ import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 import { better } from '../../src';
-import { softDelete } from '../../src/packages/soft-delete';
+import { softDelete } from '../../src/plugins/soft-delete';
 
 const records = sqliteTable('soft_delete_records', {
 	deletedAt: integer('deleted_at', { mode: 'timestamp' }),

@@ -86,7 +86,7 @@ await client.users.findMany({
 ## Agent checks
 
 - confirm the plugin kind matches the operation being changed
-- do not describe `src/packages/rules` as compile-time or schema-migration based; it is runtime and hook-driven
+- do not describe `src/plugins/rules` as compile-time or schema-migration based; it is runtime and hook-driven
 - when `better-drizzle/zod` is involved, verify both runtime validation behavior and the exposed `$zod` typing surface
 - if plugin behavior changes user-facing docs, update docs and examples accordingly
 

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { better } from 'better-drizzle';
 
-import { rules } from '../../src/packages/rules';
+import { rules } from '../../src/plugins/rules';
 import { createTestContext } from '../core/setup';
 
 const createRulesContext = (pluginOptions: Parameters<typeof rules>[0]) => {

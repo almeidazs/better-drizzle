@@ -5,7 +5,7 @@ import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 import { better } from '../../src';
-import { timestamps } from '../../src/packages/timestamps';
+import { timestamps } from '../../src/plugins/timestamps';
 
 const records = sqliteTable('timestamp_records', {
 	createdAt: integer('created_at', { mode: 'timestamp' }),

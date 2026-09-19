@@ -4,7 +4,7 @@ import { better } from 'better-drizzle';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { zod as betterZod } from '../../src/packages/zod';
+import { zod as betterZod } from '../../src/plugins/zod';
 import { createTestContext } from '../core/setup';
 
 type Equal<A, B> =

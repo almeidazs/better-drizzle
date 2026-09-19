@@ -5,11 +5,11 @@
 - **Repository scope**: `better-drizzle` is a small Bun/TypeScript workspace that publishes one package, plus a benchmark suite used to measure API-parity performance and memory overhead against raw Drizzle ORM.
 - **Workspace layout**:
   - `src`: the published library
-  - `src/packages/rules`: official runtime rules/guardrails plugin
-  - `src/packages/eslint`: official ESLint plugin for static Better Drizzle guardrails
-  - `src/packages/soft-delete`: official soft delete plugin
-  - `src/packages/timestamps`: official timestamps plugin
-  - `src/packages/zod`: official Zod schema generation and validation plugin
+  - `src/plugins/rules`: official runtime rules/guardrails plugin
+  - `src/plugins/eslint`: official ESLint plugin for static Better Drizzle guardrails
+  - `src/plugins/soft-delete`: official soft delete plugin
+  - `src/plugins/timestamps`: official timestamps plugin
+  - `src/plugins/zod`: official Zod schema generation and validation plugin
   - `benchmark`: Bun + SQLite benchmark suite
   - `apps/web`: Next.js + Fumadocs documentation/marketing site
   - `README.md`: package documentation
@@ -155,8 +155,8 @@
   - plugin hooks/transforms are the mutation layer
   - `upsertMany` is a create-oriented hook/transform kind, matching `upsert` rather than `updateMany`
   - `updateEach` is an update-oriented batch operation with its own plugin kind, but it still flows through `beforeUpdate` / `afterUpdate`
-  - `src/packages/rules` is intentionally runtime-only and hook-driven; it enforces only checks that can be inferred from current hook payloads and silently ignores unsupported rule types
-  - `src/packages/rules` accepts boolean rule settings as shorthand: `true` means `error`, `false` means `off`
+  - `src/plugins/rules` is intentionally runtime-only and hook-driven; it enforces only checks that can be inferred from current hook payloads and silently ignores unsupported rule types
+  - `src/plugins/rules` accepts boolean rule settings as shorthand: `true` means `error`, `false` means `off`
 - **Batch updateEach API**:
   - `updateEach` is native-first and performance-sensitive
   - it accepts `by`, `data`, `update`, optional `where`, optional scalar `select`, and `onEmpty`
@@ -319,8 +319,8 @@
   - verify exports from `src/index.ts`
   - update both READMEs if user-facing behavior changes
   - ensure examples still type-check conceptually against the current API
-  - if `src/packages/rules` changes, keep the root workspace scripts (`build`, `test`, `check`, `pack`) including it
-  - if `src/packages/zod` changes, keep the root workspace scripts (`build`, `test`, `check`, `pack`) including it
+  - if `src/plugins/rules` changes, keep the root workspace scripts (`build`, `test`, `check`, `pack`) including it
+  - if `src/plugins/zod` changes, keep the root workspace scripts (`build`, `test`, `check`, `pack`) including it
 - **For performance changes**:
   - inspect hot-path allocations and branches
   - rerun both benchmark suites

@@ -3,7 +3,7 @@ import { describe } from 'bun:test';
 import parser from '@typescript-eslint/parser';
 import { RuleTester } from 'eslint';
 
-import plugin from '../../src/packages/eslint';
+import plugin from '../../src/plugins/eslint';
 
 const tester = new RuleTester({
 	languageOptions: {
