@@ -1,22 +1,32 @@
 pre-commit:
-    parallel: false
-    commands:
-        biome:
-            run: |
-                FILES=$(git diff --name-only --cached --diff-filter=ACMR)
+  commands:
+    biome:
+      run: |
+        FILES=$(git diff --name-only --cached --diff-filter=ACMR)
 
-                if [ -z "$FILES" ]; then
-                  exit 0
-                fi
+        if [ -z "$FILES" ]; then
+          exit 0
+        fi
 
-                FORMATTABLE_FILES=$(echo "$FILES" | grep -E '\.(ts|tsx|js|jsx|json|css)$' || true)
+        FORMATTABLE_FILES=$(echo "$FILES" | grep -E '\.(ts|tsx|js|jsx|json|css)$' || true)
 
-                if [ -n "$FORMATTABLE_FILES" ]; then
-                  echo "$FORMATTABLE_FILES" | xargs bun exec biome check --write
-                fi
+        if [ -n "$FORMATTABLE_FILES" ]; then
+          echo "$FORMATTABLE_FILES" | xargs bun exec biome check --write
+        fi
 
-                git add $FILES
-        test:
-            run: bun test
-        types:
-            run: bun typecheck
+        git add $FILES
+
+commit-msg:
+  commands:
+    commitlint:
+      run: bunx --no-install commitlint --edit {1}
+
+pre-push:
+  parallel: true
+  commands:
+    lint:
+      run: bun run check:lint
+    types:
+      run: bun run check:types
+    test:
+      run: bun run test
