@@ -79,6 +79,7 @@ T6 → T7 → T8
 
 ### T4: Relocate the Zod integration
 
+**Status**: Done
 **What**: Move Zod source and tests to the unified tree and update it to import the core by root subpath.
 **Where**: `packages/zod`, `src/packages/zod`, `tests/zod`
 **Depends on**: T1

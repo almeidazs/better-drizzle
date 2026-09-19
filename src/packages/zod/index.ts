@@ -72,7 +72,7 @@ export const zod = <
 	>({
 		description:
 			'Generates Zod schemas from Drizzle models and validates Better Drizzle operations.',
-		id: '@better-drizzle/zod',
+		id: 'better-drizzle/zod',
 		name: 'Zod',
 		operationArgs: {
 			count: { validate: undefined as boolean | undefined },

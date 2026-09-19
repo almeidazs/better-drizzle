@@ -4,8 +4,8 @@ import { better } from 'better-drizzle';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { createTestContext } from '../../../packages/core/tests/setup';
-import { zod as betterZod } from '../src';
+import { zod as betterZod } from '../../src/packages/zod';
+import { createTestContext } from '../core/setup';
 
 type Equal<A, B> =
 	(<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2

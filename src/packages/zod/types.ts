@@ -155,7 +155,7 @@ export type ZodPluginTableSchemasConfig<
 };
 
 /**
- * Configuration options for the `@better-drizzle/zod` plugin.
+ * Configuration options for the `better-drizzle/zod` plugin.
  *
  * @typeParam Schema - The full Drizzle schema object.
  * @property behavior - Global coercion and unknown-keys behavior applied to all tables.

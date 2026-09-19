@@ -58,7 +58,7 @@ export const parseOrThrow = <Schema extends ZodTypeAny>(
 		code: BetterDrizzleErrorCode.OperationError,
 		details: {
 			issues: formatZodError(result.error),
-			pluginId: '@better-drizzle/zod',
+			pluginId: 'better-drizzle/zod',
 		},
 		message: `Zod validation failed for ${context.operation} on "${context.table}".`,
 		table: context.table,
