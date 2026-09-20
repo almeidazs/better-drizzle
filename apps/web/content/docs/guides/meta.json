@@ -6,6 +6,7 @@
 		"client-extensions",
 		"dynamic-repositories",
 		"migrating-from-drizzle",
+		"upgrading",
 		"limitations",
 		"multi-tenancy",
 		"frameworks"

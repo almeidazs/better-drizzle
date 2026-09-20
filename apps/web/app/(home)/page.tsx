@@ -3,9 +3,12 @@ import {
 	Blocks,
 	BookOpenText,
 	Filter,
+	GitBranch,
 	Layers,
+	Lock,
+	ScanSearch,
+	ShieldCheck,
 	Terminal,
-	Webhook,
 } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -21,15 +24,24 @@ const HERO_CODE = `import { better } from 'better-drizzle';
 
 const client = better(db, { schema });
 
-const posts = await client.posts.findMany({
+const authors = await client.users.findMany({
   where: {
-    published: true,
-    author: { is: { active: true } },
+    active: true,
+    posts: { some: { published: true } },
   },
-  include: { author: true },
-  orderBy: [{ id: 'desc' }],
-  take: 3,
-});`;
+  include: {
+    _count: { select: { posts: { where: { published: true } } } },
+    posts: {
+      where: { published: true },
+      orderBy: [{ score: 'desc' }],
+      take: 3,
+    },
+  },
+  take: 20,
+});
+
+authors[0]._count.posts; // number
+authors[0].posts[0].title; // string`;
 
 const RAW_CODE = `import { and, desc, eq } from 'drizzle-orm';
 
@@ -59,15 +71,18 @@ const BETTER_CODE = `const rows = await client.posts.findMany({
   take: 20,
 });`;
 
-const PLUGINS_CODE = `import { better } from 'better-drizzle';
+const PLUGINS_CODE = `// one package — every plugin is a subpath export
+import { better } from 'better-drizzle';
 import { recommended, rules } from 'better-drizzle/rules';
-import { timestamps } from 'better-drizzle/timestamps';
 import { softDelete } from 'better-drizzle/soft-delete';
+import { timestamps } from 'better-drizzle/timestamps';
+import { zod } from 'better-drizzle/zod';
 
 const client = better(db, {
   schema,
   plugins: [
     rules(recommended({ noRawUnsafe: true })),
+    zod({ validate: { create: true, update: true } }),
     timestamps(),
     softDelete({
       column: 'deletedAt',
@@ -82,13 +97,24 @@ await client.users.delete({
 }); // typed plugin arg
 
 await client.users.findMany({ deleted: 'only' }); // typed filter
-await client.users.restore({ where: { id: 1 } }); // plugin method`;
+await client.users.restore({ where: { id: 1 } }); // plugin method
+client.users.$zod.create; // generated Zod schema`;
 
 const FEATURES = [
 	{
 		icon: Filter,
 		title: 'Typed nested filters',
-		body: 'Query across relations with some / every / none / is — inferred from your Drizzle schema, no subqueries by hand.',
+		body: 'Query across relations with some / every / none / is — inferred from your Drizzle schema, no subqueries by hand. Typed JSONB path filters on PostgreSQL.',
+	},
+	{
+		icon: Layers,
+		title: 'Batched relation loading',
+		body: 'Nested include and select run one query per relation node — no N+1, no cartesian blowup. Project relation totals with _count without an extra round-trip.',
+	},
+	{
+		icon: GitBranch,
+		title: 'Relational writes',
+		body: 'connect, disconnect, and exclusive set on create and update. Junction tables are inferred, and the whole write runs in one implicit transaction.',
 	},
 	{
 		icon: BookOpenText,
@@ -96,24 +122,29 @@ const FEATURES = [
 		body: 'Use paginate() for offset pages and cursor() for feed-style navigation. Both return { data, pagination } without rebuilding metadata by hand.',
 	},
 	{
-		icon: Layers,
-		title: 'Transactions & savepoints',
-		body: 'Nested transactions, opt-in retries, explicit rollback, and afterCommit / afterRollback callbacks — all on one client.',
+		icon: ScanSearch,
+		title: 'Query plans, inline',
+		body: 'Every read helper is a thenable with .explain(). Get a structured, cross-dialect plan — including deferred relation stages — without running the query twice.',
+	},
+	{
+		icon: Lock,
+		title: 'Row locks',
+		body: 'lock, skipLocked, and noWait on PostgreSQL and MySQL, with an opt-in guard that rejects locked reads outside a transaction.',
 	},
 	{
 		icon: Blocks,
 		title: 'First-class plugins',
-		body: 'Rules, timestamps, soft delete, and your own — with transforms, lifecycle hooks, and typed operation args.',
+		body: 'Rules, Zod, timestamps, and soft delete ship in the box — with transforms, lifecycle hooks, and typed operation args you can add yourself.',
 	},
 	{
-		icon: Webhook,
-		title: 'Lifecycle hooks',
-		body: 'Audit, trace, and authorize in one place instead of threading it through every call site.',
+		icon: ShieldCheck,
+		title: 'Guardrails, static and runtime',
+		body: 'better-drizzle/eslint catches what a linter can see; better-drizzle/rules enforces the rest at runtime — raw SQL, destructive writes, unbounded reads.',
 	},
 	{
 		icon: Terminal,
 		title: 'Raw SQL, when you want it',
-		body: '$raw, $executeRaw, and guarded $rawUnsafe are first-class. Drop to SQL only when it genuinely reads better.',
+		body: '$raw, $executeRaw, and guarded $rawUnsafe are first-class, with their own hooks. Drop to SQL only when it genuinely reads better.',
 	},
 ];
 
@@ -373,10 +404,12 @@ export default function HomePage() {
 							Plugins do the cross-cutting work
 						</h2>
 						<p className="text-fd-muted-foreground mt-4">
-							Timestamps and soft delete ship as official plugins.
-							They add typed arguments, rewrite operations, and
-							extend delegates — so behavior lives in one place
-							instead of every write.
+							Rules, Zod, timestamps, and soft delete ship as
+							official plugins — all inside the one{' '}
+							<code className="text-brand">better-drizzle</code>{' '}
+							package. They add typed arguments, rewrite
+							operations, and extend delegates, so behavior lives
+							in one place instead of every write.
 						</p>
 						<div className="mt-6 flex flex-wrap gap-3">
 							<Link
@@ -498,7 +531,7 @@ export default function HomePage() {
 									Get Started
 								</Link>
 								<Link
-									href="/docs/crud"
+									href="/docs/writing/crud"
 									className="hover:text-fd-foreground"
 								>
 									Manage Data
@@ -546,13 +579,13 @@ export default function HomePage() {
 							</h3>
 							<div className="text-fd-muted-foreground mt-5 flex flex-col gap-3 text-sm">
 								<Link
-									href="/docs/queries"
+									href="/docs/querying/reads"
 									className="hover:text-fd-foreground"
 								>
 									Querying
 								</Link>
 								<Link
-									href="/docs/transactions"
+									href="/docs/advanced/transactions"
 									className="hover:text-fd-foreground"
 								>
 									Transactions

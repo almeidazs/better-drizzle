@@ -344,7 +344,7 @@ await client.users.restore({
 
 Now you can enforce repository guardrails, soft delete rows, auto-generate Zod schemas, and also have timestamps fields injected automatically.
 
-For editor and CI feedback before runtime, pair the runtime guardrails with `better-drizzle/eslint` and its flat-config presets. The ESLint package mirrors the statically-checkable subset of `better-drizzle/rules` for direct Better Drizzle callsites.
+For editor and CI feedback before runtime, pair the runtime guardrails with `better-drizzle/eslint` and its flat-config presets. The ESLint entrypoint mirrors the statically-checkable subset of `better-drizzle/rules` for direct Better Drizzle callsites.
 
 ## Hooks
 

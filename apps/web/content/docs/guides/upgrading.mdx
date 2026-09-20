@@ -1,0 +1,125 @@
+---
+title: Upgrading to 0.2
+description: Move from the scoped @better-drizzle/* plugin packages to the unified better-drizzle package with subpath exports.
+icon: ArrowUpCircle
+---
+
+`0.2.0` collapses the plugin packages into the main package. The runtime API
+did not change — only where you install and import the official plugins from.
+
+## What changed
+
+Before `0.2.0`, each official plugin was published on its own:
+
+```bash
+npm install better-drizzle @better-drizzle/rules @better-drizzle/zod
+```
+
+From `0.2.0` on there is exactly one published package. The plugins are
+subpath exports of it:
+
+```bash
+npm install better-drizzle
+```
+
+| Before (`0.1.x`) | After (`0.2.x`) |
+| --- | --- |
+| `@better-drizzle/eslint` | `better-drizzle/eslint` |
+| `@better-drizzle/rules` | `better-drizzle/rules` |
+| `@better-drizzle/soft-delete` | `better-drizzle/soft-delete` |
+| `@better-drizzle/timestamps` | `better-drizzle/timestamps` |
+| `@better-drizzle/zod` | `better-drizzle/zod` |
+| — | `better-drizzle/plugins` *(new — plugin authoring API)* |
+
+<Callout type="info">
+	Every entrypoint ships ESM, CommonJS, and its own declaration files. The
+	subpaths are declared in `exports`, so bundlers and Node resolve them
+	without a `paths` alias or any build-step configuration.
+</Callout>
+
+## Migrating
+
+### 1. Drop the scoped packages
+
+```bash
+npm uninstall @better-drizzle/eslint @better-drizzle/rules \
+	@better-drizzle/soft-delete @better-drizzle/timestamps @better-drizzle/zod
+npm install better-drizzle@^0.2.0
+```
+
+### 2. Rewrite the imports
+
+Only the module specifier changes — the exported names are identical:
+
+```ts title="db.ts"
+// [!code --:3]
+import { recommended, rules } from '@better-drizzle/rules';
+import { softDelete } from '@better-drizzle/soft-delete';
+import { timestamps } from '@better-drizzle/timestamps';
+// [!code ++:3]
+import { recommended, rules } from 'better-drizzle/rules';
+import { softDelete } from 'better-drizzle/soft-delete';
+import { timestamps } from 'better-drizzle/timestamps';
+
+import { better } from 'better-drizzle';
+
+export const client = better(db, {
+	schema,
+	plugins: [rules(recommended()), timestamps(), softDelete()],
+});
+```
+
+A one-shot rewrite across the codebase:
+
+```bash
+grep -rl "@better-drizzle/" src \
+	| xargs sed -i "s|'@better-drizzle/|'better-drizzle/|g"
+```
+
+### 3. Update the ESLint config
+
+The ESLint plugin moved the same way:
+
+```js title="eslint.config.js"
+// [!code --]
+import betterDrizzle from '@better-drizzle/eslint';
+// [!code ++]
+import betterDrizzle from 'better-drizzle/eslint';
+
+export default [betterDrizzle.configs.recommended];
+```
+
+### 4. Reinstall and typecheck
+
+```bash
+npm install && npx tsc --noEmit
+```
+
+Any remaining `@better-drizzle/*` specifier will fail to resolve, which makes
+the typecheck the complete checklist for this migration.
+
+## What did *not* change
+
+- `better(db, options)` and every option it accepts
+- every delegate method and its result shape
+- plugin factories, their options, and the typed operation args they add
+- hooks, transforms, transactions, raw SQL, and error shapes
+- the `drizzle-orm@^0.30.0` and `typescript@^5` peer ranges
+
+If your code compiled on `0.1.x`, changing the import specifiers is the
+entire upgrade.
+
+## Versioning from here
+
+The single package means a single version line. `better-drizzle` and every
+plugin entrypoint always report the same `version`:
+
+```ts
+import { version } from 'better-drizzle';
+import { version as zodVersion } from 'better-drizzle/zod';
+
+version === zodVersion; // true
+```
+
+See [stability & semver](/docs/reference/stability) for what the `0.2.x` line
+guarantees.

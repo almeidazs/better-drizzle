@@ -1,27 +1,56 @@
 ---
 title: Stability & semver
-description: What better-drizzle considers stable in the 0.1.x line, and how changes are versioned.
+description: What better-drizzle considers stable in the 0.2.x line, how the unified package is versioned, and what counts as a breaking change.
 icon: ShieldCheck
 ---
 
-`0.1.x` is the first public release line of better-drizzle.
+`0.2.x` is the current release line of better-drizzle.
 
-## What is considered stable in `0.1.x`
+<Callout type="warn" title="0.2.0 changed how plugins are distributed">
+	The official plugins are no longer published as separate
+	`@better-drizzle/*` packages. Everything ships inside the single
+	`better-drizzle` package as subpath exports. See the
+	[upgrade guide](/docs/guides/upgrading) for the one-step migration.
+</Callout>
 
-- package entrypoints and `exports`
-- documented delegate methods
+## One package, one version
+
+There is a single published manifest. `better-drizzle` and every official
+plugin move together, so there is no version matrix to reconcile:
+
+```ts
+import { version } from 'better-drizzle';
+import { version as zodVersion } from 'better-drizzle/zod';
+
+version === zodVersion; // always true
+```
+
+Each entrypoint still re-exports `version` so a plugin can report itself in
+logs, but the value is always the package version.
+
+## What is considered stable in `0.2.x`
+
+- the package entrypoints listed in `exports` (`.`, `/plugins`, `/eslint`, `/rules`, `/soft-delete`, `/timestamps`, `/zod`)
+- documented delegate methods and their result shapes
 - documented client methods
-- documented plugin entrypoints and official plugin package names
-- documented option names and result shapes
-- the published support matrix for PostgreSQL, SQLite, and MySQL
+- documented option names on `better()`, on each operation, and on official plugins
+- the plugin authoring API: `definePlugin`, hooks, transforms, extensions, and `operationArgs`
+- the published [support matrix](/docs/reference/support-matrix) for PostgreSQL, SQLite, and MySQL
+
+Anything reachable only through a deep import path (`better-drizzle/dist/...`)
+is internal and can change in a patch.
 
 ## Semver policy
 
 better-drizzle follows semver intent, with extra conservatism around types:
 
-- patch: bug fixes, doc fixes, test additions, internal optimizations, support-matrix clarifications
-- minor: additive APIs, new plugin hooks, new documented options, new examples
-- major: behavior changes, removed exports, renamed options, changed result shapes, or stricter semantics that can break existing code
+- **patch** — bug fixes, doc fixes, test additions, internal optimizations, support-matrix clarifications
+- **minor** — additive APIs, new plugin hooks, new documented options, new entrypoints
+- **major** — behavior changes, removed exports, renamed options, changed result shapes, or stricter semantics that can break existing code
+
+While the package is pre-1.0, a breaking change lands in a **minor** bump
+(`0.2.x` → `0.3.0`) and is always called out in the release notes with a
+migration path.
 
 ## Type-level compatibility
 
@@ -36,15 +65,17 @@ TypeScript users depend on inference as part of the product. Because of that:
 When a dialect cannot support a feature safely or honestly, the project prefers:
 
 1. explicit support
-2. explicit unsupported behavior with a structured error
+2. explicit unsupported behavior with a structured [error](/docs/reference/errors)
 
-It does **not** prefer hidden userland fallbacks that materially change performance or semantics without saying so.
+It does **not** prefer hidden userland fallbacks that materially change
+performance or semantics without saying so. `upsertMany` on MySQL and row
+[locks](/docs/advanced/locks) on SQLite fail fast for exactly this reason.
 
 ## Release notes
 
 Every published version should have:
 
 - a changelog entry
-- aligned package versions
 - updated docs when user-facing behavior changes
-- passing smoke-consume checks
+- a documented migration path for anything breaking
+- passing smoke-consume checks against the built tarball

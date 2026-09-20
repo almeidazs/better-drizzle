@@ -41,8 +41,57 @@ const client = better(db, options);
 			description: 'Row lock configuration, e.g. requiring locked reads to run inside transactions.',
 			type: '{ transactionsOnly?: boolean }',
 		},
+		relations: {
+			description: 'Many-to-many inference and ambiguity overrides (see below).',
+			type: 'RelationsOptions',
+		},
 	}}
 />
+
+### `relations` options
+
+better-drizzle infers a direct many-to-many relation whenever a junction table
+has exactly two required foreign-key relations and no other required columns.
+Use these options when your schema has more than one possible path.
+
+<TypeTable
+	type={{
+		inferManyToMany: {
+			description: 'Infer simple junction-table relations automatically. Set to false to require every many-to-many to be declared explicitly.',
+			type: 'boolean',
+			default: 'true',
+		},
+		manyToMany: {
+			description: 'Explicit junction relations used to resolve aliases or ambiguous paths.',
+			type: '{ through: string; left: { relation: string; name?: string }; right: { relation: string; name?: string } }[]',
+		},
+	}}
+/>
+
+```ts
+const client = better(db, {
+	schema,
+	relations: {
+		manyToMany: [
+			{
+				through: 'memberships',
+				left: { relation: 'user' },
+				right: { relation: 'group', name: 'groups' },
+			},
+		],
+	},
+});
+
+// `groups` is now a first-class relation on the user delegate
+const user = await client.users.findFirst({
+	where: { id: 1 },
+	include: { groups: { take: 10 } },
+});
+```
+
+Ambiguous paths fail with a structured error at use time instead of picking a
+junction silently. See [relations](/docs/querying/relations#many-to-many-relations) for
+the inference rules.
 
 ### `raw` options
 
@@ -144,9 +193,12 @@ enum OrderType {
 
 The library also exports its full type surface (`BetterDrizzleClient`, `BetterDrizzleModelDelegate`, `QueryArgs`, `WhereInput`, `Plugin`, hook context types, and more) for typing your own helpers.
 
-Each package also exports its own `version` constant:
+Every entrypoint re-exports the package `version`. Since `0.2.0` ships as a
+single package, these are always the same value:
 
 ```ts
 import { version } from 'better-drizzle';
 import { version as softDeleteVersion } from 'better-drizzle/soft-delete';
+
+version === softDeleteVersion; // true
 ```

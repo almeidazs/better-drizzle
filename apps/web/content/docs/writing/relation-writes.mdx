@@ -1,0 +1,253 @@
+---
+title: Relation writes
+description: Attach, detach, and replace related rows from a single create, update, or upsert with connect, disconnect, and set.
+icon: Workflow
+---
+
+Single-row `create`, `update`, and `upsert` accept relation commands alongside
+scalar columns. Instead of resolving a foreign key yourself and issuing a
+second statement, you describe the link you want and better-drizzle resolves
+it — inside one transaction.
+
+```ts
+const post = await client.posts.create({
+	data: {
+		title: 'Relations without the glue',
+		author: { connect: { email: 'alice@example.com' } },
+		tags: { connect: [{ slug: 'drizzle' }, { slug: 'typescript' }] },
+	},
+	include: { author: true, tags: true },
+});
+```
+
+No `authorId` in sight, no junction rows to insert by hand, and `post` comes
+back typed with both relations attached.
+
+## The commands
+
+Which commands a relation accepts depends on its cardinality and on whether
+you are creating or updating.
+
+| Command | To-one on `create` | To-one on `update` | To-many on `create` | To-many on `update` |
+| --- | --- | --- | --- | --- |
+| `connect` | Yes — one selector | Yes — one selector | Yes — one or many selectors | Yes — one or many selectors |
+| `disconnect` | — | `true` | — | Yes — one or many selectors |
+| `set` | — | one selector or `null` | — | an array of selectors |
+
+<Callout type="info" title="set is exclusive">
+	`set` replaces the entire relation, so it cannot be combined with `connect`
+	or `disconnect` for that same relation. The type system enforces this —
+	mixing them is a compile error, not a runtime surprise.
+</Callout>
+
+## `connect` — attach existing rows
+
+`connect` links rows that already exist. On a to-one relation it takes a
+single selector; on a to-many relation it takes one selector or an array.
+
+```ts
+// to-one: resolve the author and write the foreign key
+await client.posts.create({
+	data: {
+		title: 'Hello',
+		author: { connect: { email: 'alice@example.com' } },
+	},
+});
+
+// to-many: attach three existing posts to a user
+await client.users.update({
+	where: { id: 1 },
+	data: {
+		posts: { connect: [{ id: 2 }, { id: 3 }, { id: 9 }] },
+	},
+});
+```
+
+For an inferred many-to-many relation, `connect` inserts the junction rows for
+you:
+
+```ts
+await client.posts.update({
+	where: { id: 10 },
+	data: {
+		tags: { connect: [{ slug: 'release-notes' }] },
+	},
+});
+// inserts into post_tags — you never name the junction table
+```
+
+## `disconnect` — detach without deleting
+
+`disconnect` breaks the link and leaves both rows in place. The shape differs
+by cardinality, because a to-one relation has nothing to select:
+
+```ts
+// to-one: `true`, not a selector
+await client.posts.update({
+	where: { id: 10 },
+	data: {
+		author: { disconnect: true },
+	},
+});
+
+// to-many: the rows to detach
+await client.users.update({
+	where: { id: 1 },
+	data: {
+		posts: { disconnect: [{ id: 2 }, { id: 3 }] },
+	},
+});
+```
+
+<Callout type="warn">
+	Disconnecting a to-one relation nulls its foreign key, so it only works
+	when the column is nullable. On a `notNull()` foreign key the operation
+	fails and the whole write rolls back — use `set` to point it somewhere
+	else instead.
+</Callout>
+
+## `set` — replace the whole relation
+
+`set` makes the relation exactly what you pass, connecting what is missing and
+disconnecting what is no longer listed. It is the right command for "these are
+the tags now" semantics:
+
+```ts
+// the post ends up with exactly these two tags
+await client.posts.update({
+	where: { id: 10 },
+	data: {
+		tags: { set: [{ slug: 'drizzle' }, { slug: 'orm' }] },
+	},
+});
+
+// an empty array clears the relation
+await client.posts.update({
+	where: { id: 10 },
+	data: { tags: { set: [] } },
+});
+
+// to-one: repoint it, or null it out
+await client.posts.update({
+	where: { id: 10 },
+	data: { author: { set: { email: 'bob@example.com' } } },
+});
+
+await client.posts.update({
+	where: { id: 10 },
+	data: { author: { set: null } },
+});
+```
+
+Reaching for `set` where `connect` would do means re-resolving rows that were
+already linked. Prefer `connect` / `disconnect` for incremental edits and keep
+`set` for replace-everything flows.
+
+## Selectors must match exactly one row
+
+A relation selector is a partial of the related row, and it has to identify
+exactly one row. Matching zero rows or more than one row is an error, not a
+silent no-op:
+
+```ts
+// ✅ unique column
+{ connect: { email: 'alice@example.com' } }
+
+// ❌ throws: matches many users
+{ connect: { active: true } }
+
+// ❌ throws: matches no user
+{ connect: { email: 'nobody@example.com' } }
+```
+
+Selecting on a unique or primary-key column is the reliable choice. See
+[error handling](/docs/advanced/error-handling) for the structured error these
+failures produce.
+
+## `upsert` follows its branch
+
+`upsert` applies the rules of whichever branch runs. The `create` branch
+accepts `connect` only; the `update` branch accepts all three commands:
+
+```ts
+await client.posts.upsert({
+	where: { slug: 'hello-world' },
+	create: {
+		slug: 'hello-world',
+		title: 'Hello world',
+		author: { connect: { email: 'alice@example.com' } },
+	},
+	update: {
+		title: 'Hello world (revised)',
+		tags: { set: [{ slug: 'drizzle' }] },
+	},
+});
+```
+
+## Everything runs in one transaction
+
+The root mutation and every relation change run in a single implicit
+transaction, unless the call is already inside
+[`client.transaction()`](/docs/advanced/transactions) — in which case it joins
+the transaction you opened.
+
+That means partial relation writes cannot be observed. A missing selector, an
+ambiguous selector, a required foreign key, or an invalid command combination
+fails the whole operation and rolls the scalar changes back with it.
+
+```ts
+await client.transaction(async (tx) => {
+	const post = await tx.posts.create({
+		data: {
+			title: 'Draft',
+			author: { connect: { email: 'alice@example.com' } },
+		},
+	});
+
+	// same transaction — no nested implicit one is opened
+	await tx.posts.update({
+		where: { id: post.id },
+		data: { tags: { connect: [{ slug: 'draft' }] } },
+	});
+
+	return post;
+});
+```
+
+Delegate plugin state set with `$withState(...)` is preserved into the
+implicit transaction, so soft delete, timestamps, and your own plugins behave
+the same as in a plain write.
+
+## Batch operations stay scalar
+
+`createMany`, `updateMany`, `updateEach`, and `upsertMany` do **not** accept
+relation commands. They are native-first batch statements, and resolving
+per-row relation selectors would quietly turn them into loops — exactly the
+cost they exist to avoid.
+
+When you need relation writes across many rows, loop the single-row API inside
+one explicit transaction and keep the cost visible:
+
+```ts
+await client.transaction(async (tx) => {
+	for (const input of inputs) {
+		await tx.posts.create({
+			data: {
+				title: input.title,
+				author: { connect: { email: input.authorEmail } },
+			},
+		});
+	}
+});
+```
+
+## Where to next
+
+<Cards>
+	<Card title="CRUD & mutations" href="/docs/writing/crud">
+		The full scalar write surface, including the batch operations.
+	</Card>
+	<Card title="Relations" href="/docs/querying/relations">
+		Reading relations back with `include`, `select`, and `_count`.
+	</Card>
+</Cards>
