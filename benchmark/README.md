@@ -19,6 +19,8 @@ This directory contains the benchmark suite for `better-drizzle`. The benchmarks
 | `bun run bench:verify` | Validate deep result parity without timing |
 | `bun run bench:memory` | Run the memory benchmark (heap/rss deltas) |
 | `bun run bench:all` | Run the latency, comprehensive, and memory suites sequentially |
+| `bun run bench:report` | Emit the published overhead tables (interleaved, median of samples) |
+| `bun run bench:jsonb` | Validate and time PostgreSQL JSONB path filters (needs `DATABASE_URL`) |
 
 <div align="center">
 
@@ -31,6 +33,30 @@ Measures per-operation latency in microseconds for each API method. Benchmark co
 Validates every scenario with `deepStrictEqual` before timing it, then compares reads, writes, relations, relation-count projections, raw SQL, and transactions. Both sides execute equivalent database work and return the same effective result shape.
 
 Mutation scenarios use deterministic data pools or restore state between iterations. Relational comparisons use batched raw Drizzle queries instead of N+1 queries. When Drizzle's relational query builder cannot execute a supported nested shape consistently, the raw side performs the equivalent root, child, and grandchild queries and assembles the same nested payload.
+
+### Report benchmark
+
+`bench:report` is the suite that produces the numbers published on the docs site.
+
+Absolute timings drift between runs with machine load — the same operation can read 53 µs on an idle machine and 93 µs under load. Single-run absolute numbers are therefore not publishable. The report addresses this in two ways:
+
+- **Interleaving.** Both sides of a pair are sampled inside the same window, alternating which one leads, so a warming or cooling machine cannot systematically favour one side.
+- **Median of samples.** Each side is measured over several samples and the median is reported, discarding outliers from unrelated system activity.
+
+Measurement itself is delegated to mitata's engine — the same one behind `bun run bench` — so warmup, JIT settling, GC accounting, and outlier trimming match the other suites. Only the scheduling around it belongs to the report.
+
+Ratios are stable across runs even when absolute values are not, so **overhead percentages are the publishable figure**; treat absolute microseconds as machine-specific.
+
+### JSONB benchmark
+
+`bench:jsonb` is the only suite that needs a real PostgreSQL instance (`docker compose up -d postgres`). It seeds 100,000 rows server-side through `generate_series`, builds an expression index on the filtered path, and compares typed `json` path filters against the identical SQL written by hand.
+
+It validates **two** kinds of parity before timing:
+
+1. **Row parity** — both sides return the same rows, compared with `deepStrictEqual`.
+2. **Plan parity** — both sides reach those rows the same way. The suite runs `EXPLAIN` on each side (using `.explain()` for the better-drizzle side) and asserts that either both use the expression index or neither does. Matching rows through an index scan on one side and a sequential scan on the other would not be a fair comparison.
+
+This suite is I/O bound: the cost is dominated by PostgreSQL planning, execution, and row transfer, so run-to-run variance is high and the two sides land within noise of each other. Use it to prove that the typed API compiles to the same query, **not** as a source of wrapper-overhead figures — those come from the in-memory SQLite suites.
 
 ### Memory benchmark
 
@@ -83,6 +109,8 @@ Hardware: AMD Ryzen 5 7520U. Runtime: Bun 1.3.14. Database: SQLite in-memory.
 | Multi-op transaction | 725.98 µs | 724.15 µs | -0.3% |
 | Read-only transaction | 230.92 µs | 281.35 µs | +21.8% |
 | Nested transaction (savepoint) | — | 650.22 µs | — |
+
+The table above is a historical Bun 1.3.14 snapshot. After the cursor optimization, five interleaved mitata p50 samples on Bun 1.4.0 / Intel i7-13620H measured cursor pagination at 156 µs for exact raw Drizzle and 162 µs for better-drizzle (+3.8%). The data-only Drizzle reference measured 133 µs and does not compute the same navigation metadata.
 
 <div align="center">
 

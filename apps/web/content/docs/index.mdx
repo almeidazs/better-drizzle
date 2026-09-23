@@ -85,8 +85,9 @@ better-drizzle packages those patterns into a repository-style API — without r
 		savepoints, retries, and `afterCommit`.
 	</Card>
 	<Card title="Close to the metal" href="/docs/performance/benchmarks">
-		Fast paths for common reads and writes. Reads land within 0–18% of raw
-		Drizzle — and use less memory.
+		Fast paths for common reads and writes, and a batched relation loader
+		that beats the equivalent raw Drizzle code by ~9× at parity. Everything
+		else stays within ~10%.
 	</Card>
 </Cards>
 

@@ -158,9 +158,9 @@ const FEATURES = [
 ];
 
 const STATS = [
-	{ value: '−85%', label: 'heap on reads vs raw Drizzle' },
-	{ value: '0–18%', label: 'read latency overhead at parity' },
-	{ value: '< 4%', label: 'write overhead' },
+	{ value: '9.1×', label: 'faster relation loading at parity' },
+	{ value: '< 9%', label: 'read latency overhead at parity' },
+	{ value: '< 5%', label: 'write overhead at parity' },
 	{ value: '0', label: 'codegen or build steps' },
 ];
 
@@ -315,8 +315,9 @@ export default function HomePage() {
 					</h2>
 					<p className="text-fd-muted-foreground mt-4">
 						Measured against raw Drizzle with fair, API-parity
-						comparisons. Reads are often <em>faster</em> through the
-						wrapper — and use less memory.
+						comparisons. Relation loading is <em>faster</em> through
+						the wrapper; the rest stays close — and where it
+						doesn&rsquo;t, the benchmarks say so.
 					</p>
 				</div>
 				<div className="border-fd-border bg-fd-border mt-12 grid gap-px overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-4">

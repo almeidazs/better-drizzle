@@ -23,6 +23,8 @@
   - `bun run bench`: run the time benchmark suite
   - `bun run bench:memory`: run the memory/overhead benchmark suite
   - `bun run bench:all`: run both benchmark suites
+  - `bun run bench:report`: emit the overhead tables published on the docs site
+  - `bun run bench:jsonb`: PostgreSQL JSONB parity suite; needs `DATABASE_URL`
 - **Core dependencies**:
   - `drizzle-orm` as a peer dependency
   - `typescript` as a peer dependency
@@ -204,6 +206,14 @@
   - `benchmark/scenarios.ts`: benchmark scenarios for raw Drizzle and `better-drizzle`
   - `benchmark/setup.ts`: benchmark database/context setup
   - `benchmark/schema.ts`: benchmark schema
+  - `benchmark/report.ts`: generates the published overhead tables
+  - `benchmark/jsonb.ts`: PostgreSQL JSONB path filters, row **and** plan parity
+- **Absolute timings are not publishable**: the same operation reads 53 µs idle and 93 µs under load. Only the raw/better ratio is stable across runs. `benchmark/report.ts` interleaves both sides in one sampling window (alternating which leads) and takes the median across samples; measurement is delegated to mitata's engine so warmup/JIT/GC handling matches `bun run bench`. A hand-rolled timing loop was tried first and disagreed with mitata by ~30 points on point lookup — do not hand-roll timing here.
+- **Measured, reproducible across runs, published on the docs site** (everything sits within ~10% at parity except the relation win):
+  - `cursor()` uses one indexed data query with an inline `EXISTS` navigation check for populated single-primary-key pages; empty pages and complex queries retain an exact fallback probe. The API-parity Drizzle scenario must compute the same navigation flags, while the data-only query stays in the manual reference group.
+  - relation graph reads are ~9x *faster* than the equivalent raw code, via the batched loader
+  - mixed-read and transaction batches use more heap, not less
+- **Cursor parity is easy to fake**: an earlier revision of `rawCursorPaginate` hardcoded `hasPrevious: true`, so the raw side ran one query against better-drizzle's two and `cursor()` measured ~2x slower. The raw side must resolve `hasPrevious` for real (correlated `exists` subquery). Re-check this whenever a pagination scenario changes.
 - **Benchmark rule**: parity matters. If `better-drizzle` returns nested objects, pagination metadata, or relation payloads, the raw Drizzle comparison must return the same effective shape and do the same effective work.
 - **Two benchmark views exist intentionally**:
   - `api parity`: fair comparison where raw Drizzle and `better-drizzle` do the same work
