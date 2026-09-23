@@ -1,4 +1,15 @@
-import { and, asc, count, desc, eq, gte, like, sql } from 'drizzle-orm';
+import {
+	and,
+	asc,
+	count,
+	desc,
+	eq,
+	getTableColumns,
+	gt,
+	gte,
+	like,
+	sql,
+} from 'drizzle-orm';
 
 import { OrderType } from '../src';
 import { benchWrites, comments, posts, users } from './schema';
@@ -6,6 +17,8 @@ import type { BenchmarkContext } from './setup';
 
 // oxlint-disable-next-line typescript/no-explicit-any -- Benchmark type erasure.
 type Any = any;
+
+const userColumns = getTableColumns(users);
 
 const nextWriteId = (context: BenchmarkContext) => {
 	const id = context.counters.createDeleteId;
@@ -211,12 +224,23 @@ export const betterOffsetPaginate = async (context: BenchmarkContext) =>
 
 export const rawCursorPaginate = async (context: BenchmarkContext) => {
 	const data = await context.raw
-		.select()
+		.select({
+			...userColumns,
+			__hasPrevious:
+				sql`exists (select 1 from ${users} as prior where prior.id <= ${context.ids.cursorAfterId})`.mapWith(
+					Boolean,
+				),
+		})
 		.from(users)
-		.where(gte(users.id, context.ids.cursorAfterId + 1))
+		.where(gt(users.id, context.ids.cursorAfterId))
 		.orderBy(asc(users.id))
 		.limit(26);
 
+	const hasPrevious = data.length
+		? data[0].__hasPrevious
+		: (await context.raw.select({ id: users.id }).from(users).limit(1))
+				.length > 0;
+	for (const row of data) delete (row as Partial<typeof row>).__hasPrevious;
 	const visible = data.slice(0, 25);
 
 	return {
@@ -224,13 +248,29 @@ export const rawCursorPaginate = async (context: BenchmarkContext) => {
 		pagination: {
 			type: 'cursor' as const,
 			hasNext: data.length > 25,
-			hasPrevious: true,
+			hasPrevious,
 			nextCursor:
 				data.length > 25
 					? { id: visible[visible.length - 1]?.id }
 					: null,
-			previousCursor: visible.length ? { id: visible[0]?.id } : null,
+			previousCursor:
+				hasPrevious && visible.length ? { id: visible[0]?.id } : null,
 		},
+	};
+};
+
+export const rawCursorManualOneQuery = async (context: BenchmarkContext) => {
+	const rows = await context.raw
+		.select()
+		.from(users)
+		.where(gt(users.id, context.ids.cursorAfterId))
+		.orderBy(asc(users.id))
+		.limit(26);
+	const visible = rows.slice(0, 25);
+	return {
+		data: visible,
+		hasNext: rows.length > 25,
+		nextCursor: rows.length > 25 ? { id: visible[24]?.id } : null,
 	};
 };
 

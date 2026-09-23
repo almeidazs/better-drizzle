@@ -21,6 +21,7 @@ import {
 	rawComplexRelationFilter,
 	rawCreateDeleteBare,
 	rawCreateDeleteRoundtrip,
+	rawCursorManualOneQuery,
 	rawCursorPaginate,
 	rawExists,
 	rawFilteredList,
@@ -125,6 +126,8 @@ group('api parity: transactions', () => {
 
 group('manual drizzle reference', () => {
 	summary(() => {
+		bench('drizzle manual: cursor data only', async () =>
+			do_not_optimize(await rawCursorManualOneQuery(rawContext)));
 		bench('drizzle manual: complex join flat', async () =>
 			do_not_optimize(await rawComplexJoinFlat(rawContext)));
 		bench('drizzle parity: complex relation filter', async () =>
