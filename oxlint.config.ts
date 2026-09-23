@@ -6,7 +6,7 @@ export default defineConfig({
 		correctness: 'error',
 	},
 	ignorePatterns: core.ignorePatterns,
-	plugins: core.plugins.filter(
+	plugins: core.plugins?.filter(
 		(plugin) => !['jsdoc', 'node', 'promise'].includes(plugin),
 	),
 	rules: {
