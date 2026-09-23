@@ -26,9 +26,17 @@
         "zod": "^4.4.3",
       },
       "peerDependencies": {
+        "@typescript-eslint/parser": "^8",
         "drizzle-orm": "^0.30.0",
+        "eslint": "^9",
         "typescript": "^5",
+        "zod": "^3.25.0 || ^4.0.0",
       },
+      "optionalPeers": [
+        "@typescript-eslint/parser",
+        "eslint",
+        "zod",
+      ],
     },
     "apps/web": {
       "name": "@better-drizzle/web",
