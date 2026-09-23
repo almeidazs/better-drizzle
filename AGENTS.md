@@ -313,6 +313,7 @@
 - If a custom docs header replaces Fumadocs' default `Header`, it must participate in the docs grid with `[grid-area:header]` and the docs shell should keep `--fd-header-height` in sync, otherwise mobile/tablet layouts can collapse the main content into a narrow column.
 - For narrow screens, `#nd-docs-layout` may need an explicit single-column grid override because Fumadocs' default docs grid keeps sidebar/toc tracks in the template even when those panes are visually hidden.
 - Docs code blocks render through `apps/web/components/shiny-code-block.tsx` (the `pre` override in `mdx-components.tsx`): clicking anywhere on a block copies it and plays the `bd-code-flash` sweep from `app/global.css`.
+- SEO: titles use ` - ` as separator (never an em dash); site-wide constants/keywords live in `apps/web/lib/seo.ts`. Every docs page sets `seoTitle` (≤45 chars, the template appends ` - better-drizzle`) and `seoDescription` (110-160 chars, mentioning Drizzle ORM) in frontmatter; the visible `title`/`description` stay short. OG images come from `app/opengraph-image.tsx` and `app/og/docs/[...slug]/route.tsx`.
 - API examples pair a better-drizzle block with a raw Drizzle equivalent using Fumadocs' built-in code tabs: adjacent fences with ```` ```ts tab="better-drizzle" tab-group="orm" ```` then ```` ```ts tab="Drizzle" tab-group="orm" ````. better-drizzle comes first; the shared `tab-group` syncs and persists the selection. Skip setup/schema/plugin-config blocks.
 
 ## Change checklist

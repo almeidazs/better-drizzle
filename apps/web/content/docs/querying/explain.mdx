@@ -2,6 +2,8 @@
 title: Explain
 description: Inspect query plans without executing queries using .explain() on any read operation.
 icon: ScanSearch
+seoTitle: 'Explain - Drizzle ORM Query Plans'
+seoDescription: 'Inspect SQL query plans for any Drizzle ORM read with .explain(): EXPLAIN ANALYZE on PostgreSQL, EXPLAIN QUERY PLAN on SQLite, and MySQL EXPLAIN.'
 ---
 
 Every read operation in Better Drizzle returns an **explainable result** -- a lazy promise that exposes an `.explain()` method. Calling `.explain()` inspects the query plan the database would execute, without actually running the query.
@@ -84,7 +86,7 @@ console.log(result.statements.map(s => s.key));
 // ["data", "total"]
 ```
 
-**`cursor`** produces the data query plus runtime probe queries for `hasNext` / `hasPrevious`:
+**`cursor`** includes an indexed existence check in the data query for simple primary-key pages. Empty pages and other query shapes may also need a `hasNext` / `hasPrevious` probe:
 
 ```ts
 const result = await client.users
@@ -96,7 +98,7 @@ const result = await client.users
   .explain();
 
 console.log(result.statements.map(s => s.key));
-// ["data", "probe:hasPrevious"]
+// ["data"] for a populated primary-key page
 ```
 
 ## Options

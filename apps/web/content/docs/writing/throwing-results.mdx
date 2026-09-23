@@ -2,6 +2,8 @@
 title: Throwing results
 description: Operations that return a nullable result plus a .throw() helper, so you can opt into exception-driven flow.
 icon: TriangleAlert
+seoTitle: 'Throwing Results - Nullable vs .throw()'
+seoDescription: 'Return null for missing rows or opt into exceptions with .throw() on Drizzle ORM reads and writes, for cleaner not-found handling in services.'
 ---
 
 Some operations can legitimately match nothing. better-drizzle keeps that honest in the type — they return `T | null` — while letting you opt into throwing when not-found is genuinely exceptional.

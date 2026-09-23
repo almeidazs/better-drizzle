@@ -15,10 +15,19 @@ import Link from 'next/link';
 import { FaDiscord, FaGithub } from 'react-icons/fa';
 import { SiPostgresql } from 'react-icons/si';
 
+import { JsonLd } from '@/components/json-ld';
 import { CodeWindow } from '@/components/landing/code-window';
 import { SponsorHeart } from '@/components/landing/database-logos';
 import { InstallCommand } from '@/components/landing/install-command';
 import { Logo } from '@/components/logo';
+import {
+	GITHUB_URL,
+	KEYWORDS,
+	NPM_URL,
+	SITE_DESCRIPTION,
+	SITE_NAME,
+	SITE_URL,
+} from '@/lib/seo';
 
 const HERO_CODE = `import { better } from 'better-drizzle';
 
@@ -155,9 +164,37 @@ const STATS = [
 	{ value: '0', label: 'codegen or build steps' },
 ];
 
+const STRUCTURED_DATA = {
+	'@context': 'https://schema.org',
+	'@graph': [
+		{
+			'@type': 'WebSite',
+			'@id': `${SITE_URL}/#website`,
+			url: SITE_URL,
+			name: SITE_NAME,
+			description: SITE_DESCRIPTION,
+			inLanguage: 'en',
+		},
+		{
+			'@type': 'SoftwareSourceCode',
+			'@id': `${SITE_URL}/#software`,
+			name: SITE_NAME,
+			description: SITE_DESCRIPTION,
+			url: SITE_URL,
+			codeRepository: GITHUB_URL,
+			programmingLanguage: 'TypeScript',
+			runtimePlatform: ['Node.js', 'Bun'],
+			license: 'https://www.apache.org/licenses/LICENSE-2.0',
+			keywords: KEYWORDS.join(', '),
+			sameAs: [GITHUB_URL, NPM_URL],
+		},
+	],
+};
+
 export default function HomePage() {
 	return (
 		<>
+			<JsonLd data={STRUCTURED_DATA} />
 			<section className="relative overflow-hidden">
 				<div className="bd-grid pointer-events-none absolute inset-0" />
 				<div className="relative mx-auto grid max-w-6xl items-center gap-12 px-6 py-20 lg:grid-cols-2 lg:py-28">

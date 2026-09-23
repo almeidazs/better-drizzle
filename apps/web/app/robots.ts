@@ -16,5 +16,6 @@ export default function robots(): MetadataRoute.Robots {
 			},
 		],
 		sitemap: 'https://better-drizzle.com/sitemap.xml',
+		host: 'https://better-drizzle.com',
 	};
 }

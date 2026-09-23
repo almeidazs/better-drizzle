@@ -2,6 +2,8 @@
 title: Transactions
 description: Client-level transactions with nested savepoints, explicit rollback, lifecycle callbacks, retries, and options.
 icon: ArrowLeftRight
+seoTitle: 'Transactions & Savepoints in Drizzle ORM'
+seoDescription: 'Drizzle ORM transactions with nested savepoints, explicit rollback, afterCommit and afterRollback callbacks, retries, and isolation options.'
 ---
 
 Transactions live on the **client**, not on individual delegates. The callback receives a full Better client bound to the transaction, so delegates, plugins, hooks, and raw SQL all keep working inside it.

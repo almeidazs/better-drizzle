@@ -1,8 +1,16 @@
 import './global.css';
 import { RootProvider } from 'fumadocs-ui/provider/next';
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import type { ReactNode } from 'react';
+
+import {
+	KEYWORDS,
+	SITE_DESCRIPTION,
+	SITE_NAME,
+	SITE_TITLE,
+	SITE_URL,
+} from '@/lib/seo';
 
 const geistSans = Geist({
 	subsets: ['latin'],
@@ -15,31 +23,56 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+	metadataBase: new URL(SITE_URL),
 	title: {
-		default: 'better-drizzle — Drizzle ORM, but better',
-		template: '%s — better-drizzle',
+		default: SITE_TITLE,
+		template: `%s - ${SITE_NAME}`,
 	},
-	description:
-		'Minimal, type-safe repository helpers for Drizzle ORM. Keep Drizzle’s type-safety, drop the repetitive query glue: typed nested filters, relation loading, pagination, hooks, and plugins.',
-	metadataBase: new URL('https://better-drizzle.com'),
+	description: SITE_DESCRIPTION,
+	applicationName: SITE_NAME,
+	keywords: KEYWORDS,
+	authors: [{ name: 'Almeida', url: 'https://github.com/almeidazs' }],
+	creator: 'Almeida',
+	publisher: SITE_NAME,
+	category: 'technology',
+	alternates: { canonical: '/' },
+	formatDetection: { email: false, address: false, telephone: false },
+	robots: {
+		index: true,
+		follow: true,
+		googleBot: {
+			index: true,
+			follow: true,
+			'max-image-preview': 'large',
+			'max-snippet': -1,
+			'max-video-preview': -1,
+		},
+	},
 	icons: {
 		icon: '/icon.png',
 		shortcut: '/icon.png',
 		apple: '/icon.png',
 	},
 	openGraph: {
-		title: 'better-drizzle — Drizzle ORM, but better',
-		description:
-			'Type-safe repository helpers for Drizzle ORM: nested filters, relation loading, pagination, hooks, and plugins — without giving up the metal.',
-		url: 'https://better-drizzle.com',
-		siteName: 'better-drizzle',
+		title: SITE_TITLE,
+		description: SITE_DESCRIPTION,
+		url: SITE_URL,
+		siteName: SITE_NAME,
+		locale: 'en_US',
 		type: 'website',
-		images: [{ url: '/icon.png' }],
 	},
 	twitter: {
 		card: 'summary_large_image',
-		images: ['/icon.png'],
+		title: SITE_TITLE,
+		description: SITE_DESCRIPTION,
 	},
+};
+
+export const viewport: Viewport = {
+	themeColor: [
+		{ media: '(prefers-color-scheme: light)', color: '#ffffff' },
+		{ media: '(prefers-color-scheme: dark)', color: '#0a0a0a' },
+	],
 };
 
 export default function Layout({ children }: { children: ReactNode }) {
