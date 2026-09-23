@@ -1,61 +1,578 @@
 ---
 title: JSONB filters
-description: Type-safe PostgreSQL JSONB queries through dot-path predicates.
+description: Type-safe PostgreSQL JSONB queries through dot-path predicates, generated from your column's TypeScript shape.
 icon: Braces
 ---
 
-JSONB filters give typed access to scalar values inside a PostgreSQL `jsonb` column. Declare the JSON shape with Drizzle's `$type<T>()`, then use dot paths inside `where.<column>.json`.
+JSONB columns are where type safety usually goes to die. Settings, feature flags, billing metadata, event payloads — the data is structured, but every query against it turns into a hand-written `sql` string with operators, path arrays, and casts that TypeScript cannot check.
 
-## Define the JSON shape
+better-drizzle closes that gap. Declare the shape once with Drizzle's `$type<T>()`, and every scalar leaf inside the document becomes a **typed dot path** you can filter on with the same operators you already use for regular columns:
 
-`json` filters are available only when the JSONB column has a known TypeScript shape:
-
-```ts
-import { jsonb, pgTable } from 'drizzle-orm/pg-core';
-
-type Metadata = {
-	profile: {
-		age: number;
-		name: string;
-		active: boolean;
-	};
-};
-
-export const users = pgTable('users', {
-	id: integer('id').primaryKey(),
-	metadata: jsonb('metadata').$type<Metadata>().notNull(),
-});
-```
-
-## Query scalar paths
-
-Each scalar leaf becomes a typed dot path. The predicate accepts the same operators as its scalar type:
-
-```ts
-const users = await db.users.findMany({
+```ts tab="better-drizzle" tab-group="orm"
+const accounts = await client.accounts.findMany({
 	where: {
-		metadata: {
+		settings: {
 			json: {
-				'profile.age': { gte: 18 },
-				'profile.name': { startsWith: 'Ana' },
-				'profile.active': true,
+				'plan.tier': 'pro',
+				'plan.seats': { gte: 10 },
+				'notifications.email.enabled': true,
 			},
 		},
 	},
 });
 ```
 
-- string paths support `equals`, `contains`, `startsWith`, `endsWith`, and `not`;
-- number paths support `equals`, `lt`, `lte`, `gt`, `gte`, and `not`;
-- boolean paths support direct equality, `equals`, and `not`.
+```ts tab="Drizzle" tab-group="orm"
+import { and, sql } from 'drizzle-orm';
 
-The compiler guards each predicate with the matching PostgreSQL JSON type and uses bound parameters for paths and values.
+const rows = await db
+	.select()
+	.from(accounts)
+	.where(
+		and(
+			sql`jsonb_typeof(${accounts.settings} #> '{plan,tier}') = 'string'`,
+			sql`${accounts.settings} #>> '{plan,tier}' = ${'pro'}`,
+			sql`jsonb_typeof(${accounts.settings} #> '{plan,seats}') = 'number'`,
+			sql`(${accounts.settings} #>> '{plan,seats}')::numeric >= ${10}`,
+			sql`jsonb_typeof(${accounts.settings} #> '{notifications,email,enabled}') = 'boolean'`,
+			sql`(${accounts.settings} #>> '{notifications,email,enabled}')::boolean = ${true}`,
+		),
+	);
+```
+
+What you get:
+
+- **Autocomplete for paths.** `'plan.tier'`, `'plan.seats'`, `'notifications.email.enabled'` are inferred from the JSON type, at any depth.
+- **Operators that match the leaf type.** Numbers get `gte`/`lt`, strings get `startsWith`/`contains`, booleans get equality. Using the wrong one is a compile error.
+- **Type-guarded SQL.** Every predicate checks `jsonb_typeof(...)` before comparing, so a row that stores `"42"` (a string) never matches a numeric filter.
+- **Bound parameters.** Path segments and values are sent as parameters, never interpolated.
+- **It composes.** JSON paths work next to regular columns, inside `AND` / `OR` / `NOT`, inside relation filters, and in every helper that takes `where`.
+
+## Define the JSON shape
+
+Path filters are available only when the JSONB column has a known TypeScript shape. Add `.$type<T>()` to the column:
+
+```ts title="schema.ts"
+import { integer, jsonb, pgTable, text } from 'drizzle-orm/pg-core';
+
+export type AccountSettings = {
+	plan: {
+		tier: 'free' | 'pro' | 'enterprise';
+		seats: number;
+		trial: boolean;
+	};
+	notifications: {
+		email: { enabled: boolean; digest: 'daily' | 'weekly' | 'never' };
+	};
+	nickname: string | null;
+	referrer?: string;
+	tags: string[];
+};
+
+export const accounts = pgTable('accounts', {
+	id: integer('id').primaryKey(),
+	name: text('name').notNull(),
+	settings: jsonb('settings').$type<AccountSettings>().notNull(),
+});
+```
+
+From that type, the `json` filter on `settings` exposes exactly these paths:
+
+```ts
+type SettingsPath =
+	| 'plan.tier' // 'free' | 'pro' | 'enterprise'
+	| 'plan.seats' // number
+	| 'plan.trial' // boolean
+	| 'notifications.email.enabled' // boolean
+	| 'notifications.email.digest' // 'daily' | 'weekly' | 'never'
+	| 'nickname' // string | null
+	| 'referrer'; // string (optional)
+// `tags` is an array, so it is not addressable as a path.
+```
+
+Nested objects are flattened into dot paths, optional keys and nullable leaves are kept, and arrays are left out.
+
+## Operators by leaf type
+
+| Leaf type | Shorthand | Operators |
+| --- | --- | --- |
+| `string` (incl. string unions) | `'path': 'value'` | `equals`, `in`, `notIn`, `contains`, `startsWith`, `endsWith`, `mode`, `not` |
+| `number` / `bigint` | `'path': 42` | `equals`, `in`, `notIn`, `lt`, `lte`, `gt`, `gte`, `not` |
+| `boolean` | `'path': true` | `equals`, `not` |
+| nullable leaf (`T \| null`) | `'path': null` | everything above, plus `null` / `not: null` |
+
+Several paths inside one `json` object are combined with `AND`, and several operators on one path are combined with `AND` too.
+
+String matching is case-sensitive by default. Add `mode: 'insensitive'` to switch `contains`, `startsWith`, and `endsWith` to `ILIKE`.
+
+## Examples
+
+### Equality and string unions
+
+A plain value is shorthand for `equals`. String-union leaves only accept their literal members:
+
+```ts tab="better-drizzle" tab-group="orm"
+const enterprise = await client.accounts.findMany({
+	where: {
+		settings: { json: { 'plan.tier': 'enterprise' } },
+	},
+});
+
+// @ts-expect-error 'gold' is not a valid tier
+await client.accounts.findMany({ where: { settings: { json: { 'plan.tier': 'gold' } } } });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { and, sql } from 'drizzle-orm';
+
+const enterprise = await db
+	.select()
+	.from(accounts)
+	.where(
+		and(
+			sql`jsonb_typeof(${accounts.settings} #> '{plan,tier}') = 'string'`,
+			sql`${accounts.settings} #>> '{plan,tier}' = ${'enterprise'}`,
+		),
+	);
+
+// no compile-time check: a typo in the path or value silently matches nothing
+```
+
+### Numeric ranges
+
+Combine comparison operators on the same path to express a range:
+
+```ts tab="better-drizzle" tab-group="orm"
+const midMarket = await client.accounts.findMany({
+	where: {
+		settings: { json: { 'plan.seats': { gte: 10, lt: 500 } } },
+	},
+	orderBy: { id: 'asc' },
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { and, asc, sql } from 'drizzle-orm';
+
+const seats = sql`(${accounts.settings} #>> '{plan,seats}')::numeric`;
+
+const midMarket = await db
+	.select()
+	.from(accounts)
+	.where(
+		and(
+			sql`jsonb_typeof(${accounts.settings} #> '{plan,seats}') = 'number'`,
+			sql`${seats} >= ${10}`,
+			sql`${seats} < ${500}`,
+		),
+	)
+	.orderBy(asc(accounts.id));
+```
+
+### Deeply nested flags
+
+Paths can go as deep as the type does:
+
+```ts tab="better-drizzle" tab-group="orm"
+const dailyDigest = await client.accounts.findMany({
+	where: {
+		settings: {
+			json: {
+				'notifications.email.enabled': true,
+				'notifications.email.digest': 'daily',
+			},
+		},
+	},
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { and, sql } from 'drizzle-orm';
+
+const dailyDigest = await db
+	.select()
+	.from(accounts)
+	.where(
+		and(
+			sql`jsonb_typeof(${accounts.settings} #> '{notifications,email,enabled}') = 'boolean'`,
+			sql`(${accounts.settings} #>> '{notifications,email,enabled}')::boolean = ${true}`,
+			sql`jsonb_typeof(${accounts.settings} #> '{notifications,email,digest}') = 'string'`,
+			sql`${accounts.settings} #>> '{notifications,email,digest}' = ${'daily'}`,
+		),
+	);
+```
+
+### String matching
+
+```ts tab="better-drizzle" tab-group="orm"
+const acmeReferrals = await client.accounts.findMany({
+	where: {
+		settings: { json: { referrer: { endsWith: '@acme.com' } } },
+	},
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { and, sql } from 'drizzle-orm';
+
+const acmeReferrals = await db
+	.select()
+	.from(accounts)
+	.where(
+		and(
+			sql`jsonb_typeof(${accounts.settings} #> '{referrer}') = 'string'`,
+			sql`${accounts.settings} #>> '{referrer}' like ${'%@acme.com'}`,
+		),
+	);
+```
+
+### Lists and case-insensitive matching
+
+`in` and `notIn` take a list of allowed or excluded values, and `mode: 'insensitive'` makes pattern matching ignore case:
+
+```ts tab="better-drizzle" tab-group="orm"
+const paidTiers = await client.accounts.findMany({
+	where: {
+		settings: {
+			json: {
+				'plan.tier': { in: ['pro', 'enterprise'] },
+				'notifications.email.digest': { notIn: ['never'] },
+				nickname: { startsWith: 'ana', mode: 'insensitive' },
+			},
+		},
+	},
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { and, sql } from 'drizzle-orm';
+
+const paidTiers = await db
+	.select()
+	.from(accounts)
+	.where(
+		and(
+			sql`jsonb_typeof(${accounts.settings} #> '{plan,tier}') = 'string'`,
+			sql`${accounts.settings} #>> '{plan,tier}' in (${'pro'}, ${'enterprise'})`,
+			sql`not (jsonb_typeof(${accounts.settings} #> '{notifications,email,digest}') = 'string'
+				and ${accounts.settings} #>> '{notifications,email,digest}' in (${'never'}))`,
+			sql`jsonb_typeof(${accounts.settings} #> '{nickname}') = 'string'`,
+			sql`${accounts.settings} #>> '{nickname}' ilike ${'ana%'}`,
+		),
+	);
+```
+
+Each list compiles to one type-guarded `IN (...)` per JSON type, not one `OR` branch per value. An empty `in: []` matches nothing.
+
+### Negation
+
+`not` accepts a value or another filter object for the same leaf:
+
+```ts tab="better-drizzle" tab-group="orm"
+const paying = await client.accounts.findMany({
+	where: {
+		settings: {
+			json: {
+				'plan.tier': { not: 'free' },
+				'plan.seats': { not: { lt: 5 } },
+			},
+		},
+	},
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { and, sql } from 'drizzle-orm';
+
+const tier = sql`${accounts.settings} #>> '{plan,tier}'`;
+const seats = sql`(${accounts.settings} #>> '{plan,seats}')::numeric`;
+
+const paying = await db
+	.select()
+	.from(accounts)
+	.where(
+		and(
+			sql`not (jsonb_typeof(${accounts.settings} #> '{plan,tier}') = 'string' and ${tier} = ${'free'})`,
+			sql`not (jsonb_typeof(${accounts.settings} #> '{plan,seats}') = 'number' and ${seats} < ${5})`,
+		),
+	);
+```
+
+### JSON `null` values
+
+For nullable leaves, `null` matches an explicit JSON `null`, and `not: null` matches any non-null value:
+
+```ts tab="better-drizzle" tab-group="orm"
+// { "nickname": null }
+const withoutNickname = await client.accounts.findMany({
+	where: { settings: { json: { nickname: null } } },
+});
+
+// { "nickname": "..." }
+const withNickname = await client.accounts.findMany({
+	where: { settings: { json: { nickname: { not: null } } } },
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { not, sql } from 'drizzle-orm';
+
+const isNull = sql`jsonb_typeof(${accounts.settings} #> '{nickname}') = 'null'`;
+
+const withoutNickname = await db.select().from(accounts).where(isNull);
+const withNickname = await db.select().from(accounts).where(not(isNull));
+```
+
+See [missing keys](#missing-keys-never-match) below for how this differs from a key that is not present at all.
+
+### `OR`, `AND`, and `NOT` across paths
+
+JSON filters are ordinary `where` entries, so logical operators work as usual:
+
+```ts tab="better-drizzle" tab-group="orm"
+const upsellTargets = await client.accounts.findMany({
+	where: {
+		OR: [
+			{ settings: { json: { 'plan.trial': true } } },
+			{ settings: { json: { 'plan.tier': 'free', 'plan.seats': { gte: 3 } } } },
+		],
+		NOT: { settings: { json: { 'notifications.email.digest': 'never' } } },
+	},
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { and, eq, gte, or, sql } from 'drizzle-orm';
+
+const tier = sql`${accounts.settings} #>> '{plan,tier}'`;
+const seats = sql`(${accounts.settings} #>> '{plan,seats}')::numeric`;
+const trial = sql`(${accounts.settings} #>> '{plan,trial}')::boolean`;
+const digest = sql`${accounts.settings} #>> '{notifications,email,digest}'`;
+const typeOf = (path: string) =>
+	sql`jsonb_typeof(${accounts.settings} #> ${path}::text[])`;
+
+const upsellTargets = await db
+	.select()
+	.from(accounts)
+	.where(
+		and(
+			or(
+				and(eq(typeOf('{plan,trial}'), 'boolean'), eq(trial, true)),
+				and(
+					eq(typeOf('{plan,tier}'), 'string'),
+					eq(tier, 'free'),
+					eq(typeOf('{plan,seats}'), 'number'),
+					gte(seats, 3),
+				),
+			),
+			sql`not (${typeOf('{notifications,email,digest}')} = 'string' and ${digest} = 'never')`,
+		),
+	);
+```
+
+### Mixing JSON paths with regular columns
+
+```ts tab="better-drizzle" tab-group="orm"
+const proNamedA = await client.accounts.findMany({
+	where: {
+		name: { startsWith: 'A' },
+		settings: { json: { 'plan.tier': 'pro' } },
+	},
+	select: { id: true, name: true, settings: true },
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { and, like, sql } from 'drizzle-orm';
+
+const proNamedA = await db
+	.select({ id: accounts.id, name: accounts.name, settings: accounts.settings })
+	.from(accounts)
+	.where(
+		and(
+			like(accounts.name, 'A%'),
+			sql`jsonb_typeof(${accounts.settings} #> '{plan,tier}') = 'string'`,
+			sql`${accounts.settings} #>> '{plan,tier}' = ${'pro'}`,
+		),
+	);
+```
+
+### Inside relation filters
+
+JSON paths work on related tables through `some`, `every`, `none`, and `is`. Given an `orders` table with a typed `payload` column:
+
+```ts tab="better-drizzle" tab-group="orm"
+// accounts with at least one USD order above 100
+const bigSpenders = await client.accounts.findMany({
+	where: {
+		orders: {
+			some: { payload: { json: { currency: 'USD', total: { gt: 100 } } } },
+		},
+	},
+});
+
+// orders placed by enterprise accounts
+const enterpriseOrders = await client.orders.findMany({
+	where: {
+		account: { is: { settings: { json: { 'plan.tier': 'enterprise' } } } },
+	},
+	include: { account: true },
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { and, eq, exists, getTableColumns, sql } from 'drizzle-orm';
+
+const bigSpenders = await db
+	.select()
+	.from(accounts)
+	.where(
+		exists(
+			db
+				.select({ one: sql`1` })
+				.from(orders)
+				.where(
+					and(
+						eq(orders.accountId, accounts.id),
+						sql`jsonb_typeof(${orders.payload} #> '{currency}') = 'string'`,
+						sql`${orders.payload} #>> '{currency}' = ${'USD'}`,
+						sql`jsonb_typeof(${orders.payload} #> '{total}') = 'number'`,
+						sql`(${orders.payload} #>> '{total}')::numeric > ${100}`,
+					),
+				),
+		),
+	);
+
+const enterpriseOrders = await db
+	.select({ ...getTableColumns(orders), account: getTableColumns(accounts) })
+	.from(orders)
+	.innerJoin(accounts, eq(accounts.id, orders.accountId))
+	.where(
+		and(
+			sql`jsonb_typeof(${accounts.settings} #> '{plan,tier}') = 'string'`,
+			sql`${accounts.settings} #>> '{plan,tier}' = ${'enterprise'}`,
+		),
+	);
+```
+
+### Every helper that takes `where`
+
+The same filter object works for counting, existence checks, pagination, and bulk writes — no separate API to learn:
+
+```ts
+const onTrial = { settings: { json: { 'plan.trial': true } } } as const;
+
+const total = await client.accounts.count({ where: onTrial });
+const anyOnTrial = await client.accounts.exists({ where: onTrial });
+
+const page = await client.accounts.paginate({
+	where: onTrial,
+	orderBy: [{ id: 'asc' }],
+	limit: 20,
+});
+
+const { count: expired } = await client.accounts.updateMany({
+	where: { ...onTrial, name: { startsWith: 'legacy-' } },
+	data: { name: 'expired' },
+});
+
+await client.orders.deleteMany({
+	where: { payload: { json: { currency: 'EUR', total: { lt: 1 } } } },
+});
+```
+
+## Semantics worth knowing
+
+### Values of the wrong JSON type do not match
+
+Each predicate is guarded by `jsonb_typeof`. If one row stores `"seats": "42"` (a string) instead of `42`, a numeric filter such as `'plan.seats': { gte: 10 }` skips that row instead of comparing a string against a number. The same applies to strings and booleans.
+
+### Missing keys never match
+
+A path that does not exist in the document evaluates to SQL `NULL`, so **no JSON filter matches it — including `not` and `notIn`**:
+
+```ts
+// Only rows whose document has a `referrer` key that is not 'partner'.
+// Rows without `referrer` at all are excluded.
+await client.accounts.findMany({
+	where: { settings: { json: { referrer: { not: 'partner' } } } },
+});
+```
+
+To include rows where the key is missing, add an explicit branch with a Drizzle `sql` fragment:
+
+```ts
+import { sql } from 'drizzle-orm';
+
+await client.accounts.findMany({
+	where: sql`not (${accounts.settings} ? 'referrer') or ${accounts.settings} ->> 'referrer' <> 'partner'`,
+});
+```
+
+Likewise, `nickname: null` matches only documents that contain `"nickname": null`, not documents where `nickname` is absent.
+
+## What SQL it generates
+
+A filter such as `'plan.seats': { gte: 18 }` compiles to:
+
+```sql
+where jsonb_typeof("settings" #> ARRAY[$1, $2]::text[]) = $3
+  and ("settings" #>> ARRAY[$4, $5]::text[])::numeric >= $6
+-- params: ['plan', 'seats', 'number', 'plan', 'seats', 18]
+```
+
+Use [`.explain()`](/docs/querying/explain) on any read to see the exact statement and plan for your query.
+
+## Indexing JSON paths
+
+Filters on a JSON path can use a PostgreSQL **expression index** on the same extraction and cast. For a hot numeric path:
+
+```sql
+create index accounts_plan_seats_idx
+	on accounts (((settings #>> '{plan,seats}')::numeric));
+```
+
+For string and boolean paths, index the text extraction:
+
+```sql
+create index accounts_plan_tier_idx
+	on accounts ((settings #>> '{plan,tier}'));
+```
+
+Then confirm the planner picks it up:
+
+```ts
+const plan = await client.accounts
+	.findMany({ where: { settings: { json: { 'plan.seats': { gte: 998 } } } } })
+	.explain({ analyze: true });
+
+// Bitmap Index Scan on accounts_plan_seats_idx
+//   Index Cond: (((settings #>> '{plan,seats}'::text[]))::numeric >= '998'::numeric)
+```
+
+A GIN index on the whole column (`using gin (settings)`) speeds up containment operators such as `@>`, but does not help these path comparisons. Index the specific paths you filter on.
 
 ## Limits and dialect support
 
-This API is PostgreSQL-only. SQLite and MySQL reject it with `JSONB_QUERY_UNSUPPORTED` rather than silently changing semantics.
+- **PostgreSQL only.** SQLite and MySQL reject `json` filters with `JSONB_QUERY_UNSUPPORTED` instead of silently changing semantics.
+- **Scalar object paths only.** Arrays, object containment (`@>`), PostgreSQL JSONPath strings (`@?`, `@@`), and keys that contain a dot are intentionally outside the structured API.
+- **Filtering only.** JSON paths are available in `where`; ordering by a JSON path is not part of the structured API.
 
-Only scalar object paths are supported in this version. Arrays, object containment, PostgreSQL JSONPath strings, and JSON keys containing a dot are intentionally outside the structured API. Use a Drizzle `sql` expression in `where` for those cases.
+For anything outside those limits, pass a Drizzle `sql` fragment as the `where`:
+
+```ts
+import { sql } from 'drizzle-orm';
+
+// array membership: accounts tagged 'beta'
+const beta = await client.accounts.findMany({
+	where: sql`${accounts.settings} -> 'tags' ? 'beta'`,
+});
+
+// containment, using a GIN index on settings
+const proTrials = await client.accounts.findMany({
+	where: sql`${accounts.settings} @> ${JSON.stringify({ plan: { tier: 'pro', trial: true } })}::jsonb`,
+});
+```
 
 <Callout title="Untyped JSONB columns">
 	A plain `jsonb('metadata')` column has the type `unknown`, so it deliberately does not expose `json` path filters. Add `.$type<Metadata>()` to opt into typed paths.
