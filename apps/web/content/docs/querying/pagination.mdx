@@ -12,7 +12,7 @@ icon: BookOpenText
 Use `limit` with `skip` (or `take`) when the consumer needs totals and page
 numbers:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const page = await client.users.paginate({
 	limit: 20,
 	skip: 40,
@@ -30,11 +30,44 @@ page.pagination.hasNext;
 page.pagination.hasPrevious;
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { asc, count, eq } from 'drizzle-orm';
+
+const perPage = 20;
+const skip = 40;
+const where = eq(users.active, true);
+
+const [data, [{ total }]] = await Promise.all([
+	db
+		.select()
+		.from(users)
+		.where(where)
+		.orderBy(asc(users.id))
+		.limit(perPage)
+		.offset(skip),
+	db.select({ total: count() }).from(users).where(where),
+]);
+
+// shape the pagination metadata by hand
+const page = {
+	data,
+	pagination: {
+		type: 'offset' as const,
+		page: Math.floor(skip / perPage) + 1,
+		perPage,
+		total,
+		pageCount: Math.ceil(total / perPage),
+		hasNext: skip + data.length < total,
+		hasPrevious: skip > 0,
+	},
+};
+```
+
 ## Cursor pagination
 
 Use `cursor()` for feed-style navigation:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const first = await client.users.cursor({
 	limit: 2,
 	orderBy: [{ id: 'asc' }],
@@ -47,17 +80,54 @@ const second = await client.users.cursor({
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { asc, gt } from 'drizzle-orm';
+
+// fetch one extra row to detect the next page
+const firstRows = await db
+	.select()
+	.from(users)
+	.orderBy(asc(users.id))
+	.limit(3);
+const first = firstRows.slice(0, 2);
+const nextCursor =
+	firstRows.length > 2 ? { id: first[first.length - 1].id } : null;
+
+const secondRows = await db
+	.select()
+	.from(users)
+	.where(gt(users.id, nextCursor!.id))
+	.orderBy(asc(users.id))
+	.limit(3);
+const second = secondRows.slice(0, 2);
+// hasNext = secondRows.length > 2; hasPrevious needs one more probe query
+```
+
 ### Navigating backwards
 
 Pass `before` to move backwards. `cursor()` accepts `before` or `after`, never
 both.
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const previous = await client.users.cursor({
 	limit: 2,
 	orderBy: [{ id: 'asc' }],
 	before: { id: 4 },
 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { desc, lt } from 'drizzle-orm';
+
+// walk backwards: flip the order, fetch one extra row, then restore the order
+const rows = await db
+	.select()
+	.from(users)
+	.where(lt(users.id, 4))
+	.orderBy(desc(users.id))
+	.limit(3);
+const previous = rows.slice(0, 2).reverse();
+const hasPrevious = rows.length > 2;
 ```
 
 <Callout type="warn" title="Cursor pagination needs a stable order">
@@ -70,7 +140,7 @@ const previous = await client.users.cursor({
 
 Both helpers accept the same `select` / `include` as a normal read:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const page = await client.posts.paginate({
 	limit: 10,
 	orderBy: [{ id: 'desc' }],
@@ -82,6 +152,28 @@ const feed = await client.posts.cursor({
 	orderBy: [{ id: 'desc' }],
 	include: { author: true },
 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { count, desc, eq, getTableColumns } from 'drizzle-orm';
+
+const postsWithAuthor = () =>
+	db
+		.select({ ...getTableColumns(posts), author: getTableColumns(users) })
+		.from(posts)
+		.leftJoin(users, eq(posts.authorId, users.id))
+		.orderBy(desc(posts.id));
+
+const [data, [{ total }]] = await Promise.all([
+	postsWithAuthor().limit(10),
+	db.select({ total: count() }).from(posts),
+]);
+// ...then build the offset pagination metadata by hand
+
+// fetch one extra row to detect the next page
+const rows = await postsWithAuthor().limit(11);
+const feed = rows.slice(0, 10);
+const hasNext = rows.length > 10;
 ```
 
 ## Choosing offset vs cursor

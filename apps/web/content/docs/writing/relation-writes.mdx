@@ -9,7 +9,7 @@ scalar columns. Instead of resolving a foreign key yourself and issuing a
 second statement, you describe the link you want and better-drizzle resolves
 it — inside one transaction.
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const post = await client.posts.create({
 	data: {
 		title: 'Relations without the glue',
@@ -17,6 +17,35 @@ const post = await client.posts.create({
 		tags: { connect: [{ slug: 'drizzle' }, { slug: 'typescript' }] },
 	},
 	include: { author: true, tags: true },
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq, inArray } from 'drizzle-orm';
+
+const post = await db.transaction(async (tx) => {
+	const [author] = await tx
+		.select()
+		.from(users)
+		.where(eq(users.email, 'alice@example.com'));
+	if (!author) throw new Error('Author not found');
+
+	const tagRows = await tx
+		.select()
+		.from(tags)
+		.where(inArray(tags.slug, ['drizzle', 'typescript']));
+	if (tagRows.length !== 2) throw new Error('Tag not found');
+
+	const [created] = await tx
+		.insert(posts)
+		.values({ title: 'Relations without the glue', authorId: author.id })
+		.returning();
+	await tx
+		.insert(postTags)
+		.values(tagRows.map((tag) => ({ postId: created.id, tagId: tag.id })));
+
+	// assemble the relation payload by hand
+	return { ...created, author, tags: tagRows };
 });
 ```
 
@@ -45,7 +74,7 @@ you are creating or updating.
 `connect` links rows that already exist. On a to-one relation it takes a
 single selector; on a to-many relation it takes one selector or an array.
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 // to-one: resolve the author and write the foreign key
 await client.posts.create({
 	data: {
@@ -63,10 +92,39 @@ await client.users.update({
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { eq, inArray } from 'drizzle-orm';
+
+// to-one: resolve the author and write the foreign key
+await db.transaction(async (tx) => {
+	const [author] = await tx
+		.select({ id: users.id })
+		.from(users)
+		.where(eq(users.email, 'alice@example.com'));
+	if (!author) throw new Error('Author not found');
+	await tx.insert(posts).values({ title: 'Hello', authorId: author.id });
+});
+
+// to-many: attach three existing posts to a user
+await db.transaction(async (tx) => {
+	const [user] = await tx
+		.select({ id: users.id })
+		.from(users)
+		.where(eq(users.id, 1));
+	if (!user) throw new Error('User not found');
+	const updated = await tx
+		.update(posts)
+		.set({ authorId: user.id })
+		.where(inArray(posts.id, [2, 3, 9]))
+		.returning({ id: posts.id });
+	if (updated.length !== 3) throw new Error('Post not found');
+});
+```
+
 For an inferred many-to-many relation, `connect` inserts the junction rows for
 you:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 await client.posts.update({
 	where: { id: 10 },
 	data: {
@@ -76,12 +134,28 @@ await client.posts.update({
 // inserts into post_tags — you never name the junction table
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { eq, inArray } from 'drizzle-orm';
+
+await db.transaction(async (tx) => {
+	const tagRows = await tx
+		.select({ id: tags.id })
+		.from(tags)
+		.where(inArray(tags.slug, ['release-notes']));
+	if (tagRows.length !== 1) throw new Error('Tag not found');
+	await tx
+		.insert(postTags)
+		.values(tagRows.map((tag) => ({ postId: 10, tagId: tag.id })))
+		.onConflictDoNothing();
+});
+```
+
 ## `disconnect` — detach without deleting
 
 `disconnect` breaks the link and leaves both rows in place. The shape differs
 by cardinality, because a to-one relation has nothing to select:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 // to-one: `true`, not a selector
 await client.posts.update({
 	where: { id: 10 },
@@ -99,6 +173,23 @@ await client.users.update({
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { and, eq, inArray } from 'drizzle-orm';
+
+// to-one: null the foreign key
+await db.update(posts).set({ authorId: null }).where(eq(posts.id, 10));
+
+// to-many: the rows to detach
+await db.transaction(async (tx) => {
+	const detached = await tx
+		.update(posts)
+		.set({ authorId: null })
+		.where(and(eq(posts.authorId, 1), inArray(posts.id, [2, 3])))
+		.returning({ id: posts.id });
+	if (detached.length !== 2) throw new Error('Post not linked');
+});
+```
+
 <Callout type="warn">
 	Disconnecting a to-one relation nulls its foreign key, so it only works
 	when the column is nullable. On a `notNull()` foreign key the operation
@@ -112,7 +203,7 @@ await client.users.update({
 disconnecting what is no longer listed. It is the right command for "these are
 the tags now" semantics:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 // the post ends up with exactly these two tags
 await client.posts.update({
 	where: { id: 10 },
@@ -137,6 +228,38 @@ await client.posts.update({
 	where: { id: 10 },
 	data: { author: { set: null } },
 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq, inArray } from 'drizzle-orm';
+
+// the post ends up with exactly these two tags
+await db.transaction(async (tx) => {
+	const tagRows = await tx
+		.select({ id: tags.id })
+		.from(tags)
+		.where(inArray(tags.slug, ['drizzle', 'orm']));
+	if (tagRows.length !== 2) throw new Error('Tag not found');
+	await tx.delete(postTags).where(eq(postTags.postId, 10));
+	await tx
+		.insert(postTags)
+		.values(tagRows.map((tag) => ({ postId: 10, tagId: tag.id })));
+});
+
+// an empty array clears the relation
+await db.delete(postTags).where(eq(postTags.postId, 10));
+
+// to-one: repoint it, or null it out
+await db.transaction(async (tx) => {
+	const [author] = await tx
+		.select({ id: users.id })
+		.from(users)
+		.where(eq(users.email, 'bob@example.com'));
+	if (!author) throw new Error('Author not found');
+	await tx.update(posts).set({ authorId: author.id }).where(eq(posts.id, 10));
+});
+
+await db.update(posts).set({ authorId: null }).where(eq(posts.id, 10));
 ```
 
 Reaching for `set` where `connect` would do means re-resolving rows that were
@@ -169,7 +292,7 @@ failures produce.
 `upsert` applies the rules of whichever branch runs. The `create` branch
 accepts `connect` only; the `update` branch accepts all three commands:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 await client.posts.upsert({
 	where: { slug: 'hello-world' },
 	create: {
@@ -184,6 +307,43 @@ await client.posts.upsert({
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+await db.transaction(async (tx) => {
+	const [existing] = await tx
+		.select({ id: posts.id })
+		.from(posts)
+		.where(eq(posts.slug, 'hello-world'));
+
+	if (existing) {
+		const [tag] = await tx
+			.select({ id: tags.id })
+			.from(tags)
+			.where(eq(tags.slug, 'drizzle'));
+		if (!tag) throw new Error('Tag not found');
+		await tx
+			.update(posts)
+			.set({ title: 'Hello world (revised)' })
+			.where(eq(posts.id, existing.id));
+		await tx.delete(postTags).where(eq(postTags.postId, existing.id));
+		await tx.insert(postTags).values({ postId: existing.id, tagId: tag.id });
+		return;
+	}
+
+	const [author] = await tx
+		.select({ id: users.id })
+		.from(users)
+		.where(eq(users.email, 'alice@example.com'));
+	if (!author) throw new Error('Author not found');
+	await tx.insert(posts).values({
+		slug: 'hello-world',
+		title: 'Hello world',
+		authorId: author.id,
+	});
+});
+```
+
 ## Everything runs in one transaction
 
 The root mutation and every relation change run in a single implicit
@@ -195,7 +355,7 @@ That means partial relation writes cannot be observed. A missing selector, an
 ambiguous selector, a required foreign key, or an invalid command combination
 fails the whole operation and rolls the scalar changes back with it.
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 await client.transaction(async (tx) => {
 	const post = await tx.posts.create({
 		data: {
@@ -209,6 +369,34 @@ await client.transaction(async (tx) => {
 		where: { id: post.id },
 		data: { tags: { connect: [{ slug: 'draft' }] } },
 	});
+
+	return post;
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+await db.transaction(async (tx) => {
+	const [author] = await tx
+		.select({ id: users.id })
+		.from(users)
+		.where(eq(users.email, 'alice@example.com'));
+	if (!author) throw new Error('Author not found');
+	const [post] = await tx
+		.insert(posts)
+		.values({ title: 'Draft', authorId: author.id })
+		.returning();
+
+	const [tag] = await tx
+		.select({ id: tags.id })
+		.from(tags)
+		.where(eq(tags.slug, 'draft'));
+	if (!tag) throw new Error('Tag not found');
+	await tx
+		.insert(postTags)
+		.values({ postId: post.id, tagId: tag.id })
+		.onConflictDoNothing();
 
 	return post;
 });
@@ -228,7 +416,7 @@ cost they exist to avoid.
 When you need relation writes across many rows, loop the single-row API inside
 one explicit transaction and keep the cost visible:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 await client.transaction(async (tx) => {
 	for (const input of inputs) {
 		await tx.posts.create({
@@ -237,6 +425,21 @@ await client.transaction(async (tx) => {
 				author: { connect: { email: input.authorEmail } },
 			},
 		});
+	}
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+await db.transaction(async (tx) => {
+	for (const input of inputs) {
+		const [author] = await tx
+			.select({ id: users.id })
+			.from(users)
+			.where(eq(users.email, input.authorEmail));
+		if (!author) throw new Error('Author not found');
+		await tx.insert(posts).values({ title: input.title, authorId: author.id });
 	}
 });
 ```

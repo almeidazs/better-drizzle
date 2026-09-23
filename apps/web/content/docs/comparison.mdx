@@ -10,23 +10,7 @@ better-drizzle is a thin repository layer over Drizzle. The goal is to remove re
 
 A common request: *published posts whose author is active, newest first, with the author attached, projected for an API response.*
 
-```ts title="Raw Drizzle"
-import { and, desc, eq } from 'drizzle-orm';
-
-const rows = await db
-	.select({
-		id: posts.id,
-		title: posts.title,
-		author: { id: users.id, name: users.name },
-	})
-	.from(posts)
-	.innerJoin(users, eq(posts.authorId, users.id))
-	.where(and(eq(posts.published, true), eq(users.active, true)))
-	.orderBy(desc(posts.id))
-	.limit(20);
-```
-
-```ts title="better-drizzle"
+```ts tab="better-drizzle" tab-group="orm"
 const rows = await client.posts.findMany({
 	where: {
 		published: true,
@@ -42,7 +26,23 @@ const rows = await client.posts.findMany({
 });
 ```
 
-Both are fully typed. The difference shows up when you have *dozens* of these across a codebase — the second form is the same shape every time, and the relation join is derived from your schema instead of hand-written.
+```ts tab="Drizzle" tab-group="orm"
+import { and, desc, eq } from 'drizzle-orm';
+
+const rows = await db
+	.select({
+		id: posts.id,
+		title: posts.title,
+		author: { id: users.id, name: users.name },
+	})
+	.from(posts)
+	.innerJoin(users, eq(posts.authorId, users.id))
+	.where(and(eq(posts.published, true), eq(users.active, true)))
+	.orderBy(desc(posts.id))
+	.limit(20);
+```
+
+Both are fully typed. The difference shows up when you have *dozens* of these across a codebase — the better-drizzle form is the same shape every time, and the relation join is derived from your schema instead of hand-written.
 
 ## What it changes
 

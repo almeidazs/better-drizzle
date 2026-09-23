@@ -10,10 +10,23 @@ better-drizzle keeps nullability and exceptional flow separate, and ships helper
 
 Let the type carry the "might not exist" and decide at the edge:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const user = await client.users.findUnique({
 	where: { email: 'alice@example.com' },
 });
+
+if (!user) return null;
+return user;
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+const [user] = await db
+	.select()
+	.from(users)
+	.where(eq(users.email, 'alice@example.com'))
+	.limit(1);
 
 if (!user) return null;
 return user;
@@ -23,17 +36,29 @@ return user;
 
 When not-found is exceptional, [`.throw()`](/docs/writing/throwing-results) keeps the happy path linear:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const user = await client.users
 	.findUnique({ where: { email: 'alice@example.com' } })
 	.throw(() => new Error('User not found'));
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+const [user] = await db
+	.select()
+	.from(users)
+	.where(eq(users.email, 'alice@example.com'))
+	.limit(1);
+
+if (!user) throw new Error('User not found');
 ```
 
 ## Map errors at the protocol boundary
 
 Keep HTTP/RPC mapping close to the layer that understands it:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 app.get('/users/:id', async (req, res) => {
 	try {
 		const user = await client.users
@@ -47,11 +72,31 @@ app.get('/users/:id', async (req, res) => {
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+app.get('/users/:id', async (req, res) => {
+	try {
+		const [user] = await db
+			.select()
+			.from(users)
+			.where(eq(users.id, Number(req.params.id)))
+			.limit(1);
+
+		if (!user) throw new Error('Not found');
+
+		res.json(user);
+	} catch (error) {
+		res.status(404).json({ error: String(error) });
+	}
+});
+```
+
 ## Classifying database errors
 
 Writes fail in predictable ways — a unique email, a missing foreign key, a `NOT NULL` violation. Each driver reports these differently. better-drizzle normalizes them with exported helpers so your handling is dialect-agnostic:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 import {
 	isUniqueViolation,
 	isForeignKeyViolation,
@@ -66,6 +111,20 @@ try {
 	});
 } catch (error) {
 	if (isUniqueViolation(error)) {
+		return { status: 409, message: 'Email already in use' };
+	}
+	throw error;
+}
+```
+
+```ts tab="Drizzle" tab-group="orm"
+try {
+	await db
+		.insert(users)
+		.values({ email: 'taken@example.com', name: 'Dup', active: true });
+} catch (error) {
+	// PostgreSQL unique_violation; SQLite and MySQL report it differently
+	if ((error as { code?: string }).code === '23505') {
 		return { status: 409, message: 'Email already in use' };
 	}
 	throw error;
@@ -112,13 +171,29 @@ There is also `isDatabaseError(error)` to guard before drilling in.
 
 Inside a [transaction](/docs/advanced/transactions), throwing or calling `tx.rollback()` aborts the whole unit:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 await client.transaction(async (tx) => {
 	if (await tx.users.exists({ where: { email } })) {
 		tx.rollback('duplicate email');
 	}
 
 	await tx.users.create({ data: { email, name: 'Alice', active: true } });
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+await db.transaction(async (tx) => {
+	const [existing] = await tx
+		.select({ id: users.id })
+		.from(users)
+		.where(eq(users.email, email))
+		.limit(1);
+
+	if (existing) tx.rollback();
+
+	await tx.insert(users).values({ email, name: 'Alice', active: true });
 });
 ```
 

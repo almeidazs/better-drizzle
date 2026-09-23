@@ -14,7 +14,7 @@ The examples below assume a `users → posts` schema with relations defined (see
 
 Use [`include`](/docs/querying/selecting-fields) to keep the base row and attach relations:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const posts = await client.posts.findMany({
 	include: { author: true },
 	orderBy: [{ id: 'desc' }],
@@ -22,9 +22,20 @@ const posts = await client.posts.findMany({
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { desc, eq, getTableColumns } from 'drizzle-orm';
+
+const latestPosts = await db
+	.select({ ...getTableColumns(posts), author: getTableColumns(users) })
+	.from(posts)
+	.leftJoin(users, eq(posts.authorId, users.id))
+	.orderBy(desc(posts.id))
+	.limit(10);
+```
+
 Every nested relation accepts its own `where`, `orderBy`, `take`, `skip`, `cursor`, `select`, and `include`. Pagination is applied per parent in SQL:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const users = await client.users.findMany({
 	include: {
 		posts: {
@@ -40,13 +51,59 @@ const users = await client.users.findMany({
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { and, asc, eq, inArray, lte, sql } from 'drizzle-orm';
+
+const userRows = await db.select().from(users);
+
+// top 3 published posts per user needs a window function
+const ranked = db
+	.select({
+		id: posts.id,
+		authorId: posts.authorId,
+		title: posts.title,
+		rank: sql<number>`row_number() over (partition by ${posts.authorId} order by ${posts.score} desc)`.as('rank'),
+	})
+	.from(posts)
+	.where(
+		and(
+			eq(posts.published, true),
+			inArray(posts.authorId, userRows.map((user) => user.id)),
+		),
+	)
+	.as('ranked');
+const postRows = await db
+	.select()
+	.from(ranked)
+	.where(lte(ranked.rank, 3))
+	.orderBy(asc(ranked.authorId), asc(ranked.rank));
+
+const commentRows = await db
+	.select({ postId: comments.postId, body: comments.body })
+	.from(comments)
+	.where(inArray(comments.postId, postRows.map((post) => post.id)));
+
+// stitch the tree back together and drop the linking columns
+const usersWithPosts = userRows.map((user) => ({
+	...user,
+	posts: postRows
+		.filter((post) => post.authorId === user.id)
+		.map((post) => ({
+			title: post.title,
+			comments: commentRows
+				.filter((comment) => comment.postId === post.id)
+				.map(({ body }) => ({ body })),
+		})),
+}));
+```
+
 `select` and `include` are mutually exclusive at the same query level. Linking columns needed by the loader are selected internally and removed from the returned payload unless you requested them.
 
 ## Relation counts
 
 Use `_count` inside `include` to return counts without loading the related rows. A selected relation can be `true` or a `{ where }` filter. The result is available under `_count`; to-one relations return `0` or `1`.
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const users = await client.users.findMany({
 	include: {
 		_count: {
@@ -60,16 +117,51 @@ const users = await client.users.findMany({
 // { ..., _count: { posts: 3, profile: 1 } }
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { and, eq, getTableColumns, sql } from 'drizzle-orm';
+
+const rows = await db
+	.select({
+		...getTableColumns(users),
+		_count: {
+			posts: sql<number>`(select count(*) from ${posts} where ${and(eq(posts.authorId, users.id), eq(posts.published, true))})`.mapWith(Number),
+			profile: sql<number>`(select count(*) from ${profiles} where ${eq(profiles.userId, users.id)})`.mapWith(Number),
+		},
+	})
+	.from(users);
+// { ..., _count: { posts: 3, profile: 1 } }
+```
+
 Counts are projected as correlated subqueries in the SQL that materializes that query level. They do not add a count query per parent row.
 
 ## Many-to-many relations
 
 A junction table with exactly two required foreign-key relations and no additional required columns is inferred automatically. The virtual relation uses the target schema key:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const users = await client.users.findMany({
 	include: { groups: true },
 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq, getTableColumns, inArray } from 'drizzle-orm';
+
+const userRows = await db.select().from(users);
+
+// walk the junction table by hand
+const links = await db
+	.select({ userId: userGroups.userId, group: getTableColumns(groups) })
+	.from(userGroups)
+	.innerJoin(groups, eq(userGroups.groupId, groups.id))
+	.where(inArray(userGroups.userId, userRows.map((user) => user.id)));
+
+const usersWithGroups = userRows.map((user) => ({
+	...user,
+	groups: links
+		.filter((link) => link.userId === user.id)
+		.map((link) => link.group),
+}));
 ```
 
 Disable inference or identify an explicit junction in `better()` when your schema has multiple possible paths:
@@ -97,7 +189,7 @@ Ambiguous paths fail during use instead of choosing a junction silently. Set `re
 
 Or `select` to also narrow the related fields:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const posts = await client.posts.findMany({
 	select: {
 		id: true,
@@ -105,6 +197,19 @@ const posts = await client.posts.findMany({
 		author: { select: { id: true, name: true } },
 	},
 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+const rows = await db
+	.select({
+		id: posts.id,
+		title: posts.title,
+		author: { id: users.id, name: users.name },
+	})
+	.from(posts)
+	.leftJoin(users, eq(posts.authorId, users.id));
 ```
 
 ## Filtering by related rows
@@ -115,7 +220,7 @@ const posts = await client.posts.findMany({
 
 For a "belongs to" / "has one" relation, use `is` (and `isNot`) with a nested filter:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const posts = await client.posts.findMany({
 	where: {
 		author: {
@@ -126,11 +231,21 @@ const posts = await client.posts.findMany({
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { eq, getTableColumns } from 'drizzle-orm';
+
+const activeAuthorPosts = await db
+	.select({ ...getTableColumns(posts), author: getTableColumns(users) })
+	.from(posts)
+	.innerJoin(users, eq(posts.authorId, users.id))
+	.where(eq(users.active, true));
+```
+
 ### To-many relations: `some` / `every` / `none`
 
 For a "has many" relation, choose the quantifier:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 // Users who have at least one published post
 const authors = await client.users.findMany({
 	where: {
@@ -146,6 +261,36 @@ const fullyPublished = await client.users.findMany({
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { and, eq, exists, notExists } from 'drizzle-orm';
+
+// Users who have at least one published post
+const authors = await db
+	.select()
+	.from(users)
+	.where(
+		exists(
+			db
+				.select()
+				.from(posts)
+				.where(and(eq(posts.authorId, users.id), eq(posts.published, true))),
+		),
+	);
+
+// Users with no unpublished posts
+const fullyPublished = await db
+	.select()
+	.from(users)
+	.where(
+		notExists(
+			db
+				.select()
+				.from(posts)
+				.where(and(eq(posts.authorId, users.id), eq(posts.published, false))),
+		),
+	);
+```
+
 | Operator | True when… |
 | --- | --- |
 | `some` | at least one related row matches |
@@ -158,7 +303,7 @@ const fullyPublished = await client.users.findMany({
 
 Relation filters compose with scalar filters and logical operators like anything else:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const posts = await client.posts.findMany({
 	where: {
 		AND: [
@@ -176,6 +321,20 @@ const posts = await client.posts.findMany({
 		author: { select: { id: true, email: true } },
 	},
 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { and, eq, like } from 'drizzle-orm';
+
+const companyPosts = await db
+	.select({
+		id: posts.id,
+		title: posts.title,
+		author: { id: users.id, email: users.email },
+	})
+	.from(posts)
+	.innerJoin(users, eq(posts.authorId, users.id))
+	.where(and(eq(posts.published, true), like(users.email, '%@company.com')));
 ```
 
 ## Rule of thumb

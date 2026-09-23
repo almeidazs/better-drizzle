@@ -6,7 +6,7 @@ icon: ArrowLeftRight
 
 Transactions live on the **client**, not on individual delegates. The callback receives a full Better client bound to the transaction, so delegates, plugins, hooks, and raw SQL all keep working inside it.
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const user = await client.transaction(async (tx) => {
 	const created = await tx.users.create({
 		data: { email: 'new@example.com', name: 'New User', active: true },
@@ -20,13 +20,28 @@ const user = await client.transaction(async (tx) => {
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+const user = await db.transaction(async (tx) => {
+	const [created] = await tx
+		.insert(users)
+		.values({ email: 'new@example.com', name: 'New User', active: true })
+		.returning();
+
+	await tx
+		.insert(posts)
+		.values({ authorId: created.id, title: 'Hello', published: true });
+
+	return created;
+});
+```
+
 Whatever the callback returns becomes the result of `transaction(...)`. Throwing (or an explicit rollback) aborts and rolls back.
 
 ## Nested transactions (savepoints)
 
 A `tx.transaction(...)` inside another opens a **savepoint** that can be rolled back independently of the outer transaction:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 await client.transaction(async (tx) => {
 	await tx.users.create({
 		data: { id: 1, email: 'a@test.com', name: 'Alice', active: true },
@@ -49,11 +64,34 @@ await client.transaction(async (tx) => {
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+await db.transaction(async (tx) => {
+	await tx
+		.insert(users)
+		.values({ id: 1, email: 'a@test.com', name: 'Alice', active: true });
+
+	try {
+		await tx.transaction(async (nested) => {
+			await nested
+				.insert(users)
+				.values({ id: 2, email: 'b@test.com', name: 'Bob', active: true });
+			nested.rollback();
+		});
+	} catch (error) {
+		// only the nested savepoint was rolled back
+	}
+
+	await tx
+		.insert(users)
+		.values({ id: 3, email: 'c@test.com', name: 'Charlie', active: true });
+});
+```
+
 ## Explicit rollback
 
 Call `tx.rollback(reason)` to abort. It throws, so code after it does not run:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 await client.transaction(async (tx) => {
 	const exists = await tx.users.exists({
 		where: { email: 'alice@example.com' },
@@ -67,11 +105,29 @@ await client.transaction(async (tx) => {
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+await db.transaction(async (tx) => {
+	const [existing] = await tx
+		.select({ id: users.id })
+		.from(users)
+		.where(eq(users.email, 'alice@example.com'))
+		.limit(1);
+
+	if (existing) tx.rollback();
+
+	await tx
+		.insert(users)
+		.values({ email: 'alice@example.com', name: 'Alice', active: true });
+});
+```
+
 ## Lifecycle callbacks
 
 Register side effects that fire after the transaction settles — the right place for "send the email only if the write actually committed":
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 await client.transaction(async (tx) => {
 	tx.afterCommit(() => sendWelcomeEmail());
 	tx.afterRollback(() => cleanupTempFiles());
@@ -82,11 +138,26 @@ await client.transaction(async (tx) => {
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+// no lifecycle callbacks: run side effects after the transaction settles
+try {
+	await db.transaction(async (tx) => {
+		await tx
+			.insert(users)
+			.values({ email: 'x@example.com', name: 'X', active: true });
+	});
+	sendWelcomeEmail();
+} catch (error) {
+	cleanupTempFiles();
+	throw error;
+}
+```
+
 ## Retries
 
 Automatic retries are opt-in. Configure how many attempts, which failures qualify, and the backoff:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 await client.transaction(
 	async (tx) => {
 		await tx.users.create({
@@ -103,11 +174,29 @@ await client.transaction(
 );
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+// no built-in retries: loop by hand (PostgreSQL deadlock / serialization codes)
+for (let attempt = 1; ; attempt += 1) {
+	try {
+		await db.transaction(async (tx) => {
+			await tx
+				.insert(users)
+				.values({ email: 'retry@example.com', name: 'Retry', active: true });
+		});
+		break;
+	} catch (error) {
+		const code = (error as { code?: string }).code;
+		if (attempt >= 3 || (code !== '40P01' && code !== '40001')) throw error;
+		await new Promise((resolve) => setTimeout(resolve, attempt * 25));
+	}
+}
+```
+
 `on` accepts `'connectionError'`, `'deadlock'`, and `'serializationFailure'`; it defaults to all three. `delayMs` can be a fixed number or a function of the attempt (1-indexed).
 
 ## Options
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 await client.transaction(
 	async (tx) => tx.users.findMany({ take: 10 }),
 	{
@@ -117,6 +206,17 @@ await client.transaction(
 		name: 'users-list',
 		comment: 'users.list.transaction',
 		context: { requestId: 'req_123' },
+	},
+);
+```
+
+```ts tab="Drizzle" tab-group="orm"
+// PostgreSQL; no timeout, name, comment, or context equivalents
+await db.transaction(
+	async (tx) => tx.select().from(users).limit(10),
+	{
+		isolationLevel: 'serializable',
+		accessMode: 'read only',
 	},
 );
 ```
@@ -142,13 +242,26 @@ await client.transaction(
 
 Raw methods bind to the transaction-scoped client, so they run inside the same transaction:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 await client.transaction(async (tx) => {
 	await tx.$executeRaw`update users set active = ${true} where id = ${2}`;
 
 	const rows = await tx.$raw<{ id: number }>`
 		select id from users where active = ${true} order by id asc
 	`;
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { sql } from 'drizzle-orm';
+
+// node-postgres driver
+await db.transaction(async (tx) => {
+	await tx.execute(sql`update users set active = ${true} where id = ${2}`);
+
+	const { rows } = await tx.execute<{ id: number }>(sql`
+		select id from users where active = ${true} order by id asc
+	`);
 });
 ```
 
@@ -160,7 +273,7 @@ Row locks (`FOR UPDATE`, `FOR SHARE`, `skipLocked`, `noWait`, table targeting) a
 
 The most common pattern is combining locks with transactions:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 await client.transaction(async (tx) => {
 	return tx.posts.findMany({
 		where: { id: { gt: 0 } },
@@ -169,6 +282,18 @@ await client.transaction(async (tx) => {
 			skipLocked: true,
 		},
 	});
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { gt } from 'drizzle-orm';
+
+await db.transaction(async (tx) => {
+	return tx
+		.select()
+		.from(posts)
+		.where(gt(posts.id, 0))
+		.for('update', { skipLocked: true });
 });
 ```
 

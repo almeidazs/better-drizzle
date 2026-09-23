@@ -10,18 +10,33 @@ icon: Filter
 
 The simplest filter is a direct value — it means "equals":
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 await client.users.findMany({
 	where: { active: true, name: 'Alice' },
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { and, eq } from 'drizzle-orm';
+
+await db
+	.select()
+	.from(users)
+	.where(and(eq(users.active, true), eq(users.name, 'Alice')));
+```
+
 That is identical to the explicit form:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 await client.users.findMany({
 	where: { active: { equals: true } },
 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+await db.select().from(users).where(eq(users.active, true));
 ```
 
 Multiple keys are combined with **AND**.
@@ -30,13 +45,27 @@ Multiple keys are combined with **AND**.
 
 String columns accept equality, membership, and pattern operators:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 await client.users.findMany({
 	where: {
 		name: { contains: 'ali', mode: 'insensitive' },
 		email: { endsWith: '@example.com' },
 	},
 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { and, ilike, like } from 'drizzle-orm';
+
+await db
+	.select()
+	.from(users)
+	.where(
+		and(
+			ilike(users.name, '%ali%'),
+			like(users.email, '%@example.com'),
+		),
+	);
 ```
 
 | Operator | Meaning |
@@ -52,12 +81,21 @@ await client.users.findMany({
 
 Numbers, bigints, and dates accept range comparisons:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 await client.users.findMany({
 	where: {
 		id: { gte: 100, lte: 200 },
 	},
 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { and, gte, lte } from 'drizzle-orm';
+
+await db
+	.select()
+	.from(users)
+	.where(and(gte(users.id, 100), lte(users.id, 200)));
 ```
 
 | Operator | Meaning |
@@ -70,10 +108,16 @@ await client.users.findMany({
 
 ## Boolean filters
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 await client.users.findMany({
 	where: { active: { equals: true } },
 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+await db.select().from(users).where(eq(users.active, true));
 ```
 
 Boolean columns support `equals` and `not`.
@@ -82,7 +126,7 @@ Boolean columns support `equals` and `not`.
 
 Nullable columns accept `null` directly, and any operator can be negated with `not`:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 await client.posts.findMany({
 	where: {
 		deletedAt: null, // IS NULL
@@ -91,11 +135,20 @@ await client.posts.findMany({
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { and, isNull, like, not } from 'drizzle-orm';
+
+await db
+	.select()
+	.from(posts)
+	.where(and(isNull(posts.deletedAt), not(like(posts.title, '%draft%'))));
+```
+
 ## Logical operators
 
 Combine conditions with `AND`, `OR`, and `NOT`. They nest arbitrarily:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 await client.users.findMany({
 	where: {
 		AND: [
@@ -109,6 +162,23 @@ await client.users.findMany({
 		],
 	},
 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { and, eq, like, or } from 'drizzle-orm';
+
+await db
+	.select()
+	.from(users)
+	.where(
+		and(
+			eq(users.active, true),
+			or(
+				like(users.email, '%@company.com'),
+				like(users.name, 'Admin%'),
+			),
+		),
+	);
 ```
 
 <Callout title="Top-level keys are already AND-ed">
@@ -144,13 +214,24 @@ Typed paths inside PostgreSQL JSONB columns have their own API and limitations:
 
 When you need an expression the structured filter does not model, pass a Drizzle `SQL` fragment straight into `where`:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 import { eq } from 'drizzle-orm';
 import { users } from './schema';
 
 const user = await client.users.findFirst({
 	where: eq(users.id, 1),
 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+import { users } from './schema';
+
+const [user = null] = await db
+	.select()
+	.from(users)
+	.where(eq(users.id, 1))
+	.limit(1);
 ```
 
 Anything that produces a Drizzle `SQL` / `SQLWrapper` is accepted, so you keep the full expressive power of Drizzle for the cases that need it.

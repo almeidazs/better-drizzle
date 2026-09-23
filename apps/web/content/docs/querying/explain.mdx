@@ -10,7 +10,7 @@ Every read operation in Better Drizzle returns an **explainable result** -- a la
 
 Chain `.explain()` off any read call to get the query plan:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const plan = await client.users
   .findMany({ where: { active: true } })
   .explain();
@@ -18,6 +18,14 @@ const plan = await client.users
 console.log(plan.driver);      // "sqlite" | "pg" | "mysql"
 console.log(plan.operation);   // "findMany"
 console.log(plan.statements);  // array of ExplainStatement
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq, sql } from 'drizzle-orm';
+
+// no explain API: wrap the query builder in a raw EXPLAIN (PostgreSQL)
+const query = db.select().from(users).where(eq(users.active, true));
+const plan = await db.execute(sql`EXPLAIN ${query}`);
 ```
 
 The real query never runs. You can safely call `.explain()` in tests, diagnostics, or monitoring without side effects.

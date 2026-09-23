@@ -33,7 +33,7 @@ These usually deliver the highest reduction in repeated service-layer code.
 
 ## 4. Replace branchy write glue with direct writes
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const maybeCreated = await client.users.create({
 	data: {
 		email: 'alice@example.com',
@@ -43,14 +43,41 @@ const maybeCreated = await client.users.create({
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+const [inserted] = await db
+	.insert(users)
+	.values({
+		email: 'alice@example.com',
+		name: 'Alice',
+	})
+	.onConflictDoNothing({ target: users.email })
+	.returning();
+const maybeCreated = inserted ?? null;
+```
+
 And for bulk sync paths:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 await client.users.upsertMany({
 	data,
 	target: ['email'],
 	update: ['name', 'active'],
 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { sql } from 'drizzle-orm';
+
+await db
+	.insert(users)
+	.values(data)
+	.onConflictDoUpdate({
+		target: users.email,
+		set: {
+			name: sql`excluded.name`,
+			active: sql`excluded.active`,
+		},
+	});
 ```
 
 ## 5. Move cross-cutting behavior into plugins or hooks

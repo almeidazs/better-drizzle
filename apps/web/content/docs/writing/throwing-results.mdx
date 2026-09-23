@@ -16,7 +16,7 @@ These operations return a **throwing result**:
 
 A throwing result is a `Promise<T | null>` with an extra `.throw()` method, so you get both styles from one API:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 // Style 1 — nullable
 const user = await client.users.findUnique({ where: { id } });
 //    ^? User | null
@@ -26,11 +26,28 @@ const user = await client.users.findUnique({ where: { id } }).throw();
 //    ^? User
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+// Style 1 — nullable
+const [user = null] = await db
+	.select()
+	.from(users)
+	.where(eq(users.id, id))
+	.limit(1);
+//    ^? User | null
+
+// Style 2 — throw on null
+const [user] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+if (!user) throw new Error('User not found');
+//    ^? User
+```
+
 ## `.throw()`
 
 Call `.throw()` to turn a `null` result into a thrown error and a non-null type:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const user = await client.users
 	.findUnique({ where: { email: 'alice@example.com' } })
 	.throw();
@@ -40,14 +57,39 @@ const updated = await client.users
 	.throw();
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+const [user] = await db
+	.select()
+	.from(users)
+	.where(eq(users.email, 'alice@example.com'))
+	.limit(1);
+if (!user) throw new Error('User not found');
+
+const [updated] = await db
+	.update(users)
+	.set({ name: 'Updated' })
+	.where(eq(users.id, 1))
+	.returning();
+if (!updated) throw new Error('User not found');
+```
+
 ## Custom error factory
 
 Pass a factory to control exactly what is thrown — useful for typed domain errors or HTTP-aware errors:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const user = await client.users
 	.findOne({ where: { id: 9999 } })
 	.throw(() => new Error('User not found'));
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+const [user] = await db.select().from(users).where(eq(users.id, 9999)).limit(1);
+if (!user) throw new Error('User not found');
 ```
 
 ## Why it works this way

@@ -10,7 +10,7 @@ better-drizzle works best when the service layer stays thin and explicit. The de
 
 Compose exactly the shape the caller needs, once:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 export function getUserProfile(userId: number) {
 	return client.users.findUnique({
 		where: { id: userId },
@@ -23,11 +23,32 @@ export function getUserProfile(userId: number) {
 }
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+export async function getUserProfile(userId: number) {
+	const [user] = await db
+		.select()
+		.from(users)
+		.where(eq(users.id, userId))
+		.limit(1);
+	if (!user) return null;
+
+	// second round trip for the relation, then attach it by hand
+	const userPosts = await db
+		.select({ id: posts.id, title: posts.title, published: posts.published })
+		.from(posts)
+		.where(eq(posts.authorId, userId));
+
+	return { ...user, posts: userPosts };
+}
+```
+
 ## A good write
 
 Let `.throw()` carry the not-found decision so the happy path stays linear:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 export function renameUser(userId: number, name: string) {
 	return client.users
 		.update({ where: { id: userId }, data: { name } })
@@ -35,11 +56,25 @@ export function renameUser(userId: number, name: string) {
 }
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+export async function renameUser(userId: number, name: string) {
+	const [user] = await db
+		.update(users)
+		.set({ name })
+		.where(eq(users.id, userId))
+		.returning();
+	if (!user) throw new Error('User not found');
+	return user;
+}
+```
+
 ## A good transactional service
 
 Keep multi-step writes inside a single [transaction](/docs/advanced/transactions):
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 export function createUserAndDraft(input: {
 	email: string;
 	name: string;
@@ -53,6 +88,27 @@ export function createUserAndDraft(input: {
 		return tx.posts.create({
 			data: { authorId: user.id, title: input.title, published: false },
 		});
+	});
+}
+```
+
+```ts tab="Drizzle" tab-group="orm"
+export function createUserAndDraft(input: {
+	email: string;
+	name: string;
+	title: string;
+}) {
+	return db.transaction(async (tx) => {
+		const [user] = await tx
+			.insert(users)
+			.values({ email: input.email, name: input.name, active: true })
+			.returning();
+
+		const [post] = await tx
+			.insert(posts)
+			.values({ authorId: user.id, title: input.title, published: false })
+			.returning();
+		return post;
 	});
 }
 ```

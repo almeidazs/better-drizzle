@@ -16,10 +16,16 @@ Three options control a query's result, and they solve different problems:
 
 ## `where` filters rows
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 await client.posts.findMany({
 	where: { published: true },
 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+await db.select().from(posts).where(eq(posts.published, true));
 ```
 
 Without `select` or `include`, you get the full row for each table — all scalar columns, no relations.
@@ -28,7 +34,7 @@ Without `select` or `include`, you get the full row for each table — all scala
 
 `select` lists exactly the fields you want. Anything not listed is dropped, and the return type narrows to match:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const rows = await client.posts.findMany({
 	select: {
 		id: true,
@@ -36,6 +42,12 @@ const rows = await client.posts.findMany({
 	},
 });
 //    ^? { id: number; title: string }[]
+```
+
+```ts tab="Drizzle" tab-group="orm"
+const rows = await db
+	.select({ id: posts.id, title: posts.title })
+	.from(posts);
 ```
 
 Reach for `select` when:
@@ -48,11 +60,20 @@ Reach for `select` when:
 
 `include` keeps every scalar column and attaches the relations you name:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const posts = await client.posts.findMany({
 	include: { author: true },
 });
 //    ^? (Post & { author: User | null })[]
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq, getTableColumns } from 'drizzle-orm';
+
+const rows = await db
+	.select({ ...getTableColumns(posts), author: getTableColumns(users) })
+	.from(posts)
+	.leftJoin(users, eq(posts.authorId, users.id));
 ```
 
 Reach for `include` when a handler wants the model *plus* related records.
@@ -67,7 +88,7 @@ Reach for `include` when a handler wants the model *plus* related records.
 
 Both `select` and `include` can shape a relation by giving it a nested query instead of `true`:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const posts = await client.posts.findMany({
 	select: {
 		id: true,
@@ -77,6 +98,19 @@ const posts = await client.posts.findMany({
 		},
 	},
 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+const rows = await db
+	.select({
+		id: posts.id,
+		title: posts.title,
+		author: { id: users.id, name: users.name },
+	})
+	.from(posts)
+	.leftJoin(users, eq(posts.authorId, users.id));
 ```
 
 The nested object accepts the same `where`, `select`, `orderBy`, and `take` you would use on a top-level query — so you can filter and order related rows too.

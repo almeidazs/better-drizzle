@@ -19,12 +19,23 @@ Every table delegate exposes the same read methods. They differ in how many rows
 
 Returns every matching row. The default when you want a list, a feed, or relation loading.
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const users = await client.users.findMany({
 	where: { active: true },
 	orderBy: [{ id: 'asc' }],
 	take: 25,
 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { asc, eq } from 'drizzle-orm';
+
+const rows = await db
+	.select()
+	.from(users)
+	.where(eq(users.active, true))
+	.orderBy(asc(users.id))
+	.limit(25);
 ```
 
 `findMany` accepts the full query surface: [`where`](/docs/querying/filters), [`select` / `include`](/docs/querying/selecting-fields), `orderBy`, `take`, `skip`, and `cursor`.
@@ -33,38 +44,69 @@ const users = await client.users.findMany({
 
 The first row after filtering and ordering. Use it when the query can match many rows but you only want one.
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const newest = await client.users.findFirst({
 	where: { active: true },
 	orderBy: [{ id: 'desc' }],
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { desc, eq } from 'drizzle-orm';
+
+const [newest = null] = await db
+	.select()
+	.from(users)
+	.where(eq(users.active, true))
+	.orderBy(desc(users.id))
+	.limit(1);
+```
+
 ## `findOne`
 
 An alias for `findFirst`, read for intent: a single nullable row where the **caller** owns the not-found decision.
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const user = await client.users.findOne({
 	where: { id: 42 },
 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+const [user = null] = await db
+	.select()
+	.from(users)
+	.where(eq(users.id, 42))
+	.limit(1);
 ```
 
 ## `findUnique`
 
 Reads best when the lookup is driven by a unique field such as `email` or a slug.
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const user = await client.users.findUnique({
 	where: { email: 'alice@example.com' },
 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+const [user = null] = await db
+	.select()
+	.from(users)
+	.where(eq(users.email, 'alice@example.com'))
+	.limit(1);
 ```
 
 ## `count` and `exists`
 
 `count` returns the number of matching rows. `exists` is a cheap existence check that never materializes a row.
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const activeCount = await client.users.count({
 	where: { active: true },
 });
@@ -74,6 +116,22 @@ const taken = await client.users.exists({
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { count, eq, sql } from 'drizzle-orm';
+
+const [{ activeCount }] = await db
+	.select({ activeCount: count() })
+	.from(users)
+	.where(eq(users.active, true));
+
+const found = await db
+	.select({ one: sql`1` })
+	.from(users)
+	.where(eq(users.email, 'alice@example.com'))
+	.limit(1);
+const taken = found.length > 0;
+```
+
 <Callout type="info">
 	`count` and `exists` accept only `where`, `cursor`, and `meta` — projections
 	and ordering do not apply to them.
@@ -81,12 +139,23 @@ const taken = await client.users.exists({
 
 ## Ordering, limit, and offset
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const page = await client.posts.findMany({
 	orderBy: [{ published: 'desc' }, { id: 'desc' }],
 	skip: 20,
 	take: 10,
 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { desc } from 'drizzle-orm';
+
+const page = await db
+	.select()
+	.from(posts)
+	.orderBy(desc(posts.published), desc(posts.id))
+	.offset(20)
+	.limit(10);
 ```
 
 - `orderBy` takes one field map or an array for multi-column ordering.
@@ -99,7 +168,7 @@ For full offset pages with totals, use [`paginate`](/docs/querying/pagination). 
 
 `findFirst`, `findOne`, and `findUnique` return a value that is both awaitable as `Row | null` **and** exposes `.throw()`:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 // Treat not-found as null
 const maybeUser = await client.users.findUnique({
 	where: { email },
@@ -109,6 +178,25 @@ const maybeUser = await client.users.findUnique({
 const user = await client.users
 	.findUnique({ where: { email } })
 	.throw(() => new Error('User not found'));
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+// Treat not-found as null
+const [maybeUser = null] = await db
+	.select()
+	.from(users)
+	.where(eq(users.email, email))
+	.limit(1);
+
+// Treat not-found as exceptional
+const [user] = await db
+	.select()
+	.from(users)
+	.where(eq(users.email, email))
+	.limit(1);
+if (!user) throw new Error('User not found');
 ```
 
 See [throwing results](/docs/writing/throwing-results) for the full pattern.

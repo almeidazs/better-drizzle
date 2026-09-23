@@ -10,7 +10,7 @@ The write methods mirror the read API and return predictable shapes. Single-row 
 
 Inserts one row and returns the created record:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const user = await client.users.create({
 	data: {
 		email: 'alice@example.com',
@@ -20,11 +20,22 @@ const user = await client.users.create({
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+const [user] = await db
+	.insert(users)
+	.values({
+		email: 'alice@example.com',
+		name: 'Alice',
+		active: true,
+	})
+	.returning();
+```
+
 ## `createMany`
 
 Inserts many rows in one statement and returns a batch summary:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const batch = await client.users.createMany({
 	data: [
 		{ email: 'a@example.com', name: 'A', active: true },
@@ -36,9 +47,22 @@ batch.count; // number inserted
 batch.data; // inserted rows, when the driver supports RETURNING
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+const rows = await db
+	.insert(users)
+	.values([
+		{ email: 'a@example.com', name: 'A', active: true },
+		{ email: 'b@example.com', name: 'B', active: false },
+	])
+	.returning();
+
+// shape the batch summary by hand
+const batch = { count: rows.length, data: rows };
+```
+
 `create` and `createMany` both support `skipDuplicates`:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const maybeCreated = await client.users.create({
 	data: {
 		email: 'alice@example.com',
@@ -49,17 +73,43 @@ const maybeCreated = await client.users.create({
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+const [maybeCreated = null] = await db
+	.insert(users)
+	.values({
+		email: 'alice@example.com',
+		name: 'Alice',
+		active: true,
+	})
+	.onConflictDoNothing({ target: users.email })
+	.returning();
+```
+
 With single-row `create`, a skipped insert returns `null`. With `createMany`, `count` only includes rows that were actually inserted.
 
 ## `update`
 
 Updates a single matching row. The result is nullable (the target may not exist) and also exposes [`.throw()`](/docs/writing/throwing-results):
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const updated = await client.users.update({
 	where: { id: 1 },
 	data: { name: 'Alice Updated' },
 });
+
+if (!updated) {
+	throw new Error('Update target not found');
+}
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+const [updated] = await db
+	.update(users)
+	.set({ name: 'Alice Updated' })
+	.where(eq(users.id, 1))
+	.returning();
 
 if (!updated) {
 	throw new Error('Update target not found');
@@ -72,7 +122,7 @@ Single-row `create`, `update`, and `upsert` accept relation commands inside
 their data payloads, so you can attach related rows without resolving foreign
 keys yourself:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const post = await client.posts.create({
 	data: {
 		title: 'Connected post',
@@ -91,6 +141,41 @@ await client.users.update({
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { and, eq, inArray } from 'drizzle-orm';
+
+const post = await db.transaction(async (tx) => {
+	// resolve the foreign key by hand
+	const [author] = await tx
+		.select({ id: users.id })
+		.from(users)
+		.where(eq(users.email, 'alice@example.com'));
+	if (!author) throw new Error('Author not found');
+
+	const [created] = await tx
+		.insert(posts)
+		.values({ title: 'Connected post', authorId: author.id })
+		.returning();
+	return created;
+});
+
+await db.transaction(async (tx) => {
+	const connected = await tx
+		.update(posts)
+		.set({ authorId: 1 })
+		.where(inArray(posts.id, [2, 3]))
+		.returning({ id: posts.id });
+	if (connected.length !== 2) throw new Error('Post not found');
+
+	const disconnected = await tx
+		.update(posts)
+		.set({ authorId: null })
+		.where(and(eq(posts.id, 1), eq(posts.authorId, 1)))
+		.returning({ id: posts.id });
+	if (!disconnected.length) throw new Error('Post not connected');
+});
+```
+
 `connect`, `disconnect`, and `set` each have their own rules per cardinality,
 selectors must match exactly one row, and the root mutation plus every
 relation change run in one implicit transaction. `createMany`, `updateMany`,
@@ -103,7 +188,7 @@ matrix, the failure modes, and the batch workaround.
 
 Updates every matching row and returns the affected count:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const batch = await client.users.updateMany({
 	where: { active: true },
 	data: { active: false },
@@ -112,11 +197,23 @@ const batch = await client.users.updateMany({
 batch.count; // rows updated
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+const rows = await db
+	.update(users)
+	.set({ active: false })
+	.where(eq(users.active, true))
+	.returning({ id: users.id });
+
+const batch = { count: rows.length };
+```
+
 ## `updateEach`
 
 Updates many rows with different values in a single statement. Instead of applying the same value to all matching rows (like `updateMany`), `updateEach` generates a `CASE` expression per column so each row can have its own value:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const batch = await client.users.updateEach({
 	by: users.id,
 	data: [
@@ -128,6 +225,46 @@ const batch = await client.users.updateEach({
 		city: (row) => row.city,
 	},
 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { inArray, sql } from 'drizzle-orm';
+
+const data = [
+	{ id: 1, name: 'Alice Updated', city: 'New York' },
+	{ id: 2, name: 'Bob Updated', city: 'Chicago' },
+];
+
+// build one CASE expression per column by hand
+const nameCase = sql.join(
+	[
+		sql`case`,
+		...data.map((row) => sql`when ${users.id} = ${row.id} then ${row.name}`),
+		sql`else ${users.name} end`,
+	],
+	sql` `,
+);
+const cityCase = sql.join(
+	[
+		sql`case`,
+		...data.map((row) => sql`when ${users.id} = ${row.id} then ${row.city}`),
+		sql`else ${users.city} end`,
+	],
+	sql` `,
+);
+
+const rows = await db
+	.update(users)
+	.set({ name: nameCase, city: cityCase })
+	.where(
+		inArray(
+			users.id,
+			data.map((row) => row.id),
+		),
+	)
+	.returning({ id: users.id });
+
+const batch = { count: rows.length };
 ```
 
 This generates a single SQL statement:
@@ -167,7 +304,7 @@ WHERE id IN (1, 2)
 
 Combine a `where` filter with the `by` column to scope which rows are eligible for update:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const batch = await client.users.updateEach({
 	by: users.id,
 	data: [
@@ -179,11 +316,45 @@ const batch = await client.users.updateEach({
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { and, eq, inArray, sql } from 'drizzle-orm';
+
+const data = [
+	{ id: 1, name: 'Alice' },
+	{ id: 2, name: 'Bob' },
+];
+
+const rows = await db
+	.update(users)
+	.set({
+		name: sql.join(
+			[
+				sql`case`,
+				...data.map((row) => sql`when ${users.id} = ${row.id} then ${row.name}`),
+				sql`else ${users.name} end`,
+			],
+			sql` `,
+		),
+	})
+	.where(
+		and(
+			inArray(
+				users.id,
+				data.map((row) => row.id),
+			),
+			eq(users.active, true), // only update active users
+		),
+	)
+	.returning({ id: users.id });
+
+const batch = { count: rows.length };
+```
+
 ### Projecting results
 
 Use `select` to return specific scalar columns after the update:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const batch = await client.users.updateEach({
 	by: users.id,
 	data: [
@@ -193,6 +364,39 @@ const batch = await client.users.updateEach({
 	update: { name: (row) => row.name },
 	select: { id: true, name: true, email: true },
 });
+
+console.log(batch.data); // [{ id: 1, name: 'Alice', ... }, ...]
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { inArray, sql } from 'drizzle-orm';
+
+const data = [
+	{ id: 1, name: 'Alice' },
+	{ id: 2, name: 'Bob' },
+];
+
+const rows = await db
+	.update(users)
+	.set({
+		name: sql.join(
+			[
+				sql`case`,
+				...data.map((row) => sql`when ${users.id} = ${row.id} then ${row.name}`),
+				sql`else ${users.name} end`,
+			],
+			sql` `,
+		),
+	})
+	.where(
+		inArray(
+			users.id,
+			data.map((row) => row.id),
+		),
+	)
+	.returning({ id: users.id, name: users.name, email: users.email });
+
+const batch = { count: rows.length, data: rows };
 
 console.log(batch.data); // [{ id: 1, name: 'Alice', ... }, ...]
 ```
@@ -246,17 +450,26 @@ await client.users.updateEach({
 
 Deletes a single matching row and returns it (nullable, with `.throw()`):
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const deleted = await client.users.delete({
 	where: { id: 1 },
 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+const [deleted = null] = await db
+	.delete(users)
+	.where(eq(users.id, 1))
+	.returning();
 ```
 
 ## `deleteMany`
 
 Deletes every matching row and returns the affected count:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const batch = await client.users.deleteMany({
 	where: { active: false },
 });
@@ -264,11 +477,22 @@ const batch = await client.users.deleteMany({
 batch.count; // rows deleted
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+const rows = await db
+	.delete(users)
+	.where(eq(users.active, false))
+	.returning({ id: users.id });
+
+const batch = { count: rows.length };
+```
+
 ## `upsert`
 
 "Create if missing, update if present" — without branching in your own code:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const user = await client.users.upsert({
 	where: { email: 'alice@example.com' },
 	create: {
@@ -282,13 +506,28 @@ const user = await client.users.upsert({
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+const [user] = await db
+	.insert(users)
+	.values({
+		email: 'alice@example.com',
+		name: 'Alice',
+		active: true,
+	})
+	.onConflictDoUpdate({
+		target: users.email,
+		set: { name: 'Alice Renamed' },
+	})
+	.returning();
+```
+
 `upsert` is usually cleaner than "find, then branch, then write" when the behavior is genuinely upsert-shaped.
 
 ## `upsertMany`
 
 For bulk create-or-update flows, use `upsertMany` instead of looping over `upsert()`:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 import { sql } from 'drizzle-orm';
 
 const result = await client.users.upsertMany({
@@ -311,6 +550,29 @@ const result = await client.users.upsertMany({
 });
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { sql } from 'drizzle-orm';
+
+// chunk large inputs yourself (batchSize)
+const rows = await db
+	.insert(users)
+	.values([
+		{ email: 'alice@example.com', name: 'Alice', active: true },
+		{ email: 'bob@example.com', name: 'Bob', active: false },
+	])
+	.onConflictDoUpdate({
+		target: users.email,
+		set: {
+			name: sql`excluded.name`,
+			active: sql`excluded.active`,
+			updatedAt: sql`now()`,
+		},
+	})
+	.returning({ id: users.id, email: users.email, name: users.name });
+
+const result = { count: rows.length, data: rows };
+```
+
 `upsertMany` is designed around native conflict handling, not userland loops.
 
 - `target` is required
@@ -323,11 +585,19 @@ const result = await client.users.upsertMany({
 
 `create`, `update`, `delete`, `upsert`, `createMany`, `updateEach`, and `upsertMany` can project results. `updateEach` and `upsertMany` support `select`; the others support `select` and `include`:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const user = await client.users.create({
 	data: { email: 'writer@example.com', name: 'Writer', active: true },
 	select: { id: true, email: true },
 });
+//    ^? { id: number; email: string }
+```
+
+```ts tab="Drizzle" tab-group="orm"
+const [user] = await db
+	.insert(users)
+	.values({ email: 'writer@example.com', name: 'Writer', active: true })
+	.returning({ id: users.id, email: users.email });
 //    ^? { id: number; email: string }
 ```
 

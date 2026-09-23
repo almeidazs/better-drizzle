@@ -16,7 +16,7 @@ The delegate API covers routine work; raw SQL covers the rest. better-drizzle ke
 
 As a tagged template — interpolated values are bound as parameters, not concatenated:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const rows = await client.$raw<{ id: number; email: string }>`
 	select id, email
 	from users
@@ -25,12 +25,33 @@ const rows = await client.$raw<{ id: number; email: string }>`
 `;
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { sql } from 'drizzle-orm';
+
+// node-postgres driver
+const { rows } = await db.execute<{ id: number; email: string }>(sql`
+	select id, email
+	from users
+	where active = ${true}
+	order by id asc
+`);
+```
+
 Or with a Drizzle `sql` object:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 import { sql } from 'drizzle-orm';
 
 const rows = await client.$raw<{ id: number; email: string }>(
+	sql`select id, email from users where email like ${'%@example.com'}`,
+);
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { sql } from 'drizzle-orm';
+
+// node-postgres driver
+const { rows } = await db.execute<{ id: number; email: string }>(
 	sql`select id, email from users where email like ${'%@example.com'}`,
 );
 ```
@@ -39,7 +60,7 @@ const rows = await client.$raw<{ id: number; email: string }>(
 
 For statements that change data. Returns a normalized result:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 const result = await client.$executeRaw`
 	update users set active = ${false} where id = ${1}
 `;
@@ -47,11 +68,22 @@ const result = await client.$executeRaw`
 result.rowsAffected;
 ```
 
+```ts tab="Drizzle" tab-group="orm"
+import { sql } from 'drizzle-orm';
+
+// node-postgres driver
+const result = await db.execute(sql`
+	update users set active = ${false} where id = ${1}
+`);
+
+result.rowCount;
+```
+
 ## Row mapping and options
 
 The `sql`-object form of `$raw` accepts options — including a `map` function applied to each row, plus tracing metadata and a timeout:
 
-```ts
+```ts tab="better-drizzle" tab-group="orm"
 import { sql } from 'drizzle-orm';
 
 const rows = await client.$raw(
@@ -66,6 +98,20 @@ const rows = await client.$raw(
 		timeoutMs: 5000,
 	},
 );
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { sql } from 'drizzle-orm';
+
+// node-postgres driver; no name, comment, or timeout options
+const result = await db.execute<{ id: number; email: string }>(
+	sql`select id, email from users order by id asc`,
+);
+
+const rows = result.rows.map((row) => ({
+	id: row.id,
+	email: row.email.toLowerCase(),
+}));
 ```
 
 Supported per-call options on raw methods:
