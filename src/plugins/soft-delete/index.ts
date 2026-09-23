@@ -138,8 +138,12 @@ export const softDelete = (options: SoftDeleteOptions = {}) => {
 
 				if (mode === 'hard') return;
 
+				const timestamp =
+					context.model.columns[column]?.dataType === 'string'
+						? new Date().toISOString()
+						: new Date();
 				const data = {
-					[column]: new Date(),
+					[column]: timestamp,
 				} as UpdateArgs<
 					typeof context.schema,
 					typeof context.table,

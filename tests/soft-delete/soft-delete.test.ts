@@ -19,7 +19,13 @@ const basicRecords = sqliteTable('soft_delete_basic_records', {
 	name: text('name').notNull(),
 });
 
-const schema = { basicRecords, records };
+const textRecords = sqliteTable('soft_delete_text_records', {
+	deletedAt: text('deleted_at'),
+	id: integer('id').primaryKey(),
+	name: text('name').notNull(),
+});
+
+const schema = { basicRecords, records, textRecords };
 
 const createContext = () => {
 	const sqlite = new Database(':memory:');
@@ -35,10 +41,17 @@ const createContext = () => {
 			id INTEGER PRIMARY KEY NOT NULL,
 			name TEXT NOT NULL
 		);
+		CREATE TABLE soft_delete_text_records (
+			id INTEGER PRIMARY KEY NOT NULL,
+			name TEXT NOT NULL,
+			deleted_at TEXT
+		);
 		INSERT INTO soft_delete_records (id, name, deleted_at, deleted_by_id)
 		VALUES
 			(1, 'Alice', NULL, NULL),
 			(2, 'Bob', 1710000000, 'seed-user');
+		INSERT INTO soft_delete_text_records (id, name, deleted_at)
+		VALUES (1, 'Text timestamp', NULL);
 	`);
 
 	return {
@@ -116,6 +129,23 @@ describe('better-drizzle/soft-delete', () => {
 		expect(deleted?.deletedById).toBe('admin-user');
 		expect(afterDelete).toHaveLength(2);
 		expect(afterDelete.map((row) => row.id)).toEqual([1, 2]);
+		ctx.close();
+	});
+
+	test('serializes soft deletes for text timestamp columns', async () => {
+		const ctx = createContext();
+		const client = better(ctx.db, {
+			plugins: [softDelete()],
+			schema,
+		});
+
+		const deleted = await client.textRecords.delete({
+			where: { id: 1 },
+		});
+
+		expect(deleted?.deletedAt).toMatch(
+			/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+		);
 		ctx.close();
 	});
 

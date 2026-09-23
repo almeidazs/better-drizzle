@@ -157,6 +157,7 @@
   - `updateEach` is an update-oriented batch operation with its own plugin kind, but it still flows through `beforeUpdate` / `afterUpdate`
   - `src/plugins/rules` is intentionally runtime-only and hook-driven; it enforces only checks that can be inferred from current hook payloads and silently ignores unsupported rule types
   - `src/plugins/rules` accepts boolean rule settings as shorthand: `true` means `error`, `false` means `off`
+  - `src/plugins/soft-delete` writes ISO 8601 values for string-backed delete timestamp columns and `Date` values for Drizzle date columns; this preserves SQLite text-column compatibility while retaining native timestamp encoders
 - **Batch updateEach API**:
   - `updateEach` is native-first and performance-sensitive
   - it accepts `by`, `data`, `update`, optional `where`, optional scalar `select`, and `onEmpty`
