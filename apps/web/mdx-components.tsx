@@ -6,6 +6,8 @@ import { TypeTable } from 'fumadocs-ui/components/type-table';
 import defaultMdxComponents from 'fumadocs-ui/mdx';
 import type { MDXComponents } from 'mdx/types';
 
+import { ShinyCodeBlock } from '@/components/shiny-code-block';
+
 /**
  * Components available to every MDX page. Spread `defaultMdxComponents` first so
  * built-ins (code blocks, headings, links, Cards) work, then register the extra
@@ -14,6 +16,7 @@ import type { MDXComponents } from 'mdx/types';
 export function getMDXComponents(components?: MDXComponents): MDXComponents {
 	return {
 		...defaultMdxComponents,
+		pre: ShinyCodeBlock,
 		Callout,
 		Card,
 		Cards,

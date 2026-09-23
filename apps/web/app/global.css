@@ -120,9 +120,41 @@ body {
 	transform-origin: center;
 }
 
+/* Light sweep played across a docs code block when it is clicked or copied. */
+@keyframes bd-code-flash {
+	from {
+		transform: translateX(-100%);
+	}
+	to {
+		transform: translateX(100%);
+	}
+}
+
+.bd-code-flash {
+	--bd-flash: rgb(197 247 79 / 0.45);
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	background: linear-gradient(
+		90deg,
+		transparent 15%,
+		var(--bd-flash) 50%,
+		transparent 85%
+	);
+	animation: bd-code-flash 750ms ease-in-out forwards;
+}
+
+.dark .bd-code-flash {
+	--bd-flash: rgb(255 255 255 / 0.3);
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.bd-rise {
 		animation: none;
+	}
+
+	.bd-code-flash {
+		animation-duration: 1ms;
 	}
 }
 
