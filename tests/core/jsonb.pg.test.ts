@@ -92,6 +92,57 @@ describe.skipIf(!DATABASE_URL)('JSONB where (PostgreSQL)', () => {
 		).toBe(true);
 	});
 
+	test('supports in, notIn, and insensitive mode on JSONB paths', async () => {
+		const inRows = await db.events.findMany({
+			where: {
+				metadata: {
+					json: {
+						'profile.name': { in: ['User 1', 'User 2', 'User 3'] },
+						'profile.age': { in: [19, 20] },
+					},
+				},
+			},
+		});
+		expect(inRows.map((row) => row.id).sort((a, b) => a - b)).toEqual([
+			1, 2,
+		]);
+
+		const empty = await db.events.findMany({
+			where: { metadata: { json: { 'profile.name': { in: [] } } } },
+		});
+		expect(empty).toEqual([]);
+
+		const notIn = await db.events.count({
+			where: {
+				metadata: { json: { 'profile.active': { notIn: [true] } } },
+			},
+		});
+		expect(notIn).toBe(5000);
+
+		const insensitive = await db.events.findMany({
+			where: {
+				metadata: {
+					json: {
+						'profile.name': {
+							startsWith: 'user 999',
+							mode: 'insensitive',
+						},
+					},
+				},
+			},
+		});
+		expect(insensitive.map((row) => row.id).sort((a, b) => a - b)).toEqual([
+			999, 9990, 9991, 9992, 9993, 9994, 9995, 9996, 9997, 9998, 9999,
+		]);
+
+		const sensitive = await db.events.count({
+			where: {
+				metadata: { json: { 'profile.name': { startsWith: 'user' } } },
+			},
+		});
+		expect(sensitive).toBe(0);
+	});
+
 	test('matches an equivalent raw PostgreSQL predicate', async () => {
 		const betterRows = await db.events.findMany({
 			where: { metadata: { json: { 'profile.age': { gte: 60 } } } },

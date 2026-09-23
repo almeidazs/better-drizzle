@@ -196,13 +196,46 @@ const compileJsonPathFilter = (
 				eq(sql`(${textValue})::numeric`, entry),
 			);
 	};
+	const numeric = sql`(${textValue})::numeric`;
+	// Groups list values by JSON type so each type compiles to one guarded IN.
+	const compareAny = (entries: unknown[]): SQL => {
+		const strings: string[] = [];
+		const numbers: (number | bigint)[] = [];
+		const booleans: boolean[] = [];
+		const branches: SQL[] = [];
+		for (const entry of entries) {
+			if (typeof entry === 'string') strings.push(entry);
+			else if (typeof entry === 'number' || typeof entry === 'bigint')
+				numbers.push(entry);
+			else if (typeof entry === 'boolean') booleans.push(entry);
+			else if (entry === null) branches.push(eq(jsonType, 'null'));
+		}
+		if (strings.length)
+			branches.push(
+				and(eq(jsonType, 'string'), inArray(textValue, strings)) as SQL,
+			);
+		if (numbers.length)
+			branches.push(
+				and(eq(jsonType, 'number'), inArray(numeric, numbers)) as SQL,
+			);
+		if (booleans.length)
+			branches.push(
+				and(
+					eq(jsonType, 'boolean'),
+					inArray(sql`(${textValue})::boolean`, booleans),
+				) as SQL,
+			);
+		return branches.length ? (or(...branches) as SQL) : sql`false`;
+	};
 	if (!isScalarFilter(value)) return compare(value);
 	const conditions: SQL[] = [];
 	if ('equals' in value) {
 		const condition = compare(value.equals);
 		if (condition) conditions.push(condition);
 	}
-	const numeric = sql`(${textValue})::numeric`;
+	if (Array.isArray(value.in)) conditions.push(compareAny(value.in));
+	if (Array.isArray(value.notIn) && value.notIn.length)
+		conditions.push(not(compareAny(value.notIn)));
 	if (typeof value.lt === 'number')
 		conditions.push(
 			and(eq(jsonType, 'number'), lt(numeric, value.lt)) as SQL,
@@ -219,25 +252,35 @@ const compileJsonPathFilter = (
 		conditions.push(
 			and(eq(jsonType, 'number'), gte(numeric, value.gte)) as SQL,
 		);
+	const pattern = value.mode === 'insensitive' ? ilike : like;
 	if (typeof value.contains === 'string')
 		conditions.push(
 			and(
 				eq(jsonType, 'string'),
-				like(textValue as unknown as AnyColumn, `%${value.contains}%`),
+				pattern(
+					textValue as unknown as AnyColumn,
+					`%${value.contains}%`,
+				),
 			) as SQL,
 		);
 	if (typeof value.startsWith === 'string')
 		conditions.push(
 			and(
 				eq(jsonType, 'string'),
-				like(textValue as unknown as AnyColumn, `${value.startsWith}%`),
+				pattern(
+					textValue as unknown as AnyColumn,
+					`${value.startsWith}%`,
+				),
 			) as SQL,
 		);
 	if (typeof value.endsWith === 'string')
 		conditions.push(
 			and(
 				eq(jsonType, 'string'),
-				like(textValue as unknown as AnyColumn, `%${value.endsWith}`),
+				pattern(
+					textValue as unknown as AnyColumn,
+					`%${value.endsWith}`,
+				),
 			) as SQL,
 		);
 	if ('not' in value) {
