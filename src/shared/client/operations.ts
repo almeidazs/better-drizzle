@@ -1,4 +1,17 @@
-import { type AnyColumn, and, eq, isNull, type SQL, sql } from 'drizzle-orm';
+import {
+	type AnyColumn,
+	and,
+	asc,
+	desc,
+	eq,
+	gt,
+	gte,
+	isNull,
+	lt,
+	lte,
+	type SQL,
+	sql,
+} from 'drizzle-orm';
 import { One } from 'drizzle-orm/relations';
 import { isSQLWrapper } from 'drizzle-orm/sql';
 
@@ -2016,6 +2029,104 @@ const getCursorToken = (
 	return { [field]: row[field] };
 };
 
+const CURSOR_OPPOSITE_FLAG = '__betterDrizzleCursorOpposite';
+
+export const buildFastCursorQuery = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	args: CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
+	queryArgs: QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
+) => {
+	const runtime = getTableRuntime(context, tableName as string);
+	const field = runtime.primaryKeyFields[0];
+	const cursor = (args.after ?? args.before) as
+		| Record<string, unknown>
+		| undefined;
+	if (
+		runtime.primaryKeyFields.length !== 1 ||
+		!field ||
+		!cursor ||
+		typeof cursor !== 'object' ||
+		Array.isArray(cursor) ||
+		Object.keys(cursor).length !== 1 ||
+		!(field in cursor) ||
+		args.skip !== undefined ||
+		args.lock ||
+		args.include ||
+		runtime.columns[CURSOR_OPPOSITE_FLAG] ||
+		hasRelationSelection(
+			runtime,
+			args.select as Record<string, unknown> | undefined,
+		)
+	)
+		return;
+
+	const entries = Array.isArray(args.orderBy)
+		? args.orderBy
+		: args.orderBy
+			? [args.orderBy]
+			: undefined;
+	if (
+		entries &&
+		(entries.length !== 1 || Object.keys(entries[0]).length !== 1)
+	)
+		return;
+	if (entries && !(field in entries[0])) return;
+	const direction = entries
+		? (entries[0] as Record<string, 'asc' | 'desc'>)[field]
+		: args.before
+			? 'asc'
+			: 'desc';
+	if (direction !== 'asc' && direction !== 'desc') return;
+
+	const where = args.where
+		? compileFastWhere(runtime, args.where)
+		: undefined;
+	if (args.where && !where) return;
+
+	const column = runtime.columns[field];
+	const value = cursor[field];
+	const opposite =
+		(args.after && direction === 'asc') ||
+		(args.before && direction === 'desc')
+			? lte(column, value)
+			: gte(column, value);
+	const flag =
+		sql`exists (select 1 from ${runtime.table} where ${and(where, opposite)})`.mapWith(
+			Boolean,
+		);
+	if (!args.where && !args.select) {
+		const predicate =
+			(args.after && direction === 'asc') ||
+			(args.before && direction === 'desc')
+				? gt(column, value)
+				: lt(column, value);
+		return context.db
+			.select({ ...runtime.columns, [CURSOR_OPPOSITE_FLAG]: flag })
+			.from(runtime.table)
+			.where(predicate)
+			.orderBy(
+				(args.after && direction === 'asc') ||
+					(args.before && direction === 'desc')
+					? asc(column)
+					: desc(column),
+			)
+			.limit(queryArgs.take ?? 10);
+	}
+	const state = buildReadState(context, tableName, queryArgs);
+	let query = context.db
+		.select({
+			...(state.select ?? runtime.columns),
+			[CURSOR_OPPOSITE_FLAG]: flag,
+		})
+		.from(runtime.table);
+	if (state.where) query = query.where(state.where);
+	if (state.orderBy?.length) query = query.orderBy(...state.orderBy);
+	if (state.limit !== undefined) query = query.limit(state.limit);
+
+	return query;
+};
+
 const hasCursorPage = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
@@ -2038,10 +2149,30 @@ const hasCursorPage = async <Schema extends AnySchema, Meta>(
 	const rows = await findManyRecords(
 		context,
 		tableName,
-		result.query as QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
+		projectCursorProbe(
+			context,
+			tableName,
+			result.query as QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
+		),
 		'cursor',
 	);
 	return rows.length > 0;
+};
+
+const projectCursorProbe = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	query: QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
+) => {
+	const runtime = getTableRuntime(context, tableName as string);
+	const field =
+		runtime.primaryKeyFields[0] ?? Object.keys(runtime.columns)[0];
+	if (!field) return query;
+	return {
+		...query,
+		include: undefined,
+		select: { [field]: true },
+	} as QueryArgs<Schema, BetterTableKey<Schema>, Meta>;
 };
 
 export const getCursorExplainProbes = async <Schema extends AnySchema, Meta>(
@@ -2053,8 +2184,10 @@ export const getCursorExplainProbes = async <Schema extends AnySchema, Meta>(
 	},
 	dataQuery: Promise<unknown[]>,
 	limit: number,
+	fast: boolean,
 ) => {
 	const rows = (await dataQuery) as Record<string, unknown>[];
+	if (fast && rows.length) return [];
 	const hasOverflow = rows.length > limit;
 	const slice = hasOverflow ? rows.slice(0, limit) : rows;
 	const data = built.direction === 'before' ? [...slice].reverse() : slice;
@@ -2089,7 +2222,7 @@ export const getCursorExplainProbes = async <Schema extends AnySchema, Meta>(
 		query: Promise<Record<string, unknown>[]>;
 	}> = [];
 
-	if (built.direction !== 'before' && args.after && previousToken) {
+	if (built.direction !== 'before' && args.after) {
 		const query = buildCursorPaginationQuery(
 			{
 				...args,
@@ -2104,13 +2237,13 @@ export const getCursorExplainProbes = async <Schema extends AnySchema, Meta>(
 			query: buildFindManyQuery(
 				context,
 				tableName,
-				query,
+				projectCursorProbe(context, tableName, query),
 				'cursor',
 			) as Promise<Record<string, unknown>[]>,
 		});
 	}
 
-	if (built.direction === 'before' && args.before && nextToken) {
+	if (built.direction === 'before' && args.before) {
 		const query = buildCursorPaginationQuery(
 			{
 				...args,
@@ -2125,7 +2258,7 @@ export const getCursorExplainProbes = async <Schema extends AnySchema, Meta>(
 			query: buildFindManyQuery(
 				context,
 				tableName,
-				query,
+				projectCursorProbe(context, tableName, query),
 				'cursor',
 			) as Promise<Record<string, unknown>[]>,
 		});
@@ -2156,12 +2289,22 @@ export const cursorRecords = async <Schema extends AnySchema, Meta>(
 			table: runtime.dbName,
 		});
 
-	const rows = await findManyRecords(
-		context,
-		tableName,
-		built.query as QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
-		'cursor',
-	);
+	const queryArgs = built.query as QueryArgs<
+		Schema,
+		BetterTableKey<Schema>,
+		Meta
+	>;
+	const fastQuery = buildFastCursorQuery(context, tableName, args, queryArgs);
+	const rows = (await (fastQuery ??
+		findManyRecords(context, tableName, queryArgs, 'cursor'))) as Record<
+		string,
+		unknown
+	>[];
+	const hasOpposite =
+		fastQuery && rows.length
+			? Boolean(rows[0][CURSOR_OPPOSITE_FLAG])
+			: undefined;
+	if (fastQuery) for (const row of rows) delete row[CURSOR_OPPOSITE_FLAG];
 	const hasOverflow = rows.length > limit;
 	const slice = hasOverflow ? rows.slice(0, limit) : rows;
 	const data = built.direction === 'before' ? [...slice].reverse() : slice;
@@ -2194,22 +2337,24 @@ export const cursorRecords = async <Schema extends AnySchema, Meta>(
 		built.direction === 'before'
 			? hasOverflow
 			: args.after
-				? await hasCursorPage(context, tableName, {
+				? (hasOpposite ??
+					(await hasCursorPage(context, tableName, {
 						...args,
 						after: undefined,
 						before: previousToken,
 						limit: 1,
-					})
+					})))
 				: false;
 	const hasNext =
 		built.direction === 'before'
 			? args.before
-				? await hasCursorPage(context, tableName, {
+				? (hasOpposite ??
+					(await hasCursorPage(context, tableName, {
 						...args,
 						before: undefined,
 						after: nextToken,
 						limit: 1,
-					})
+					})))
 				: false
 			: hasOverflow;
 

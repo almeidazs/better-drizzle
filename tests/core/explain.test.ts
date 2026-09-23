@@ -193,7 +193,7 @@ describe('explain', () => {
 		ctx.close();
 	});
 
-	test('cursor explain includes runtime probe statements when needed', async () => {
+	test('cursor explain shows the inline check and empty-page probe', async () => {
 		const ctx = createTestContext();
 
 		const result = await ctx.better.users
@@ -205,6 +205,14 @@ describe('explain', () => {
 			.explain();
 
 		expect(result.statements.map((statement) => statement.key)).toEqual([
+			'data',
+		]);
+		expect(result.statements[0]?.sql).toContain('exists');
+
+		const empty = await ctx.better.users
+			.cursor({ after: { id: 999 }, limit: 2, orderBy: { id: 'asc' } })
+			.explain();
+		expect(empty.statements.map((statement) => statement.key)).toEqual([
 			'data',
 			'probe:hasPrevious',
 		]);

@@ -148,6 +148,89 @@ describe('paginate - offset', () => {
 });
 
 describe('cursor - cursor pagination', () => {
+	test('uses one statement for populated primary-key pages', async () => {
+		const statements: string[] = [];
+		const prepare = ctx.sqlite.prepare.bind(ctx.sqlite);
+		ctx.sqlite.prepare = ((query: string) => {
+			statements.push(query);
+			return prepare(query);
+		}) as typeof ctx.sqlite.prepare;
+
+		const forward = await ctx.better.users.cursor({
+			after: { id: 2 },
+			limit: 2,
+			orderBy: { id: 'asc' },
+		});
+		expect(forward.pagination.hasPrevious).toBe(true);
+		expect(Object.keys(forward.data[0] ?? {})).toEqual([
+			'id',
+			'email',
+			'name',
+			'age',
+			'active',
+		]);
+		expect(statements).toHaveLength(1);
+		expect(statements[0]).toContain('exists');
+
+		statements.length = 0;
+		const backward = await ctx.better.users.cursor({
+			before: { id: 4 },
+			limit: 2,
+			orderBy: { id: 'asc' },
+		});
+		expect(backward.pagination.hasNext).toBe(true);
+		expect(statements).toHaveLength(1);
+	});
+
+	test('keeps exact flags with filters, descending order, and empty pages', async () => {
+		const filtered = await ctx.better.users.cursor({
+			after: { id: 1 },
+			limit: 2,
+			orderBy: { id: 'asc' },
+			where: { active: false },
+		});
+		expect(filtered.data.map((row) => row.id)).toEqual([3, 5]);
+		expect(filtered.pagination.hasPrevious).toBe(false);
+
+		const descending = await ctx.better.users.cursor({
+			after: { id: 4 },
+			limit: 2,
+			orderBy: { id: 'desc' },
+		});
+		expect(descending.data.map((row) => row.id)).toEqual([3, 2]);
+		expect(descending.pagination.hasPrevious).toBe(true);
+
+		const statements: string[] = [];
+		const prepare = ctx.sqlite.prepare.bind(ctx.sqlite);
+		ctx.sqlite.prepare = ((query: string) => {
+			statements.push(query);
+			return prepare(query);
+		}) as typeof ctx.sqlite.prepare;
+		const empty = await ctx.better.users.cursor({
+			after: { id: 999 },
+			limit: 2,
+			orderBy: { id: 'asc' },
+		});
+		expect(empty.data).toEqual([]);
+		expect(empty.pagination.hasPrevious).toBe(true);
+		expect(empty.pagination.previousCursor).toBeNull();
+		expect(statements).toHaveLength(2);
+		expect(statements[1]?.startsWith('select "id" from')).toBe(true);
+	});
+
+	test('keeps navigation checks with relation filters and includes', async () => {
+		const page = await ctx.better.users.cursor({
+			after: { id: 1 },
+			include: { posts: true },
+			limit: 2,
+			orderBy: { id: 'asc' },
+			where: { posts: { some: { published: true } } },
+		});
+		expect(page.data.map((row) => row.id)).toEqual([2, 4]);
+		expect(page.data[0]?.posts.length).toBeGreaterThan(0);
+		expect(page.pagination.hasPrevious).toBe(true);
+	});
+
 	test('cursor forward pagination returns navigation tokens', async () => {
 		const first = await ctx.better.users.cursor({
 			limit: 2,

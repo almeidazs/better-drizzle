@@ -21,6 +21,7 @@ import {
 	buildOffsetPaginationQuery,
 } from '../query';
 import {
+	buildFastCursorQuery,
 	buildExistsQuery,
 	buildFindFirstQuery,
 	buildFindManyQuery,
@@ -434,12 +435,25 @@ const buildQueryList = async <
 					operation: 'cursor',
 				});
 
-			const dataQuery = buildFindManyQuery(
+			const fastQuery = buildFastCursorQuery(
 				context,
 				tableName,
+				cursorArgs,
 				built.query as QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
-				'cursor',
 			);
+
+			const dataQuery =
+				fastQuery ??
+				buildFindManyQuery(
+					context,
+					tableName,
+					built.query as QueryArgs<
+						Schema,
+						BetterTableKey<Schema>,
+						Meta
+					>,
+					'cursor',
+				);
 			const statements = [
 				{
 					key: 'data',
@@ -453,6 +467,7 @@ const buildQueryList = async <
 				built,
 				dataQuery,
 				limit,
+				Boolean(fastQuery),
 			);
 
 			for (const probe of probes)
