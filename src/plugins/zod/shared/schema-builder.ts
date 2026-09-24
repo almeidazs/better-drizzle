@@ -414,6 +414,14 @@ const createArrayMutationSchema = (valueSchema: z.ZodTypeAny) => {
 
 const createArrayFilterSchema = (valueSchema: z.ZodTypeAny) => {
 	const elementSchema = getArrayElementSchema(valueSchema);
+	const elementFilter = createScalarWhereSchema(elementSchema).refine(
+		(value) =>
+			typeof value === 'object' &&
+			value !== null &&
+			!Array.isArray(value) &&
+			Object.keys(value).some((key) => key !== 'mode'),
+		'Array element predicates must be non-empty filter objects.',
+	);
 	const filter: z.ZodTypeAny = z.lazy(() =>
 		z.object({
 			containedBy: z.array(elementSchema).optional(),
@@ -425,6 +433,9 @@ const createArrayFilterSchema = (valueSchema: z.ZodTypeAny) => {
 			isEmpty: z.boolean().optional(),
 			length: createComparableFilterSchema(z.number()).optional(),
 			not: z.union([valueSchema, filter]).optional(),
+			none: elementFilter.optional(),
+			some: elementFilter.optional(),
+			every: elementFilter.optional(),
 		}),
 	);
 

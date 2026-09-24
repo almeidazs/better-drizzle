@@ -133,6 +133,16 @@ describe('better-drizzle/zod - PostgreSQL array update schemas', () => {
 				update: () => ({ tags: { addUnique: 'b' } }),
 			}).success,
 		).toBe(true);
+		const where = registry.get('users')?.schemas.where;
+		expect(
+			where?.safeParse({ tags: { some: { contains: 'a' } } }).success,
+		).toBe(true);
+		expect(where?.safeParse({ tags: { every: {} } }).success).toBe(false);
+		expect(
+			where?.safeParse({ tags: { some: { mode: 'insensitive' } } })
+				.success,
+		).toBe(false);
+		expect(where?.safeParse({ tags: { none: 'a' } }).success).toBe(false);
 	});
 });
 
