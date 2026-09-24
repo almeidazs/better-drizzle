@@ -304,7 +304,7 @@
   - core plugin typing now supports table-specific model extensions through an optional model-extension resolver generic on `definePlugin(...)`; use this when an extension type depends on the current table
 - **Multi-agent surfaces**:
   - `AGENTS.md` remains the repo-wide source of truth for agent context
-  - `CLAUDE.md` and `GEMINI.md` should stay as short adapters that point agents to `AGENTS.md` and the canonical skill pack
+  - `CLAUDE.md` and `GEMINI.md` were removed in `71e1758`; do not reintroduce them or reference them in docs
 - **Security posture**:
   - the skill pack is intentionally `zero-scripts / zero-network`
   - do not add `scripts/`, binaries, remote fetch instructions, install commands, or secret-reading guidance to `skills/better-drizzle/`
