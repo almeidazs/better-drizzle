@@ -6,7 +6,7 @@
 @source "../app/**/*.{ts,tsx}";
 
 /*
- * Brand palette. A single, refined green accent — a nod to Drizzle's green,
+ * Brand palette. A single, refined green accent - a nod to Drizzle's green,
  * pushed toward emerald so "better-drizzle" reads as its own thing. The value
  * is a plain CSS variable so it can flip per color scheme; `@theme inline`
  * exposes it to Tailwind utilities (`text-brand`, `bg-brand`, `border-brand`).
@@ -78,7 +78,7 @@ body {
 	background: transparent;
 }
 
-/* Subtle dotted grid used behind the hero — decorative, low-contrast. */
+/* Subtle dotted grid used behind the hero - decorative, low-contrast. */
 .bd-grid {
 	background-image: radial-gradient(
 		var(--color-fd-border) 1px,
@@ -165,6 +165,20 @@ body {
 
 #nd-docs-layout {
 	--fd-header-height: 3.5rem;
+}
+
+/* Set by the docs header while it is scrolled away (see site-header.tsx). */
+#nd-docs-layout[data-header-hidden] {
+	--fd-docs-row-2: var(--fd-docs-row-1) !important;
+}
+
+[data-toc-popover] {
+	transition: top 200ms;
+}
+
+/* Leave room below the theme switch, which sits at the top of the TOC column on xl. */
+#nd-toc {
+	padding-top: calc(var(--fd-header-height) + 1.5rem);
 }
 
 #nd-page,

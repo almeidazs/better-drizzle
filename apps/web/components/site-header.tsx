@@ -103,31 +103,17 @@ function useGithubStars() {
 	return stars;
 }
 
-function HeaderShell({
-	children,
-	right,
-	className,
-}: {
-	children?: React.ReactNode;
-	right?: React.ReactNode;
-	className?: string;
-}) {
+function HeaderShell({ right }: { right?: React.ReactNode }) {
 	const stars = useGithubStars();
 
 	return (
-		<header
-			className={cn(
-				'border-fd-border/70 bg-fd-background/80 sticky top-0 z-40 min-w-0 border-b backdrop-blur-lg',
-				className,
-			)}
-		>
+		<header className="border-fd-border/70 bg-fd-background/80 sticky top-0 z-40 min-w-0 border-b backdrop-blur-lg">
 			<div className="mx-auto flex h-14 max-w-6xl min-w-0 items-center gap-3 px-4 sm:px-6">
 				<Link href="/" className="shrink-0">
 					<Logo className="w-28 sm:w-32" />
 				</Link>
 				<NavLinks />
 				<div className="ml-auto flex min-w-0 items-center gap-2">
-					{children}
 					<div className="hidden sm:block">
 						<GithubStarsButton stars={stars} />
 					</div>
@@ -163,22 +149,58 @@ export function HomeSiteHeader() {
 	);
 }
 
+function useHideOnScrollDown() {
+	const [hidden, setHidden] = useState(false);
+
+	useEffect(() => {
+		let lastY = window.scrollY;
+
+		const onScroll = () => {
+			const y = window.scrollY;
+			if (Math.abs(y - lastY) < 4) return;
+			setHidden(y > lastY && y > 56);
+			lastY = y;
+		};
+
+		window.addEventListener('scroll', onScroll, { passive: true });
+		return () => window.removeEventListener('scroll', onScroll);
+	}, []);
+
+	return hidden;
+}
+
 export function DocsSiteHeader() {
 	const { slots } = useDocsLayout();
+	const hidden = useHideOnScrollDown();
+
+	// The mobile TOC popover sticks below the header; let it follow the header up.
+	useEffect(() => {
+		document
+			.getElementById('nd-docs-layout')
+			?.toggleAttribute('data-header-hidden', hidden);
+	}, [hidden]);
 
 	return (
-		<HeaderShell
-			className="[grid-area:header]"
-			right={
-				<>
-					<div className="hidden lg:block">
-						{slots.searchTrigger && (
-							<slots.searchTrigger.full
-								hideIfDisabled
-								className="w-full max-w-[220px] rounded-full ps-2.5"
-							/>
-						)}
-					</div>
+		<header
+			className={cn(
+				'border-fd-border/70 bg-fd-background/80 sticky top-0 z-40 min-w-0 border-b backdrop-blur-lg transition-transform duration-200 [grid-area:header]',
+				hidden && '-translate-y-full',
+			)}
+		>
+			<div className="flex h-14 min-w-0 items-center gap-3 px-4 sm:px-6">
+				<Link href="/" className="shrink-0 md:hidden">
+					<Logo className="w-28" />
+				</Link>
+				<div className="hidden min-w-0 flex-1 justify-center md:flex">
+					{slots.searchTrigger && (
+						<slots.searchTrigger.full
+							hideIfDisabled
+							className="w-full max-w-xl rounded-full ps-3"
+						/>
+					)}
+				</div>
+				{/* On xl the header only spans the content column; the switch sits in the TOC column, aligned with "On this page". */}
+				<div className="ml-auto flex items-center gap-2 md:ml-0 xl:absolute xl:top-1/2 xl:left-full xl:-translate-y-1/2">
 					{slots.themeSwitch && <slots.themeSwitch />}
 					<div className="flex items-center md:hidden">
 						{slots.searchTrigger && (
@@ -191,8 +213,8 @@ export function DocsSiteHeader() {
 							<SidebarIcon className="size-5" />
 						</slots.sidebar.trigger>
 					</div>
-				</>
-			}
-		/>
+				</div>
+			</div>
+		</header>
 	);
 }
