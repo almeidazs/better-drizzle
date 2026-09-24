@@ -355,4 +355,6 @@
   - reducing wrapper overhead
   - making benchmarks fairer
   - improving README quality and positioning
+- **Drizzle ORM v1 RC compatibility (checked against `1.0.0-rc.4`)**: this is a separate compatibility target, not a peer-range-only change. The RC removes the legacy relational metadata APIs used by the runtime (`createTableRelationsHelpers`, `extractTablesRelationalConfig`, and `normalizeRelation`) and replaces `TableRelationalConfig.tsName` plus legacy `One`/`Many` shapes with RQB v2 metadata. The current package fails at module load under the RC. A dedicated implementation/build and RC CI matrix are required; do not widen the stable peer range until that implementation passes type, runtime, integration, and benchmark parity checks.
+- **PostgreSQL array filters**: native `PgArray` columns use a dedicated typed `ArrayFilter`, not the generic scalar filter, so JSON columns typed as arrays do not gain array operators. The compiler uses PostgreSQL `@>`, `&&`, `<@`, and `cardinality()` with parameter binding; array filter objects must fail fast outside PostgreSQL. `length` always means total cardinality across dimensions.
 - If future tasks discover important architectural or benchmarking constraints, add them here instead of leaving them buried in commit history.
