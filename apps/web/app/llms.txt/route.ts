@@ -16,9 +16,9 @@ const BASE = 'https://better-drizzle.com';
 export function GET() {
 	const body = `# better-drizzle
 
-> Minimal, type-safe repository helpers for Drizzle ORM. Keep the type-safety, drop the repetitive query glue. better-drizzle wraps an existing Drizzle client and gives every table a small, consistent API for reads, writes, pagination, nested filters, relation loading, hooks, and plugins — without hiding Drizzle or rebuilding a full ORM.
+> Minimal, type-safe repository helpers for Drizzle ORM. Keep the type-safety, drop the repetitive query glue. better-drizzle wraps an existing Drizzle client and gives every table a small, consistent API for reads, writes, pagination, nested filters, relation loading, hooks, and plugins - without hiding Drizzle or rebuilding a full ORM.
 
-better-drizzle is a thin repository-style wrapper on top of Drizzle ORM. It does not replace raw Drizzle — you still define your schema, choose your driver, and reach for raw SQL whenever you want. It simply removes the query glue you would otherwise rewrite in every service.
+better-drizzle is a thin repository-style wrapper on top of Drizzle ORM. It does not replace raw Drizzle - you still define your schema, choose your driver, and reach for raw SQL whenever you want. It simply removes the query glue you would otherwise rewrite in every service.
 
 Key characteristics:
 - Not a new ORM. Does not hide Drizzle or rebuild a query engine.
@@ -38,48 +38,48 @@ Key characteristics:
 
 ## Documentation
 
-- [Introduction](${BASE}/docs): Overview of better-drizzle — what it is, what it does, and how it fits alongside Drizzle ORM.
+- [Introduction](${BASE}/docs): Overview of better-drizzle - what it is, what it does, and how it fits alongside Drizzle ORM.
 - [Getting Started](${BASE}/docs/getting-started): Install, configure, and run your first better-drizzle client in minutes.
-- [Comparison with Raw Drizzle](${BASE}/docs/comparison): Side-by-side comparison showing the query glue better-drizzle removes and the overhead it adds.
+- [Why better-drizzle?](${BASE}/docs/why): What better-drizzle adds over raw Drizzle, what stays the same, and when raw Drizzle is still the right tool.
 
 ## Querying
 
-- [Reads](${BASE}/docs/querying/reads): findMany, findFirst, findOne, findUnique, count, and exists — the full read surface.
+- [Reads](${BASE}/docs/querying/reads): findMany, findFirst, findOne, findUnique, count, and exists - the full read surface.
 - [Filters](${BASE}/docs/querying/filters): Typed where clauses with AND/OR/NOT, scalar operators, and nested relation filters.
 - [Selecting Fields](${BASE}/docs/querying/selecting-fields): Pick specific columns or load nested relations with select and include.
-- [Relations](${BASE}/docs/querying/relations): Loading related records — one-to-one, one-to-many, and many-to-many patterns.
+- [Relations](${BASE}/docs/querying/relations): Loading related records - one-to-one, one-to-many, and many-to-many patterns.
 - [Pagination](${BASE}/docs/querying/pagination): \`paginate()\` for offset pages and \`cursor()\` for cursor navigation, both with typed metadata.
 - [JSONB Filters](${BASE}/docs/querying/jsonb): Typed PostgreSQL JSONB path filters derived from \`jsonb().$type<T>()\` columns.
 - [Explain](${BASE}/docs/querying/explain): Lazy \`.explain()\` on read helpers for cross-dialect query plans, including deferred relation stages.
 
 ## Writing
 
-- [Create, Update & Delete](${BASE}/docs/writing/crud): The full write surface — create, createMany, update, updateMany, updateEach, delete, deleteMany, upsert, and upsertMany.
+- [Create, Update & Delete](${BASE}/docs/writing/crud): The full write surface - create, createMany, update, updateMany, updateEach, delete, deleteMany, upsert, and upsertMany.
 - [Relation Writes](${BASE}/docs/writing/relation-writes): Attach, detach, and replace related rows from a single write with connect, disconnect, and set.
 - [Throwing Results](${BASE}/docs/writing/throwing-results): Use .throw() on nullable results to convert null into a typed error instead of manual null checks.
 
 ## Advanced
 
 - [Transactions](${BASE}/docs/advanced/transactions): Transaction API with savepoints, retries, timeouts, AbortSignal support, and lifecycle hooks.
-- [Hooks](${BASE}/docs/advanced/hooks): beforeCreate, afterQuery, onError, and more — cross-cutting concerns without polluting business logic.
+- [Hooks](${BASE}/docs/advanced/hooks): beforeCreate, afterQuery, onError, and more - cross-cutting concerns without polluting business logic.
 - [Error Handling](${BASE}/docs/advanced/error-handling): BetterDrizzleError, structured error codes, database error detection, and constraint violation helpers.
 - [Row Locks](${BASE}/docs/advanced/locks): \`lock\`, \`skipLocked\`, and \`noWait\` on PostgreSQL and MySQL, with transaction-only enforcement.
-- [Raw SQL](${BASE}/docs/advanced/raw-sql): $raw, $executeRaw, and $rawUnsafe — safe raw SQL with comment metadata, timeouts, and dialect guards.
+- [Raw SQL](${BASE}/docs/advanced/raw-sql): $raw, $executeRaw, and $rawUnsafe - safe raw SQL with comment metadata, timeouts, and dialect guards.
 
 ## Plugins
 
-- [Plugin Overview](${BASE}/docs/plugins/overview): How the plugin system works — setup, hooks, transforms, extensions, and operation args.
-- [ESLint](${BASE}/docs/plugins/eslint): Official ESLint plugin — the statically-checkable subset of the runtime guardrails, for IDE and CI.
-- [Rules](${BASE}/docs/plugins/rules): Official rules plugin — runtime guardrails for raw SQL, destructive writes, pagination, locks, and request context.
-- [Soft Delete](${BASE}/docs/plugins/soft-delete): Official soft delete plugin — marks rows as deleted instead of removing them.
-- [Timestamps](${BASE}/docs/plugins/timestamps): Official timestamps plugin — auto-manages createdAt and updatedAt columns.
-- [Zod](${BASE}/docs/plugins/zod): Official Zod plugin — per-table generated schemas on \`db.<table>.$zod\` plus hook-driven runtime validation.
-- [Writing Plugins](${BASE}/docs/plugins/writing-plugins): Build your own plugin — extend clients, models, hooks, transforms, and operation args.
+- [Plugin Overview](${BASE}/docs/plugins/overview): How the plugin system works - setup, hooks, transforms, extensions, and operation args.
+- [ESLint](${BASE}/docs/plugins/eslint): Official ESLint plugin - the statically-checkable subset of the runtime guardrails, for IDE and CI.
+- [Rules](${BASE}/docs/plugins/rules): Official rules plugin - runtime guardrails for raw SQL, destructive writes, pagination, locks, and request context.
+- [Soft Delete](${BASE}/docs/plugins/soft-delete): Official soft delete plugin - marks rows as deleted instead of removing them.
+- [Timestamps](${BASE}/docs/plugins/timestamps): Official timestamps plugin - auto-manages createdAt and updatedAt columns.
+- [Zod](${BASE}/docs/plugins/zod): Official Zod plugin - per-table generated schemas on \`db.<table>.$zod\` plus hook-driven runtime validation.
+- [Writing Plugins](${BASE}/docs/plugins/writing-plugins): Build your own plugin - extend clients, models, hooks, transforms, and operation args.
 
 ## Guides
 
 - [Frameworks](${BASE}/docs/guides/frameworks): Integration patterns for Bun, Express, Fastify, Next.js, and other runtimes.
-- [Service Patterns](${BASE}/docs/guides/service-patterns): Structuring application code with better-drizzle — repositories, services, and dependency injection.
+- [Service Patterns](${BASE}/docs/guides/service-patterns): Structuring application code with better-drizzle - repositories, services, and dependency injection.
 - [Multi-Tenancy & Request Context](${BASE}/docs/guides/multi-tenancy): Thread tenant and request metadata through hooks, plugins, and transactions with meta and $withContext.
 - [Client Extensions](${BASE}/docs/guides/client-extensions): Attach app-specific helpers to the client with \`extends()\`, preserved across \`$withContext()\` clones and transactions.
 - [Dynamic Repositories](${BASE}/docs/guides/dynamic-repositories): Resolve delegates at runtime by schema key or database table name.
@@ -90,20 +90,20 @@ Key characteristics:
 ## Performance
 
 - [Benchmarks](${BASE}/docs/performance/benchmarks): Latency, throughput, and memory overhead comparisons against raw Drizzle.
-- [API Parity](${BASE}/docs/performance/parity): Fair comparison methodology — better-drizzle and raw Drizzle doing the same effective work.
+- [API Parity](${BASE}/docs/performance/parity): Fair comparison methodology - better-drizzle and raw Drizzle doing the same effective work.
 
 ## Reference
 
 - [Client API](${BASE}/docs/reference/client): better() options, client-level methods, and exports.
-- [Model API](${BASE}/docs/reference/model-api): Per-table delegate methods — CRUD, queries, pagination, and batch operations.
-- [Query Options](${BASE}/docs/reference/query-options): where, select, include, orderBy, take, skip, and cursor — fully typed.
+- [Model API](${BASE}/docs/reference/model-api): Per-table delegate methods - CRUD, queries, pagination, and batch operations.
+- [Query Options](${BASE}/docs/reference/query-options): where, select, include, orderBy, take, skip, and cursor - fully typed.
 - [Error Reference](${BASE}/docs/reference/errors): BetterDrizzleError codes, status mapping, and database error detection helpers.
 - [Support Matrix](${BASE}/docs/reference/support-matrix): Driver and dialect support for every feature.
 - [Stability](${BASE}/docs/reference/stability): API stability guarantees and versioning policy.
 
 ## AI & Agents
 
-- [Agent Skills](${BASE}/docs/ai): First-party agent skill pack — installation, supported agent surfaces, and the zero-scripts/zero-network security model.
+- [Agent Skills](${BASE}/docs/ai): First-party agent skill pack - installation, supported agent surfaces, and the zero-scripts/zero-network security model.
 
 ## Optional
 

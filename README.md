@@ -50,7 +50,7 @@ const users = await client.users.findMany({
 });
 ```
 
-A nested relation filter, three posts **per user**, and a relation count — typed end to end from your Drizzle schema. One query per relation node, never one per row.
+A nested relation filter, three posts **per user**, and a relation count - typed end to end from your Drizzle schema. One query per relation node, never one per row.
 
 No codegen. No client process. No new schema language. It is still your Drizzle client underneath, and you can drop back to it at any line.
 
@@ -108,7 +108,7 @@ const page = await client.users.paginate({
 
 ## Not-found, handled honestly
 
-Operations that can legitimately match nothing say so in the type — and let you opt into throwing when it is genuinely exceptional.
+Operations that can legitimately match nothing say so in the type - and let you opt into throwing when it is genuinely exceptional.
 
 ```ts
 const user = await client.users.findUnique({ where: { id } });
@@ -184,7 +184,7 @@ Pair `better-drizzle/eslint` with the runtime rules to catch the statically-chec
 
 ## Performance
 
-Measured against raw Drizzle doing the same work and returning the same shape — not against a lower-level query that does less.
+Measured against raw Drizzle doing the same work and returning the same shape - not against a lower-level query that does less.
 
 - **9.1× faster relation loading** (10.24 ms → 1.12 ms), and the gap widens with the number of parent rows
 - every other read within **~9%**, writes within **~5%**
@@ -200,11 +200,11 @@ Full tables, methodology, and the cases where the wrapper costs you: [benchmarks
 
 ## AI agents
 
-better-drizzle ships a first-party [skill pack](https://github.com/almeidazs/better-drizzle/tree/main/skills/better-drizzle) — `SKILL.md` plus task references — for coding agents that need accurate API guidance and review guardrails. Zero scripts, zero network. See the [AI docs](https://better-drizzle.com/docs/ai).
+better-drizzle ships a first-party [skill pack](https://github.com/almeidazs/better-drizzle/tree/main/skills/better-drizzle) - `SKILL.md` plus task references - for coding agents that need accurate API guidance and review guardrails. Zero scripts, zero network. See the [AI docs](https://better-drizzle.com/docs/ai).
 
 ## Docs
 
-[Getting started](https://better-drizzle.com/docs/getting-started) · [Querying](https://better-drizzle.com/docs/querying/reads) · [Writing](https://better-drizzle.com/docs/writing/crud) · [Plugins](https://better-drizzle.com/docs/plugins/overview) · [vs raw Drizzle](https://better-drizzle.com/docs/comparison) · [Limitations](https://better-drizzle.com/docs/guides/limitations)
+[Getting started](https://better-drizzle.com/docs/getting-started) · [Querying](https://better-drizzle.com/docs/querying/reads) · [Writing](https://better-drizzle.com/docs/writing/crud) · [Plugins](https://better-drizzle.com/docs/plugins/overview) · [Why better-drizzle?](https://better-drizzle.com/docs/why) · [Limitations](https://better-drizzle.com/docs/guides/limitations)
 
 ## Contributors
 
