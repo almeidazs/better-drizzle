@@ -119,7 +119,18 @@ const baseBooleanSchema = (behavior: ZodPluginBehavior | undefined) =>
 const baseColumnSchema = (
 	column: AnyColumn,
 	behavior: ZodPluginBehavior | undefined,
-) => {
+): z.ZodTypeAny => {
+	if (
+		(column as { columnType?: string }).columnType === 'PgArray' &&
+		'baseColumn' in column
+	)
+		return z.array(
+			baseColumnSchema(
+				(column as { baseColumn: AnyColumn }).baseColumn,
+				behavior,
+			),
+		);
+
 	const enumValues =
 		'enumValues' in column && Array.isArray(column.enumValues)
 			? column.enumValues
@@ -345,6 +356,31 @@ const createDefaultFilterSchema = (valueSchema: z.ZodTypeAny) => {
 	return z.union([valueSchema, filter]);
 };
 
+const createArrayFilterSchema = (valueSchema: z.ZodTypeAny) => {
+	let elementSchema = valueSchema;
+	if (elementSchema instanceof z.ZodOptional)
+		elementSchema = elementSchema.unwrap() as z.ZodTypeAny;
+	if (elementSchema instanceof z.ZodNullable)
+		elementSchema = elementSchema.unwrap() as z.ZodTypeAny;
+	while (elementSchema instanceof z.ZodArray)
+		elementSchema = elementSchema.element as z.ZodTypeAny;
+	const filter: z.ZodTypeAny = z.lazy(() =>
+		z.object({
+			containedBy: z.array(elementSchema).optional(),
+			equals: valueSchema.optional(),
+			has: elementSchema.optional(),
+			hasEvery: z.array(elementSchema).optional(),
+			hasNone: z.array(elementSchema).optional(),
+			hasSome: z.array(elementSchema).optional(),
+			isEmpty: z.boolean().optional(),
+			length: createComparableFilterSchema(z.number()).optional(),
+			not: z.union([valueSchema, filter]).optional(),
+		}),
+	);
+
+	return z.union([valueSchema, filter]);
+};
+
 const createScalarWhereSchema = (columnSchema: z.ZodTypeAny) => {
 	const directValue =
 		columnSchema instanceof z.ZodOptional
@@ -454,10 +490,18 @@ export const createWhereSchema = <Schema extends AnySchema>(
 
 	for (const [columnName, columnSchema] of Object.entries(
 		entry.schemas.select.shape,
-	))
-		shape[columnName] = createScalarWhereSchema(
-			columnSchema as z.ZodTypeAny,
-		).optional();
+	)) {
+		const column = entry.columns[columnName];
+		shape[columnName] =
+			(column as { columnType?: string } | undefined)?.columnType ===
+			'PgArray'
+				? createArrayFilterSchema(
+						columnSchema as z.ZodTypeAny,
+					).optional()
+				: createScalarWhereSchema(
+						columnSchema as z.ZodTypeAny,
+					).optional();
+	}
 
 	for (const [relationName, relation] of Object.entries(entry.relations)) {
 		const target = registry.get(relation.tableName);
