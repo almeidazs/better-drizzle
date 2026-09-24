@@ -1,14 +1,14 @@
-"use client";
+'use client';
 
-import { Check, Copy } from "lucide-react";
-import { useState } from "react";
+import { Check, Copy } from 'lucide-react';
+import { useState } from 'react';
 
-import { cn } from "@/lib/utils";
+import { cn } from '@/lib/utils';
 
 export function CopyButton({
 	value,
 	className,
-	label = "Copy",
+	label = 'Copy',
 }: {
 	value: string;
 	className?: string;
@@ -30,9 +30,9 @@ export function CopyButton({
 		<button
 			type="button"
 			onClick={copy}
-			aria-label={copied ? "Copied" : label}
+			aria-label={copied ? 'Copied' : label}
 			className={cn(
-				"text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-accent-foreground inline-flex size-8 items-center justify-center rounded-md transition-colors",
+				'text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-accent-foreground inline-flex size-8 items-center justify-center rounded-md transition-colors',
 				className,
 			)}
 		>

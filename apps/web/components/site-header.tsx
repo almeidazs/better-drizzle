@@ -1,21 +1,21 @@
-"use client";
+'use client';
 
-import { useDocsLayout } from "fumadocs-ui/layouts/docs";
-import { useHomeLayout } from "fumadocs-ui/layouts/home";
-import { SidebarIcon } from "lucide-react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
-import { FaGithub } from "react-icons/fa";
+import { useDocsLayout } from 'fumadocs-ui/layouts/docs';
+import { useHomeLayout } from 'fumadocs-ui/layouts/home';
+import { SidebarIcon } from 'lucide-react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { FaGithub } from 'react-icons/fa';
 
-import { Logo } from "@/components/logo";
-import { formatGithubStars } from "@/lib/github";
-import { cn } from "@/lib/utils";
+import { Logo } from '@/components/logo';
+import { formatGithubStars } from '@/lib/github';
+import { cn } from '@/lib/utils';
 
 const NAV_LINKS = [
-	{ href: "/docs", label: "Documentation" },
-	{ href: "/docs/plugins/overview", label: "Plugins" },
-	{ href: "/docs/performance/benchmarks", label: "Benchmarks" },
+	{ href: '/docs', label: 'Documentation' },
+	{ href: '/docs/plugins/overview', label: 'Plugins' },
+	{ href: '/docs/performance/benchmarks', label: 'Benchmarks' },
 ];
 
 function NavLinks() {
@@ -25,19 +25,20 @@ function NavLinks() {
 		<nav className="hidden items-center gap-1 md:flex">
 			{NAV_LINKS.map((link) => {
 				const active =
-					link.href === "/docs"
-						? pathname.startsWith("/docs")
-						: pathname === link.href || pathname.startsWith(`${link.href}/`);
+					link.href === '/docs'
+						? pathname.startsWith('/docs')
+						: pathname === link.href ||
+							pathname.startsWith(`${link.href}/`);
 
 				return (
 					<Link
 						key={link.href}
 						href={link.href}
 						className={cn(
-							"rounded-md px-3 py-2 text-sm font-medium transition-colors",
+							'rounded-md px-3 py-2 text-sm font-medium transition-colors',
 							active
-								? "text-fd-foreground"
-								: "text-fd-muted-foreground hover:text-fd-foreground",
+								? 'text-fd-foreground'
+								: 'text-fd-muted-foreground hover:text-fd-foreground',
 						)}
 					>
 						{link.label}
@@ -84,8 +85,8 @@ function useGithubStars() {
 	useEffect(() => {
 		let cancelled = false;
 
-		fetch("https://api.github.com/repos/almeidazs/better-drizzle", {
-			headers: { Accept: "application/vnd.github+json" },
+		fetch('https://api.github.com/repos/almeidazs/better-drizzle', {
+			headers: { Accept: 'application/vnd.github+json' },
 		})
 			.then((response) => (response.ok ? response.json() : null))
 			.then((data: { stargazers_count?: number } | null) => {
@@ -161,8 +162,8 @@ function useHideOnScrollDown() {
 			lastY = y;
 		};
 
-		window.addEventListener("scroll", onScroll, { passive: true });
-		return () => window.removeEventListener("scroll", onScroll);
+		window.addEventListener('scroll', onScroll, { passive: true });
+		return () => window.removeEventListener('scroll', onScroll);
 	}, []);
 
 	return hidden;
@@ -175,15 +176,15 @@ export function DocsSiteHeader() {
 	// The mobile TOC popover sticks below the header; let it follow the header up.
 	useEffect(() => {
 		document
-			.getElementById("nd-docs-layout")
-			?.toggleAttribute("data-header-hidden", hidden);
+			.getElementById('nd-docs-layout')
+			?.toggleAttribute('data-header-hidden', hidden);
 	}, [hidden]);
 
 	return (
 		<header
 			className={cn(
-				"border-fd-border/70 bg-fd-background/80 sticky top-0 z-40 min-w-0 border-b backdrop-blur-lg transition-transform duration-200 [grid-area:header]",
-				hidden && "-translate-y-full",
+				'border-fd-border/70 bg-fd-background/80 sticky top-0 z-40 min-w-0 border-b backdrop-blur-lg transition-transform duration-200 [grid-area:header]',
+				hidden && '-translate-y-full',
 			)}
 		>
 			<div className="flex h-14 min-w-0 items-center gap-3 px-4 sm:px-6">
@@ -203,7 +204,10 @@ export function DocsSiteHeader() {
 					{slots.themeSwitch && <slots.themeSwitch />}
 					<div className="flex items-center md:hidden">
 						{slots.searchTrigger && (
-							<slots.searchTrigger.sm hideIfDisabled className="p-2" />
+							<slots.searchTrigger.sm
+								hideIfDisabled
+								className="p-2"
+							/>
 						)}
 						<slots.sidebar.trigger className="text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-foreground inline-flex size-9 items-center justify-center rounded-md transition-colors">
 							<SidebarIcon className="size-5" />

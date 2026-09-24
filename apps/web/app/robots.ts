@@ -1,21 +1,21 @@
-import type { MetadataRoute } from "next";
+import type { MetadataRoute } from 'next';
 
 export default function robots(): MetadataRoute.Robots {
 	return {
 		rules: [
-			{ userAgent: "*", allow: "/" },
+			{ userAgent: '*', allow: '/' },
 			{
 				userAgent: [
-					"OAI-SearchBot",
-					"GPTBot",
-					"Claude-SearchBot",
-					"Claude-User",
-					"ClaudeBot",
+					'OAI-SearchBot',
+					'GPTBot',
+					'Claude-SearchBot',
+					'Claude-User',
+					'ClaudeBot',
 				],
-				allow: "/",
+				allow: '/',
 			},
 		],
-		sitemap: "https://better-drizzle.com/sitemap.xml",
-		host: "https://better-drizzle.com",
+		sitemap: 'https://better-drizzle.com/sitemap.xml',
+		host: 'https://better-drizzle.com',
 	};
 }

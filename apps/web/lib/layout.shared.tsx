@@ -1,6 +1,6 @@
-import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
+import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
 
-import { Wordmark } from "@/components/logo";
+import { Wordmark } from '@/components/logo';
 
 /**
  * Shared layout options for both the docs shell and the home/landing shell, so
@@ -10,21 +10,21 @@ export function baseOptions(): BaseLayoutProps {
 	return {
 		nav: {
 			title: <Wordmark />,
-			transparentMode: "none",
+			transparentMode: 'none',
 		},
 		links: [
 			{
-				text: "Documentation",
-				url: "/docs",
-				active: "nested-url",
+				text: 'Documentation',
+				url: '/docs',
+				active: 'nested-url',
 			},
 			{
-				text: "Plugins",
-				url: "/docs/plugins/overview",
+				text: 'Plugins',
+				url: '/docs/plugins/overview',
 			},
 			{
-				text: "Benchmarks",
-				url: "/docs/performance/benchmarks",
+				text: 'Benchmarks',
+				url: '/docs/performance/benchmarks',
 			},
 		],
 	};

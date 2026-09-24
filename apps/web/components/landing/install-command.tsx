@@ -1,20 +1,20 @@
-"use client";
+'use client';
 
-import { Check, Copy } from "lucide-react";
-import { useState } from "react";
+import { Check, Copy } from 'lucide-react';
+import { useState } from 'react';
 
-import { cn } from "@/lib/utils";
+import { cn } from '@/lib/utils';
 
 const MANAGERS = {
-	npm: "npm install better-drizzle drizzle-orm",
-	pnpm: "pnpm add better-drizzle drizzle-orm",
-	bun: "bun add better-drizzle drizzle-orm",
+	npm: 'npm install better-drizzle drizzle-orm',
+	pnpm: 'pnpm add better-drizzle drizzle-orm',
+	bun: 'bun add better-drizzle drizzle-orm',
 } as const;
 
 type Manager = keyof typeof MANAGERS;
 
 export function InstallCommand() {
-	const [manager, setManager] = useState<Manager>("npm");
+	const [manager, setManager] = useState<Manager>('npm');
 	const [copied, setCopied] = useState(false);
 	const command = MANAGERS[manager];
 
@@ -37,10 +37,10 @@ export function InstallCommand() {
 						type="button"
 						onClick={() => setManager(key)}
 						className={cn(
-							"rounded-md px-2 py-1 text-xs transition-colors",
+							'rounded-md px-2 py-1 text-xs transition-colors',
 							key === manager
-								? "bg-brand/10 text-brand"
-								: "text-fd-muted-foreground hover:text-fd-foreground",
+								? 'bg-brand/10 text-brand'
+								: 'text-fd-muted-foreground hover:text-fd-foreground',
 						)}
 					>
 						{key}
@@ -54,7 +54,7 @@ export function InstallCommand() {
 			<button
 				type="button"
 				onClick={copy}
-				aria-label={copied ? "Copied" : "Copy install command"}
+				aria-label={copied ? 'Copied' : 'Copy install command'}
 				className="text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-accent-foreground inline-flex size-7 shrink-0 items-center justify-center rounded-md transition-colors"
 			>
 				{copied ? (

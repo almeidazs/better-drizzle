@@ -1,4 +1,4 @@
-import { codeToHtml } from "shiki";
+import { codeToHtml } from 'shiki';
 
 /**
  * Server-side syntax highlighting for the marketing pages.
@@ -8,12 +8,12 @@ import { codeToHtml } from "shiki";
  * lives in `app/global.css` under `.shiki` (it swaps `--shiki-light` /
  * `--shiki-dark` based on the `.dark` class).
  */
-export function highlight(code: string, lang = "ts"): Promise<string> {
+export function highlight(code: string, lang = 'ts'): Promise<string> {
 	return codeToHtml(code.trim(), {
 		lang,
 		themes: {
-			light: "github-light",
-			dark: "github-dark",
+			light: 'github-light',
+			dark: 'github-dark',
 		},
 		defaultColor: false,
 	});
