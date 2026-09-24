@@ -8,11 +8,11 @@ import { better } from '../../src';
 
 const role = pgEnum('better_drizzle_array_role', ['admin', 'member']);
 const users = pgTable('better_drizzle_array_users', {
-	id: integer().primaryKey(),
-	ids: uuid().array().notNull(),
-	roles: role().array().notNull(),
-	scores: integer().array().notNull(),
-	tags: text().array(),
+	id: integer('id').primaryKey(),
+	ids: uuid('ids').array().notNull(),
+	roles: role('roles').array().notNull(),
+	scores: integer('scores').array().notNull(),
+	tags: text('tags').array(),
 });
 const schema = { users };
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -127,5 +127,133 @@ describe.skipIf(!DATABASE_URL)('PostgreSQL array filters', () => {
 		expect(
 			ids(await db.users.findMany({ where: { tags: { not: null } } })),
 		).toEqual([1, 2]);
+	});
+
+	test('mutates arrays atomically across every write path', async () => {
+		await db.users.update({
+			data: { scores: { append: [40] } },
+			where: { id: 1 },
+		});
+		await db.users.updateMany({
+			data: { scores: { prepend: 5 } } as never,
+			where: { id: 1 },
+		});
+		await db.users.updateEach({
+			by: users.id,
+			data: [
+				{ id: 1, from: 10, to: 11 },
+				{ id: 2, from: 20, to: 21 },
+			],
+			update: {
+				scores: (row) => ({ replace: { from: row.from, to: row.to } }),
+			},
+		});
+		await db.users.upsert({
+			create: {
+				id: 1,
+				ids: ['00000000-0000-0000-0000-000000000001'],
+				roles: ['admin'],
+				scores: [1],
+			},
+			update: { scores: { remove: [20, 40] } } as never,
+			where: { id: 1 },
+		});
+		await db.users.upsertMany({
+			data: [
+				{
+					id: 1,
+					ids: ['00000000-0000-0000-0000-000000000001'],
+					roles: ['admin'],
+					scores: [1],
+				},
+				{
+					id: 3,
+					ids: ['00000000-0000-0000-0000-000000000003'],
+					roles: ['admin'],
+					scores: [1],
+					tags: ['created-only'],
+				},
+			],
+			target: 'id',
+			update: {
+				scores: { addUnique: [11, 12, 13] },
+				tags: { addUnique: 'new-tag' },
+			},
+		});
+
+		expect(
+			(await db.users.findFirst({ where: { id: 1 } }))?.scores,
+		).toEqual([5, 11, 12, 13]);
+		expect(
+			(await db.users.findFirst({ where: { id: 2 } }))?.scores,
+		).toEqual([21, 30]);
+		expect(
+			(await db.users.findFirst({ where: { id: 3 } }))?.tags,
+		).toBeNull();
+
+		await db.users.update({
+			data: { tags: { addUnique: ['drizzle', 'drizzle', 'orm'] } },
+			where: { id: 2 },
+		});
+		expect((await db.users.findFirst({ where: { id: 2 } }))?.tags).toEqual([
+			'drizzle',
+			'orm',
+		]);
+
+		await db.users.update({
+			data: { scores: [1, 1, 2] },
+			where: { id: 2 },
+		});
+		await db.users.update({
+			data: { scores: { remove: 1 } },
+			where: { id: 2 },
+		});
+		expect(
+			(await db.users.findFirst({ where: { id: 2 } }))?.scores,
+		).toEqual([2]);
+
+		await db.users.update({
+			data: {
+				scores: {
+					replace: [
+						{ from: 2, to: 3 },
+						{ from: 3, to: 4 },
+					],
+				},
+			},
+			where: { id: 2 },
+		});
+		expect(
+			(await db.users.findFirst({ where: { id: 2 } }))?.scores,
+		).toEqual([4]);
+
+		await db.users.upsertMany({
+			data: [
+				{
+					id: 2,
+					ids: ['00000000-0000-0000-0000-000000000002'],
+					roles: ['member'],
+					scores: [1],
+				},
+			],
+			target: 'id',
+			update: () => ({ scores: { addUnique: [4, 5, 5] } }),
+		});
+		expect(
+			(await db.users.findFirst({ where: { id: 2 } }))?.scores,
+		).toEqual([4, 5]);
+	});
+
+	test('rejects malformed array mutation input', async () => {
+		await expect(
+			db.users.update({
+				data: { scores: { append: [], remove: 1 } } as never,
+				where: { id: 1 },
+			}),
+		).rejects.toMatchObject({
+			code: 'OPERATION_ERROR',
+			message:
+				'PostgreSQL array mutations must specify exactly one operation.',
+		});
 	});
 });

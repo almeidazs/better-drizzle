@@ -380,19 +380,22 @@ export const createZodSchemasRegistry = <Schema extends AnySchema>(
 		},
 		getUpsertManyArgsSchema(tableName) {
 			const entry = getEntry(tableName);
+			const column = z.enum(
+				Object.keys(entry.columns) as [string, ...string[]],
+			);
+			const columns = z.array(column).min(1);
 			return z.object({
 				batchSize: z.number().int().positive().optional(),
 				data: z.array(entry.schemas.create),
 				meta: z.unknown().optional(),
 				select: getSelectSchema(entry).optional(),
-				target: z
-					.array(
-						z.enum(
-							Object.keys(entry.columns) as [string, ...string[]],
-						),
-					)
-					.min(1),
-				update: entry.schemas.update,
+				target: z.union([column, columns]),
+				update: z.union([
+					entry.schemas.update,
+					z.literal('all'),
+					columns,
+					z.custom((value) => typeof value === 'function'),
+				]),
 				validate: z.boolean().optional(),
 				where: z.unknown().optional(),
 			});

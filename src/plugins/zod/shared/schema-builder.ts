@@ -271,7 +271,14 @@ export const buildRowShape = <
 		const overridden = applyFieldOverride(override, baseSchema);
 
 		if (overridden === false) continue;
-		shape[columnName] = applyColumnRules(overridden, column, mode);
+		shape[columnName] = applyColumnRules(
+			mode === 'update' &&
+				(column as { columnType?: string }).columnType === 'PgArray'
+				? z.union([overridden, createArrayMutationSchema(overridden)])
+				: overridden,
+			column,
+			mode,
+		);
 	}
 
 	return shape;
@@ -356,7 +363,7 @@ const createDefaultFilterSchema = (valueSchema: z.ZodTypeAny) => {
 	return z.union([valueSchema, filter]);
 };
 
-const createArrayFilterSchema = (valueSchema: z.ZodTypeAny) => {
+const getArrayElementSchema = (valueSchema: z.ZodTypeAny) => {
 	let elementSchema = valueSchema;
 	if (elementSchema instanceof z.ZodOptional)
 		elementSchema = elementSchema.unwrap() as z.ZodTypeAny;
@@ -364,6 +371,49 @@ const createArrayFilterSchema = (valueSchema: z.ZodTypeAny) => {
 		elementSchema = elementSchema.unwrap() as z.ZodTypeAny;
 	while (elementSchema instanceof z.ZodArray)
 		elementSchema = elementSchema.element as z.ZodTypeAny;
+
+	return elementSchema;
+};
+
+const createArrayMutationSchema = (valueSchema: z.ZodTypeAny) => {
+	let elementSchema = valueSchema;
+	if (elementSchema instanceof z.ZodOptional)
+		elementSchema = elementSchema.unwrap() as z.ZodTypeAny;
+	if (elementSchema instanceof z.ZodNullable)
+		elementSchema = elementSchema.unwrap() as z.ZodTypeAny;
+	if (elementSchema instanceof z.ZodArray)
+		elementSchema = elementSchema.element as z.ZodTypeAny;
+
+	const nonNullElementSchema = elementSchema.refine(
+		(value) => value !== null && value !== undefined,
+		'Array mutation elements cannot be null.',
+	);
+	const valuesSchema = z.union([
+		nonNullElementSchema,
+		z.array(nonNullElementSchema).min(1),
+	]);
+	const replacementSchema = z
+		.object({ from: nonNullElementSchema, to: nonNullElementSchema })
+		.strict();
+
+	return z.union([
+		z.object({ append: valuesSchema }).strict(),
+		z.object({ prepend: valuesSchema }).strict(),
+		z.object({ remove: valuesSchema }).strict(),
+		z
+			.object({
+				replace: z.union([
+					replacementSchema,
+					z.array(replacementSchema).min(1),
+				]),
+			})
+			.strict(),
+		z.object({ addUnique: valuesSchema }).strict(),
+	]);
+};
+
+const createArrayFilterSchema = (valueSchema: z.ZodTypeAny) => {
+	const elementSchema = getArrayElementSchema(valueSchema);
 	const filter: z.ZodTypeAny = z.lazy(() =>
 		z.object({
 			containedBy: z.array(elementSchema).optional(),

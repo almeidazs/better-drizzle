@@ -185,6 +185,7 @@ const isArrayFilter = (value: unknown): value is Record<string, unknown> =>
 const compileArrayFilter = (
 	column: AnyColumn,
 	value: Record<string, unknown>,
+	encoder: AnyColumn = column,
 ): SQL | undefined => {
 	const conditions: SQL[] = [];
 	const needsCardinality =
@@ -198,18 +199,20 @@ const compileArrayFilter = (
 			value.equals === null ? isNull(column) : eq(column, value.equals),
 		);
 	if (value.has !== undefined && value.has !== null)
-		conditions.push(sql`${column} @> ${sql.param([value.has], column)}`);
+		conditions.push(sql`${column} @> ${sql.param([value.has], encoder)}`);
 	if (Array.isArray(value.hasEvery))
-		conditions.push(sql`${column} @> ${sql.param(value.hasEvery, column)}`);
+		conditions.push(
+			sql`${column} @> ${sql.param(value.hasEvery, encoder)}`,
+		);
 	if (Array.isArray(value.hasSome))
-		conditions.push(sql`${column} && ${sql.param(value.hasSome, column)}`);
+		conditions.push(sql`${column} && ${sql.param(value.hasSome, encoder)}`);
 	if (Array.isArray(value.hasNone))
 		conditions.push(
-			sql`not (${column} && ${sql.param(value.hasNone, column)})`,
+			sql`not (${column} && ${sql.param(value.hasNone, encoder)})`,
 		);
 	if (Array.isArray(value.containedBy))
 		conditions.push(
-			sql`${column} <@ ${sql.param(value.containedBy, column)}`,
+			sql`${column} <@ ${sql.param(value.containedBy, encoder)}`,
 		);
 	if (value.isEmpty === true && cardinality)
 		conditions.push(eq(cardinality, 0));
@@ -226,7 +229,7 @@ const compileArrayFilter = (
 	}
 	if ('not' in value) {
 		if (isPlainObject(value.not)) {
-			const nested = compileArrayFilter(column, value.not);
+			const nested = compileArrayFilter(column, value.not, encoder);
 			if (nested) conditions.push(not(nested));
 		} else if (value.not === null) conditions.push(not(isNull(column)));
 		else if (value.not !== undefined)
@@ -671,7 +674,7 @@ export const compileWhereInput = <Schema extends AnySchema, Meta>(
 						'Native PostgreSQL array filters are only supported by PostgreSQL.',
 					table: context.tableName,
 				});
-			const arrayFilter = compileArrayFilter(field, value);
+			const arrayFilter = compileArrayFilter(field, value, column);
 			if (arrayFilter) conditions.push(arrayFilter);
 			continue;
 		}

@@ -35,6 +35,7 @@ import type {
 	AnySchema,
 	DbNameKey,
 	InsertModelFor,
+	PgArrayKeysFor,
 	RelatedNameFor,
 	RelationFor,
 	RelationKeysFor,
@@ -116,11 +117,78 @@ export type CreateDataInput<
 	| (Partial<InsertModelFor<Schema, Name>> &
 			AtLeastOne<CreateRelationData<Schema, Name>>);
 
+type PgArrayElement<T> = Exclude<
+	NonNullable<T> extends readonly (infer Value)[] ? Value : never,
+	null | undefined
+>;
+
+type PgArrayMutationValues<T> =
+	| PgArrayElement<T>
+	| readonly PgArrayElement<T>[];
+
+type PgArrayReplace<T> = {
+	from: PgArrayElement<T>;
+	to: PgArrayElement<T>;
+};
+
+/** Atomic mutations supported by native PostgreSQL array columns. */
+export type PgArrayMutationInput<T> =
+	| {
+			append: PgArrayMutationValues<T>;
+			prepend?: never;
+			remove?: never;
+			replace?: never;
+			addUnique?: never;
+	  }
+	| {
+			append?: never;
+			prepend: PgArrayMutationValues<T>;
+			remove?: never;
+			replace?: never;
+			addUnique?: never;
+	  }
+	| {
+			append?: never;
+			prepend?: never;
+			remove: PgArrayMutationValues<T>;
+			replace?: never;
+			addUnique?: never;
+	  }
+	| {
+			append?: never;
+			prepend?: never;
+			remove?: never;
+			replace: PgArrayReplace<T> | readonly PgArrayReplace<T>[];
+			addUnique?: never;
+	  }
+	| {
+			append?: never;
+			prepend?: never;
+			remove?: never;
+			replace?: never;
+			addUnique: PgArrayMutationValues<T>;
+	  };
+
+/** Partial scalar data accepted by update operations. */
+export type UpdateScalarDataInput<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = Partial<{
+	[K in keyof InsertModelFor<Schema, Name>]: K extends PgArrayKeysFor<
+		Schema,
+		Name
+	>
+		?
+				| InsertModelFor<Schema, Name>[K]
+				| PgArrayMutationInput<InsertModelFor<Schema, Name>[K]>
+		: InsertModelFor<Schema, Name>[K];
+}>;
+
 /** Partial scalar update data plus nested relation mutation commands. */
 export type UpdateDataInput<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
-> = Partial<InsertModelFor<Schema, Name>> & UpdateRelationData<Schema, Name>;
+> = UpdateScalarDataInput<Schema, Name> & UpdateRelationData<Schema, Name>;
 
 /**
  * A factory function that creates the error thrown when `.throw()` is invoked
@@ -348,7 +416,7 @@ export interface UpdateManyArgs<
 	/** Optional filter. When omitted, all rows are updated. */
 	where?: WhereArg<Schema, Name>;
 	/** Partial column values to apply to every matched row. */
-	data: Partial<InsertModelFor<Schema, Name>>;
+	data: UpdateScalarDataInput<Schema, Name>;
 	/** Custom metadata forwarded to hooks. */
 	meta?: Meta;
 }
@@ -394,7 +462,12 @@ export type UpdateEachUpdateMap<
 > = Partial<{
 	[K in ScalarKeysFor<Schema, Name>]: (
 		row: Row,
-	) => SelectModelFor<Schema, Name>[K] | SQL;
+	) => K extends PgArrayKeysFor<Schema, Name>
+		?
+				| SelectModelFor<Schema, Name>[K]
+				| PgArrayMutationInput<SelectModelFor<Schema, Name>[K]>
+				| SQL
+		: SelectModelFor<Schema, Name>[K] | SQL;
 }>;
 
 /**
@@ -571,9 +644,15 @@ export type UpsertManyUpdateValue<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 > = Partial<{
-	[K in UpsertManyTargetColumn<Schema, Name>]:
-		| InsertModelFor<Schema, Name>[K]
-		| SQL;
+	[K in UpsertManyTargetColumn<Schema, Name>]: K extends PgArrayKeysFor<
+		Schema,
+		Name
+	>
+		?
+				| InsertModelFor<Schema, Name>[K]
+				| PgArrayMutationInput<InsertModelFor<Schema, Name>[K]>
+				| SQL
+		: InsertModelFor<Schema, Name>[K] | SQL;
 }>;
 
 /**
