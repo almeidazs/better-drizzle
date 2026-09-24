@@ -136,7 +136,9 @@
 		"test:mysql": "bun test tests/core/where.mysql.test.ts",
 		"test:integration": "bun test tests/core/integration",
 		"bench:jsonb": "DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required} bun run benchmark/jsonb.ts",
+		"bench:arrays": "DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required} bun run benchmark/arrays.ts",
 		"test:jsonb": "bun test tests/core/jsonb.pg.test.ts",
+		"test:arrays": "bun test tests/core/arrays.pg.test.ts",
 		"bench:report": "bun run benchmark/report.ts"
 	},
 	"devDependencies": {
