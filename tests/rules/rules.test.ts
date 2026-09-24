@@ -110,8 +110,7 @@ describe('better-drizzle/rules', () => {
 
 		await expect(
 			ctx.client.users.paginate({
-				page: 1,
-				perPage: 1,
+				limit: 1,
 			}),
 		).rejects.toThrow('paginate requires orderBy.');
 
@@ -247,6 +246,16 @@ describe('better-drizzle/rules', () => {
 		ctx.close();
 	});
 
+	test('raw rules also cover $executeRaw', async () => {
+		const ctx = createRulesContext({ noRawMutation: true });
+
+		await expect(
+			ctx.client.$executeRaw`update test_users set active = 1`,
+		).rejects.toThrow('Raw mutation queries are not allowed.');
+
+		ctx.close();
+	});
+
 	test('requires tenant context and protects tenant overrides', async () => {
 		const ctx = createRulesContext({
 			requireTenantContext: true,
@@ -283,7 +292,13 @@ describe('better-drizzle/rules', () => {
 
 	test('merge applies extends in order, then rules, skipping falsy entries', () => {
 		const merged = merge({
-			extends: [safe(), false, null, undefined, { noRawMutation: 'warn' }],
+			extends: [
+				safe(),
+				false,
+				null,
+				undefined,
+				{ noRawMutation: 'warn' },
+			],
 			rules: { maxLimit: { value: 200 } },
 		});
 
