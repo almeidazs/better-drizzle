@@ -9,17 +9,17 @@ import {
 	ScanSearch,
 	ShieldCheck,
 	Terminal,
-} from 'lucide-react';
-import Image from 'next/image';
-import Link from 'next/link';
-import { FaDiscord, FaGithub } from 'react-icons/fa';
-import { SiPostgresql } from 'react-icons/si';
+} from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
+import { FaDiscord, FaGithub } from "react-icons/fa";
+import { SiPostgresql } from "react-icons/si";
 
-import { JsonLd } from '@/components/json-ld';
-import { CodeWindow } from '@/components/landing/code-window';
-import { SponsorHeart } from '@/components/landing/database-logos';
-import { InstallCommand } from '@/components/landing/install-command';
-import { Logo } from '@/components/logo';
+import { JsonLd } from "@/components/json-ld";
+import { CodeWindow } from "@/components/landing/code-window";
+import { SponsorHeart } from "@/components/landing/database-logos";
+import { InstallCommand } from "@/components/landing/install-command";
+import { Logo } from "@/components/logo";
 import {
 	GITHUB_URL,
 	KEYWORDS,
@@ -27,7 +27,7 @@ import {
 	SITE_DESCRIPTION,
 	SITE_NAME,
 	SITE_URL,
-} from '@/lib/seo';
+} from "@/lib/seo";
 
 const HERO_CODE = `import { better } from 'better-drizzle';
 
@@ -112,80 +112,80 @@ client.users.$zod.create; // generated Zod schema`;
 const FEATURES = [
 	{
 		icon: Filter,
-		title: 'Typed nested filters',
-		body: 'Query across relations with some / every / none / is - inferred from your Drizzle schema, no subqueries by hand. Typed JSONB path filters on PostgreSQL.',
+		title: "Typed nested filters",
+		body: "Query across relations with some / every / none / is - inferred from your Drizzle schema, no subqueries by hand. Typed JSONB path filters on PostgreSQL.",
 	},
 	{
 		icon: Layers,
-		title: 'Batched relation loading',
-		body: 'Nested include and select run one query per relation node - no N+1, no cartesian blowup. Project relation totals with _count without an extra round-trip.',
+		title: "Batched relation loading",
+		body: "Nested include and select run one query per relation node - no N+1, no cartesian blowup. Project relation totals with _count without an extra round-trip.",
 	},
 	{
 		icon: GitBranch,
-		title: 'Relational writes',
-		body: 'connect, disconnect, and exclusive set on create and update. Junction tables are inferred, and the whole write runs in one implicit transaction.',
+		title: "Relational writes",
+		body: "connect, disconnect, and exclusive set on create and update. Junction tables are inferred, and the whole write runs in one implicit transaction.",
 	},
 	{
 		icon: BookOpenText,
-		title: 'One pagination shape',
-		body: 'Use paginate() for offset pages and cursor() for feed-style navigation. Both return { data, pagination } without rebuilding metadata by hand.',
+		title: "One pagination shape",
+		body: "Use paginate() for offset pages and cursor() for feed-style navigation. Both return { data, pagination } without rebuilding metadata by hand.",
 	},
 	{
 		icon: ScanSearch,
-		title: 'Query plans, inline',
-		body: 'Every read helper is a thenable with .explain(). Get a structured, cross-dialect plan - including deferred relation stages - without running the query twice.',
+		title: "Query plans, inline",
+		body: "Every read helper is a thenable with .explain(). Get a structured, cross-dialect plan - including deferred relation stages - without running the query twice.",
 	},
 	{
 		icon: Lock,
-		title: 'Row locks',
-		body: 'lock, skipLocked, and noWait on PostgreSQL and MySQL, with an opt-in guard that rejects locked reads outside a transaction.',
+		title: "Row locks",
+		body: "lock, skipLocked, and noWait on PostgreSQL and MySQL, with an opt-in guard that rejects locked reads outside a transaction.",
 	},
 	{
 		icon: Blocks,
-		title: 'First-class plugins',
-		body: 'Rules, Zod, timestamps, and soft delete ship in the box - with transforms, lifecycle hooks, and typed operation args you can add yourself.',
+		title: "First-class plugins",
+		body: "Rules, Zod, timestamps, and soft delete ship in the box - with transforms, lifecycle hooks, and typed operation args you can add yourself.",
 	},
 	{
 		icon: ShieldCheck,
-		title: 'Guardrails, static and runtime',
-		body: 'better-drizzle/eslint catches what a linter can see; better-drizzle/rules enforces the rest at runtime - raw SQL, destructive writes, unbounded reads.',
+		title: "Guardrails, static and runtime",
+		body: "better-drizzle/eslint catches what a linter can see; better-drizzle/rules enforces the rest at runtime - raw SQL, destructive writes, unbounded reads.",
 	},
 	{
 		icon: Terminal,
-		title: 'Raw SQL, when you want it',
-		body: '$raw, $executeRaw, and guarded $rawUnsafe are first-class, with their own hooks. Drop to SQL only when it genuinely reads better.',
+		title: "Raw SQL, when you want it",
+		body: "$raw, $executeRaw, and guarded $rawUnsafe are first-class, with their own hooks. Drop to SQL only when it genuinely reads better.",
 	},
 ];
 
 const STATS = [
-	{ value: '9.1×', label: 'faster relation loading at parity' },
-	{ value: '< 9%', label: 'read latency overhead at parity' },
-	{ value: '< 5%', label: 'write overhead at parity' },
-	{ value: '0', label: 'codegen or build steps' },
+	{ value: "9.1×", label: "faster relation loading at parity" },
+	{ value: "< 9%", label: "read latency overhead at parity" },
+	{ value: "< 5%", label: "write overhead at parity" },
+	{ value: "0", label: "codegen or build steps" },
 ];
 
 const STRUCTURED_DATA = {
-	'@context': 'https://schema.org',
-	'@graph': [
+	"@context": "https://schema.org",
+	"@graph": [
 		{
-			'@type': 'WebSite',
-			'@id': `${SITE_URL}/#website`,
+			"@type": "WebSite",
+			"@id": `${SITE_URL}/#website`,
 			url: SITE_URL,
 			name: SITE_NAME,
 			description: SITE_DESCRIPTION,
-			inLanguage: 'en',
+			inLanguage: "en",
 		},
 		{
-			'@type': 'SoftwareSourceCode',
-			'@id': `${SITE_URL}/#software`,
+			"@type": "SoftwareSourceCode",
+			"@id": `${SITE_URL}/#software`,
 			name: SITE_NAME,
 			description: SITE_DESCRIPTION,
 			url: SITE_URL,
 			codeRepository: GITHUB_URL,
-			programmingLanguage: 'TypeScript',
-			runtimePlatform: ['Node.js', 'Bun'],
-			license: 'https://www.apache.org/licenses/LICENSE-2.0',
-			keywords: KEYWORDS.join(', '),
+			programmingLanguage: "TypeScript",
+			runtimePlatform: ["Node.js", "Bun"],
+			license: "https://www.apache.org/licenses/LICENSE-2.0",
+			keywords: KEYWORDS.join(", "),
 			sameAs: [GITHUB_URL, NPM_URL],
 		},
 	],
@@ -204,14 +204,13 @@ export default function HomePage() {
 							Drizzle ORM, but better
 						</span>
 						<h1 className="mt-6 text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
-							Type-safe repository helpers for{' '}
+							Type-safe repository helpers for{" "}
 							<span className="text-brand">Drizzle</span>.
 						</h1>
 						<p className="text-fd-muted-foreground mt-5 max-w-xl text-lg text-pretty">
-							Keep Drizzle&rsquo;s type-safety. Drop the
-							repetitive query glue. better-drizzle wraps your
-							client and gives every table reads, writes, relation
-							loading, pagination, hooks, and plugins - without
+							Keep Drizzle&rsquo;s type-safety. Drop the repetitive query glue.
+							better-drizzle wraps your client and gives every table reads,
+							writes, relation loading, pagination, hooks, and plugins - without
 							giving up the metal.
 						</p>
 						<div className="mt-7 w-full">
@@ -237,10 +236,7 @@ export default function HomePage() {
 						</div>
 					</div>
 
-					<div
-						className="bd-rise lg:pl-4"
-						style={{ animationDelay: '80ms' }}
-					>
+					<div className="bd-rise lg:pl-4" style={{ animationDelay: "80ms" }}>
 						<CodeWindow code={HERO_CODE} title="posts.ts" accent />
 					</div>
 				</div>
@@ -252,9 +248,8 @@ export default function HomePage() {
 						The same query, without the glue
 					</h2>
 					<p className="text-fd-muted-foreground mt-4">
-						Both are fully typed. The difference is the dozens of
-						these you write across a codebase - and which one
-						you&rsquo;d rather read.
+						Both are fully typed. The difference is the dozens of these you
+						write across a codebase - and which one you&rsquo;d rather read.
 					</p>
 				</div>
 				<div className="mt-12 grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
@@ -268,11 +263,7 @@ export default function HomePage() {
 						<span className="text-brand text-sm font-medium">
 							better-drizzle
 						</span>
-						<CodeWindow
-							code={BETTER_CODE}
-							title="better-drizzle.ts"
-							accent
-						/>
+						<CodeWindow code={BETTER_CODE} title="better-drizzle.ts" accent />
 					</div>
 				</div>
 			</section>
@@ -284,9 +275,9 @@ export default function HomePage() {
 							Everything you rewrite, once
 						</h2>
 						<p className="text-fd-muted-foreground mt-4">
-							A consistent repository API per table - the patterns
-							every service ends up re-implementing, generated
-							from your schema and kept typed.
+							A consistent repository API per table - the patterns every service
+							ends up re-implementing, generated from your schema and kept
+							typed.
 						</p>
 					</div>
 					<div className="border-fd-border bg-fd-border mt-12 grid grid-cols-1 gap-px overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-3">
@@ -296,9 +287,7 @@ export default function HomePage() {
 								className="bg-fd-background flex flex-col gap-3 p-6"
 							>
 								<feature.icon className="text-brand size-5" />
-								<h3 className="font-semibold">
-									{feature.title}
-								</h3>
+								<h3 className="font-semibold">{feature.title}</h3>
 								<p className="text-fd-muted-foreground text-sm">
 									{feature.body}
 								</p>
@@ -314,10 +303,9 @@ export default function HomePage() {
 						Close to the metal
 					</h2>
 					<p className="text-fd-muted-foreground mt-4">
-						Measured against raw Drizzle with fair, API-parity
-						comparisons. Relation loading is <em>faster</em> through
-						the wrapper; the rest stays close - and where it
-						doesn&rsquo;t, the benchmarks say so.
+						Measured against raw Drizzle with fair, API-parity comparisons.
+						Relation loading is <em>faster</em> through the wrapper; the rest
+						stays close - and where it doesn&rsquo;t, the benchmarks say so.
 					</p>
 				</div>
 				<div className="border-fd-border bg-fd-border mt-12 grid grid-cols-1 gap-px overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-4">
@@ -336,8 +324,7 @@ export default function HomePage() {
 					))}
 				</div>
 				<p className="text-fd-muted-foreground mt-6 text-center text-sm">
-					Numbers from the repository&rsquo;s suite (SQLite
-					in-memory).{' '}
+					Numbers from the repository&rsquo;s suite (SQLite in-memory).{" "}
 					<Link
 						href="/docs/performance/benchmarks"
 						className="text-brand font-medium hover:underline"
@@ -353,8 +340,8 @@ export default function HomePage() {
 						Works with your existing database
 					</h2>
 					<p className="text-fd-muted-foreground mt-4">
-						better-drizzle stays on top of Drizzle, so your driver
-						choice does not change.
+						better-drizzle stays on top of Drizzle, so your driver choice does
+						not change.
 					</p>
 				</div>
 				<div className="border-fd-border bg-fd-border mt-10 grid grid-cols-1 gap-px overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-4">
@@ -373,8 +360,7 @@ export default function HomePage() {
 						<div className="pr-12">
 							<p className="font-semibold">Neon</p>
 							<p className="text-fd-muted-foreground text-sm">
-								Serverless Postgres for modern Drizzle
-								workflows.
+								Serverless Postgres for modern Drizzle workflows.
 							</p>
 						</div>
 					</div>
@@ -409,8 +395,7 @@ export default function HomePage() {
 						<div>
 							<p className="font-semibold">SQLite</p>
 							<p className="text-fd-muted-foreground text-sm">
-								Fast local dev and benchmark-friendly in-memory
-								setups.
+								Fast local dev and benchmark-friendly in-memory setups.
 							</p>
 						</div>
 					</div>
@@ -427,8 +412,7 @@ export default function HomePage() {
 						<div>
 							<p className="font-semibold">MySQL</p>
 							<p className="text-fd-muted-foreground text-sm">
-								Same API surface on top of mysql-backed Drizzle
-								clients.
+								Same API surface on top of mysql-backed Drizzle clients.
 							</p>
 						</div>
 					</div>
@@ -442,12 +426,11 @@ export default function HomePage() {
 							Plugins do the cross-cutting work
 						</h2>
 						<p className="text-fd-muted-foreground mt-4">
-							Rules, Zod, timestamps, and soft delete ship as
-							official plugins - all inside the one{' '}
-							<code className="text-brand">better-drizzle</code>{' '}
-							package. They add typed arguments, rewrite
-							operations, and extend delegates, so behavior lives
-							in one place instead of every write.
+							Rules, Zod, timestamps, and soft delete ship as official plugins -
+							all inside the one{" "}
+							<code className="text-brand">better-drizzle</code> package. They
+							add typed arguments, rewrite operations, and extend delegates, so
+							behavior lives in one place instead of every write.
 						</p>
 						<div className="mt-6 flex flex-wrap gap-3">
 							<Link
@@ -476,8 +459,7 @@ export default function HomePage() {
 							Our Sponsors
 						</h2>
 						<p className="text-fd-muted-foreground mt-4 text-lg">
-							Thanks to companies backing better-drizzle and the
-							work around it.
+							Thanks to companies backing better-drizzle and the work around it.
 						</p>
 					</div>
 					<div className="mt-12 flex justify-center">

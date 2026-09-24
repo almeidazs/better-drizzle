@@ -1,11 +1,11 @@
-import { cache } from 'react';
+import { cache } from "react";
 
-const REPO_API = 'https://api.github.com/repos/almeidazs/better-drizzle';
+const REPO_API = "https://api.github.com/repos/almeidazs/better-drizzle";
 
 export const getGithubStars = cache(async () => {
 	try {
 		const response = await fetch(REPO_API, {
-			headers: { Accept: 'application/vnd.github+json' },
+			headers: { Accept: "application/vnd.github+json" },
 			next: { revalidate: 3600 },
 		});
 

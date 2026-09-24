@@ -1,7 +1,7 @@
-import { notFound } from 'next/navigation';
+import { notFound } from "next/navigation";
 
-import { renderOgImage } from '@/lib/og';
-import { source } from '@/lib/source';
+import { renderOgImage } from "@/lib/og";
+import { source } from "@/lib/source";
 
 export const revalidate = false;
 
@@ -15,7 +15,7 @@ export async function GET(
 	if (!page) notFound();
 
 	return renderOgImage({
-		eyebrow: 'Docs',
+		eyebrow: "Docs",
 		title: page.data.title,
 		description: page.data.description,
 	});
@@ -23,6 +23,6 @@ export async function GET(
 
 export function generateStaticParams() {
 	return source.getPages().map((page) => ({
-		slug: [...page.slugs, 'image.png'],
+		slug: [...page.slugs, "image.png"],
 	}));
 }

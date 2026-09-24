@@ -1,8 +1,8 @@
-import './global.css';
-import { RootProvider } from 'fumadocs-ui/provider/next';
-import type { Metadata, Viewport } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
-import type { ReactNode } from 'react';
+import "./global.css";
+import { RootProvider } from "fumadocs-ui/provider/next";
+import type { Metadata, Viewport } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import type { ReactNode } from "react";
 
 import {
 	KEYWORDS,
@@ -10,16 +10,16 @@ import {
 	SITE_NAME,
 	SITE_TITLE,
 	SITE_URL,
-} from '@/lib/seo';
+} from "@/lib/seo";
 
 const geistSans = Geist({
-	subsets: ['latin'],
-	variable: '--font-sans',
+	subsets: ["latin"],
+	variable: "--font-sans",
 });
 
 const geistMono = Geist_Mono({
-	subsets: ['latin'],
-	variable: '--font-mono',
+	subsets: ["latin"],
+	variable: "--font-mono",
 });
 
 export const metadata: Metadata = {
@@ -31,11 +31,11 @@ export const metadata: Metadata = {
 	description: SITE_DESCRIPTION,
 	applicationName: SITE_NAME,
 	keywords: KEYWORDS,
-	authors: [{ name: 'Almeida', url: 'https://github.com/almeidazs' }],
-	creator: 'Almeida',
+	authors: [{ name: "Almeida", url: "https://github.com/almeidazs" }],
+	creator: "Almeida",
 	publisher: SITE_NAME,
-	category: 'technology',
-	alternates: { canonical: '/' },
+	category: "technology",
+	alternates: { canonical: "/" },
 	formatDetection: { email: false, address: false, telephone: false },
 	robots: {
 		index: true,
@@ -43,26 +43,26 @@ export const metadata: Metadata = {
 		googleBot: {
 			index: true,
 			follow: true,
-			'max-image-preview': 'large',
-			'max-snippet': -1,
-			'max-video-preview': -1,
+			"max-image-preview": "large",
+			"max-snippet": -1,
+			"max-video-preview": -1,
 		},
 	},
 	icons: {
-		icon: '/icon.png',
-		shortcut: '/icon.png',
-		apple: '/icon.png',
+		icon: "/icon.png",
+		shortcut: "/icon.png",
+		apple: "/icon.png",
 	},
 	openGraph: {
 		title: SITE_TITLE,
 		description: SITE_DESCRIPTION,
 		url: SITE_URL,
 		siteName: SITE_NAME,
-		locale: 'en_US',
-		type: 'website',
+		locale: "en_US",
+		type: "website",
 	},
 	twitter: {
-		card: 'summary_large_image',
+		card: "summary_large_image",
 		title: SITE_TITLE,
 		description: SITE_DESCRIPTION,
 	},
@@ -70,8 +70,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
 	themeColor: [
-		{ media: '(prefers-color-scheme: light)', color: '#ffffff' },
-		{ media: '(prefers-color-scheme: dark)', color: '#0a0a0a' },
+		{ media: "(prefers-color-scheme: light)", color: "#ffffff" },
+		{ media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
 	],
 };
 

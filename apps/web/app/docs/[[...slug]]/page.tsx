@@ -3,26 +3,30 @@ import {
 	DocsDescription,
 	DocsPage,
 	DocsTitle,
-} from 'fumadocs-ui/layouts/docs/page';
-import { createRelativeLink } from 'fumadocs-ui/mdx';
-import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
-import type { ComponentProps, ComponentType } from 'react';
+} from "fumadocs-ui/layouts/docs/page";
+import { createRelativeLink } from "fumadocs-ui/mdx";
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import type { ComponentProps, ComponentType } from "react";
 
-import { JsonLd } from '@/components/json-ld';
-import { SITE_NAME, SITE_URL } from '@/lib/seo';
-import { source } from '@/lib/source';
-import { getMDXComponents } from '@/mdx-components';
+import { JsonLd } from "@/components/json-ld";
+import { SITE_NAME, SITE_URL } from "@/lib/seo";
+import { source } from "@/lib/source";
+import { getMDXComponents } from "@/mdx-components";
 
 type PageParams = { params: Promise<{ slug?: string[] }> };
 type DocsPageData = {
-	body: ComponentType<{ components?: ReturnType<typeof getMDXComponents> }>;
 	description?: string;
 	full?: boolean;
+	load(): Promise<{
+		body: ComponentType<{
+			components?: ReturnType<typeof getMDXComponents>;
+		}>;
+		toc?: ComponentProps<typeof DocsPage>["toc"];
+	}>;
 	seoDescription?: string;
 	seoTitle?: string;
 	title: string;
-	toc?: ComponentProps<typeof DocsPage>['toc'];
 };
 
 export default async function Page(props: PageParams) {
@@ -32,40 +36,39 @@ export default async function Page(props: PageParams) {
 	if (!page) notFound();
 
 	const data = page.data as typeof page.data & DocsPageData;
-	const MDX = data.body;
+	const { body: MDX, toc } = await data.load();
 	const url = `${SITE_URL}${page.url}`;
 	const breadcrumb = [
 		{ name: SITE_NAME, url: SITE_URL },
-		{ name: 'Documentation', url: `${SITE_URL}/docs` },
+		{ name: "Documentation", url: `${SITE_URL}/docs` },
 	];
 	if (page.slugs.length > 0) breadcrumb.push({ name: data.title, url });
 
 	return (
-		<DocsPage toc={data.toc} full={data.full}>
+		<DocsPage toc={toc} full={data.full}>
 			<JsonLd
 				data={{
-					'@context': 'https://schema.org',
-					'@graph': [
+					"@context": "https://schema.org",
+					"@graph": [
 						{
-							'@type': 'TechArticle',
+							"@type": "TechArticle",
 							headline: data.seoTitle ?? data.title,
-							description:
-								data.seoDescription ?? data.description,
+							description: data.seoDescription ?? data.description,
 							url,
-							image: `${SITE_URL}/og/docs/${[...page.slugs, 'image.png'].join('/')}`,
-							inLanguage: 'en',
-							about: 'Drizzle ORM',
-							isPartOf: { '@id': `${SITE_URL}/#website` },
+							image: `${SITE_URL}/og/docs/${[...page.slugs, "image.png"].join("/")}`,
+							inLanguage: "en",
+							about: "Drizzle ORM",
+							isPartOf: { "@id": `${SITE_URL}/#website` },
 							publisher: {
-								'@type': 'Organization',
+								"@type": "Organization",
 								name: SITE_NAME,
 								url: SITE_URL,
 							},
 						},
 						{
-							'@type': 'BreadcrumbList',
+							"@type": "BreadcrumbList",
 							itemListElement: breadcrumb.map((item, index) => ({
-								'@type': 'ListItem',
+								"@type": "ListItem",
 								position: index + 1,
 								name: item.name,
 								item: item.url,
@@ -100,7 +103,7 @@ export async function generateMetadata(props: PageParams): Promise<Metadata> {
 	const data = page.data as typeof page.data & DocsPageData;
 	const title = data.seoTitle ?? data.title;
 	const description = data.seoDescription ?? data.description;
-	const image = `/og/docs/${[...page.slugs, 'image.png'].join('/')}`;
+	const image = `/og/docs/${[...page.slugs, "image.png"].join("/")}`;
 
 	return {
 		title,
@@ -111,12 +114,12 @@ export async function generateMetadata(props: PageParams): Promise<Metadata> {
 			description,
 			url: page.url,
 			siteName: SITE_NAME,
-			locale: 'en_US',
-			type: 'article',
+			locale: "en_US",
+			type: "article",
 			images: [{ url: image, width: 1200, height: 630, alt: data.title }],
 		},
 		twitter: {
-			card: 'summary_large_image',
+			card: "summary_large_image",
 			title: `${title} - ${SITE_NAME}`,
 			description,
 			images: [image],

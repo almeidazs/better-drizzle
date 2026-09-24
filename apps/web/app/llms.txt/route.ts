@@ -1,6 +1,6 @@
 export const revalidate = false;
 
-const BASE = 'https://better-drizzle.com';
+const BASE = "https://better-drizzle.com";
 
 /**
  * Generates a comprehensive llms.txt file following the llmstxt.org spec.
@@ -112,6 +112,6 @@ Key characteristics:
 `;
 
 	return new Response(body, {
-		headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+		headers: { "Content-Type": "text/plain; charset=utf-8" },
 	});
 }
