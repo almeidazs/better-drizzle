@@ -456,6 +456,44 @@ export type ScalarWhereField<T> =
 	| ScalarFilter<T>
 	| (null extends T ? null : never);
 
+type ArrayElement<T> =
+	NonNullish<T> extends readonly (infer Value)[]
+		? ArrayElement<Value>
+		: NonNullish<T>;
+
+type ArrayValue<T> = Exclude<ArrayElement<T>, null>;
+
+/** Filter operators for native PostgreSQL array columns. */
+export type ArrayFilter<T> = {
+	equals?: T;
+	has?: ArrayValue<T>;
+	hasEvery?: readonly ArrayValue<T>[];
+	hasNone?: readonly ArrayValue<T>[];
+	hasSome?: readonly ArrayValue<T>[];
+	containedBy?: readonly ArrayValue<T>[];
+	isEmpty?: boolean;
+	length?: number | ComparableFilter<number>;
+	not?: T | Omit<ArrayFilter<T>, 'not'>;
+};
+
+/** Accepted where value for a native PostgreSQL array column. */
+export type ArrayWhereField<T> =
+	| NonNullish<T>
+	| ArrayFilter<T>
+	| (null extends T ? null : never);
+
+/** Keys backed by Drizzle's native PostgreSQL array column. */
+export type PgArrayKeysFor<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = {
+	[K in ScalarKeysFor<Schema, Name>]: K extends keyof TableFor<Schema, Name>
+		? TableFor<Schema, Name>[K] extends { columnType: 'PgArray' }
+			? K
+			: never
+		: never;
+}[ScalarKeysFor<Schema, Name>];
+
 type IsUnknown<T> = unknown extends T
 	? [keyof T] extends [never]
 		? true
