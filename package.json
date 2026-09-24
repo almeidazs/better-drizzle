@@ -147,6 +147,7 @@
 		"@types/estree": "^1.0.8",
 		"@types/pg": "^8.20.0",
 		"@typescript-eslint/parser": "^8.38.0",
+		"ata-validator": "^1.30.0",
 		"commitlint": "^21.1.0",
 		"eslint": "^9.31.0",
 		"lefthook": "^2.0.0",
@@ -164,6 +165,7 @@
 	},
 	"peerDependencies": {
 		"@typescript-eslint/parser": "^8",
+		"ata-validator": "^1.30.0",
 		"drizzle-orm": "^0.30.0",
 		"eslint": "^9",
 		"typescript": "^5",
@@ -177,6 +179,9 @@
 			"optional": true
 		},
 		"@typescript-eslint/parser": {
+			"optional": true
+		},
+		"ata-validator": {
 			"optional": true
 		}
 	}
