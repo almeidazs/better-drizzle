@@ -26,6 +26,7 @@ import {
 	buildFindFirstQuery,
 	buildFindManyQuery,
 	getCursorExplainProbes,
+	withDefaultCursorOrder,
 } from './operations';
 import { getDeferredRelationPlans } from './relations';
 
@@ -414,11 +415,11 @@ const buildQueryList = async <
 			] satisfies ExplainableQuery[];
 		}
 		case 'cursor': {
-			const cursorArgs = args as CursorArgs<
-				Schema,
-				BetterTableKey<Schema>,
-				Meta
-			>;
+			const cursorArgs = withDefaultCursorOrder(
+				context,
+				tableName,
+				args as CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
+			);
 			const limit =
 				Math.abs(cursorArgs.limit ?? cursorArgs.take ?? 10) || 10;
 			const built = buildCursorPaginationQuery(cursorArgs, limit + 1);

@@ -2074,9 +2074,7 @@ export const buildFastCursorQuery = <Schema extends AnySchema, Meta>(
 	if (entries && !(field in entries[0])) return;
 	const direction = entries
 		? (entries[0] as Record<string, 'asc' | 'desc'>)[field]
-		: args.before
-			? 'asc'
-			: 'desc';
+		: 'asc';
 	if (direction !== 'asc' && direction !== 'desc') return;
 
 	const where = args.where
@@ -2267,11 +2265,31 @@ export const getCursorExplainProbes = async <Schema extends AnySchema, Meta>(
 	return probes;
 };
 
-export const cursorRecords = async <Schema extends AnySchema, Meta>(
+/**
+ * Without an `orderBy`, cursor pages are ordered by the primary key ascending
+ * so the first page and every `after`/`before` page walk the same order.
+ */
+export const withDefaultCursorOrder = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
 	args: CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
 ) => {
+	if (args.orderBy || args.after || args.before) return args;
+	const field = getTableRuntime(context, tableName as string)
+		.primaryKeyFields[0];
+	if (!field) return args;
+	return {
+		...args,
+		orderBy: { [field]: 'asc' },
+	} as CursorArgs<Schema, BetterTableKey<Schema>, Meta>;
+};
+
+export const cursorRecords = async <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	cursorArgs: CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
+) => {
+	const args = withDefaultCursorOrder(context, tableName, cursorArgs);
 	const limit = Math.abs(args.limit ?? args.take ?? 10) || 10;
 	const runtime = getTableRuntime(context, tableName as string);
 	const built = buildCursorPaginationQuery(args, limit + 1);
