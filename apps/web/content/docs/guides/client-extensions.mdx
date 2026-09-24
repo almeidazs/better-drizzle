@@ -6,68 +6,190 @@ seoTitle: 'Client Extensions - Custom Drizzle Helpers'
 seoDescription: 'Add app-specific helpers and shared values to a Drizzle ORM client with extends(), preserved across transactions and $withContext clones.'
 ---
 
-`client.extends(...)` is the lightest way to add application-specific helpers or shared values to a Better Drizzle client.
+`client.extends(...)` adds application-specific helpers or shared values to a Better Drizzle client. It takes a plain object or a callback, merges the result onto the client, and reapplies it to every `$withContext()` clone and transaction client derived later.
 
-## Object form
+## Object form and callback form
 
-Use the object form for static values:
+The object form is for static values:
 
 ```ts
 const client = better(db, { schema }).extends({
-	tenantScope: 'public',
+	limits: { maxPageSize: 100 },
 });
 
-console.log(client.tenantScope);
+client.limits.maxPageSize; // 100
 ```
 
-## Callback form
-
-Use the callback form when the helper needs the bound client instance:
+The callback form receives the client it is being applied to and returns the extension:
 
 ```ts
 const client = better(db, { schema }).extends((client) => ({
-	findByIdOrName(idOrName: number | string) {
-		return typeof idOrName === 'number'
-			? client.users.findFirst({ where: { id: idOrName } })
-			: client.users.findFirst({ where: { name: idOrName } });
+	findUserByEmail(email: string) {
+		return client.users.findUnique({ where: { email } });
 	},
 }));
 
-const user = await client.findByIdOrName('Alice');
+const user = await client.findUserByEmail('alice@example.com');
 ```
 
-The callback form is the safer default when the helper needs to call back into the client, because it closes over the already bound instance.
+The callback runs immediately for the current client, then **again for each derived client**: every `$withContext()` clone, every transaction client, and every nested savepoint client. Inside it, `client` is that derived instance, so a helper called as `tx.findUserByEmail(...)` queries through the transaction.
 
-## Derived clients keep the extension
-
-Extensions are reapplied to future `$withContext()` clones and transaction clients:
+The object form does not get this. The same object is copied onto each derived client, so a method that closes over an outer variable keeps using that variable:
 
 ```ts
-const base = client.extends((client) => ({
-	findById(id: number) {
-		return client.users.findFirst({ where: { id } });
-	},
-}));
+const base = better(db, { schema });
 
-const scoped = base.$withContext({ requestId: 'req-1' });
-await scoped.findById(1);
+const client = base.extends({
+	countUsers: () => base.users.count(), // always the root client
+});
 
-await base.transaction(async (tx) => {
-	await tx.findById(1);
+await client.transaction(async (tx) => {
+	await tx.countUsers(); // runs on the root client, not on tx
 });
 ```
 
-<Callout title="Conflicts fail fast">
-	`extends()` cannot override built-in client methods, table delegates, plugin
-	client extensions, or keys added by an earlier `extends()` call.
+Use the object form for values, and the callback form for anything that runs queries.
+
+Returning `undefined` from the callback adds nothing. `extends()` modifies the client it is called on and returns that same instance.
+
+## Typing
+
+`extends()` returns the client type intersected with the extension type:
+
+```ts
+const base = better(db, { schema });
+
+const helpers = (client: typeof base) => ({
+	findUserByEmail(email: string) {
+		return client.users.findUnique({ where: { email } });
+	},
+	publishPost(id: number) {
+		return client.posts.update({ where: { id }, data: { published: true } });
+	},
+});
+
+export const client = base.extends(helpers);
+export type AppHelpers = ReturnType<typeof helpers>;
+```
+
+The static types have three gaps:
+
+- **Chained calls keep only the last extension.** The type of `client.extends(a).extends(b)` includes `b` but not `a`, even though both exist at runtime. Put every helper in one `extends()` call, as above.
+- **`$withContext()` returns the base client type**, without extension keys.
+- **The `tx` parameter of `transaction()` is the base transaction client type**, without extension keys.
+
+The helpers are present at runtime in all three cases. Where you need them typed, assert the extension type:
+
+```ts
+const scoped = client.$withContext({ requestId }) as typeof client;
+await scoped.findUserByEmail('alice@example.com');
+
+await client.transaction(async (tx) => {
+	const txClient = tx as typeof tx & AppHelpers;
+	await txClient.publishPost(1);
+});
+```
+
+Keys added by a plugin's `extendClient()` do not have these gaps: they are part of the client type, including on scoped and transaction clients. See [extends vs plugins](#extends-vs-plugins).
+
+## Conflicts fail fast
+
+An extension cannot replace an existing key. The call throws `BetterDrizzleError` with code `PLUGIN_EXTENSION_CONFLICT` and the message `Client extension cannot override "<key>".` This covers:
+
+- built-in client keys such as `repository`, `transaction`, `$raw`, and `$withContext`
+- table delegates such as `users`
+- keys added by plugins through `extendClient()`
+- keys added by an earlier `extends()` call
+
+Plugin extensions are applied first, so a plugin key always wins the conflict and the `extends()` call is the one that fails.
+
+<Callout type="warn" title="Call extends() once, at startup">
+	Extensions are registered on state shared by the root client and everything
+	derived from it. Calling `extends()` on a per-request `$withContext()` clone
+	registers the extension for all future clones, and the next request that
+	adds the same key fails with a conflict. Register extensions where you build
+	the client, not in request handlers.
 </Callout>
 
-## When to use extends vs plugins
+## Example: domain helpers that respect transactions
+
+Helpers that compose several operations can call `client.transaction(...)`. Because the callback form rebinds `client`, the same helper opens a transaction when called on the root client and a nested savepoint when called on a transaction client:
+
+```ts title="lib/db.ts"
+const base = better(drizzle(pool, { schema }), { schema });
+
+const helpers = (client: typeof base) => ({
+	async transferPost(postId: number, toUserId: number) {
+		return client.transaction(async (tx) => {
+			await tx.users.findUnique({ where: { id: toUserId } }).throw();
+
+			return tx.posts.update({
+				where: { id: postId },
+				data: { authorId: toUserId },
+			});
+		});
+	},
+});
+
+export const client = base.extends(helpers);
+export type AppHelpers = ReturnType<typeof helpers>;
+```
+
+```ts
+// Own transaction
+await client.transferPost(10, 2);
+
+// Savepoint inside a larger transaction, rolled back with it
+await client.transaction(async (tx) => {
+	await (tx as typeof tx & AppHelpers).transferPost(10, 2);
+	await tx.users.update({ where: { id: 1 }, data: { active: false } });
+});
+```
+
+## Example: shared services next to the data
+
+An extension can carry values that helpers and callers both need, such as configuration, next to the helpers that use them:
+
+```ts title="lib/db.ts"
+const base = better(drizzle(pool, { schema }), { schema });
+const config = { maxPageSize: 100 };
+
+const helpers = (client: typeof base) => ({
+	config,
+	listPublished(page: number, perPage = 20) {
+		const limit = Math.min(perPage, config.maxPageSize);
+
+		return client.posts.paginate({
+			where: { published: true },
+			orderBy: [{ id: 'desc' }],
+			limit,
+			skip: (page - 1) * limit,
+		});
+	},
+});
+
+export const client = base.extends(helpers);
+```
+
+```ts
+const { data, pagination } = await client.listPublished(2);
+const { maxPageSize } = client.config;
+```
+
+Plain values are safe in either form, because they do not depend on which client they are attached to.
+
+## extends vs plugins
 
 Use `extends()` when:
 
-- the helper is app-specific
-- the behavior only needs client-level helpers or shared values
+- the helper is specific to this application and its tables
+- you only need client-level helpers or shared values
 - you do not need transforms, lifecycle hooks, or typed operation args
 
-Reach for a [plugin](/docs/plugins/writing-plugins) when the behavior needs to change repository operations globally, attach model-level helpers, or participate in hook/transform flow.
+Use a [plugin](/docs/plugins/writing-plugins) with `extendClient()` when:
+
+- the behavior is reusable across schemas, since plugin code sees the schema generically rather than as your tables
+- the extension must be typed on scoped and transaction clients without assertions
+- it has to change repository operations, add model-level helpers, or observe hooks
+
+A plugin's `extendClient(ctx)` also runs for every bound client, and `ctx.client` is that client, so the same rebinding rules apply.

@@ -1,56 +1,20 @@
 ---
 title: Framework integration
-description: Where the Better client fits in Bun, Next.js, Express, and Fastify apps.
+description: One client per process, a scoped client per request, and consistent HTTP error mapping in Next.js, Hono, Express, and Fastify.
 icon: Plug
-seoTitle: 'Drizzle ORM with Next.js, Express & Fastify'
-seoDescription: 'Set up better-drizzle and Drizzle ORM in Next.js, Bun, Express, and Fastify apps: where the client lives and how requests use it.'
+seoTitle: 'Drizzle ORM with Next.js, Hono & Fastify'
+seoDescription: 'Use better-drizzle and Drizzle ORM in Next.js, Hono, Express, and Fastify: one client per process, per-request context, and HTTP error mapping.'
 ---
 
-The pattern is the same everywhere: **construct the Drizzle and Better clients once in a shared module, then import that client** into routes and services. Pick your stack:
+The same three pieces apply to every server framework:
 
-<Tabs items={['Bun + SQLite', 'Next.js + Postgres', 'Express + Postgres', 'Fastify + Postgres']}>
+1. build the Drizzle and Better clients **once per process**
+2. derive a **scoped client per request** with `$withContext(...)`
+3. map errors to HTTP responses in **one place**
 
-<Tab value="Bun + SQLite">
+## One client per process
 
-The lightest full-stack setup - great for local tools, prototypes, and demos.
-
-```ts title="client.ts"
-import Database from 'bun:sqlite';
-import { better } from 'better-drizzle';
-import { drizzle } from 'drizzle-orm/bun-sqlite';
-import { schema } from './schema';
-
-const sqlite = new Database('app.db');
-const db = drizzle(sqlite, { schema });
-
-export const client = better(db, { schema });
-```
-
-```ts title="server.ts"
-import { client } from './client';
-
-Bun.serve({
-	async fetch(req) {
-		const url = new URL(req.url);
-
-		if (url.pathname === '/users') {
-			const users = await client.users.findMany({
-				orderBy: [{ id: 'desc' }],
-				take: 20,
-			});
-			return Response.json(users);
-		}
-
-		return new Response('Not found', { status: 404 });
-	},
-});
-```
-
-</Tab>
-
-<Tab value="Next.js + Postgres">
-
-Keep client construction in a server-only module and reuse it from route handlers and server actions.
+`better(db, options)` builds table metadata and runs every plugin's `setup()` once. Do it at module scope and import the result. Calling `better()` inside a handler repeats that work and, if you also create the pool there, opens new connections on every request.
 
 ```ts title="lib/db.ts"
 import { better } from 'better-drizzle';
@@ -59,121 +23,324 @@ import { Pool } from 'pg';
 import { schema } from './schema';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const db = drizzle(pool, { schema });
 
-export const client = better(db, { schema });
+export const client = better(drizzle(pool, { schema }), { schema });
+export type Db = typeof client;
 ```
 
-```ts title="app/api/posts/route.ts"
-import { client } from '@/lib/db';
+## A scoped client per request
 
-export async function GET() {
-	const posts = await client.posts.findMany({
-		include: { author: true },
-		orderBy: [{ id: 'desc' }],
-		take: 10,
+`client.$withContext(meta)` returns a clone whose `meta` is merged into every operation, raw query, and transaction started from it. Hooks and plugins read it as `ctx.meta`, so request IDs and tenant IDs reach logs and guardrails without being passed through every function.
+
+```ts
+const db = client.$withContext({
+	requestId: request.headers.get('x-request-id') ?? crypto.randomUUID(),
+	tenantId: session.tenantId,
+	userId: session.userId,
+});
+
+await db.posts.findMany({ where: { published: true } });
+// hooks see meta: { requestId, tenantId, userId }
+```
+
+- The merge is shallow: scoped keys first, then per-call `meta`, so a per-call key wins.
+- Nested `$withContext()` calls stack.
+- The clone does not re-run plugin `setup()`, but it does rebuild the table delegates. Create it once per request and pass it down, rather than once per query.
+- Do not call `extends()` on a per-request clone. Extensions are registered on state shared by every client derived from the root, so the second request fails with a key conflict. Register them once at startup (see [client extensions](/docs/guides/client-extensions)).
+
+Read the metadata in a hook, for example to tag failures:
+
+```ts title="lib/db.ts"
+export const client = better(drizzle(pool, { schema }), {
+	schema,
+	hooks: {
+		onError(ctx) {
+			logger.error('db operation failed', {
+				requestId: ctx.meta?.requestId,
+				table: ctx.table,
+				action: ctx.action,
+				error: ctx.error,
+			});
+		},
+	},
+});
+```
+
+`.throw()` also reports to `onError`, with code `RESULT_NOT_FOUND`. Skip that code in the hook if expected 404s would add noise.
+
+See [multi-tenancy](/docs/guides/multi-tenancy) for enforcing tenant scope from this metadata.
+
+## Map errors in one place
+
+Library errors are `BetterDrizzleError` instances with a `code` and an HTTP-like `status`. Examples: `.throw()` on a missing row gives `RESULT_NOT_FOUND` (404), an aborted or timed-out transaction gives 408, `tx.rollback()` gives `TRANSACTION_ROLLBACK` (409). The full list is in the [error codes reference](/docs/reference/errors#error-codes).
+
+Database failures reach you in one of two shapes:
+
+- **the raw driver error**, for example from a plain `create()` on a client without hooks
+- **a wrapped `BetterDrizzleError`** with code `OPERATION_ERROR`, status 500, and the driver error in `cause`, when the failure happens inside `transaction()`, inside a raw query, or while an `onError` hook or a hook for that operation is configured
+
+Check both the error and its `cause` so a unique violation maps to 409 whichever shape arrives:
+
+```ts title="lib/http-error.ts"
+import {
+	BetterDrizzleError,
+	isForeignKeyViolation,
+	isUniqueViolation,
+} from 'better-drizzle';
+
+export const toHttpError = (error: unknown) => {
+	const cause = BetterDrizzleError.is(error) ? error.cause : undefined;
+
+	if (isUniqueViolation(error) || isUniqueViolation(cause))
+		return { status: 409, body: { code: 'CONFLICT' } };
+	if (isForeignKeyViolation(error) || isForeignKeyViolation(cause))
+		return { status: 422, body: { code: 'INVALID_REFERENCE' } };
+
+	if (BetterDrizzleError.is(error))
+		return {
+			status: error.status,
+			body: {
+				code: error.code,
+				// never expose internal messages on 5xx
+				message: error.status < 500 ? error.message : undefined,
+			},
+		};
+
+	return { status: 500, body: { code: 'INTERNAL' } };
+};
+```
+
+<Callout type="warn" title="400 usually means a bug, not bad input">
+	Codes with a 400 default, such as `RAW_INVALID_QUERY` or `LOCK_NOT_SUPPORTED`,
+	describe an invalid call from your code. Validate user input before it
+	reaches the client, so these stay rare and visible in logs.
+</Callout>
+
+## One transaction per unit of work
+
+Wrap the writes of a single request in one `transaction()`. Scoped metadata from `$withContext()` carries into the transaction client, and options bound the work to the request:
+
+- `signal`: rolls back when the signal aborts (for example, the client disconnected). The error has status 408.
+- `timeoutMs`: rolls back after the given duration, also 408.
+- `tx.afterCommit(callback)`: runs side effects such as emails or queue messages only after the commit succeeds.
+
+```ts
+const post = await db.transaction(
+	async (tx) => {
+		const created = await tx.posts.create({
+			data: { authorId: userId, title, published: false },
+		});
+
+		tx.afterCommit(() => queue.publish('post.created', { id: created.id }));
+		return created;
+	},
+	{ signal: request.signal, timeoutMs: 5_000 },
+);
+```
+
+## Framework snippets
+
+Each snippet imports `client` from `lib/db.ts` and `toHttpError` from `lib/http-error.ts` above.
+
+<Tabs items={['Next.js', 'Hono', 'Express', 'Fastify']}>
+
+<Tab value="Next.js">
+
+Keep the client in a server-only module. In development, hot reloads re-evaluate modules, so cache the pool on `globalThis` to avoid opening a new pool on every edit.
+
+```ts title="lib/db.ts"
+import 'server-only';
+import { better } from 'better-drizzle';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+import { schema } from './schema';
+
+const globalForDb = globalThis as unknown as { pool?: Pool };
+
+const pool =
+	globalForDb.pool ?? new Pool({ connectionString: process.env.DATABASE_URL });
+if (process.env.NODE_ENV !== 'production') globalForDb.pool = pool;
+
+export const client = better(drizzle(pool, { schema }), { schema });
+```
+
+A route handler scopes the client from the request and maps errors:
+
+```ts title="app/api/users/[id]/route.ts"
+import { client } from '@/lib/db';
+import { toHttpError } from '@/lib/http-error';
+
+export async function GET(
+	request: Request,
+	{ params }: { params: Promise<{ id: string }> },
+) {
+	const { id } = await params;
+	const db = client.$withContext({
+		requestId: request.headers.get('x-request-id') ?? crypto.randomUUID(),
 	});
 
-	return Response.json(posts);
+	try {
+		const user = await db.users
+			.findUnique({ where: { id: Number(id) } })
+			.throw();
+
+		return Response.json(user);
+	} catch (error) {
+		const { status, body } = toHttpError(error);
+		return Response.json(body, { status });
+	}
 }
 ```
+
+A server action has no `Request`, so read headers from `next/headers`:
 
 ```ts title="app/actions.ts"
 'use server';
 
+import { headers } from 'next/headers';
 import { client } from '@/lib/db';
 
-export async function createUserAndPost(input: {
-	email: string;
-	name: string;
-	title: string;
-}) {
-	return client.transaction(async (tx) => {
-		const user = await tx.users.create({
-			data: { email: input.email, name: input.name, active: true },
-		});
-
-		return tx.posts.create({
-			data: { authorId: user.id, title: input.title, published: false },
-		});
+export async function createPost(input: { authorId: number; title: string }) {
+	const requestHeaders = await headers();
+	const db = client.$withContext({
+		requestId: requestHeaders.get('x-request-id') ?? crypto.randomUUID(),
+		userId: input.authorId,
 	});
+
+	return db.transaction(
+		(tx) =>
+			tx.posts.create({
+				data: { authorId: input.authorId, title: input.title, published: false },
+			}),
+		{ timeoutMs: 5_000 },
+	);
 }
 ```
 
 </Tab>
 
-<Tab value="Express + Postgres">
+<Tab value="Hono">
 
-A natural fit when you already have middleware and route modules.
+Store the scoped client in a typed context variable from a middleware, and map errors in `app.onError`:
 
-```ts title="client.ts"
-import { better } from 'better-drizzle';
-import { drizzle } from 'drizzle-orm/node-postgres';
-import { Pool } from 'pg';
-import { schema } from './schema';
+```ts title="app.ts"
+import { Hono } from 'hono';
+import { client, type Db } from './lib/db';
+import { toHttpError } from './lib/http-error';
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const db = drizzle(pool, { schema });
+const app = new Hono<{ Variables: { db: Db } }>();
 
-export const client = better(db, { schema });
-```
-
-```ts title="routes.ts"
-import express from 'express';
-import { client } from './client';
-
-const app = express();
-
-app.get('/users/:id', async (req, res) => {
-	const user = await client.users.findUnique({
-		where: { id: Number(req.params.id) },
-		include: { posts: true },
-		meta: { requestId: req.header('x-request-id') },
-	});
-
-	if (!user) {
-		res.status(404).json({ error: 'User not found' });
-		return;
-	}
-
-	res.json(user);
+app.use(async (c, next) => {
+	c.set(
+		'db',
+		client.$withContext({
+			requestId: c.req.header('x-request-id') ?? crypto.randomUUID(),
+			tenantId: c.req.header('x-tenant-id'),
+		}),
+	);
+	await next();
 });
+
+app.get('/users/:id', async (c) => {
+	const user = await c
+		.get('db')
+		.users.findUnique({ where: { id: Number(c.req.param('id')) } })
+		.throw();
+
+	return c.json(user);
+});
+
+app.onError((error) => {
+	const { status, body } = toHttpError(error);
+	return Response.json(body, { status });
+});
+
+export default app;
 ```
 
 </Tab>
 
-<Tab value="Fastify + Postgres">
+<Tab value="Express">
 
-Share the client through a decorator for a plugin-oriented structure.
+Attach the scoped client to `res.locals` and map errors in an error middleware. Express 5 forwards rejected promises from async handlers to it; on Express 4, catch and call `next(error)` yourself.
 
-```ts title="client.ts"
-import { better } from 'better-drizzle';
-import { drizzle } from 'drizzle-orm/node-postgres';
-import { Pool } from 'pg';
-import { schema } from './schema';
+```ts title="app.ts"
+import express from 'express';
+import { client, type Db } from './lib/db';
+import { toHttpError } from './lib/http-error';
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const db = drizzle(pool, { schema });
+declare global {
+	namespace Express {
+		interface Locals {
+			db: Db;
+		}
+	}
+}
 
-export const client = better(db, { schema });
-```
+const app = express();
 
-```ts title="db.plugin.ts"
-import fp from 'fastify-plugin';
-import { client } from './client';
-
-export default fp(async (app) => {
-	app.decorate('db', client);
-});
-```
-
-```ts title="routes.ts"
-app.get('/posts', async () => {
-	return app.db.posts.findMany({
-		include: { author: true },
-		orderBy: [{ id: 'desc' }],
-		take: 20,
+app.use((req, res, next) => {
+	res.locals.db = client.$withContext({
+		requestId: req.header('x-request-id') ?? crypto.randomUUID(),
 	});
+	next();
+});
+
+app.get('/users/:id', async (req, res) => {
+	const user = await res.locals.db.users
+		.findUnique({ where: { id: Number(req.params.id) } })
+		.throw();
+
+	res.json(user);
+});
+
+app.use(
+	(
+		error: unknown,
+		req: express.Request,
+		res: express.Response,
+		next: express.NextFunction,
+	) => {
+		const { status, body } = toHttpError(error);
+		res.status(status).json(body);
+	},
+);
+```
+
+</Tab>
+
+<Tab value="Fastify">
+
+Decorate the request, scope it in an `onRequest` hook (Fastify already assigns `request.id`), and map errors in `setErrorHandler`:
+
+```ts title="app.ts"
+import Fastify from 'fastify';
+import { client, type Db } from './lib/db';
+import { toHttpError } from './lib/http-error';
+
+declare module 'fastify' {
+	interface FastifyRequest {
+		db: Db;
+	}
+}
+
+const app = Fastify();
+
+app.decorateRequest('db', null as unknown as Db);
+
+app.addHook('onRequest', async (request) => {
+	request.db = client.$withContext({ requestId: request.id });
+});
+
+app.get<{ Params: { id: string } }>('/users/:id', async (request) =>
+	request.db.users
+		.findUnique({ where: { id: Number(request.params.id) } })
+		.throw(),
+);
+
+app.setErrorHandler((error, request, reply) => {
+	const { status, body } = toHttpError(error);
+	reply.status(status).send(body);
 });
 ```
 
@@ -181,8 +348,10 @@ app.get('/posts', async () => {
 
 </Tabs>
 
-<Callout title="One client, reused">
-	Instantiate the Drizzle and Better clients a single time and import the shared
-	`client` everywhere. That keeps connection pooling sane and gives you one
-	place to add [hooks](/docs/advanced/hooks) and [plugins](/docs/plugins/overview).
-</Callout>
+## Serverless and edge
+
+better-drizzle adds no connection handling of its own: it runs every query through the Drizzle instance you pass in. What matters is that instance and where you create it.
+
+- **Create the client at module scope.** Warm invocations reuse the module, so metadata and plugin setup are built once per instance, and the driver's connection or pool is reused.
+- **The driver decides what runs.** Any Drizzle driver works for repository calls. On PostgreSQL and MySQL, `transaction()` delegates to the Drizzle client's own `transaction`; if the client has none, the call throws `TRANSACTIONS_UNSUPPORTED`. Check your driver's transaction support before relying on `transaction()` at the edge.
+- **SQLite is handled differently.** Transactions run through explicit `BEGIN` / `SAVEPOINT` statements, and raw SQL uses `db.all()` / `db.run()` instead of `db.execute()`.

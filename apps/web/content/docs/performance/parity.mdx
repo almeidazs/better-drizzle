@@ -1,34 +1,155 @@
 ---
 title: Benchmark parity
-description: The one rule that keeps overhead numbers honest - compare equivalent work, not just equivalent SQL count.
+description: How the benchmark suite keeps overhead numbers honest - equivalent work on both sides, verified before anything is timed.
 icon: Scale
 seoTitle: 'Benchmark Parity Methodology'
-seoDescription: 'How better-drizzle benchmarks stay honest: compare equivalent work against raw Drizzle ORM, same result shape, not just the same SQL count.'
+seoDescription: 'How better-drizzle benchmarks stay honest: raw Drizzle ORM does the same work and returns the same result shape, verified before timing, with medians.'
 ---
 
-The repository has one hard benchmarking rule:
+The benchmark suite has one hard rule:
 
 > Compare equivalent **work**, not just equivalent **SQL count**.
 
-A wrapper looks slow if you compare its rich result against a raw query that does less. Parity keeps the comparison honest.
+A wrapper looks slow if its rich result is timed against a raw query that does less, and looks fast if the raw side does more. Parity keeps both sides doing the same thing. The resulting numbers are on the [benchmarks page](/docs/performance/benchmarks); this page explains how they are produced.
 
-## Good parity comparisons
+## What "API parity" means
 
-- `findMany({ include })` against a raw Drizzle query that **also loads those relations**
-- `paginate()` against a manual flow that returns rows **plus** offset pagination metadata
-- `cursor()` against a manual flow that returns rows **plus** cursor navigation metadata
-- the soft-delete plugin against a manual implementation that performs the **same** visibility filtering and delete rewrite
+Every published scenario is a pair of functions in `benchmark/scenarios.ts`: a raw Drizzle version and a better-drizzle version. For a pair to count as parity:
 
-## Bad comparisons
+- **Same result.** The raw side returns the same value, deep-equal: the same rows, the same nested relation payloads, the same pagination metadata. Suites check this with `deepStrictEqual` before timing.
+- **Same work.** The raw side runs the queries a careful developer would write to produce that result: batched relation loading instead of N+1 queries, a real `count` for offset totals, a real existence check for cursor navigation.
+- **Same database.** Both sides run against the same schema and seed data, on SQLite, so wrapper overhead is not hidden by network or disk I/O.
 
-- a nested repository payload against a flat SQL join
-- a paginated helper against a raw query that returns rows only
-- a plugin-enabled mutation against a baseline that skips the same side effects
+Scenarios that intentionally do less work on the raw side, such as a flat join instead of a nested payload or a cursor page without navigation flags, live in a separate **manual drizzle reference** group. They show what is possible without the wrapper, but they are never used as overhead claims.
 
-## Practical interpretation
+## Example: cursor `hasPrevious`
 
-Sometimes a hand-tuned manual query beats the wrapper. That is expected and fine. The relevant question is: **did the wrapper stay small for the amount of behavior it added?**
+`cursor()` returns `hasNext`, `hasPrevious`, `nextCursor`, and `previousCursor`. An earlier raw scenario hardcoded `hasPrevious: true`, so it ran one query while better-drizzle resolved the flag for real. That made `cursor()` look about 2x slower than raw Drizzle, from work only one side did.
 
-## When you change a hot path
+The current raw scenario computes the flag in the same query, with a correlated `exists` subquery, and falls back to a probe query for empty pages:
 
-If you add a performance-sensitive feature, re-run the suite and verify parity *before* reading headline numbers. Update the examples and wording so the claims still match what the benchmark actually measures.
+```ts title="benchmark/scenarios.ts"
+export const rawCursorPaginate = async (context: BenchmarkContext) => {
+	const data = await context.raw
+		.select({
+			...userColumns,
+			__hasPrevious:
+				sql`exists (select 1 from ${users} as prior where prior.id <= ${context.ids.cursorAfterId})`.mapWith(
+					Boolean,
+				),
+		})
+		.from(users)
+		.where(gt(users.id, context.ids.cursorAfterId))
+		.orderBy(asc(users.id))
+		.limit(26);
+
+	const hasPrevious = data.length
+		? data[0].__hasPrevious
+		: (await context.raw.select({ id: users.id }).from(users).limit(1))
+				.length > 0;
+	// ...strip __hasPrevious, slice to 25, build the same pagination object
+};
+```
+
+The data-only version, one query with no navigation flags, is kept as `drizzle manual: cursor data only` in the manual reference group. Re-check this kind of detail whenever a pagination scenario changes.
+
+## How the published numbers are measured
+
+Absolute timings drift with machine load: the same operation can read 53 µs on an idle machine and 93 µs under load. The raw/better **ratio** is stable across runs, so that is what gets published. `benchmark/report.ts` is built around it:
+
+<Steps>
+<Step>
+### Verify parity
+
+Each read pair runs once on both sides and the results are compared with `deepStrictEqual`. A mismatch stops the run before anything is timed. Write and transaction pairs are skipped here, because they change state on each call; `bench:full` checks those.
+</Step>
+<Step>
+### Interleave samples
+
+For each pair, both sides are sampled inside the same window. The leading side alternates on every sample, so a machine that is warming up or cooling down does not favour whichever side runs first. The sample count is `BENCH_SAMPLES`, 7 by default.
+</Step>
+<Step>
+### Delegate each measurement to mitata
+
+Each sample is one mitata `measure()` call, and its p50 is recorded. Warmup, JIT settling, GC handling, and outlier trimming therefore match `bun run bench`. An earlier hand-rolled timing loop disagreed with mitata by about 30 points on point lookup, so timing is not done by hand.
+</Step>
+<Step>
+### Take the median
+
+The report uses the median of each side's samples and publishes `better / raw` as the overhead percentage, alongside machine-specific absolute values.
+</Step>
+</Steps>
+
+## Running the suites
+
+| Command | What it does |
+| --- | --- |
+| `bun run bench` | Latency per operation with mitata, grouped as `api parity: reads`, `writes`, `transactions`, and `manual drizzle reference`. Raw and better sides use separate temporary databases. |
+| `bun run bench:verify` | Deep result parity for every read, write, and transaction pair in `benchmark/full.ts`, with no timing. |
+| `bun run bench:full` | Runs the same verification, then times all of those pairs, including batch writes, relation writes, relation counts, and raw SQL. |
+| `bun run bench:memory` | Heap and RSS deltas across batches of reads, writes, and transactions. |
+| `bun run bench:report` | Verifies read parity, then prints the interleaved, median-of-samples Markdown tables used on the benchmarks page. |
+| `bun run bench:all` | `bench`, `bench:full`, and `bench:memory` in sequence. |
+| `bun run bench:jsonb` | PostgreSQL JSONB path filters with row parity and plan parity (both sides must use, or both skip, the expression index). Needs `DATABASE_URL`. |
+
+```bash
+bun run bench:verify
+BENCH_SAMPLES=11 bun run bench:report
+```
+
+When you change performance-sensitive code, run `bench`, `bench:verify`, `bench:full`, and `bench:memory`, and read regressions against the parity groups first.
+
+## Adding a fair scenario
+
+<Steps>
+<Step>
+### Write both sides
+
+Add a `raw...` and a `better...` function to `benchmark/scenarios.ts`. Each takes the `BenchmarkContext` and returns its result.
+
+```ts title="benchmark/scenarios.ts"
+export const rawTopPosts = async (context: BenchmarkContext) =>
+	context.raw
+		.select()
+		.from(posts)
+		.where(eq(posts.published, true))
+		.orderBy(desc(posts.score), asc(posts.id))
+		.limit(10);
+
+export const betterTopPosts = async (context: BenchmarkContext) =>
+	betterClient(context).posts.findMany({
+		where: { published: true },
+		orderBy: [{ score: 'desc' }, { id: 'asc' }],
+		take: 10,
+	});
+```
+
+Give both sides the same total order, with a tiebreaker such as `id`. Rows that tie on the sort key can come back in a different order and fail the deep-equal check.
+</Step>
+<Step>
+### Match the work, not the call count
+
+If the better side loads relations, the raw side loads the same relations with batched queries and assembles the same nesting. If it returns pagination metadata, the raw side computes every field. If a plugin rewrites the operation, the raw side performs the same filtering or rewrite.
+</Step>
+<Step>
+### Keep writes repeatable
+
+Mutation scenarios run thousands of times. Use the deterministic ID and token counters in `scenarios.ts`, or restore state inside the scenario, so every iteration does the same work and the two sides never collide on unique keys.
+</Step>
+<Step>
+### Register the pair
+
+Add it to the `api parity` group in `benchmark/time.ts`, to `readPairs` or `writePairs` in `benchmark/full.ts`, and, if it should be published, to `READS` or `WRITES` in `benchmark/report.ts`. A raw shortcut that does less work goes only in the `manual drizzle reference` group.
+</Step>
+<Step>
+### Verify before reading numbers
+
+Run `bun run bench:verify`. Only once parity passes do the timings mean anything.
+</Step>
+</Steps>
+
+## Reading the results
+
+- A hand-tuned manual query can beat the wrapper. The question is whether the wrapper stayed small for the behavior it added.
+- The wrapper can also win, when its default is better than the obvious raw code. Relation graph reads are the main case: the batched loader beats the equivalent raw code.
+- Heap numbers matter as much as latency. Some batches, such as mixed reads and transactions, use more heap than raw Drizzle.
