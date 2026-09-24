@@ -52,6 +52,8 @@ export enum BetterDrizzleErrorCode {
 	DialectInferenceFailed = 'DIALECT_INFERENCE_FAILED',
 	/** JSONB path filters are only supported by PostgreSQL. */
 	JsonbQueryUnsupported = 'JSONB_QUERY_UNSUPPORTED',
+	/** Native PostgreSQL array filters are only supported by PostgreSQL. */
+	ArrayQueryUnsupported = 'ARRAY_QUERY_UNSUPPORTED',
 	/** A lifecycle hook threw an error. */
 	HookError = 'HOOK_ERROR',
 	/** Row locking is not supported for the current dialect or query shape. */
@@ -173,6 +175,7 @@ const getDefaultStatus = (code: BetterDrizzleErrorCode) => {
 		case BetterDrizzleErrorCode.LockNotSupported:
 		case BetterDrizzleErrorCode.LockRequiresTransaction:
 		case BetterDrizzleErrorCode.JsonbQueryUnsupported:
+		case BetterDrizzleErrorCode.ArrayQueryUnsupported:
 		case BetterDrizzleErrorCode.TransactionUnsupportedOption:
 			return 400;
 		case BetterDrizzleErrorCode.LockTimeout:

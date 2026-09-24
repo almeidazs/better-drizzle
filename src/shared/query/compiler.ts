@@ -167,6 +167,75 @@ const isJsonWhereFilter = (
 ): value is { json: Record<string, unknown> } =>
 	isPlainObject(value) && isPlainObject(value.json);
 
+const isPgArrayColumn = (column: AnyColumn) =>
+	(column as { columnType?: string }).columnType === 'PgArray';
+
+const isArrayFilter = (value: unknown): value is Record<string, unknown> =>
+	isPlainObject(value) &&
+	('equals' in value ||
+		'has' in value ||
+		'hasEvery' in value ||
+		'hasNone' in value ||
+		'hasSome' in value ||
+		'containedBy' in value ||
+		'isEmpty' in value ||
+		'length' in value ||
+		'not' in value);
+
+const compileArrayFilter = (
+	column: AnyColumn,
+	value: Record<string, unknown>,
+): SQL | undefined => {
+	const conditions: SQL[] = [];
+	const needsCardinality =
+		value.isEmpty !== undefined || value.length !== undefined;
+	const cardinality = needsCardinality
+		? sql`cardinality(${column})`
+		: undefined;
+
+	if ('equals' in value)
+		conditions.push(
+			value.equals === null ? isNull(column) : eq(column, value.equals),
+		);
+	if (value.has !== undefined && value.has !== null)
+		conditions.push(sql`${column} @> ${sql.param([value.has], column)}`);
+	if (Array.isArray(value.hasEvery))
+		conditions.push(sql`${column} @> ${sql.param(value.hasEvery, column)}`);
+	if (Array.isArray(value.hasSome))
+		conditions.push(sql`${column} && ${sql.param(value.hasSome, column)}`);
+	if (Array.isArray(value.hasNone))
+		conditions.push(
+			sql`not (${column} && ${sql.param(value.hasNone, column)})`,
+		);
+	if (Array.isArray(value.containedBy))
+		conditions.push(
+			sql`${column} <@ ${sql.param(value.containedBy, column)}`,
+		);
+	if (value.isEmpty === true && cardinality)
+		conditions.push(eq(cardinality, 0));
+	if (value.isEmpty === false && cardinality)
+		conditions.push(gt(cardinality, 0));
+	if (typeof value.length === 'number')
+		conditions.push(eq(cardinality as SQL, value.length));
+	else if (isPlainObject(value.length) && cardinality) {
+		const lengthFilter = compileScalarFilter(
+			cardinality as unknown as AnyColumn,
+			value.length,
+		);
+		if (lengthFilter) conditions.push(lengthFilter);
+	}
+	if ('not' in value) {
+		if (isPlainObject(value.not)) {
+			const nested = compileArrayFilter(column, value.not);
+			if (nested) conditions.push(not(nested));
+		} else if (value.not === null) conditions.push(not(isNull(column)));
+		else if (value.not !== undefined)
+			conditions.push(not(eq(column, value.not)));
+	}
+
+	return conditions.length ? and(...conditions) : undefined;
+};
+
 const compileJsonPathFilter = (
 	column: AnyColumn,
 	path: string,
@@ -589,6 +658,21 @@ export const compileWhereInput = <Schema extends AnySchema, Meta>(
 				);
 				if (clause) conditions.push(clause);
 			}
+			continue;
+		}
+
+		if (isPgArrayColumn(column) && isArrayFilter(value)) {
+			if (context.dialect !== 'pg')
+				throw new BetterDrizzleError({
+					code: BetterDrizzleErrorCode.ArrayQueryUnsupported,
+					column: key,
+					dialect: context.dialect,
+					message:
+						'Native PostgreSQL array filters are only supported by PostgreSQL.',
+					table: context.tableName,
+				});
+			const arrayFilter = compileArrayFilter(field, value);
+			if (arrayFilter) conditions.push(arrayFilter);
 			continue;
 		}
 
