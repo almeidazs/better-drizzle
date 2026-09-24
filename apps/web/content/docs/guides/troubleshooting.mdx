@@ -1,0 +1,354 @@
+---
+title: Troubleshooting & FAQ
+description: Common better-drizzle errors grouped by symptom, with the error code or message, why it happens, and how to fix it.
+icon: LifeBuoy
+seoTitle: 'Troubleshooting & FAQ'
+seoDescription: 'Fix common better-drizzle errors on Drizzle ORM: relations, dialect inference, transactions, row locks, raw SQL, JSONB and array filters, plugins, and types.'
+---
+
+Every error better-drizzle throws is a `BetterDrizzleError` with a `code`, a `message`, and structured fields such as `table`, `operation`, and `details`. Start by logging those:
+
+```ts
+import { BetterDrizzleError } from 'better-drizzle';
+
+try {
+	await client.users.findMany({ include: { posts: true } });
+} catch (error) {
+	if (error instanceof BetterDrizzleError)
+		console.error(error.code, error.message, error.table, error.details);
+	throw error;
+}
+```
+
+The full list of codes lives in the [errors reference](/docs/reference/errors). This page is organized by symptom.
+
+## Setup and schema
+
+### A relation does not appear in `include` or `select`
+
+**Message:** `Unknown relation or column "posts" on "users".` (code `OPERATION_ERROR`), or the key is simply missing from the TypeScript autocomplete.
+
+**Why:** better-drizzle reads relations from the Drizzle `relations(...)` definitions in the `schema` you pass to `better()`. A foreign key alone (`.references(...)`) is not a relation, and a `relations(...)` export that is not in the `schema` object is invisible.
+
+**Fix:** define both sides with `relations(...)` and include the relation exports in `schema`:
+
+```ts
+export const usersRelations = relations(users, ({ many }) => ({
+	posts: many(posts),
+}));
+
+export const postsRelations = relations(posts, ({ one }) => ({
+	author: one(users, {
+		fields: [posts.authorId],
+		references: [users.id],
+	}),
+}));
+
+export const schema = {
+	users,
+	usersRelations,
+	posts,
+	postsRelations,
+};
+
+const client = better(db, { schema });
+```
+
+Also check that `select` and `include` are not used at the same level: that throws `select and include cannot be used at the same query level.` See [relations](/docs/querying/relations).
+
+### A many-to-many relation is ambiguous
+
+**Message:** `Relation "groups" on "users" is ambiguous. Configure its junction explicitly.` (code `OPERATION_ERROR`, with the candidate paths in `details.paths`).
+
+**Why:** junction tables with two foreign-key `one` relations are inferred as many-to-many. When more than one junction could produce the same relation name, better-drizzle refuses to pick one silently. The error is thrown when you use the relation, not at startup.
+
+**Fix:** declare the junction explicitly, and optionally turn inference off:
+
+```ts
+const client = better(db, {
+	schema,
+	relations: {
+		inferManyToMany: false,
+		manyToMany: [
+			{
+				through: 'userGroups',
+				left: { relation: 'user' },
+				right: { relation: 'group' },
+			},
+		],
+	},
+});
+```
+
+If an entry does not match a valid junction, bootstrap fails with `Invalid many-to-many relation through "userGroups".` Check that `through` is the schema key of the junction table and that `left.relation` / `right.relation` are its `one` relation names.
+
+### `REPOSITORY_NOT_FOUND`
+
+**Message:** `Repository "user" not found.`
+
+**Why:** `client.repository(name)` resolves by the TypeScript schema key (for example `users`) or by the database table name (for example `app_users`). Anything else, including a singular form or a typo, is not registered.
+
+**Fix:** pass one of those two names. `details.name` holds the value you passed. See [dynamic repositories](/docs/guides/dynamic-repositories).
+
+### `DIALECT_INFERENCE_FAILED`
+
+**Message:** `Unable to infer Better Drizzle dialect from "SomeDialect".`
+
+**Why:** the dialect is detected from the constructor name of the Drizzle instance's `dialect` (`db.dialect.constructor.name`). It must contain `sqlite`, `mysql`, `pg`, or `postgres`. It fails when you pass something that is not a Drizzle database instance (a raw driver pool, a connection, a proxy object), or a wrapper that hides `dialect`.
+
+**Fix:** pass the object returned by Drizzle's `drizzle(...)` for your driver. `details.dialectConstructorName` shows what was found (`unknown` means there was no `dialect` at all).
+
+## Transactions
+
+### `TRANSACTIONS_UNSUPPORTED`
+
+**Message:** `The provided Drizzle client does not support transactions.`
+
+**Why:** on PostgreSQL and MySQL, `client.transaction(...)` delegates to Drizzle's `db.transaction`. If the Drizzle client does not expose a `transaction` method, the call fails before starting. Some HTTP-style drivers do not support interactive transactions; if their `transaction` method exists but throws, you see the driver's own error instead.
+
+**Fix:** use a driver with transaction support (for example a pooled or WebSocket driver instead of an HTTP one) for code paths that need `client.transaction(...)`, relation writes, or `locks.transactionsOnly`. Relation writes (`connect`, `disconnect`, `set`) open an implicit transaction when none is active, so they are affected too.
+
+### Transactions on SQLite behave differently
+
+**Why:** Bun SQLite's native Drizzle transaction callback is synchronous, so for SQLite better-drizzle does not call `db.transaction`. It runs explicit `begin` / `commit` / `rollback`, and `savepoint` / `release savepoint` / `rollback to savepoint` for nested transactions, on the same Drizzle client. That is also why SQLite never throws `TRANSACTIONS_UNSUPPORTED`.
+
+**What to expect:**
+
+- `isolationLevel` and `readOnly` are not applied on SQLite, and `comment` is PostgreSQL only. By default that logs a warning; with `transaction: { unsupportedOptions: 'throw' }` it throws `TRANSACTION_UNSUPPORTED_OPTION` (`Transaction option "readOnly" is not supported for dialect "sqlite".`), and `'ignore'` silences it.
+- Because statements run on the shared connection, queries issued through the raw `db` while a SQLite transaction is open run inside it.
+
+See [transactions](/docs/advanced/transactions).
+
+### `AFTER_COMMIT_OUTSIDE_TRANSACTION` / `AFTER_ROLLBACK_OUTSIDE_TRANSACTION`
+
+**Message:** `afterCommit() can only be used inside a transaction.` or `afterRollback() can only be used inside a transaction.`
+
+**Why:** the root client exposes `afterCommit` and `afterRollback` so shared code can call them, but they only work while a transaction is active. The same applies to the helpers passed to hooks and plugins.
+
+**Fix:** register the callback on the transaction client, or check first:
+
+```ts
+await client.transaction(async (tx) => {
+	await tx.orders.create({ data: order });
+	tx.afterCommit(() => sendReceipt(order.id));
+});
+```
+
+In hooks and plugins, read `isInTransaction` from the payload before registering.
+
+## Row locks
+
+### `LOCK_NOT_SUPPORTED`
+
+Row locks are PostgreSQL and MySQL only, and only on read queries. The message tells you which case you hit:
+
+| Message | Why | Fix |
+| --- | --- | --- |
+| `Row locks are not supported on SQLite.` | SQLite has no `SELECT ... FOR UPDATE` | remove `lock` on SQLite, rely on the transaction |
+| `Row locks are only supported on read queries without general relation loading.` | the query uses multiple `include` fields or a relation `select`, which do not carry the lock | lock the root rows alone, then load relations in a second query; a single `one` relation `include` is supported |
+| `Nested relation locks are not supported.` | `lock` was set inside a nested relation | lock only at the root |
+| `Lock mode "keyShare" is not supported on MySQL.` | `keyShare` and `noKeyUpdate` are PostgreSQL modes | use `update` or `share` on MySQL |
+| `lock.tables is only supported on PostgreSQL.` | `tables` targets `FOR UPDATE OF ...` | drop `tables` on MySQL |
+| `The current Drizzle select builder does not support row locks.` | the Drizzle select builder has no `.for()` | upgrade Drizzle or use a driver whose builder supports it |
+
+Setting `noWait` and `skipLocked` together throws `lock cannot enable both noWait and skipLocked.` (code `OPERATION_ERROR`). `count`, `exists`, and writes do not accept `lock`.
+
+### `LOCK_REQUIRES_TRANSACTION`
+
+**Message:** `Row locks can only be used inside a transaction.`
+
+**Why:** the client was created with `locks: { transactionsOnly: true }` and a locked read ran on the root client.
+
+**Fix:** run the locked read on the transaction client:
+
+```ts
+await client.transaction(async (tx) => {
+	const jobs = await tx.jobs.findMany({
+		where: { status: 'pending' },
+		orderBy: { id: 'asc' },
+		take: 10,
+		lock: { mode: 'update', skipLocked: true },
+	});
+	// ...
+});
+```
+
+See [row locks](/docs/advanced/locks).
+
+## Raw SQL
+
+All of these come from `$raw`, `$executeRaw`, and `$rawUnsafe`. See [raw SQL](/docs/advanced/raw-sql).
+
+### `RAW_DISABLED`
+
+**Message:** `Raw SQL is disabled for this Better Drizzle client.`
+
+**Why:** the client was created with `raw: { enabled: false }`. **Fix:** enable it, or use the raw Drizzle `db` directly for that code path.
+
+### `RAW_UNSAFE_DISABLED`
+
+**Message:** ``Unsafe raw SQL is disabled. Set raw.allowUnsafe = true to enable `$rawUnsafe()`.``
+
+**Why:** `$rawUnsafe` takes a plain SQL string and is off by default. **Fix:** prefer `$raw` with a tagged template. Only if you must run a string, set `raw: { allowUnsafe: true }`.
+
+### `RAW_INVALID_QUERY`
+
+**Message:** `Safe raw queries must use a tagged template or a Drizzle SQL object.`
+
+**Why:** `$raw` or `$executeRaw` received a plain string at runtime, often from calling it as a function with a pre-built string instead of using it as a tag (usually through an `any` or a cast). **Fix:**
+
+```ts
+// Wrong: a plain string
+await client.$raw(`select * from users where id = ${id}`);
+
+// Right: a tagged template, values are bound as parameters
+await client.$raw`select * from users where id = ${id}`;
+```
+
+### `RAW_UNSAFE_PLACEHOLDER_MISMATCH`
+
+**Message:** `Raw unsafe parameter count does not match "?" placeholder count.`
+
+**Why:** `$rawUnsafe(query, params)` splits the query on `?` and the count differs from `params.length`. A literal `?` inside a string or a PostgreSQL JSON operator such as `?|` also counts. **Fix:** make the counts match; `details.params` and `details.placeholders` show both numbers.
+
+### `RAW_COMMENT_REQUIRED`
+
+**Message:** ``Raw SQL requires `options.comment`.``
+
+**Why:** the client has `raw: { requireComment: true }`. **Fix:** pass a `comment` in the raw call options.
+
+### `RAW_UNSUPPORTED_OPTION` for `comment`
+
+**Message:** `Raw option "comment" is not supported for dialect "sqlite".`
+
+**Why:** raw SQL comments are prepended as `/* ... */` only on PostgreSQL. On SQLite and MySQL the comment is dropped. By default this only logs a warning; it throws when the client sets `raw: { unsupportedOptions: 'throw' }`.
+
+**Fix:** set `raw.unsupportedOptions` to `'ignore'` if you keep comments for portability, or omit `comment` on non-PostgreSQL clients. Note that `requireComment: true` still requires the option to be present even where it is dropped.
+
+## Dialect-specific filters
+
+### `JSONB_QUERY_UNSUPPORTED`
+
+**Message:** `JSONB path filters are only supported by PostgreSQL.`
+
+**Why:** a `where` used the `{ json: { ... } }` path filter on SQLite or MySQL. **Fix:** use PostgreSQL for JSONB path filters, or write the condition with Drizzle `sql` for your dialect. See [JSONB](/docs/querying/jsonb).
+
+### `ARRAY_QUERY_UNSUPPORTED`
+
+**Message:** `Native PostgreSQL array filters are only supported by PostgreSQL.`
+
+**Why:** array operators (`has`, `hasEvery`, `hasSome`, `hasNone`, `containedBy`, `isEmpty`, and `length`) compile to PostgreSQL `@>`, `&&`, `<@`, and `cardinality()`. They are only typed and accepted for native `PgArray` columns. **Fix:** keep array filters on PostgreSQL. JSON columns typed as arrays do not get array operators. See [arrays](/docs/querying/arrays).
+
+## Plugins
+
+Plugin validation runs once, when `better()` is called, so these fail at startup rather than on the first query.
+
+| Code | Message | Fix |
+| --- | --- | --- |
+| `PLUGIN_DUPLICATE_ID` | `Duplicate Better Drizzle plugin id "x".` | register each plugin once; give custom plugins unique ids |
+| `PLUGIN_DIALECT_UNSUPPORTED` | `Plugin "x" does not support dialect "sqlite".` | the plugin's `config.dialects` excludes your dialect; remove it or use a supported dialect |
+| `PLUGIN_REQUIRED_COLUMN_MISSING` | `Plugin "x" requires column "deletedAt" on model "users".` | add the column to every model, or mark the requirement `optional` in your own plugin |
+| `PLUGIN_REQUIRED_COLUMN_TYPE` | `Plugin "x" requires column "c" on model "m" to be "t", got "..." (...).` | change the column so its Drizzle `columnType` or `dataType` matches; `details` holds both |
+| `PLUGIN_OPERATION_ARG_CONFLICT` | `Plugin "b" cannot override operation arg "k" on "findMany" because it is already declared by plugin "a".` | two plugins declare the same `operationArgs` field; rename one |
+| `PLUGIN_EXTENSION_CONFLICT` | `Plugin "x" cannot override "k" on ...` or `Client extension cannot override "k".` | a plugin extension or `client.extends(...)` uses a key that already exists (built-in or from another plugin); rename it |
+
+Remember that a requirement is checked against **every** model in the schema. See [writing plugins](/docs/plugins/writing-plugins).
+
+### The rules plugin throws on every call
+
+**Message:** `Tenant context "tenantId" is required.` (code `OPERATION_ERROR`)
+
+**Why:** both `recommended()` and `strict()` enable `requireTenantContext` at `'error'`. Every operation, including raw SQL and transactions, then needs `meta.tenantId`, unless `meta.system` is truthy.
+
+**Fix:** provide the tenant through scoped metadata, or turn the rule off if your app is not multi-tenant:
+
+```ts
+import { recommended, rules } from 'better-drizzle/rules';
+
+const client = better(db, {
+	schema,
+	plugins: [rules(recommended({ requireTenantContext: false }))],
+});
+
+// or, per request
+const scoped = client.$withContext({ tenantId: session.tenantId });
+```
+
+For any other unexpected violation, read `details.rule` to find which rule fired, then change the call or configure that rule. Setting a rule to `false` or `'off'` disables it; `throwOnError: false` reports without throwing:
+
+```ts
+try {
+	await client.users.deleteMany();
+} catch (error) {
+	if (error instanceof BetterDrizzleError)
+		console.error(error.details?.rule, error.details?.path, error.message);
+}
+```
+
+See the [rules plugin](/docs/plugins/rules).
+
+## Reads and pagination
+
+### `cursor()` rejects its arguments
+
+| Message | Fix |
+| --- | --- |
+| `cursor() accepts either before or after, but not both.` | pass only one direction per call |
+| `cursor() after must be a cursor object.` / `cursor() before must be a cursor object.` | pass the object returned as `nextCursor` / `previousCursor`, such as `{ id: 42 }`, not a bare value |
+| `Cursor field "id" must be selected when using cursor pagination on table "users"` | include every `orderBy` / cursor column in `select` |
+
+All three use code `OPERATION_ERROR`. See [pagination](/docs/querying/pagination).
+
+### `RESULT_NOT_FOUND`
+
+**Message:** `No record found for findUnique on "users".` (status `404`)
+
+**Why:** `.throw()` was called on `findFirst`, `findOne`, `findUnique`, `update`, or `delete`, and the result was `null`. This is the intended behavior, not a bug.
+
+**Fix:** drop `.throw()` and handle `null`, or pass a factory to throw your own error. A factory's error is still normalized to `RESULT_NOT_FOUND` with status `404`:
+
+```ts
+const user = await client.users
+	.findUnique({ where: { id } })
+	.throw(() => new Error('User not found'));
+```
+
+See [throwing results](/docs/writing/throwing-results).
+
+## TypeScript
+
+### "Type instantiation is excessively deep and possibly infinite" or a slow editor
+
+**Why:** the delegate types are derived from your whole schema, including relations. Very large schemas and deeply nested `include` / `select` / `where` literals make the compiler do a lot of work.
+
+**Things that help:**
+
+- keep TypeScript on a current `5.x` release
+- split very deep nested `include` trees into several smaller queries
+- when you reuse query args, declare them once and check them with `satisfies` against the delegate's argument type, instead of repeating large inline literals
+- let the compiler infer result types instead of annotating deep generic types by hand
+
+If a specific schema reproduces the error, open an issue with a minimal reproduction.
+
+## Versions
+
+### Unsupported Drizzle versions
+
+**Why:** the `drizzle-orm` peer floor is `^0.30.0`. `0.29.5` fails the typecheck.
+
+The Drizzle ORM `1.0.0` release candidates are **not supported yet**. They remove the legacy relational metadata APIs better-drizzle reads, so the package fails at module load under the RC. Stay on the stable `0.x` line until support is announced.
+
+See the [support matrix](/docs/reference/support-matrix).
+
+## Getting help
+
+If none of this matches your problem, include the `code`, `message`, `driver`, and `details` from the error, your dialect and driver, and the `better-drizzle` and `drizzle-orm` versions.
+
+<Cards>
+	<Card title="GitHub issues" href="https://github.com/almeidazs/better-drizzle/issues">
+		Bug reports and feature requests, ideally with a minimal reproduction.
+	</Card>
+	<Card title="Discord" href="https://discord.gg/yfjTbVXMW4">
+		Questions and discussion with the community.
+	</Card>
+</Cards>

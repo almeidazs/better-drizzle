@@ -81,6 +81,269 @@ const LOCK_STRENGTH_MAP = {
 	update: 'update',
 } as const satisfies Record<string, LockStrength>;
 
+type PgArrayColumn = AnyColumn & {
+	baseColumn: AnyColumn;
+	columnType?: string;
+	getSQLType(): string;
+};
+
+type ArrayMutationName =
+	| 'addUnique'
+	| 'append'
+	| 'prepend'
+	| 'remove'
+	| 'replace';
+
+const ARRAY_MUTATION_NAMES = new Set<ArrayMutationName>([
+	'addUnique',
+	'append',
+	'prepend',
+	'remove',
+	'replace',
+]);
+
+const isPgArrayColumn = (column: AnyColumn): column is PgArrayColumn =>
+	(column as { columnType?: string }).columnType === 'PgArray';
+
+const arrayMutationError = (
+	runtime: TableRuntime,
+	column: string,
+	operation: string,
+	message: string,
+	details?: Record<string, unknown>,
+) =>
+	new BetterDrizzleError({
+		code: BetterDrizzleErrorCode.OperationError,
+		column,
+		details,
+		message,
+		operation,
+		table: runtime.dbName,
+	});
+
+const getPgArrayDepth = (column: PgArrayColumn) => {
+	let depth = 1;
+	let current = column.baseColumn;
+
+	while (isPgArrayColumn(current)) {
+		depth += 1;
+		current = current.baseColumn;
+	}
+
+	return depth;
+};
+
+const hasNullArrayElement = (value: unknown): boolean => {
+	if (value === null || value === undefined) return true;
+	if (!Array.isArray(value)) return false;
+
+	for (const entry of value) if (hasNullArrayElement(entry)) return true;
+
+	return false;
+};
+
+const getArrayMutationValues = (
+	runtime: TableRuntime,
+	columnName: string,
+	column: PgArrayColumn,
+	operation: string,
+	name: ArrayMutationName,
+	value: unknown,
+) => {
+	const elementDepth = getPgArrayDepth(column) - 1;
+	let current = value;
+
+	for (let index = 0; index < elementDepth; index += 1) {
+		if (!Array.isArray(current)) break;
+		current = current[0];
+	}
+
+	const values: unknown[] = Array.isArray(current)
+		? (value as unknown[])
+		: [value];
+	if (!values.length)
+		throw arrayMutationError(
+			runtime,
+			columnName,
+			operation,
+			`${name} requires at least one array element.`,
+		);
+	if (values.some(hasNullArrayElement))
+		throw arrayMutationError(
+			runtime,
+			columnName,
+			operation,
+			`${name} does not support null array elements.`,
+		);
+
+	return values;
+};
+
+const getArrayMutationPairs = (
+	runtime: TableRuntime,
+	columnName: string,
+	operation: string,
+	value: unknown,
+) => {
+	const pairs = Array.isArray(value) ? value : [value];
+	if (!pairs.length)
+		throw arrayMutationError(
+			runtime,
+			columnName,
+			operation,
+			'replace requires at least one { from, to } pair.',
+		);
+
+	const result = new Array<{ from: unknown; to: unknown }>(pairs.length);
+	for (let index = 0; index < pairs.length; index += 1) {
+		const pair = pairs[index];
+		if (
+			!isSimpleRecord(pair) ||
+			Object.keys(pair).length !== 2 ||
+			!('from' in pair) ||
+			!('to' in pair) ||
+			hasNullArrayElement(pair.from) ||
+			hasNullArrayElement(pair.to)
+		)
+			throw arrayMutationError(
+				runtime,
+				columnName,
+				operation,
+				'replace requires non-null { from, to } pairs.',
+				{ index },
+			);
+
+		result[index] = { from: pair.from, to: pair.to };
+	}
+
+	return result;
+};
+
+const compileArrayMutation = (
+	runtime: TableRuntime,
+	columnName: string,
+	column: PgArrayColumn,
+	dialect: string,
+	operation: string,
+	value: Record<string, unknown>,
+) => {
+	const keys = Object.keys(value);
+	const name = keys.find((key): key is ArrayMutationName =>
+		ARRAY_MUTATION_NAMES.has(key as ArrayMutationName),
+	);
+
+	if (!name)
+		throw arrayMutationError(
+			runtime,
+			columnName,
+			operation,
+			`Invalid PostgreSQL array mutation for column "${columnName}".`,
+		);
+	if (keys.length !== 1)
+		throw arrayMutationError(
+			runtime,
+			columnName,
+			operation,
+			'PostgreSQL array mutations must specify exactly one operation.',
+		);
+	if (dialect !== 'pg')
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.ArrayMutationUnsupported,
+			column: columnName,
+			dialect,
+			message:
+				'Native PostgreSQL array mutations are only supported by PostgreSQL.',
+			operation,
+			table: runtime.dbName,
+		});
+
+	const input = value[name];
+	const baseColumn = column.baseColumn;
+	if (name === 'replace') {
+		let expression = sql`${column}`;
+		for (const pair of getArrayMutationPairs(
+			runtime,
+			columnName,
+			operation,
+			input,
+		))
+			expression = sql`array_replace(${expression}, ${sql.param(
+				pair.from,
+				baseColumn,
+			)}, ${sql.param(pair.to, baseColumn)})`;
+		return expression;
+	}
+
+	const values = getArrayMutationValues(
+		runtime,
+		columnName,
+		column,
+		operation,
+		name,
+		input,
+	);
+	if (name === 'append')
+		return values.length === 1
+			? sql`array_append(${column}, ${sql.param(values[0], baseColumn)})`
+			: sql`array_cat(${column}, ${sql.param(values, column)})`;
+	if (name === 'prepend')
+		return values.length === 1
+			? sql`array_prepend(${sql.param(values[0], baseColumn)}, ${column})`
+			: sql`array_cat(${sql.param(values, column)}, ${column})`;
+
+	if (name === 'addUnique') {
+		const items = sql.raw('array_mutation_item');
+		const positions = sql.raw('array_mutation_position');
+		const input = sql.raw('array_mutation_input');
+		const missing = sql.raw('array_mutation_missing');
+		const empty = sql`${column}[0:0]`;
+		const parameter = sql`${sql.param(values, column)}::${sql.raw(column.getSQLType())}`;
+		const additions = sql`(select array_agg(${items} order by ${positions}) from (select ${items}, min(${positions}) as ${positions} from unnest(${parameter}) with ordinality as ${input}(${items}, ${positions}) where not (${column} @> array[${items}]) group by ${items}) as ${missing})`;
+
+		return sql`case when ${column} is null then ${column} else array_cat(${column}, coalesce(${additions}, ${empty})) end`;
+	}
+
+	let expression = sql`${column}`;
+	for (const entry of values) {
+		expression = sql`array_remove(${expression}, ${sql.param(
+			entry,
+			baseColumn,
+		)})`;
+	}
+
+	return expression;
+};
+
+const compilePgArrayMutations = (
+	runtime: TableRuntime,
+	dialect: string,
+	operation: string,
+	data: Record<string, unknown>,
+) => {
+	let result: Record<string, unknown> | undefined;
+
+	for (const key in data) {
+		const value = data[key];
+		if (!isSimpleRecord(value) || isSQLWrapper(value)) continue;
+
+		const column = runtime.columns[key];
+		if (!column || !isPgArrayColumn(column)) continue;
+
+		const mutation = compileArrayMutation(
+			runtime,
+			key,
+			column,
+			dialect,
+			operation,
+			value,
+		);
+		if (!result) result = { ...data };
+		result[key] = mutation;
+	}
+
+	return result ?? data;
+};
+
 const getSkipDuplicatesConfig = <Schema extends AnySchema>(
 	skipDuplicates?: SkipDuplicatesOption<Schema, BetterTableKey<Schema>>,
 ): ResolvedSkipDuplicates => {
@@ -404,6 +667,7 @@ const getUpdateEachRows = <Schema extends AnySchema, Meta>(
 };
 
 const buildUpdateEachSet = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
 	runtime: TableRuntime,
 	byKey: string,
 	args: UpdateEachArgs<Schema, BetterTableKey<Schema>, Meta>,
@@ -440,10 +704,24 @@ const buildUpdateEachSet = <Schema extends AnySchema, Meta>(
 					table: runtime.dbName,
 				});
 
+			const mutation =
+				isPgArrayColumn(column) &&
+				isSimpleRecord(nextValue) &&
+				!isSQLWrapper(nextValue)
+					? compileArrayMutation(
+							runtime,
+							key,
+							column,
+							context.dialect,
+							'updateEach',
+							nextValue,
+						)
+					: undefined;
 			branches[index] = sql`when ${byColumn} = ${row[byKey]} then ${
-				isSQLWrapper(nextValue)
+				mutation ??
+				(isSQLWrapper(nextValue)
 					? nextValue
-					: sql.param(nextValue, column)
+					: sql.param(nextValue, column))
 			}`;
 		}
 
@@ -1511,7 +1789,12 @@ const upsertManyChunk = async <Schema extends AnySchema, Meta>(
 		runtime,
 		args.select as Record<string, unknown> | undefined,
 	);
-	const set = buildUpsertManySet(runtime, args, targetColumns);
+	const set = compilePgArrayMutations(
+		runtime,
+		context.dialect,
+		'upsertMany',
+		buildUpsertManySet(runtime, args, targetColumns),
+	);
 
 	if (!Object.keys(set).length)
 		throw new BetterDrizzleError({
@@ -1648,7 +1931,14 @@ export const updateRecord = async <Schema extends AnySchema, Meta>(
 			if (!predicate) return null;
 			await context.db
 				.update(runtime.table)
-				.set(prepared.scalar)
+				.set(
+					compilePgArrayMutations(
+						runtime,
+						context.dialect,
+						'update',
+						prepared.scalar,
+					),
+				)
 				.where(predicate);
 			current =
 				(await reloadRecord(context, tableName, current)) ?? current;
@@ -1667,7 +1957,14 @@ export const updateRecord = async <Schema extends AnySchema, Meta>(
 
 	const builder = context.db
 		.update(runtime.table)
-		.set(args.data)
+		.set(
+			compilePgArrayMutations(
+				runtime,
+				context.dialect,
+				'update',
+				args.data as Record<string, unknown>,
+			),
+		)
 		.where(predicate);
 
 	if (typeof builder.returning === 'function') {
@@ -1749,7 +2046,17 @@ export const updateManyRecords = async <Schema extends AnySchema, Meta>(
 
 	const affectedCount = await countRows(context, tableName, args.where);
 	if (affectedCount > 0)
-		await context.db.update(runtime.table).set(args.data).where(predicate);
+		await context.db
+			.update(runtime.table)
+			.set(
+				compilePgArrayMutations(
+					runtime,
+					context.dialect,
+					'updateMany',
+					args.data as Record<string, unknown>,
+				),
+			)
+			.where(predicate);
 
 	return { count: affectedCount };
 };
@@ -1774,7 +2081,7 @@ export const updateEachRecords = async <Schema extends AnySchema, Meta>(
 	const affectedCount = await countRows(context, tableName, where);
 	if (affectedCount === 0) return { count: 0 };
 
-	const set = buildUpdateEachSet(runtime, rows.byKey, args);
+	const set = buildUpdateEachSet(context, runtime, rows.byKey, args);
 	const selection = getReturningSelection(
 		runtime,
 		args.select as Record<string, unknown> | undefined,
@@ -1902,7 +2209,12 @@ export const upsertRecord = async <Schema extends AnySchema, Meta>(
 			} as CreateArgs<Schema, BetterTableKey<Schema>, Meta>);
 
 		const builder = insertBuilder.onConflictDoUpdate({
-			set: updateData,
+			set: compilePgArrayMutations(
+				runtime,
+				context.dialect,
+				'upsert',
+				updateData,
+			),
 			target: conflictTarget,
 		});
 

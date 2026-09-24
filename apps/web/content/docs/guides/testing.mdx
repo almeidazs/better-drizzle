@@ -1,0 +1,397 @@
+---
+title: Testing
+description: Fast tests on in-memory SQLite, a fresh client per test, rolled-back transactions, hook and plugin assertions, and PostgreSQL-only suites.
+icon: FlaskConical
+seoTitle: 'Testing Drizzle ORM Apps'
+seoDescription: 'Test Drizzle ORM code with better-drizzle: in-memory SQLite, a fresh client per test, rolled-back transactions, hook assertions, and PostgreSQL suites.'
+---
+
+better-drizzle has no test mode and no mock client. You test it the way it runs: `better(db, { schema })` on top of a real Drizzle database. For most suites that database is SQLite in memory, which is fast enough to build from scratch for every test.
+
+The examples use `bun:test`. Vitest has the same `describe`, `test`, `expect`, `beforeEach`, and `describe.skipIf`, so the code carries over as is. Under Vitest on Node, use better-sqlite3 instead of `bun:sqlite`.
+
+## In-memory SQLite
+
+Put the database setup in one helper that every test file imports. It opens a new `:memory:` database, applies the schema, and returns a client:
+
+<Tabs items={['Bun', 'Node (better-sqlite3)']}>
+
+<Tab value="Bun">
+
+```ts title="tests/db.ts"
+import { Database } from 'bun:sqlite';
+import { better } from 'better-drizzle';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { schema } from '../src/db/schema';
+
+const ddl = `
+CREATE TABLE users (
+	id INTEGER PRIMARY KEY NOT NULL,
+	email TEXT NOT NULL UNIQUE,
+	name TEXT NOT NULL,
+	active INTEGER NOT NULL
+);
+`;
+
+export const createTestDb = () => {
+	const sqlite = new Database(':memory:');
+	sqlite.exec('PRAGMA foreign_keys = ON;');
+	sqlite.exec(ddl);
+
+	const db = drizzle(sqlite, { schema });
+	const client = better(db, { schema });
+
+	return { client, db, close: () => sqlite.close() };
+};
+```
+
+</Tab>
+
+<Tab value="Node (better-sqlite3)">
+
+```ts title="tests/db.ts"
+import Database from 'better-sqlite3';
+import { better } from 'better-drizzle';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { schema } from '../src/db/schema';
+
+const ddl = `
+CREATE TABLE users (
+	id INTEGER PRIMARY KEY NOT NULL,
+	email TEXT NOT NULL UNIQUE,
+	name TEXT NOT NULL,
+	active INTEGER NOT NULL
+);
+`;
+
+export const createTestDb = () => {
+	const sqlite = new Database(':memory:');
+	sqlite.exec('PRAGMA foreign_keys = ON;');
+	sqlite.exec(ddl);
+
+	const db = drizzle(sqlite, { schema });
+	const client = better(db, { schema });
+
+	return { client, db, close: () => sqlite.close() };
+};
+```
+
+</Tab>
+
+</Tabs>
+
+SQLite leaves foreign keys off by default. Turn them on so tests fail on the same constraint violations as production.
+
+## Applying the schema
+
+Any way that produces the right tables works. Pick one and keep it in the helper:
+
+- **Raw DDL**, as above. It is the fastest option, and you see exactly what the tests run against. The downside is that it can drift from your real migrations.
+- **Your drizzle-kit migrations.** Run the generated SQL files with Drizzle's migrator, so tests use the same schema history as production:
+
+  ```ts
+  import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
+
+  migrate(db, { migrationsFolder: 'drizzle' });
+  ```
+
+  On Node, import from `drizzle-orm/better-sqlite3/migrator`.
+- **`drizzle-kit push`** against a database that lives longer than one test, such as a PostgreSQL test database. It cannot target a `:memory:` database, because that database only exists inside the test process.
+
+## A fresh client per test
+
+Create the database in `beforeEach` and close it in `afterEach`. Tests then share nothing, which means no ordering bugs and no cleanup code:
+
+```ts title="tests/users.test.ts"
+import { afterEach, beforeEach, expect, test } from 'bun:test';
+import { deactivateUser } from '../src/users';
+import { createTestDb } from './db';
+
+let ctx: ReturnType<typeof createTestDb>;
+
+beforeEach(async () => {
+	ctx = createTestDb();
+
+	await ctx.client.users.createMany({
+		data: [
+			{ id: 1, email: 'alice@example.com', name: 'Alice', active: true },
+			{ id: 2, email: 'bob@example.com', name: 'Bob', active: true },
+		],
+	});
+});
+
+afterEach(() => ctx.close());
+
+test('deactivateUser flips the flag', async () => {
+	await deactivateUser(ctx.client, 1);
+
+	const user = await ctx.client.users.findUnique({ where: { id: 1 } });
+	expect(user?.active).toBe(false);
+});
+```
+
+To test code this way, it has to take the client as a parameter or from a factory. A module that imports a process-wide client directly cannot be pointed at a test database.
+
+`better(...)` runs every plugin's `setup()` when it builds the client. With a fresh client per test, that happens once per test. On an in-memory database this costs very little.
+
+## Seeding
+
+Seed with `createMany`. It goes through the same path as your application writes, including [plugins](/docs/plugins/overview) such as timestamps:
+
+```ts
+const { count } = await ctx.client.users.createMany({
+	data: [
+		{ id: 1, email: 'alice@example.com', name: 'Alice', active: true },
+		{ id: 2, email: 'bob@example.com', name: 'Bob', active: true },
+	],
+});
+
+expect(count).toBe(2);
+```
+
+If a plugin should not touch fixture rows, seed through `ctx.client.users.$withoutPlugins().createMany(...)`, or insert with the raw Drizzle `db`.
+
+## Isolating tests with a rolled-back transaction
+
+When rebuilding the database for each test is too slow, as with a shared PostgreSQL database, run each test inside a transaction and roll it back at the end. `tx.rollback()` throws a `BetterDrizzleTransactionRollbackError`, which `transaction(...)` passes on to its caller. The helper swallows that error and rethrows anything else:
+
+```ts title="tests/rollback.ts"
+import { BetterDrizzleTransactionRollbackError } from 'better-drizzle';
+import type { client } from '../src/db';
+
+type Client = typeof client;
+type Tx = Parameters<Parameters<Client['transaction']>[0]>[0];
+
+export const rollbackAfter = async (
+	client: Client,
+	run: (tx: Tx) => Promise<void>,
+) => {
+	try {
+		await client.transaction(async (tx) => {
+			await run(tx);
+			tx.rollback();
+		});
+	} catch (error) {
+		if (!(error instanceof BetterDrizzleTransactionRollbackError))
+			throw error;
+	}
+};
+```
+
+```ts
+test('creates an order', async () => {
+	await rollbackAfter(client, async (tx) => {
+		await createOrder(tx, { userId: 1, total: 40 });
+
+		expect(await tx.orders.count({ where: { userId: 1 } })).toBe(1);
+	});
+});
+```
+
+Things to know:
+
+- Code under test must use the `tx` it receives. A query on the root client runs outside the transaction: on PostgreSQL it does not see the test's rows and is not rolled back.
+- Transactions opened by the code under test become savepoints inside the test transaction, so they roll back too.
+- `afterCommit` callbacks never run, because nothing commits. `afterRollback` callbacks and the `afterTransactionRollback` hook do run.
+- An explicit `rollback()` does not fire `onTransactionError`.
+- Tests that share one database must run one after another. Do not mark them concurrent.
+
+For SQLite in memory, a fresh database per test is usually simpler than this pattern.
+
+## Testing hooks
+
+Build a second client on the test database with the hooks you want to check, capture the calls in an array, and assert on it. Hooks receive `action`, `table`, `args`, `meta`, and, in after hooks, `result`:
+
+```ts
+import { better } from 'better-drizzle';
+import { schema } from '../src/db/schema';
+
+test('create fires before and after hooks', async () => {
+	const events: string[] = [];
+	const client = better(ctx.db, {
+		schema,
+		hooks: {
+			beforeCreate(hook) {
+				events.push(`before:${hook.action}:${hook.table}`);
+			},
+			afterCreate(hook) {
+				events.push(`after:${hook.action}:${hook.table}`);
+			},
+		},
+	});
+
+	await client.users.create({
+		data: { id: 3, email: 'carol@example.com', name: 'Carol', active: true },
+	});
+
+	expect(events).toEqual(['before:create:users', 'after:create:users']);
+});
+```
+
+The same approach checks request metadata. Scoped `meta` from `$withContext(...)` and per-call `meta` are shallow-merged, with the per-call keys winning:
+
+```ts
+const seen: unknown[] = [];
+const client = better(ctx.db, {
+	schema,
+	hooks: {
+		beforeCreate(hook) {
+			seen.push(hook.meta);
+		},
+	},
+});
+
+await client.$withContext({ requestId: 'req-1', tenantId: 't-1' }).users.create({
+	data: { id: 3, email: 'carol@example.com', name: 'Carol', active: true },
+	meta: { requestId: 'req-2' },
+});
+
+expect(seen).toEqual([{ requestId: 'req-2', tenantId: 't-1' }]);
+```
+
+## Testing plugins
+
+Build the client with the plugin under test and compare against `$withoutPlugins()`. `$withoutPlugins()` skips plugin hooks and transforms for that delegate. Client hooks still run.
+
+```ts
+import { definePlugin } from 'better-drizzle/plugins';
+
+test('audit plugin records creates', async () => {
+	const seen: string[] = [];
+	const audit = definePlugin({
+		id: 'test/audit',
+		hooks: {
+			afterCreate(hook) {
+				seen.push(`${hook.kind}:${hook.table}`);
+			},
+		},
+	});
+
+	const client = better(ctx.db, { schema, plugins: [audit] });
+
+	await client.users.create({
+		data: { id: 3, email: 'carol@example.com', name: 'Carol', active: true },
+	});
+	await client.users.$withoutPlugins().create({
+		data: { id: 4, email: 'dave@example.com', name: 'Dave', active: true },
+	});
+
+	expect(seen).toEqual(['create:users']);
+});
+```
+
+For plugins that rewrite queries, such as soft delete or tenant scoping, read the stored rows back through `$withoutPlugins()` or the raw Drizzle `db` to check what the plugin actually wrote.
+
+## Asserting errors
+
+Errors raised by better-drizzle are `BetterDrizzleError` instances with a stable `code` and an HTTP-style `status`. Assert on `code`, not on the message text:
+
+```ts
+import { BetterDrizzleError, BetterDrizzleErrorCode } from 'better-drizzle';
+
+test('missing user throws RESULT_NOT_FOUND', async () => {
+	await expect(
+		ctx.client.users.findUnique({ where: { id: 999 } }).throw(),
+	).rejects.toMatchObject({
+		code: BetterDrizzleErrorCode.ResultNotFound,
+		status: 404,
+	});
+});
+
+test('rollback rejects with a rollback error', async () => {
+	const error = await ctx.client
+		.transaction(async (tx) => tx.rollback('nope'))
+		.catch((caught: unknown) => caught);
+
+	expect(error).toBeInstanceOf(BetterDrizzleError);
+	expect(error).toMatchObject({
+		code: BetterDrizzleErrorCode.TransactionRollback,
+		reason: 'nope',
+	});
+});
+```
+
+For constraint violations, use the [classification helpers](/docs/advanced/error-handling#classifying-database-errors). They work across drivers and do not depend on how the error was wrapped:
+
+```ts
+import { isUniqueViolation } from 'better-drizzle';
+
+test('duplicate email is rejected', async () => {
+	const error = await ctx.client.users
+		.create({
+			data: { id: 9, email: 'alice@example.com', name: 'Dup', active: true },
+		})
+		.catch((caught: unknown) => caught);
+
+	expect(isUniqueViolation(error)).toBe(true);
+});
+```
+
+<Callout type="warn" title="Test with the production client options">
+	When the client has hooks (including only `onError`), errors from the operation reach the caller
+	re-wrapped with code `OPERATION_ERROR`. The original message is kept. Build
+	the test client with the same `hooks` and `plugins` as production so the
+	codes you assert on are the ones callers actually see.
+</Callout>
+
+## PostgreSQL-only features
+
+Some features cannot run on SQLite: [JSONB filters](/docs/querying/jsonb), [array filters](/docs/querying/arrays), and [row locks](/docs/advanced/locks). On SQLite they fail fast (`JSONB_QUERY_UNSUPPORTED`, `ARRAY_QUERY_UNSUPPORTED`, `LOCK_NOT_SUPPORTED`) instead of running a different query.
+
+Put these tests in separate files that run only when `DATABASE_URL` is set. Local runs without a database skip them, and CI runs them against a real server:
+
+```ts title="tests/posts.pg.test.ts"
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { better } from 'better-drizzle';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Client } from 'pg';
+import { schema } from '../src/db/schema';
+import { rollbackAfter } from './rollback';
+
+const DATABASE_URL = process.env.DATABASE_URL;
+
+describe.skipIf(!DATABASE_URL)('posts (PostgreSQL)', () => {
+	let pg: Client;
+	let client: ReturnType<typeof better<typeof schema>>;
+
+	beforeAll(async () => {
+		pg = new Client({ connectionString: DATABASE_URL });
+		await pg.connect();
+		client = better(drizzle(pg, { schema }), { schema });
+	});
+
+	afterAll(async () => {
+		await pg?.end();
+	});
+
+	test('filters by array membership', async () => {
+		await rollbackAfter(client, async (tx) => {
+			await tx.posts.createMany({
+				data: [
+					{ id: 1, title: 'ORMs', tags: ['typescript', 'orm'] },
+					{ id: 2, title: 'SQL', tags: ['sql'] },
+				],
+			});
+
+			const rows = await tx.posts.findMany({
+				where: { tags: { has: 'orm' } },
+			});
+
+			expect(rows.map(({ id }) => id)).toEqual([1]);
+		});
+	});
+});
+```
+
+Apply the schema once before the suite runs, with `drizzle-kit push` or your migrations, or with DDL in `beforeAll`.
+
+## Why not mock the client
+
+Mocking `client.users.findMany` removes the part that tends to break:
+
+- `where`, `select`, and `include` compile to SQL. A mock accepts any shape, including ones the compiler would reject.
+- Relation loading, pagination metadata, and `count` in `createMany` come from real queries.
+- Unique, foreign key, and `NOT NULL` violations only happen in a database.
+- Transactions, savepoints, and `afterCommit` ordering need a real connection.
+
+An in-memory SQLite test runs in milliseconds and covers all of this. Where you want a seam, keep it at your own service boundary, for example a `UsersService` interface. Do not mock the client. Keep pure business logic out of data-access functions so it can be tested with no database at all.

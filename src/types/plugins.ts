@@ -17,8 +17,10 @@ import type {
 	DeleteArgs,
 	DeleteManyArgs,
 	UpdateArgs,
+	UpdateDataInput,
 	UpdateEachArgs,
 	UpdateManyArgs,
+	UpdateScalarDataInput,
 	UpsertArgs,
 	UpsertManyArgs,
 } from './delegate';
@@ -284,16 +286,16 @@ type PluginOperationInputBase<
 				? InsertModelFor<Schema, Name>[]
 				: Kind extends 'updateEach'
 					? UpdateEachArgs<Schema, Name, Meta>['data']
-					: Kind extends 'update' | 'updateMany'
-						? Partial<InsertModelFor<Schema, Name>>
-						: Kind extends 'upsert'
-							? {
-									create: InsertModelFor<Schema, Name>;
-									update: Partial<
-										InsertModelFor<Schema, Name>
-									>;
-								}
-							: never;
+					: Kind extends 'update'
+						? UpdateDataInput<Schema, Name>
+						: Kind extends 'updateMany'
+							? UpdateScalarDataInput<Schema, Name>
+							: Kind extends 'upsert'
+								? {
+										create: InsertModelFor<Schema, Name>;
+										update: UpdateDataInput<Schema, Name>;
+									}
+								: never;
 	db: unknown;
 	dialect: PluginDialect;
 	isInTransaction: boolean;

@@ -10,6 +10,7 @@ import type {
 	RelatedNameFor,
 	RelationFor,
 	RelationKeysFor,
+	PgArrayKeysFor,
 	ScalarKeysFor,
 	SelectModelFor,
 	TableFor,
@@ -118,7 +119,11 @@ export type WhereInput<
 } & {
 	[K in ScalarKeysFor<Schema, Name>]?: K extends JsonbKeysFor<Schema, Name>
 		? JsonbWhereField<SelectModelFor<Schema, Name>[K]>
-		: import('./utils').ScalarWhereField<SelectModelFor<Schema, Name>[K]>;
+		: K extends PgArrayKeysFor<Schema, Name>
+			? import('./utils').ArrayWhereField<SelectModelFor<Schema, Name>[K]>
+			: import('./utils').ScalarWhereField<
+					SelectModelFor<Schema, Name>[K]
+				>;
 } & {
 	[K in RelationKeysFor<Schema, Name>]?: RelationWhereInput<Schema, Name, K>;
 };

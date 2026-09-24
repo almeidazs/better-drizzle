@@ -62,22 +62,17 @@ import { and, ilike, like } from 'drizzle-orm';
 await db
 	.select()
 	.from(users)
-	.where(
-		and(
-			ilike(users.name, '%ali%'),
-			like(users.email, '%@example.com'),
-		),
-	);
+	.where(and(ilike(users.name, '%ali%'), like(users.email, '%@example.com')));
 ```
 
-| Operator | Meaning |
-| --- | --- |
-| `equals` | exact match |
-| `in` / `notIn` | value is (not) in a list |
-| `contains` | substring match |
-| `startsWith` / `endsWith` | prefix / suffix match |
-| `mode` | `'default'` (case-sensitive) or `'insensitive'` |
-| `not` | negate a value or a nested filter |
+| Operator                  | Meaning                                         |
+| ------------------------- | ----------------------------------------------- |
+| `equals`                  | exact match                                     |
+| `in` / `notIn`            | value is (not) in a list                        |
+| `contains`                | substring match                                 |
+| `startsWith` / `endsWith` | prefix / suffix match                           |
+| `mode`                    | `'default'` (case-sensitive) or `'insensitive'` |
+| `not`                     | negate a value or a nested filter               |
 
 ## Numeric and date filters
 
@@ -100,13 +95,13 @@ await db
 	.where(and(gte(users.id, 100), lte(users.id, 200)));
 ```
 
-| Operator | Meaning |
-| --- | --- |
-| `equals` | exact match |
-| `in` / `notIn` | value is (not) in a list |
-| `lt` / `lte` | less than / less than or equal |
-| `gt` / `gte` | greater than / greater than or equal |
-| `not` | negate a value or a nested filter |
+| Operator       | Meaning                              |
+| -------------- | ------------------------------------ |
+| `equals`       | exact match                          |
+| `in` / `notIn` | value is (not) in a list             |
+| `lt` / `lte`   | less than / less than or equal       |
+| `gt` / `gte`   | greater than / greater than or equal |
+| `not`          | negate a value or a nested filter    |
 
 ## Boolean filters
 
@@ -175,10 +170,7 @@ await db
 	.where(
 		and(
 			eq(users.active, true),
-			or(
-				like(users.email, '%@company.com'),
-				like(users.name, 'Admin%'),
-			),
+			or(like(users.email, '%@company.com'), like(users.name, 'Admin%')),
 		),
 	);
 ```
@@ -187,6 +179,24 @@ await db
 	You only need explicit `AND` when you want to group an `OR` next to other
 	conditions, or to express the same condition on a field twice.
 </Callout>
+
+## PostgreSQL arrays
+
+Native PostgreSQL array columns support exact equality, containment, overlap, emptiness, and total element-count filters. These filters are PostgreSQL-only.
+
+```ts
+const posts = await db.posts.findMany({
+	where: {
+		tags: { has: 'drizzle', length: { lte: 3 } },
+		roles: { hasEvery: ['admin', 'member'] },
+		scores: { hasSome: [10, 20], hasNone: [0] },
+	},
+});
+```
+
+Use `equals` (or pass an array directly) for exact equality, `containedBy` when every stored value must be in a supplied list, and `isEmpty` for empty/non-empty arrays. `length` uses PostgreSQL `cardinality`, including every dimension. GIN indexes help containment and overlap queries; use an expression index on `cardinality(column)` for frequent length filters.
+
+See [Array filters](/docs/querying/arrays) for every operator, the generated SQL, `NULL` semantics, and indexing.
 
 ## JSONB filters
 

@@ -1,0 +1,387 @@
+---
+title: Typing results
+description: How result types follow select and include, which helper types better-drizzle exports, and how to type services, transactions, plugins, and meta.
+icon: Type
+seoTitle: 'Typing Query Results in Drizzle ORM'
+seoDescription: 'Infer and reuse better-drizzle result types in Drizzle ORM: PayloadForArgs, satisfies with QueryArgs, typed services, transaction clients, plugins, and meta.'
+---
+
+better-drizzle has no code generation step. Every result type is computed by TypeScript from your Drizzle schema and the arguments of the call. This page shows how that inference works and how to name, reuse, and pass those types around.
+
+All examples use the schema from [Getting started](/docs/getting-started) (`users` and `posts`, related by `users.posts` and `posts.author`) and a client created with `better(db, { schema })`.
+
+## Results follow the arguments
+
+The payload type depends on `select` and `include`:
+
+```ts
+// No select or include: the full row
+const users = await client.users.findMany();
+// { id: number; email: string; name: string; active: boolean }[]
+
+// select: only the keys set to true
+const names = await client.users.findMany({
+	select: { id: true, name: true },
+});
+// { id: number; name: string }[]
+
+// include: the full row plus the listed relations
+const authors = await client.users.findMany({
+	include: {
+		posts: { select: { id: true, title: true } },
+		_count: { select: { posts: true } },
+	},
+});
+// { id; email; name; active; posts: { id: number; title: string }[]; _count: { posts: number } }[]
+
+// A to-one relation is always typed as nullable
+const drafts = await client.posts.findMany({
+	include: { author: true },
+});
+// { ...post; author: { id; email; name; active } | null }[]
+```
+
+The rules:
+
+- no `select` or `include`: the table's select model (the same type as Drizzle's `$inferSelect`)
+- `select`: only keys whose value is the literal `true`; `false` and `boolean` keys are left out
+- `include`: every scalar column, plus the listed relations, plus `_count` when requested
+- to-many relations are arrays; to-one relations are `T | null`
+- nested `select` and `include` are resolved the same way at each level
+
+The method also shapes the result:
+
+| Method | Resolves to |
+| --- | --- |
+| `findMany` | `Payload[]` |
+| `findFirst`, `findOne`, `findUnique`, `update`, `delete` | `Payload \| null`; `.throw()` resolves to `Payload` |
+| `create` | `Payload`, or `Payload \| null` with `skipDuplicates` |
+| `upsert` | `Payload` |
+| `createMany`, `upsertMany`, `updateEach` | `BatchResult<Payload>` (`{ count; data? }`) |
+| `updateMany`, `deleteMany` | `BatchResult<never>` (`{ count }`) |
+| `count` / `exists` | `number` / `boolean` |
+| `paginate` | `OffsetPaginationResult<Payload>` |
+| `cursor` | `CursorPaginationResult<Payload>` |
+
+```ts
+const user = await client.users.findUnique({ where: { id: 1 } });
+// { id; email; name; active } | null
+
+const sameUser = await client.users.findUnique({ where: { id: 1 } }).throw();
+// { id; email; name; active }
+
+const {
+	data,
+	pagination: { total, hasNext },
+} = await client.posts.paginate({
+	limit: 20,
+	select: { id: true, title: true },
+});
+// data: { id: number; title: string }[]
+```
+
+## Name a result type
+
+### From a function
+
+The simplest way to name a payload is to wrap the query in a function and read its return type:
+
+```ts
+export function listAuthorCards() {
+	return client.users.findMany({
+		select: {
+			id: true,
+			name: true,
+			posts: { select: { id: true, title: true } },
+		},
+	});
+}
+
+export type AuthorCard = Awaited<ReturnType<typeof listAuthorCards>>[number];
+// { id: number; name: string; posts: { id: number; title: string }[] }
+```
+
+`Awaited` also unwraps the helper types that `findMany` and friends return, so the result is the plain payload.
+
+### From the arguments: `PayloadForArgs`
+
+`PayloadForArgs<Schema, Table, Args>` computes the payload for an arguments object without running or wrapping a query. It is the counterpart of Prisma's `UserGetPayload`:
+
+```ts
+import type { PayloadForArgs, QueryArgs } from 'better-drizzle';
+import type { schema } from './schema';
+
+type Schema = typeof schema;
+
+export const userWithPosts = {
+	include: {
+		posts: {
+			where: { published: true },
+			select: { id: true, title: true },
+		},
+	},
+} satisfies QueryArgs<Schema, 'users'>;
+
+export type UserWithPosts = PayloadForArgs<Schema, 'users', typeof userWithPosts>;
+// { id; email; name; active; posts: { id: number; title: string }[] }
+
+const users = await client.users.findMany(userWithPosts);
+// UserWithPosts[]
+```
+
+`Table` is the schema key (`'users'`), not the database table name.
+
+### Plain rows: `BetterRecord`
+
+`BetterRecord<Schema, Table>` is the full row type, the same as Drizzle's select model:
+
+```ts tab="better-drizzle" tab-group="orm"
+import type { BetterRecord } from 'better-drizzle';
+
+type User = BetterRecord<typeof schema, 'users'>;
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { users } from './schema';
+
+type User = typeof users.$inferSelect;
+```
+
+## Reuse `where`, `select`, and `include` objects
+
+Argument objects defined outside the call need care, because TypeScript widens `true` to `boolean` in a plain object, and `select` only keeps keys typed as `true`.
+
+<Callout type="warn" title="Do not annotate select objects">
+	`const select: SelectInput<Schema, 'users'> = { id: true }` compiles, but
+	the declared type is `boolean`, so the payload type loses every selected
+	key. The same happens with a plain `const select = { id: true }`. The
+	rows still contain the fields at runtime; only the type is wrong.
+</Callout>
+
+Use `satisfies`. It checks the object against the exported argument type and keeps the literal types:
+
+```ts
+import type {
+	IncludeInput,
+	OrderByInput,
+	SelectInput,
+	WhereInput,
+} from 'better-drizzle';
+
+type Schema = typeof schema;
+
+const publishedOnly = {
+	published: true,
+	title: { contains: 'drizzle' },
+} satisfies WhereInput<Schema, 'posts'>;
+
+const postCard = {
+	id: true,
+	title: true,
+	author: { select: { id: true, name: true } },
+} satisfies SelectInput<Schema, 'posts'>;
+
+const withRecentPosts = {
+	posts: { orderBy: { id: 'desc' }, take: 3 },
+} satisfies IncludeInput<Schema, 'users'>;
+
+const newestFirst = { id: 'desc' } satisfies OrderByInput<Schema, 'posts'>;
+
+const cards = await client.posts.findMany({
+	where: publishedOnly,
+	select: postCard,
+	orderBy: newestFirst,
+});
+// { id: number; title: string; author: { id: number; name: string } | null }[]
+```
+
+`as const` also keeps literals and is enough for flat `select` objects:
+
+```ts
+const userSummary = { id: true, name: true } as const;
+
+const users = await client.users.findMany({ select: userSummary });
+// { id: number; name: string }[]
+```
+
+Prefer `satisfies` for anything that contains an array. `as const` makes arrays `readonly`, and `in`, `notIn`, `AND`, `OR`, and multi-column `orderBy` expect mutable arrays, so the object no longer matches.
+
+A `where` object does not affect the payload type, so a plain annotation is fine there:
+
+```ts
+const where: WhereInput<Schema, 'users'> = { active: true };
+```
+
+The exported argument types, all generic over `<Schema, Table>`:
+
+- `WhereInput` (structured filters) and `WhereArg` (`WhereInput`, or a Drizzle `SQL` / `SQLWrapper`)
+- `SelectInput`, `IncludeInput`, `OrderByInput`, `CursorInput`
+- `QueryArgs` for `findMany` / `findFirst` / `findOne` / `findUnique`; `CountArgs`, `ExistsArgs`, `PaginationArgs`, `CursorArgs`
+- `CreateArgs`, `CreateManyArgs`, `UpdateArgs`, `UpdateManyArgs`, `UpsertArgs`, `UpsertManyArgs`, `UpdateEachArgs`, `DeleteArgs`, `DeleteManyArgs`
+- `CreateDataInput` and `UpdateDataInput` for `data` payloads
+
+The operation argument types (`QueryArgs`, `CreateArgs`, and so on) take an optional third parameter for your [`meta` type](#typed-meta).
+
+## Type services that take a client or a transaction
+
+Export the client type once and use it for every function that queries:
+
+```ts title="db.ts"
+export const client = better(db, { schema });
+export type Db = typeof client;
+```
+
+A transaction client is the root client type plus `transaction`, `rollback`, `afterCommit`, and `afterRollback`, so it is assignable to `Db`. The same function then works inside and outside a transaction:
+
+```ts title="posts.service.ts"
+import type { Db } from './db';
+
+export async function publishDraft(db: Db, postId: number) {
+	const post = await db.posts
+		.update({ where: { id: postId }, data: { published: true } })
+		.throw();
+
+	return db.users.findUnique({ where: { id: post.authorId } }).throw();
+}
+
+await publishDraft(client, 10);
+
+await client.transaction(async (tx) => {
+	await publishDraft(tx, 10);
+	await publishDraft(tx, 11);
+});
+```
+
+When a function needs the transaction-only methods, ask for the transaction client type instead. Deriving it from `Db` keeps plugins and `meta` in sync:
+
+```ts
+import type { Db } from './db';
+
+type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
+
+export async function publishAndNotify(tx: Tx, postId: number) {
+	await tx.posts.update({ where: { id: postId }, data: { published: true } });
+	tx.afterCommit(() => notifySubscribers(postId));
+}
+```
+
+For a client without plugins or a custom `meta`, the exported types say the same thing directly:
+
+```ts
+import type {
+	BetterDrizzleClient,
+	BetterDrizzleTransactionClient,
+} from 'better-drizzle';
+
+type Db = BetterDrizzleClient<typeof schema>;
+type Tx = BetterDrizzleTransactionClient<typeof schema>;
+```
+
+To accept a single table's delegate, index the client type:
+
+```ts
+type UsersRepository = Db['users'];
+
+export function findByEmail(users: UsersRepository, email: string) {
+	return users.findUnique({ where: { email } });
+}
+
+await findByEmail(client.users, 'ada@example.com');
+```
+
+`BetterDrizzleModelDelegate<Schema, Table, Meta, Plugins>` is the same type written out.
+
+<Callout type="info" title="Clients built with extends()">
+	`typeof client` includes keys added with `client.extends(...)`, but the
+	`tx` passed to `transaction()` does not, so `tx` is not assignable to
+	that type. See [Client extensions](/docs/guides/client-extensions#typing)
+	for the gaps and the type assertion that covers them.
+</Callout>
+
+## Clients with plugins
+
+Plugins add to the client type: extra operation arguments (`deleted` from [soft delete](/docs/plugins/soft-delete)), model methods (`restore`), and client keys. `typeof client` carries all of them, including on transaction clients:
+
+```ts
+import { better } from 'better-drizzle';
+import { softDelete } from 'better-drizzle/soft-delete';
+
+export const client = better(db, {
+	schema,
+	plugins: [softDelete()],
+});
+export type Db = typeof client;
+
+export function listUsers(db: Db) {
+	return db.users.findMany({ deleted: 'with' }); // typed by the plugin
+}
+```
+
+`BetterDrizzleClient<typeof schema>` does not know about plugins, so `deleted` is a type error there. Use `typeof client`, or pass the plugin tuple as the third type argument.
+
+## Typed meta
+
+`meta` is `Record<string, unknown>` by default. Pass your own type as the second type argument of `better()`:
+
+```ts
+type AppMeta = {
+	requestId?: string;
+	tenantId?: string;
+	userId?: number;
+};
+
+export const client = better<typeof schema, AppMeta>(db, {
+	schema,
+	hooks: {
+		afterCreate(ctx) {
+			log(ctx.table, ctx.meta?.requestId); // ctx.meta: AppMeta | undefined
+		},
+	},
+});
+
+const scoped = client.$withContext({ requestId: 'req_1' });
+
+await scoped.users.create({
+	data: { email: 'ada@example.com', name: 'Ada' },
+	meta: { userId: 1 },
+});
+
+await client.users.findMany({ meta: { userId: '1' } }); // type error: userId is a number
+```
+
+What the type controls:
+
+- `$withContext(meta)` accepts `Partial<AppMeta>`
+- per-call `meta` on every operation, raw query, and `transaction(..., { meta })` accepts `AppMeta`
+- hook and plugin contexts expose `ctx.meta` as `AppMeta | undefined`
+
+Per-call `meta` is the full `AppMeta`, not a partial, so keep its keys optional unless every call must pass them.
+
+TypeScript does not infer the remaining type arguments once you pass some. With plugins, pass the plugin tuple as well:
+
+```ts
+const plugins = [softDelete()] as const;
+
+export const client = better<typeof schema, AppMeta, typeof plugins>(db, {
+	schema,
+	plugins,
+});
+```
+
+## Exported types at a glance
+
+All of these are type exports from `better-drizzle`:
+
+| Type | Use it for |
+| --- | --- |
+| `BetterDrizzleClient<Schema, Meta, Plugins>` | the client returned by `better()` |
+| `BetterDrizzleTransactionClient<Schema, Meta, Plugins>` | the `tx` passed to `transaction()` |
+| `BetterDrizzleModelDelegate<Schema, Table, Meta, Plugins>` | one table's delegate, such as `client.users` |
+| `PayloadForArgs<Schema, Table, Args>` | the payload for a `select` / `include` arguments object |
+| `BetterRecord<Schema, Table>` | a full row |
+| `ExplainableResult<T>` | what read helpers return: a `Promise<T>` with [`.explain()`](/docs/querying/explain) |
+| `ThrowingResult<T>` | `T \| null` plus [`.throw()`](/docs/writing/throwing-results) |
+| `BatchResult<T>` | `{ count; data? }` from batch writes |
+| `OffsetPaginationResult<T>` / `CursorPaginationResult<T>` | `paginate()` / `cursor()` results |
+| `BetterTableKey<Schema>` / `BetterRepositoryKey<Schema>` | valid table keys / keys accepted by `repository()` |
+| `BetterMeta` | the default `meta` type |

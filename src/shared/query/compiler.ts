@@ -167,6 +167,294 @@ const isJsonWhereFilter = (
 ): value is { json: Record<string, unknown> } =>
 	isPlainObject(value) && isPlainObject(value.json);
 
+const isPgArrayColumn = (column: AnyColumn) =>
+	(column as { columnType?: string }).columnType === 'PgArray';
+
+const isArrayFilter = (value: unknown): value is Record<string, unknown> =>
+	isPlainObject(value) &&
+	('equals' in value ||
+		'has' in value ||
+		'hasEvery' in value ||
+		'hasNone' in value ||
+		'hasSome' in value ||
+		'containedBy' in value ||
+		'none' in value ||
+		'some' in value ||
+		'every' in value ||
+		'isEmpty' in value ||
+		'length' in value ||
+		'not' in value);
+
+type ArrayElementQuantifier = 'none' | 'some' | 'every';
+
+const arrayElementPredicateError = (quantifier: ArrayElementQuantifier) =>
+	new BetterDrizzleError({
+		code: BetterDrizzleErrorCode.OperationError,
+		message: `Array ${quantifier} predicate must be a non-empty scalar filter object.`,
+	});
+
+const validateArrayElementPredicate = (
+	quantifier: ArrayElementQuantifier,
+	value: unknown,
+): Record<string, unknown> => {
+	if (!isScalarFilter(value)) throw arrayElementPredicateError(quantifier);
+
+	const filter = value;
+	let predicates = 0;
+	for (const key in filter) {
+		const entry = filter[key];
+		if (key === 'mode') {
+			if (entry !== 'default' && entry !== 'insensitive')
+				throw arrayElementPredicateError(quantifier);
+			continue;
+		}
+		if (key === 'in' || key === 'notIn') {
+			if (!Array.isArray(entry) || entry.some((item) => item == null))
+				throw new BetterDrizzleError({
+					code: BetterDrizzleErrorCode.OperationError,
+					message: `Array ${quantifier} predicate cannot compare against a NULL array element.`,
+				});
+			predicates += 1;
+			continue;
+		}
+		if (key === 'contains' || key === 'startsWith' || key === 'endsWith') {
+			if (typeof entry !== 'string')
+				throw arrayElementPredicateError(quantifier);
+			predicates += 1;
+			continue;
+		}
+		if (key === 'not') {
+			if (entry == null)
+				throw new BetterDrizzleError({
+					code: BetterDrizzleErrorCode.OperationError,
+					message: `Array ${quantifier} predicate cannot compare against a NULL array element.`,
+				});
+			if (isScalarFilter(entry))
+				validateArrayElementPredicate(quantifier, entry);
+			predicates += 1;
+			continue;
+		}
+		if (
+			key === 'equals' ||
+			key === 'lt' ||
+			key === 'lte' ||
+			key === 'gt' ||
+			key === 'gte'
+		) {
+			if (entry == null)
+				throw new BetterDrizzleError({
+					code: BetterDrizzleErrorCode.OperationError,
+					message: `Array ${quantifier} predicate cannot compare against a NULL array element.`,
+				});
+			predicates += 1;
+		}
+	}
+	if (!predicates) throw arrayElementPredicateError(quantifier);
+	return filter;
+};
+
+const compileArrayElementScalarFilter = (
+	column: AnyColumn,
+	encoder: AnyColumn,
+	value: Record<string, unknown>,
+): SQL | undefined => {
+	const conditions: SQL[] = [];
+	const bind = (entry: unknown) => sql.param(entry, encoder);
+	const pattern = (
+		entry: string,
+		mode: 'contains' | 'startsWith' | 'endsWith',
+		insensitive: boolean,
+	) => {
+		const value =
+			mode === 'contains'
+				? `%${entry}%`
+				: mode === 'startsWith'
+					? `${entry}%`
+					: `%${entry}`;
+		return insensitive
+			? sql`${column} ilike ${bind(value)}`
+			: sql`${column} like ${bind(value)}`;
+	};
+
+	if ('equals' in value)
+		conditions.push(sql`${column} = ${bind(value.equals)}`);
+	if (Array.isArray(value.in))
+		conditions.push(
+			value.in.length
+				? sql`${column} in (${sql.join(value.in.map(bind), sql`, `)})`
+				: sql`false`,
+		);
+	if (Array.isArray(value.notIn))
+		conditions.push(
+			value.notIn.length
+				? sql`${column} not in (${sql.join(value.notIn.map(bind), sql`, `)})`
+				: sql`true`,
+		);
+	if (value.lt !== undefined)
+		conditions.push(sql`${column} < ${bind(value.lt)}`);
+	if (value.lte !== undefined)
+		conditions.push(sql`${column} <= ${bind(value.lte)}`);
+	if (value.gt !== undefined)
+		conditions.push(sql`${column} > ${bind(value.gt)}`);
+	if (value.gte !== undefined)
+		conditions.push(sql`${column} >= ${bind(value.gte)}`);
+
+	const insensitive = value.mode === 'insensitive';
+	if (typeof value.contains === 'string')
+		conditions.push(pattern(value.contains, 'contains', insensitive));
+	if (typeof value.startsWith === 'string')
+		conditions.push(pattern(value.startsWith, 'startsWith', insensitive));
+	if (typeof value.endsWith === 'string')
+		conditions.push(pattern(value.endsWith, 'endsWith', insensitive));
+	if ('not' in value) {
+		const nested = isScalarFilter(value.not)
+			? compileArrayElementScalarFilter(column, encoder, value.not)
+			: sql`${column} = ${bind(value.not)}`;
+		if (nested) conditions.push(not(nested));
+	}
+
+	return conditions.length ? and(...conditions) : undefined;
+};
+
+const compileArrayElementPredicate = (
+	column: AnyColumn,
+	encoder: AnyColumn,
+	quantifier: ArrayElementQuantifier,
+	value: unknown,
+) => {
+	const filter = validateArrayElementPredicate(quantifier, value);
+	const keys = Object.keys(filter);
+	const predicateKeys = keys.filter((key) => key !== 'mode');
+	const only = predicateKeys.length === 1 ? predicateKeys[0] : undefined;
+	const notNull = sql`${column} is not null`;
+	let elementEncoder = encoder;
+	while ((elementEncoder as { columnType?: string }).columnType === 'PgArray')
+		elementEncoder = (
+			elementEncoder as unknown as { baseColumn: AnyColumn }
+		).baseColumn;
+
+	if (
+		only === 'equals' &&
+		filter.equals !== null &&
+		filter.equals !== undefined
+	) {
+		const match = sql`${column} @> ${sql.param([filter.equals], encoder)}`;
+		if (quantifier === 'some') return match;
+		if (quantifier === 'every')
+			return sql`${notNull} and ${column} <@ ${sql.param([filter.equals], encoder)}`;
+		return sql`${notNull} and not (${match})`;
+	}
+
+	if (only === 'in' && Array.isArray(filter.in)) {
+		const values = sql.param(filter.in, encoder);
+		if (quantifier === 'some') return sql`${column} && ${values}`;
+		if (quantifier === 'every')
+			return sql`${notNull} and ${column} <@ ${values}`;
+		return sql`${notNull} and not (${column} && ${values})`;
+	}
+
+	if (only === 'lt' || only === 'lte' || only === 'gt' || only === 'gte') {
+		const comparison =
+			only === 'lt'
+				? sql`${sql.param(filter.lt, elementEncoder)} >`
+				: only === 'lte'
+					? sql`${sql.param(filter.lte, elementEncoder)} >=`
+					: only === 'gt'
+						? sql`${sql.param(filter.gt, elementEncoder)} <`
+						: sql`${sql.param(filter.gte, elementEncoder)} <=`;
+		const quantifierSql = quantifier === 'every' ? sql`all` : sql`any`;
+		const matches = sql`${comparison} ${quantifierSql}(${column})`;
+		if (quantifier === 'none')
+			return sql`${notNull} and coalesce(not (${matches}), true)`;
+		return sql`${notNull} and ${matches}`;
+	}
+
+	const element = sql.raw('array_element') as unknown as AnyColumn;
+	const predicate = compileArrayElementScalarFilter(
+		element,
+		elementEncoder,
+		filter,
+	);
+	if (!predicate) throw arrayElementPredicateError(quantifier);
+
+	const source = sql`unnest(${column}) as array_element`;
+	const matches = sql`(${predicate}) is true`;
+	if (quantifier === 'some')
+		return sql`${notNull} and exists (select 1 from ${source} where ${matches})`;
+	if (quantifier === 'every')
+		return sql`${notNull} and not exists (select 1 from ${source} where (${predicate}) is not true)`;
+	return sql`${notNull} and not exists (select 1 from ${source} where ${matches})`;
+};
+
+const compileArrayFilter = (
+	column: AnyColumn,
+	value: Record<string, unknown>,
+	encoder: AnyColumn = column,
+): SQL | undefined => {
+	const conditions: SQL[] = [];
+	const needsCardinality =
+		value.isEmpty !== undefined || value.length !== undefined;
+	const cardinality = needsCardinality
+		? sql`cardinality(${column})`
+		: undefined;
+
+	if ('equals' in value)
+		conditions.push(
+			value.equals === null ? isNull(column) : eq(column, value.equals),
+		);
+	if (value.has !== undefined && value.has !== null)
+		conditions.push(sql`${column} @> ${sql.param([value.has], encoder)}`);
+	if (Array.isArray(value.hasEvery))
+		conditions.push(
+			sql`${column} @> ${sql.param(value.hasEvery, encoder)}`,
+		);
+	if (Array.isArray(value.hasSome))
+		conditions.push(sql`${column} && ${sql.param(value.hasSome, encoder)}`);
+	if (Array.isArray(value.hasNone))
+		conditions.push(
+			sql`not (${column} && ${sql.param(value.hasNone, encoder)})`,
+		);
+	if (Array.isArray(value.containedBy))
+		conditions.push(
+			sql`${column} <@ ${sql.param(value.containedBy, encoder)}`,
+		);
+	if ('some' in value)
+		conditions.push(
+			compileArrayElementPredicate(column, encoder, 'some', value.some),
+		);
+	if ('every' in value)
+		conditions.push(
+			compileArrayElementPredicate(column, encoder, 'every', value.every),
+		);
+	if ('none' in value)
+		conditions.push(
+			compileArrayElementPredicate(column, encoder, 'none', value.none),
+		);
+	if (value.isEmpty === true && cardinality)
+		conditions.push(eq(cardinality, 0));
+	if (value.isEmpty === false && cardinality)
+		conditions.push(gt(cardinality, 0));
+	if (typeof value.length === 'number')
+		conditions.push(eq(cardinality as SQL, value.length));
+	else if (isPlainObject(value.length) && cardinality) {
+		const lengthFilter = compileScalarFilter(
+			cardinality as unknown as AnyColumn,
+			value.length,
+		);
+		if (lengthFilter) conditions.push(lengthFilter);
+	}
+	if ('not' in value) {
+		if (isPlainObject(value.not)) {
+			const nested = compileArrayFilter(column, value.not, encoder);
+			if (nested) conditions.push(not(nested));
+		} else if (value.not === null) conditions.push(not(isNull(column)));
+		else if (value.not !== undefined)
+			conditions.push(not(eq(column, value.not)));
+	}
+
+	return conditions.length ? and(...conditions) : undefined;
+};
+
 const compileJsonPathFilter = (
 	column: AnyColumn,
 	path: string,
@@ -589,6 +877,21 @@ export const compileWhereInput = <Schema extends AnySchema, Meta>(
 				);
 				if (clause) conditions.push(clause);
 			}
+			continue;
+		}
+
+		if (isPgArrayColumn(column) && isArrayFilter(value)) {
+			if (context.dialect !== 'pg')
+				throw new BetterDrizzleError({
+					code: BetterDrizzleErrorCode.ArrayQueryUnsupported,
+					column: key,
+					dialect: context.dialect,
+					message:
+						'Native PostgreSQL array filters are only supported by PostgreSQL.',
+					table: context.tableName,
+				});
+			const arrayFilter = compileArrayFilter(field, value, column);
+			if (arrayFilter) conditions.push(arrayFilter);
 			continue;
 		}
 

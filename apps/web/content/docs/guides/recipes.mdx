@@ -1,0 +1,277 @@
+---
+title: Recipes
+description: Short, copy-paste answers to everyday questions - conditional filters, counters, top N per group, upserts, search, and aggregates.
+icon: ChefHat
+seoTitle: 'Recipes - Common Queries with Drizzle ORM'
+seoDescription: 'Copy-paste recipes for Drizzle ORM with better-drizzle: conditional filters, counters, toggles, top N per group, get-or-create, full-text search, and aggregates.'
+---
+
+Each recipe is a small, complete answer to a question that comes up in almost every app. They use the docs schema: `users` (`id`, `email`, `name`, `active`) and `posts` (`id`, `authorId`, `title`, `published`, `score`, `tags`), with `users.posts` and `posts.author` relations.
+
+## Conditional filters
+
+Build one `where` from optional inputs. A key set to `undefined` is skipped, so you do not need `if` chains:
+
+```ts tab="better-drizzle" tab-group="orm"
+type Filters = { search?: string; authorId?: number; published?: boolean };
+
+export const listPosts = ({ search, authorId, published }: Filters) =>
+	client.posts.findMany({
+		where: {
+			title: search ? { contains: search, mode: 'insensitive' } : undefined,
+			authorId,
+			published,
+		},
+		orderBy: { id: 'desc' },
+		take: 20,
+	});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { and, desc, eq, ilike } from 'drizzle-orm';
+
+export const listPosts = ({ search, authorId, published }: Filters) =>
+	db
+		.select()
+		.from(posts)
+		.where(
+			and(
+				search ? ilike(posts.title, `%${search}%`) : undefined,
+				authorId === undefined ? undefined : eq(posts.authorId, authorId),
+				published === undefined ? undefined : eq(posts.published, published),
+			),
+		)
+		.orderBy(desc(posts.id))
+		.limit(20);
+```
+
+<Callout type="warn" title="Guard writes built this way">
+	If every optional input is missing, the `where` is empty. Before reusing the
+	pattern for `updateMany` or `deleteMany`, read [null and
+	undefined](/docs/querying/null-and-undefined) and turn on the [rules
+	plugin](/docs/plugins/rules) guards such as `noEmptyWhere`.
+</Callout>
+
+## Increment or decrement a counter
+
+Atomic updates need a SQL expression, not a value read from the row. `updateEach` accepts one per column, and each row can carry the amount:
+
+```ts tab="better-drizzle" tab-group="orm"
+import { sql } from 'drizzle-orm';
+
+// score = score + delta, for many rows in one UPDATE ... CASE statement
+await client.posts.updateEach({
+	by: posts.id,
+	data: [
+		{ id: 1, delta: 5 },
+		{ id: 2, delta: -1 },
+	],
+	update: { score: (row) => sql`${posts.score} + ${row.delta}` },
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq, sql } from 'drizzle-orm';
+
+// one statement per row, or build the CASE expression by hand
+await db
+	.update(posts)
+	.set({ score: sql`${posts.score} + ${5}` })
+	.where(eq(posts.id, 1));
+```
+
+The expression runs in the database, so concurrent requests never overwrite each other's increments.
+
+## Toggle a boolean
+
+The same pattern flips a flag without reading it first:
+
+```ts
+import { sql } from 'drizzle-orm';
+
+await client.posts.updateEach({
+	by: posts.id,
+	data: [{ id: 10 }],
+	update: { published: () => sql`not ${posts.published}` },
+});
+```
+
+## Top N per group
+
+"The 3 best posts of each author" is a window function in SQL. With better-drizzle it is a nested `take`, and the per-parent limit still runs in the database:
+
+```ts tab="better-drizzle" tab-group="orm"
+const authors = await client.users.findMany({
+	where: { active: true },
+	include: {
+		posts: {
+			where: { published: true },
+			orderBy: { score: 'desc' },
+			take: 3,
+		},
+	},
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { and, desc, eq, inArray, lte, sql } from 'drizzle-orm';
+
+const userRows = await db.select().from(users).where(eq(users.active, true));
+
+const ranked = db
+	.select({
+		post: posts,
+		rank: sql<number>`row_number() over (partition by ${posts.authorId} order by ${posts.score} desc)`.as('rank'),
+	})
+	.from(posts)
+	.where(
+		and(
+			eq(posts.published, true),
+			inArray(posts.authorId, userRows.map((user) => user.id)),
+		),
+	)
+	.as('ranked');
+
+const postRows = await db.select().from(ranked).where(lte(ranked.rank, 3));
+
+// then group postRows by authorId and attach them to each user
+```
+
+## Count related rows
+
+Use `_count` instead of loading the rows. It becomes a subquery in the same statement:
+
+```ts
+const authors = await client.users.findMany({
+	include: {
+		_count: {
+			select: {
+				posts: { where: { published: true } },
+			},
+		},
+	},
+});
+
+authors[0]?._count.posts; // number
+```
+
+## Get or create
+
+For "insert unless it exists", let the database resolve the conflict:
+
+```ts
+// returns null when a row with the same email already exists
+const created = await client.users.create({
+	data: { email, name },
+	skipDuplicates: ['email'],
+});
+
+const user = created ?? (await client.users.findUnique({ where: { email } }));
+```
+
+When the existing row should be updated instead, use `upsert`. It compiles to a native `ON CONFLICT ... DO UPDATE` when it can:
+
+```ts
+const user = await client.users.upsert({
+	where: { email },
+	create: { email, name },
+	update: { name },
+});
+```
+
+For many rows at once, `upsertMany` sends batched native upserts:
+
+```ts
+const { count } = await client.users.upsertMany({
+	data: importedRows,
+	target: 'email',
+	update: ['name', 'active'],
+	batchSize: 500,
+});
+```
+
+See [Create, update & delete](/docs/writing/crud) for every option.
+
+## Add tags to an array column
+
+On PostgreSQL, array columns can be updated in place, without reading the row first:
+
+```ts
+await client.posts.update({
+	where: { id: 10 },
+	data: { tags: { addUnique: ['drizzle', 'orm'] } },
+});
+```
+
+`append`, `prepend`, `remove`, and `replace` work the same way. See [Array filters](/docs/querying/arrays).
+
+## Case-insensitive search
+
+`contains` with `mode: 'insensitive'` covers simple search boxes:
+
+```ts
+await client.users.findMany({
+	where: {
+		OR: [
+			{ name: { contains: query, mode: 'insensitive' } },
+			{ email: { contains: query, mode: 'insensitive' } },
+		],
+	},
+	take: 10,
+});
+```
+
+## Full-text search on PostgreSQL
+
+`where` also accepts a Drizzle `sql` expression, so PostgreSQL full-text search needs no special API:
+
+```ts
+import { sql } from 'drizzle-orm';
+
+const results = await client.posts.findMany({
+	where: sql`to_tsvector('english', ${posts.title}) @@ plainto_tsquery('english', ${query})`,
+	take: 20,
+});
+```
+
+Add a GIN index on the same expression so the search does not scan the table:
+
+```sql
+create index posts_title_fts on posts using gin (to_tsvector('english', title));
+```
+
+## Aggregates and `GROUP BY`
+
+The delegate API has `count` and `exists`, but no `groupBy` or `sum`. Aggregates read better as SQL, and `$raw` keeps them typed and parameterized:
+
+```ts
+const totals = await client.$raw<{ authorId: number; posts: number }>`
+	select author_id as "authorId", count(*)::int as posts
+	from posts
+	where published = ${true}
+	group by author_id
+	order by posts desc
+`;
+```
+
+Inside `client.transaction(...)`, use `tx.$raw` so the query runs in the same transaction. See [Raw SQL](/docs/advanced/raw-sql).
+
+## Check before you act
+
+`exists` is cheaper than `count` when you only need a yes or no:
+
+```ts
+const hasDrafts = await client.posts.exists({
+	where: { authorId: userId, published: false },
+});
+```
+
+## Require a row, or fail
+
+Reads return `null` when nothing matches. Chain `.throw()` to get a `RESULT_NOT_FOUND` error instead, which maps to HTTP 404:
+
+```ts
+const post = await client.posts.findUnique({ where: { id } }).throw();
+```
+
+See [Throwing results](/docs/writing/throwing-results).

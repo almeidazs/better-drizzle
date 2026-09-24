@@ -2,9 +2,11 @@ import { describe, expect, test } from 'bun:test';
 
 import { better } from 'better-drizzle';
 import { sql } from 'drizzle-orm';
+import { integer, pgTable, text } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 
 import { zod as betterZod } from '../../src/plugins/zod';
+import { createZodSchemasRegistry } from '../../src/plugins/zod/shared/registry';
 import { createTestContext } from '../core/setup';
 
 type Equal<A, B> =
@@ -78,6 +80,71 @@ const createZodContext = () => {
 		client,
 	};
 };
+
+describe('better-drizzle/zod - PostgreSQL array update schemas', () => {
+	test('accepts exclusive non-empty mutation envelopes', () => {
+		const users = pgTable('zod_array_mutation_users', {
+			id: integer().primaryKey(),
+			tags: text().array(),
+		});
+		const registry = createZodSchemasRegistry({ users }, {});
+		const schema = registry.get('users')?.schemas.update;
+		const upsertMany = registry.getUpsertManyArgsSchema('users');
+
+		expect(schema?.safeParse({ tags: ['a'] }).success).toBe(true);
+		expect(schema?.safeParse({ tags: { append: 'a' } }).success).toBe(true);
+		expect(
+			schema?.safeParse({ tags: { prepend: ['a', 'b'] } }).success,
+		).toBe(true);
+		expect(
+			schema?.safeParse({ tags: { remove: ['a', 'b'] } }).success,
+		).toBe(true);
+		expect(
+			schema?.safeParse({ tags: { replace: { from: 'a', to: 'b' } } })
+				.success,
+		).toBe(true);
+		expect(
+			schema?.safeParse({
+				tags: { replace: [{ from: 'a', to: 'b' }] },
+			}).success,
+		).toBe(true);
+		expect(schema?.safeParse({ tags: { addUnique: 'a' } }).success).toBe(
+			true,
+		);
+
+		expect(schema?.safeParse({ tags: { append: [] } }).success).toBe(false);
+		expect(schema?.safeParse({ tags: { append: null } }).success).toBe(
+			false,
+		);
+		expect(
+			schema?.safeParse({ tags: { append: 'a', remove: 'b' } }).success,
+		).toBe(false);
+		expect(schema?.safeParse({ tags: { replace: [] } }).success).toBe(
+			false,
+		);
+		expect(
+			schema?.safeParse({ tags: { replace: { from: null, to: 'a' } } })
+				.success,
+		).toBe(false);
+		expect(
+			upsertMany.safeParse({
+				data: [{ id: 1, tags: ['a'] }],
+				target: 'id',
+				update: () => ({ tags: { addUnique: 'b' } }),
+			}).success,
+		).toBe(true);
+		const where = registry.get('users')?.schemas.where;
+		expect(
+			where?.safeParse({ tags: { some: { contains: 'a' } } }).success,
+		).toBe(true);
+		expect(where?.safeParse({ tags: { every: {} } }).success).toBe(false);
+		expect(
+			where?.safeParse({ tags: { some: { mode: 'insensitive' } } })
+				.success,
+		).toBe(false);
+		expect(where?.safeParse({ tags: { none: 'a' } }).success).toBe(false);
+	});
+});
 
 describe('better-drizzle/zod - typing', () => {
 	test('exposes typed $zod schemas on delegates', () => {
