@@ -15,21 +15,15 @@ Use `limit` with `skip` (or `take`) when the consumer needs totals and page
 numbers:
 
 ```ts tab="better-drizzle" tab-group="orm"
-const page = await client.users.paginate({
+const {
+	data, // User[]
+	pagination: { type, page, perPage, total, pageCount, hasNext, hasPrevious }, // type: "offset"
+} = await client.users.paginate({
 	limit: 20,
 	skip: 40,
 	orderBy: [{ id: 'asc' }],
 	where: { active: true },
 });
-
-page.data; // User[]
-page.pagination.type; // "offset"
-page.pagination.page;
-page.pagination.perPage;
-page.pagination.total;
-page.pagination.pageCount;
-page.pagination.hasNext;
-page.pagination.hasPrevious;
 ```
 
 ```ts tab="Drizzle" tab-group="orm"
@@ -70,15 +64,18 @@ const page = {
 Use `cursor()` for feed-style navigation:
 
 ```ts tab="better-drizzle" tab-group="orm"
-const first = await client.users.cursor({
+const {
+	data: first,
+	pagination: { nextCursor },
+} = await client.users.cursor({
 	limit: 2,
 	orderBy: [{ id: 'asc' }],
 });
 
-const second = await client.users.cursor({
+const { data: second } = await client.users.cursor({
 	limit: 2,
 	orderBy: [{ id: 'asc' }],
-	after: first.pagination.nextCursor as { id: number },
+	after: nextCursor as { id: number },
 });
 ```
 

@@ -142,7 +142,7 @@ The package exports three presets. Each builds on the previous one:
 	Both presets enable `requireTenantContext` at `'error'`. Every operation, including raw SQL and transactions, then throws unless `meta.tenantId` is set (for example through `db.$withContext({ tenantId })`) or `meta.system` is truthy. If your app is not multi-tenant, turn it off: `recommended({ requireTenantContext: false })`.
 </Callout>
 
-This table shows the level each preset sets. A dash means the rule is off in that preset.
+This table shows the level each preset sets. `off` means the preset does not enable the rule.
 
 | Rule | `safe()` | `recommended()` | `strict()` |
 | --- | --- | --- | --- |
@@ -152,37 +152,37 @@ This table shows the level each preset sets. A dash means the rule is off in tha
 | `noUpdateWithoutWhere` | error | error | error |
 | `noEmptyWhere` | error | error | error |
 | `noUnboundedFindMany` | warn | warn | error |
-| `requireExplicitLimit` | — | — | warn |
+| `requireExplicitLimit` | off | off | warn |
 | `maxLimit` | warn, 1000 | warn, 1000 | error, 500 |
-| `requireOrderByForLimit` | — | — | warn |
-| `requireOrderByForPagination` | — | — | warn |
+| `requireOrderByForLimit` | off | off | warn |
+| `requireOrderByForPagination` | off | off | warn |
 | `requireOrderByForCursor` | error | error | error |
-| `requireStableOrderByForCursor` | — | warn | error |
-| `maxIncludeDepth` | — | warn, 3 | error, 2 |
-| `maxIncludeRelations` | — | warn, 5 | error, 3 |
+| `requireStableOrderByForCursor` | off | warn | error |
+| `maxIncludeDepth` | off | warn, 3 | error, 2 |
+| `maxIncludeRelations` | off | warn, 5 | error, 3 |
 | `requireTransactionForLock` | warn | warn | error |
 | `noLockWithInclude` | error | error | error |
 | `noInvalidLockCombination` | error | error | error |
-| `requireOrderByForSkipLocked` | — | warn | error |
+| `requireOrderByForSkipLocked` | off | warn | error |
 | `requireLimitForSkipLocked` | error | error | error |
 | `noRawUnsafe` | error | error | error |
-| `requireRawComment` | — | — | warn, 8 chars |
-| `requireRawTimeout` | — | warn | error |
-| `noRawMutation` | — | warn | error |
-| `noRawWithoutTransaction` | — | — | warn, mutations only |
-| `requireTimeoutForLongRunningOperation` | — | warn, max 60s | error, max 30s |
-| `requireTenantContext` | — | error | error |
-| `noTenantBypassWithoutSystem` | — | — | error |
-| `noTenantColumnOverride` | — | — | error |
-| `requireTenantOnCreate` | — | — | error |
-| `requireTenantOnUpdate` | — | — | error |
-| `requireTenantOnDelete` | — | — | error |
-| `noSensitiveSelect` | — | error | error |
-| `requireExplicitSensitiveAccessReason` | — | — | error |
-| `noHardDeleteOnSoftDeleteModel` | — | error | error |
-| `requireHardDeleteReason` | — | — | error |
-| `noQueryDeletedWithoutExplicitOptIn` | — | — | warn |
-| `noSystemModeWithoutReason` | — | warn | error |
+| `requireRawComment` | off | off | warn, 8 chars |
+| `requireRawTimeout` | off | warn | error |
+| `noRawMutation` | off | warn | error |
+| `noRawWithoutTransaction` | off | off | warn, mutations only |
+| `requireTimeoutForLongRunningOperation` | off | warn, max 60s | error, max 30s |
+| `requireTenantContext` | off | error | error |
+| `noTenantBypassWithoutSystem` | off | off | error |
+| `noTenantColumnOverride` | off | off | error |
+| `requireTenantOnCreate` | off | off | error |
+| `requireTenantOnUpdate` | off | off | error |
+| `requireTenantOnDelete` | off | off | error |
+| `noSensitiveSelect` | off | error | error |
+| `requireExplicitSensitiveAccessReason` | off | off | error |
+| `noHardDeleteOnSoftDeleteModel` | off | error | error |
+| `requireHardDeleteReason` | off | off | error |
+| `noQueryDeletedWithoutExplicitOptIn` | off | off | warn |
+| `noSystemModeWithoutReason` | off | warn | error |
 
 The presets also set some rules that are [not enforced yet](#not-enforced-yet). Those settings have no effect today.
 
@@ -284,7 +284,7 @@ The `*WithoutWhere` rules only catch a missing `where`. Pair them with `noEmptyW
 | `maxIncludeDepth` | `include` nests deeper than `value` | `value` (required), scope |
 | `maxIncludeRelations` | `include` loads more than `value` relations in total, nested ones included | `value` (required), scope |
 
-The resolved limit is `take` or `limit`. For `paginate` it also reads `perPage`. With `noUnboundedFindMany`, `allowWithLimit` accepts either `take` or `limit`, and `allowSmallStaticModels` currently behaves like `allowWithWhere`.
+The resolved limit is `take` or `limit`. With `noUnboundedFindMany`, `allowWithLimit` accepts either `take` or `limit`, and `allowSmallStaticModels` currently behaves like `allowWithWhere`.
 
 ### Row locks
 

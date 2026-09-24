@@ -13,13 +13,11 @@ Every read operation in Better Drizzle returns an **explainable result** -- a la
 Chain `.explain()` off any read call to get the query plan:
 
 ```ts tab="better-drizzle" tab-group="orm"
-const plan = await client.users
-  .findMany({ where: { active: true } })
-  .explain();
-
-console.log(plan.driver);      // "sqlite" | "pg" | "mysql"
-console.log(plan.operation);   // "findMany"
-console.log(plan.statements);  // array of ExplainStatement
+const {
+  driver, // "sqlite" | "pg" | "mysql"
+  operation, // "findMany"
+  statements, // array of ExplainStatement
+} = await client.users.findMany({ where: { active: true } }).explain();
 ```
 
 ```ts tab="Drizzle" tab-group="orm"
@@ -141,11 +139,11 @@ const plan = await client.users
 ## Checking applied vs ignored options
 
 ```ts
-const plan = await client.users
+const {
+  statements: [stmt],
+} = await client.users
   .findMany({ where: { active: true } })
   .explain({ analyze: true, verbose: true });
-
-const stmt = plan.statements[0];
 
 // On SQLite, both are ignored
 console.log(stmt.ignoredOptions); // ["analyze", "verbose"]
@@ -164,12 +162,12 @@ const client = better(db, {
   plugins: [forceActivePlugin], // injects { active: true } into every findMany
 });
 
-const plan = await client.users
-  .findMany({ where: { id: 1 } })
-  .explain();
+const {
+  statements: [{ sql }],
+} = await client.users.findMany({ where: { id: 1 } }).explain();
 
 // The SQL includes the plugin-injected active filter
-console.log(plan.statements[0].sql);
+console.log(sql);
 // contains "active" clause
 ```
 

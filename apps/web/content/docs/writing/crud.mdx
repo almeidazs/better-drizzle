@@ -1,6 +1,6 @@
 ---
 title: Create, update & delete
-description: The write surface — create, createMany, update, updateMany, updateEach, delete, deleteMany, upsert, and upsertMany.
+description: The write surface - create, createMany, update, updateMany, updateEach, delete, deleteMany, upsert, and upsertMany.
 icon: SquarePen
 seoTitle: 'Create, Update, Delete & Upsert in Drizzle'
 seoDescription: 'Drizzle ORM writes with create, createMany, update, updateMany, updateEach, delete, deleteMany, upsert, and upsertMany using native SQL conflict handling.'
@@ -38,15 +38,15 @@ const [user] = await db
 Inserts many rows in one statement and returns a batch summary:
 
 ```ts tab="better-drizzle" tab-group="orm"
-const batch = await client.users.createMany({
+const {
+	count, // number inserted
+	data, // inserted rows, when the driver supports RETURNING
+} = await client.users.createMany({
 	data: [
 		{ email: 'a@example.com', name: 'A', active: true },
 		{ email: 'b@example.com', name: 'B', active: false },
 	],
 });
-
-batch.count; // number inserted
-batch.data; // inserted rows, when the driver supports RETURNING
 ```
 
 ```ts tab="Drizzle" tab-group="orm"
@@ -59,7 +59,8 @@ const rows = await db
 	.returning();
 
 // shape the batch summary by hand
-const batch = { count: rows.length, data: rows };
+const count = rows.length;
+const data = rows;
 ```
 
 `create` and `createMany` both support `skipDuplicates`:
@@ -191,12 +192,10 @@ matrix, the failure modes, and the batch workaround.
 Updates every matching row and returns the affected count:
 
 ```ts tab="better-drizzle" tab-group="orm"
-const batch = await client.users.updateMany({
+const { count } = await client.users.updateMany({
 	where: { active: true },
 	data: { active: false },
-});
-
-batch.count; // rows updated
+}); // count: rows updated
 ```
 
 ```ts tab="Drizzle" tab-group="orm"
@@ -208,7 +207,7 @@ const rows = await db
 	.where(eq(users.active, true))
 	.returning({ id: users.id });
 
-const batch = { count: rows.length };
+const count = rows.length;
 ```
 
 ## `updateEach`
@@ -216,7 +215,7 @@ const batch = { count: rows.length };
 Updates many rows with different values in a single statement. Instead of applying the same value to all matching rows (like `updateMany`), `updateEach` generates a `CASE` expression per column so each row can have its own value:
 
 ```ts tab="better-drizzle" tab-group="orm"
-const batch = await client.users.updateEach({
+const { data } = await client.users.updateEach({
 	by: users.id,
 	data: [
 		{ id: 1, name: 'Alice Updated', city: 'New York' },
@@ -266,7 +265,7 @@ const rows = await db
 	)
 	.returning({ id: users.id });
 
-const batch = { count: rows.length };
+const count = rows.length;
 ```
 
 This generates a single SQL statement:
@@ -307,7 +306,7 @@ WHERE id IN (1, 2)
 Combine a `where` filter with the `by` column to scope which rows are eligible for update:
 
 ```ts tab="better-drizzle" tab-group="orm"
-const batch = await client.users.updateEach({
+const { data } = await client.users.updateEach({
 	by: users.id,
 	data: [
 		{ id: 1, name: 'Alice' },
@@ -349,7 +348,7 @@ const rows = await db
 	)
 	.returning({ id: users.id });
 
-const batch = { count: rows.length };
+const count = rows.length;
 ```
 
 ### Projecting results
@@ -357,7 +356,7 @@ const batch = { count: rows.length };
 Use `select` to return specific scalar columns after the update:
 
 ```ts tab="better-drizzle" tab-group="orm"
-const batch = await client.users.updateEach({
+const { data } = await client.users.updateEach({
 	by: users.id,
 	data: [
 		{ id: 1, name: 'Alice' },
@@ -367,7 +366,7 @@ const batch = await client.users.updateEach({
 	select: { id: true, name: true, email: true },
 });
 
-console.log(batch.data); // [{ id: 1, name: 'Alice', ... }, ...]
+console.log(data); // [{ id: 1, name: 'Alice', ... }, ...]
 ```
 
 ```ts tab="Drizzle" tab-group="orm"
@@ -398,9 +397,7 @@ const rows = await db
 	)
 	.returning({ id: users.id, name: users.name, email: users.email });
 
-const batch = { count: rows.length, data: rows };
-
-console.log(batch.data); // [{ id: 1, name: 'Alice', ... }, ...]
+console.log(rows); // [{ id: 1, name: 'Alice', ... }, ...]
 ```
 
 ### Empty input handling
@@ -429,7 +426,7 @@ await client.users.updateEach({
 `updateEach` rejects duplicate `by` values in the `data` array. Each row must have a unique match column value:
 
 ```ts
-// Throws — duplicate id values
+// Throws - duplicate id values
 await client.users.updateEach({
 	by: users.id,
 	data: [
@@ -472,11 +469,9 @@ const [deleted = null] = await db
 Deletes every matching row and returns the affected count:
 
 ```ts tab="better-drizzle" tab-group="orm"
-const batch = await client.users.deleteMany({
+const { count } = await client.users.deleteMany({
 	where: { active: false },
-});
-
-batch.count; // rows deleted
+}); // count: rows deleted
 ```
 
 ```ts tab="Drizzle" tab-group="orm"
@@ -487,12 +482,12 @@ const rows = await db
 	.where(eq(users.active, false))
 	.returning({ id: users.id });
 
-const batch = { count: rows.length };
+const count = rows.length;
 ```
 
 ## `upsert`
 
-"Create if missing, update if present" — without branching in your own code:
+"Create if missing, update if present" - without branching in your own code:
 
 ```ts tab="better-drizzle" tab-group="orm"
 const user = await client.users.upsert({
@@ -607,9 +602,9 @@ const [user] = await db
 
 - `createMany`, `updateMany`, `updateEach`, and `deleteMany` return a `{ count, data? }` summary, not individual rows.
 - `upsertMany` also returns `{ count, data? }`.
-- `update` and `delete` are nullable by default because the target row may not exist — handle `null`, or call `.throw()`.
+- `update` and `delete` are nullable by default because the target row may not exist - handle `null`, or call `.throw()`.
 - Returning affected rows (`data`) depends on the driver supporting `RETURNING`.
-- `updateEach` is native-first — it generates a single `UPDATE ... CASE` statement instead of per-row loops.
+- `updateEach` is native-first - it generates a single `UPDATE ... CASE` statement instead of per-row loops.
 - `updateEach` rejects duplicate `by` values in the input data.
 - `upsertMany` is intentionally native-first and currently fails fast on unsupported dialects instead of degrading to slow per-row loops.
-- Need lifecycle behavior on writes — timestamps, soft delete, audit trails? That belongs in [plugins](/docs/plugins/overview) or [hooks](/docs/advanced/hooks), not duplicated per call.
+- Need lifecycle behavior on writes - timestamps, soft delete, audit trails? That belongs in [plugins](/docs/plugins/overview) or [hooks](/docs/advanced/hooks), not duplicated per call.

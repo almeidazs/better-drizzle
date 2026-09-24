@@ -84,17 +84,14 @@ The plugin fills timestamp columns before the database call:
 | `upsert` | sets both on the create payload, refreshes `updatedAt` on update |
 
 ```ts
-const post = await client.posts.create({
+const { createdAt, updatedAt } = await client.posts.create({
 	data: { title: 'Hello' },
-});
-
-post.createdAt; // Date
-post.updatedAt; // Date
+}); // both are Date
 ```
 
 ### `mode: 'database'`
 
-The plugin becomes a no-op — use it when the database owns timestamps (column defaults like `DEFAULT now()`, `ON UPDATE`, triggers, or generated values):
+The plugin becomes a no-op - use it when the database owns timestamps (column defaults like `DEFAULT now()`, `ON UPDATE`, triggers, or generated values):
 
 ```ts
 timestamps({ mode: 'database' });
@@ -114,5 +111,5 @@ timestamps({
 ## Behavior details
 
 - Models missing the configured columns are skipped automatically.
-- It only mutates write payloads — reads, filters, and result shapes are untouched.
+- It only mutates write payloads - reads, filters, and result shapes are untouched.
 - Works the same for single writes, batch writes, and upserts.
