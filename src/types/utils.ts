@@ -474,6 +474,9 @@ export type ArrayFilter<T> = {
 	isEmpty?: boolean;
 	length?: number | ComparableFilter<number>;
 	not?: T | Omit<ArrayFilter<T>, 'not'>;
+	none?: ScalarFilter<ArrayValue<T>>;
+	some?: ScalarFilter<ArrayValue<T>>;
+	every?: ScalarFilter<ArrayValue<T>>;
 };
 
 /** Accepted where value for a native PostgreSQL array column. */

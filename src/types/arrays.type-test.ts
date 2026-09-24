@@ -14,6 +14,12 @@ db.users.findMany({
 	where: { roles: { has: 'admin' }, scores: { hasEvery: [10, 20] } },
 });
 db.users.findMany({ where: { roles: ['admin'] } });
+db.users.findMany({
+	where: {
+		roles: { every: { in: ['admin', 'member'] } },
+		scores: { some: { gt: 10 }, none: { lt: 0 } },
+	},
+});
 db.users.update({ data: { roles: ['admin'] }, where: { name: 'Ada' } });
 db.users.update({
 	data: { roles: { append: 'admin' } },
@@ -61,6 +67,18 @@ db.users.findMany({
 	where: {
 		// @ts-expect-error enum elements remain narrow
 		roles: { has: 'potato' },
+	},
+});
+db.users.findMany({
+	where: {
+		// @ts-expect-error enum element predicates remain narrow
+		roles: { some: { equals: 'potato' } },
+	},
+});
+db.users.findMany({
+	where: {
+		// @ts-expect-error numeric element predicates do not expose string patterns
+		scores: { some: { contains: '10' } },
 	},
 });
 db.users.update({
