@@ -828,6 +828,34 @@ export type RulesPluginOptions<
 	}>;
 };
 
+/**
+ * Options for `merge(...)`.
+ *
+ * `extends` configs are applied in order, then `rules` on top. The merge is
+ * shallow: a later setting replaces the whole earlier setting for that rule.
+ * `undefined`, `null`, and `false` entries are skipped.
+ *
+ * @example
+ * ```ts
+ * merge({
+ *   extends: [safe(), isProd && { throwOnError: false }],
+ *   rules: { noRawMutation: 'warn' },
+ * });
+ * ```
+ */
+export type MergeRulesOptions<
+	TModel extends string = string,
+	TContextKey extends string = string,
+> = {
+	/** Base configs, applied in order. */
+	extends?: MaybeArray<
+		RulesPluginOptions<TModel, TContextKey> | undefined | null | false
+	>;
+
+	/** Overrides applied after every `extends` entry. */
+	rules?: RulesPluginOptions<TModel, TContextKey> | null | false;
+};
+
 export type NormalizedRule<TOptions extends object = Record<never, never>> = {
 	level: RuleSeverity;
 	options: TOptions;

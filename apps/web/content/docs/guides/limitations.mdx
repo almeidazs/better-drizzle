@@ -1,12 +1,95 @@
 ---
 title: Limitations & tradeoffs
-description: Where better-drizzle deliberately stays small, native-first, or explicit instead of adding silent abstractions.
+description: What better-drizzle does not do, where plugins stop applying, and where it stays native-first or explicit instead of adding silent abstractions.
 icon: TriangleAlert
 seoTitle: 'Limitations & Tradeoffs'
-seoDescription: 'Where better-drizzle deliberately stays small, native-first, or explicit on top of Drizzle ORM instead of adding silent ORM abstractions.'
+seoDescription: 'What better-drizzle does not cover on top of Drizzle ORM: aggregates, ordering, plugin scope on relations, soft-delete coverage, locks, and raw SQL rules.'
 ---
 
-better-drizzle is intentionally opinionated about a few tradeoffs.
+better-drizzle covers the common repository calls and leaves the rest to Drizzle. The raw Drizzle `db` you passed to `better()` stays available for anything listed here.
+
+## No `groupBy` or aggregates beyond count
+
+Delegates expose `count()` and `exists()`, and `include: { _count: { select: { ... } } }` projects relation counts. There is no `groupBy`, `sum`, `avg`, `min`, or `max`. Use the Drizzle query builder for those:
+
+```ts
+import { avg, count, eq } from 'drizzle-orm';
+
+const stats = await db
+	.select({
+		authorId: posts.authorId,
+		total: count(),
+		avgScore: avg(posts.score),
+	})
+	.from(posts)
+	.where(eq(posts.published, true))
+	.groupBy(posts.authorId);
+```
+
+## `orderBy` is column and direction only
+
+`orderBy` accepts scalar columns of the queried table, each with `'asc'` or `'desc'`, as one object or an array for multi-column ordering. It does not support:
+
+- `NULLS FIRST` / `NULLS LAST`, so null placement is the database default (for example, PostgreSQL puts nulls last in ascending order, SQLite and MySQL put them first)
+- SQL expressions
+- ordering the root rows by a relation's columns
+
+For those, use Drizzle directly:
+
+```ts
+import { sql } from 'drizzle-orm';
+
+const rows = await db
+	.select()
+	.from(posts)
+	.orderBy(sql`${posts.publishedAt} desc nulls last`);
+```
+
+## Pagination inputs
+
+- `paginate()` takes `limit` and `skip`. There is no `page` or `perPage` input; compute `skip` as `(page - 1) * limit`. The response still reports `page`, `perPage`, `total`, and `pageCount`.
+- `cursor()` takes `limit` and one of `after` or `before`. Without `orderBy` it pages by primary key ascending. When you sort by another column, end the `orderBy` with a unique column so pages cannot overlap or skip rows.
+
+## Transforms apply to the root query only
+
+Plugin `transform()` runs once per operation, on the root query. Relation loads from `include` or relation `select`, and `_count` projections, are built by the batched loader and do not pass through transforms. A plugin that adds a `where` condition, such as tenant scoping or soft-delete visibility, does not add it to nested relations.
+
+Filter nested relations explicitly when it matters:
+
+```ts
+const users = await client.users.findMany({
+	include: {
+		posts: { where: { deletedAt: null } },
+	},
+});
+```
+
+## Soft delete coverage
+
+`better-drizzle/soft-delete` hides deleted rows only in `findMany`, `findFirst`, `count`, and `exists`, and rewrites only `delete` into an update. Everything else sees and changes deleted rows as ordinary rows:
+
+| Operation | Behavior with the plugin |
+| --- | --- |
+| `findMany`, `findFirst`, `count`, `exists` | deleted rows hidden by default; `deleted: 'with' \| 'only'` changes it |
+| `findUnique`, `findOne` | **not filtered**, returns a deleted row |
+| `paginate`, `cursor` | **not filtered**, includes deleted rows in `data` and `total` |
+| relations in `include` / `select`, `_count` | **not filtered**, see [above](#transforms-apply-to-the-root-query-only) |
+| `delete` | soft delete by default; `mode: 'hard'` deletes physically |
+| `deleteMany` | **physical delete**, not rewritten |
+| `update`, `updateMany`, `updateEach`, `upsert`, `upsertMany` | **not filtered**, can modify deleted rows |
+
+Add `deletedAt: null` to the `where` of these calls when they must ignore deleted rows. The [rules plugin](/docs/plugins/rules) rule `noHardDeleteOnSoftDeleteModel` only checks `delete({ mode: 'hard' })`; it does not flag `deleteMany`.
+
+## Row locks reject relation loading
+
+`lock` works on PostgreSQL and MySQL for `findMany`, `findFirst`, `findOne`, `findUnique`, `paginate`, and `cursor`. It is rejected, not silently dropped, in these cases:
+
+- on SQLite: `LOCK_NOT_SUPPORTED`
+- with general relation loading, meaning multiple `include` fields or a relation `select`: `LOCK_NOT_SUPPORTED`, "Row locks are only supported on read queries without general relation loading."
+- as a `lock` inside a nested relation: `LOCK_NOT_SUPPORTED`
+- `count`, `exists`, and writes do not accept `lock`
+
+A single `one` relation `include` on the root query, such as `include: { author: true }`, is supported. See [row locks](/docs/advanced/locks).
 
 ## `upsertMany` is native-first
 
@@ -14,28 +97,21 @@ better-drizzle is intentionally opinionated about a few tradeoffs.
 - currently unsupported on MySQL
 - fails fast on unsupported dialects instead of looping through many `upsert()` calls
 
-That is deliberate. A slow hidden fallback would make throughput and behavior harder to reason about.
+A slow hidden fallback would make throughput and behavior harder to reason about.
 
-## `upsertMany` is not a relation loader
-
-- supports `select`
-- does **not** support relation `include`
-- does **not** support relation selects
-
-Batch upsert is treated as a write primitive, not a nested graph loader.
+`upsertMany` is also a write primitive, not a graph loader: it supports `select`, but not relation `include` or relation selects.
 
 ## Some transaction options are dialect-specific
 
-Options like `isolationLevel`, `readOnly`, and transaction comments depend on the underlying dialect and driver. SQLite especially ignores some of them.
+`isolationLevel` and `readOnly` are ignored on SQLite, and `comment` is PostgreSQL only. Choose how unsupported options are handled with the client's `transaction.unsupportedOptions` setting (`'warn'`, `'throw'`, or `'ignore'`) instead of discovering it by accident.
 
-You can control unsupported-option behavior through client config instead of discovering it by accident.
+## Raw SQL is explicit, and rules cover it partially
 
-## Raw SQL is explicit by design
+- `$raw` and `$executeRaw` accept only tagged templates or Drizzle `sql` objects
+- `$rawUnsafe` is disabled unless `raw.allowUnsafe` is enabled
+- raw calls bypass model transforms and CRUD hooks; they have their own `beforeRaw`, `afterRaw`, and `onRawError` hooks
 
-- `$raw` and `$executeRaw` are safe-by-default
-- `$rawUnsafe` is off by default
-- raw methods bypass model transforms and CRUD hooks
-- dedicated raw hooks still exist for observability and policy
+The [rules plugin](/docs/plugins/rules) checks `$raw`, `$rawUnsafe`, and `$executeRaw` through `beforeRaw`. CRUD rules such as `noDeleteManyWithoutWhere` never inspect raw SQL, so a raw `DELETE` is only caught by raw rules like `noRawMutation`.
 
 ## Plugins are the mutation layer
 
@@ -53,9 +129,4 @@ The project reads your Drizzle schema directly. That keeps setup small, but it a
 
 ## Performance claims are parity-shaped
 
-The benchmark suite distinguishes between:
-
-- fair API-parity comparisons
-- lower-level manual Drizzle reference queries
-
-The project avoids claiming wrapper-overhead numbers using non-equivalent queries.
+The benchmark suite separates fair API-parity comparisons from lower-level manual Drizzle reference queries, and overhead numbers come only from the parity group. See [benchmark parity](/docs/performance/parity).

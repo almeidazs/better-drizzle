@@ -96,7 +96,7 @@ app.get('/users/:id', async (req, res) => {
 
 ## Classifying database errors
 
-Writes fail in predictable ways — a unique email, a missing foreign key, a `NOT NULL` violation. Each driver reports these differently. better-drizzle normalizes them with exported helpers so your handling is dialect-agnostic:
+Writes fail in predictable ways - a unique email, a missing foreign key, a `NOT NULL` violation. Each driver reports these differently. better-drizzle normalizes them with exported helpers so your handling is dialect-agnostic:
 
 ```ts tab="better-drizzle" tab-group="orm"
 import {

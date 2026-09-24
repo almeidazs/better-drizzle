@@ -7,7 +7,7 @@ seoDescription: 'Migrate from the scoped @better-drizzle/* plugin packages to th
 ---
 
 `0.2.0` collapses the plugin packages into the main package. The runtime API
-did not change — only where you install and import the official plugins from.
+did not change - only where you install and import the official plugins from.
 
 ## What changed
 
@@ -31,7 +31,7 @@ npm install better-drizzle
 | `@better-drizzle/soft-delete` | `better-drizzle/soft-delete` |
 | `@better-drizzle/timestamps` | `better-drizzle/timestamps` |
 | `@better-drizzle/zod` | `better-drizzle/zod` |
-| — | `better-drizzle/plugins` *(new — plugin authoring API)* |
+| - | `better-drizzle/plugins` *(new - plugin authoring API)* |
 
 <Callout type="info">
 	Every entrypoint ships ESM, CommonJS, and its own declaration files. The
@@ -51,7 +51,7 @@ npm install better-drizzle@^0.2.0
 
 ### 2. Rewrite the imports
 
-Only the module specifier changes — the exported names are identical:
+Only the module specifier changes - the exported names are identical:
 
 ```ts title="db.ts"
 // [!code --:3]

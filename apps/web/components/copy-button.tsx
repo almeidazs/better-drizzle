@@ -1,9 +1,8 @@
 'use client';
 
+import { cn } from 'cnfast';
 import { Check, Copy } from 'lucide-react';
 import { useState } from 'react';
-
-import { cn } from '@/lib/utils';
 
 export function CopyButton({
 	value,
@@ -22,7 +21,7 @@ export function CopyButton({
 			setCopied(true);
 			setTimeout(() => setCopied(false), 1500);
 		} catch {
-			// clipboard can be unavailable (e.g. insecure context) — fail quietly
+			// clipboard can be unavailable (e.g. insecure context) - fail quietly
 		}
 	}
 

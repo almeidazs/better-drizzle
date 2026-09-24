@@ -3,11 +3,11 @@
 	"icon": "Blocks",
 	"pages": [
 		"overview",
-		"eslint",
-		"rules",
-		"zod",
 		"timestamps",
 		"soft-delete",
+		"zod",
+		"rules",
+		"eslint",
 		"writing-plugins"
 	]
 }

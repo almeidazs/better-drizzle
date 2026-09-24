@@ -111,6 +111,61 @@ describe('plugins', () => {
 		close();
 	});
 
+	test('optional required columns may be missing, but type is still checked', () => {
+		const { raw, close } = createContext();
+
+		expect(() =>
+			better(raw, {
+				plugins: [
+					definePlugin({
+						config: {
+							requires: {
+								columns: [
+									{ column: 'missingColumn', optional: true },
+								],
+							},
+						},
+						id: 'optional-column',
+					}),
+				],
+				schema,
+			}),
+		).not.toThrow();
+
+		expect(() =>
+			better(raw, {
+				plugins: [
+					definePlugin({
+						config: {
+							requires: {
+								columns: [{ column: 'name', type: 'number' }],
+							},
+						},
+						id: 'typed-column',
+					}),
+				],
+				schema,
+			}),
+		).toThrow('to be "number"');
+
+		expect(() =>
+			better(raw, {
+				plugins: [
+					definePlugin({
+						config: {
+							requires: {
+								columns: [{ column: 'name', type: 'string' }],
+							},
+						},
+						id: 'typed-column-ok',
+					}),
+				],
+				schema,
+			}),
+		).not.toThrow();
+		close();
+	});
+
 	test('setup runs once and can register hooks', async () => {
 		const { raw, close } = createContext();
 		let setupCalls = 0;

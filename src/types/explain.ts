@@ -19,9 +19,9 @@ export type ExplainOptions = {
 	 * When `true`, the database runs the query and reports actual execution
 	 * statistics instead of estimates.
 	 *
-	 * - **PostgreSQL**: supported — maps to `EXPLAIN (ANALYZE true)`.
-	 * - **MySQL**: supported — maps to `EXPLAIN ANALYZE`.
-	 * - **SQLite**: not supported — reported as ignored.
+	 * - **PostgreSQL**: supported - maps to `EXPLAIN (ANALYZE true)`.
+	 * - **MySQL**: supported - maps to `EXPLAIN ANALYZE`.
+	 * - **SQLite**: not supported - reported as ignored.
 	 */
 	analyze?: boolean;
 
@@ -29,9 +29,9 @@ export type ExplainOptions = {
 	 * When `true`, the output includes additional columns such as the
 	 * output schema of each plan node.
 	 *
-	 * - **PostgreSQL**: supported — maps to `EXPLAIN (VERBOSE true)`.
-	 * - **MySQL**: not supported — reported as ignored.
-	 * - **SQLite**: not supported — reported as ignored.
+	 * - **PostgreSQL**: supported - maps to `EXPLAIN (VERBOSE true)`.
+	 * - **MySQL**: not supported - reported as ignored.
+	 * - **SQLite**: not supported - reported as ignored.
 	 */
 	verbose?: boolean;
 
@@ -39,9 +39,9 @@ export type ExplainOptions = {
 	 * When `false`, the estimated startup and total cost of each plan node
 	 * are omitted from the output.
 	 *
-	 * - **PostgreSQL**: supported — maps to `EXPLAIN (COSTS false)`.
-	 * - **MySQL**: not supported — reported as ignored.
-	 * - **SQLite**: not supported — reported as ignored.
+	 * - **PostgreSQL**: supported - maps to `EXPLAIN (COSTS false)`.
+	 * - **MySQL**: not supported - reported as ignored.
+	 * - **SQLite**: not supported - reported as ignored.
 	 */
 	costs?: boolean;
 
@@ -49,9 +49,9 @@ export type ExplainOptions = {
 	 * When `false`, the actual time spent in each plan node is omitted even
 	 * when `analyze` is `true`.
 	 *
-	 * - **PostgreSQL**: supported — maps to `EXPLAIN (TIMING false)`.
-	 * - **MySQL**: not supported — reported as ignored.
-	 * - **SQLite**: not supported — reported as ignored.
+	 * - **PostgreSQL**: supported - maps to `EXPLAIN (TIMING false)`.
+	 * - **MySQL**: not supported - reported as ignored.
+	 * - **SQLite**: not supported - reported as ignored.
 	 */
 	timing?: boolean;
 
@@ -59,9 +59,9 @@ export type ExplainOptions = {
 	 * When `false`, the summary line (e.g. "Planning Time", "Execution Time")
 	 * is omitted from the output.
 	 *
-	 * - **PostgreSQL**: supported — maps to `EXPLAIN (SUMMARY false)`.
-	 * - **MySQL**: not supported — reported as ignored.
-	 * - **SQLite**: not supported — reported as ignored.
+	 * - **PostgreSQL**: supported - maps to `EXPLAIN (SUMMARY false)`.
+	 * - **MySQL**: not supported - reported as ignored.
+	 * - **SQLite**: not supported - reported as ignored.
 	 */
 	summary?: boolean;
 
@@ -79,9 +79,9 @@ export type ExplainOptions = {
 	/**
 	 * Optional name for the prepared statement created by `EXPLAIN`.
 	 *
-	 * - **PostgreSQL**: supported — maps to `EXPLAIN (NAME '...')`.
-	 * - **MySQL**: not supported — reported as ignored.
-	 * - **SQLite**: not supported — reported as ignored.
+	 * - **PostgreSQL**: supported - maps to `EXPLAIN (NAME '...')`.
+	 * - **MySQL**: not supported - reported as ignored.
+	 * - **SQLite**: not supported - reported as ignored.
 	 */
 	name?: string;
 

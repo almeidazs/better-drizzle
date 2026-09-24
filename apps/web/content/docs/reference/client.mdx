@@ -1,9 +1,9 @@
 ---
 title: Client
-description: better() — options, client-level methods, and the values exported from better-drizzle.
+description: better() - options, client-level methods, and the values exported from better-drizzle.
 icon: Settings2
 seoTitle: 'Client API Reference - better()'
-seoDescription: 'API reference for better(): client options, schema, plugins, hooks, transaction, $raw, $withContext, extends, repository, and package exports.'
+seoDescription: 'API reference for better(), the Drizzle ORM client wrapper: options, plugins, hooks, raw SQL, $rawUnsafe, $withContext, extends, and exports.'
 ---
 
 ```ts
@@ -126,6 +126,8 @@ the inference rules.
 	}}
 />
 
+When `raw.enabled` is `false`, every raw method throws a `BetterDrizzleError` with code `RAW_DISABLED`. Calling `$rawUnsafe()` without `raw.allowUnsafe: true` throws `RAW_UNSAFE_DISABLED`. With `raw.requireComment`, a call without `options.comment` throws `RAW_COMMENT_REQUIRED`. See [error codes](/docs/reference/errors#error-codes).
+
 ## Client methods
 
 Beyond the per-table delegates, the client exposes:
@@ -138,10 +140,8 @@ Beyond the per-table delegates, the client exposes:
 | `transaction(fn, options?)` | run `fn` in a [transaction](/docs/advanced/transactions) |
 | `$raw(...)` | run a [safe raw](/docs/advanced/raw-sql) read, returns rows |
 | `$executeRaw(...)` | run a safe raw write, returns `{ rowsAffected }` |
-| `$rawUnsafe(...)` | run a raw string query (requires `raw.allowUnsafe`) |
+| `$rawUnsafe(query, params?, options?)` | run a raw string query (requires `raw.allowUnsafe`) |
 | `$withContext(meta)` | clone the client with default [metadata](/docs/guides/multi-tenancy) merged into every operation |
-| `afterCommit(cb)` | register a callback for the current transaction scope |
-| `afterRollback(cb)` | register a callback for the current transaction scope |
 
 `repository(name)` accepts either the TypeScript schema key or the underlying database table name:
 
@@ -162,7 +162,25 @@ const extended = client.extends((client) => ({
 
 See the full guide at [Client extensions](/docs/guides/client-extensions).
 
-`afterCommit()` and `afterRollback()` are useful when you're already holding a transaction-bound client deeper in your call stack and don't want to thread the callback registration through another abstraction.
+### `$rawUnsafe`
+
+`$rawUnsafe(query, params?, options?)` takes a plain SQL string. Use `?` placeholders for values: each one is replaced by the matching entry of `params` as a bound parameter, in order. It returns rows like `$raw`.
+
+```ts
+const client = better(db, { schema, raw: { allowUnsafe: true } });
+
+const rows = await client.$rawUnsafe(
+	'select id, name from users where id = ? and active = ?',
+	[1, true],
+	{ name: 'admin-user-lookup' },
+);
+```
+
+When `params` is non-empty and the number of `?` placeholders differs from `params.length`, the call throws `RAW_UNSAFE_PLACEHOLDER_MISMATCH` (status `400`) with `details: { params, placeholders }`. Without `params`, the string runs as-is.
+
+### Transaction clients
+
+The client passed to a `transaction(...)` callback also has `rollback(reason?)`, `afterCommit(cb)`, and `afterRollback(cb)`. See [transactions](/docs/advanced/transactions). The root client does not declare `afterCommit` / `afterRollback`; calling them on it at runtime throws `AFTER_COMMIT_OUTSIDE_TRANSACTION` / `AFTER_ROLLBACK_OUTSIDE_TRANSACTION`.
 
 ## Exports
 
@@ -179,7 +197,9 @@ import {
 	isForeignKeyViolation,
 	isNotNullViolation,
 	isCheckViolation,
-	// transaction error
+	// errors
+	BetterDrizzleError,
+	BetterDrizzleErrorCode,
 	BetterDrizzleTransactionRollbackError,
 } from 'better-drizzle';
 ```

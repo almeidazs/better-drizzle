@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { better } from 'better-drizzle';
 
-import { rules } from '../../src/plugins/rules';
+import { merge, rules, safe } from '../../src/plugins/rules';
 import { createTestContext } from '../core/setup';
 
 const createRulesContext = (pluginOptions: Parameters<typeof rules>[0]) => {
@@ -110,8 +110,7 @@ describe('better-drizzle/rules', () => {
 
 		await expect(
 			ctx.client.users.paginate({
-				page: 1,
-				perPage: 1,
+				limit: 1,
 			}),
 		).rejects.toThrow('paginate requires orderBy.');
 
@@ -247,6 +246,16 @@ describe('better-drizzle/rules', () => {
 		ctx.close();
 	});
 
+	test('raw rules also cover $executeRaw', async () => {
+		const ctx = createRulesContext({ noRawMutation: true });
+
+		await expect(
+			ctx.client.$executeRaw`update test_users set active = 1`,
+		).rejects.toThrow('Raw mutation queries are not allowed.');
+
+		ctx.close();
+	});
+
 	test('requires tenant context and protects tenant overrides', async () => {
 		const ctx = createRulesContext({
 			requireTenantContext: true,
@@ -279,6 +288,26 @@ describe('better-drizzle/rules', () => {
 		).rejects.toThrow('Overriding tenantId is not allowed.');
 
 		ctx.close();
+	});
+
+	test('merge applies extends in order, then rules, skipping falsy entries', () => {
+		const merged = merge({
+			extends: [
+				safe(),
+				false,
+				null,
+				undefined,
+				{ noRawMutation: 'warn' },
+			],
+			rules: { maxLimit: { value: 200 } },
+		});
+
+		expect(merged.noRawUnsafe).toBe('error');
+		expect(merged.noRawMutation).toBe('warn');
+		expect(merged.maxLimit).toEqual({ value: 200 });
+		expect(merge({ extends: { noRawUnsafe: true } })).toEqual({
+			noRawUnsafe: true,
+		});
 	});
 
 	test('unsupported rules are silent no-ops', async () => {

@@ -945,7 +945,7 @@ export const buildCursorPaginationQuery = <Schema extends AnySchema, Meta>(
 		args.orderBy ??
 		inferCursorOrderBy<Schema>(
 			args.after as Record<string, unknown> | undefined,
-			'desc',
+			'asc',
 		);
 
 	if (args.before)

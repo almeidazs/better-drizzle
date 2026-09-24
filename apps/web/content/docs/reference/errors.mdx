@@ -1,9 +1,9 @@
 ---
 title: Error helpers
-description: Cross-dialect constraint detection and normalized database error info exported from better-drizzle.
+description: BetterDrizzleError, its error codes, and cross-dialect constraint detection helpers.
 icon: OctagonAlert
 seoTitle: 'Error Helpers - Constraint Detection'
-seoDescription: 'Cross-dialect helpers to detect unique, foreign key, and not-null constraint violations and normalize database errors from Drizzle ORM drivers.'
+seoDescription: 'BetterDrizzleError fields, error codes, and HTTP statuses, plus cross-dialect helpers to detect constraint violations from Drizzle ORM drivers.'
 ---
 
 better-drizzle exports helpers that normalize database errors across PostgreSQL, SQLite, and MySQL, so you can classify failures without string-matching driver messages. See [error handling](/docs/advanced/error-handling) for end-to-end usage.
@@ -83,9 +83,162 @@ const info = getDatabaseErrorInfo(error);
 	}}
 />
 
+## `BetterDrizzleError`
+
+Every error thrown by better-drizzle itself is a `BetterDrizzleError` (it extends `Error`). Database failures that surface through an operation are normalized into the same shape.
+
+```ts
+import { BetterDrizzleError, BetterDrizzleErrorCode } from 'better-drizzle';
+
+try {
+	await client.users.findUnique({ where: { id: 1 } }).throw();
+} catch (error) {
+	if (
+		BetterDrizzleError.is(error) &&
+		error.code === BetterDrizzleErrorCode.ResultNotFound
+	) {
+		// error.status === 404
+	}
+	throw error;
+}
+```
+
+### Fields
+
+<TypeTable
+	type={{
+		code: {
+			description: 'Error category. See the code table below.',
+			type: 'BetterDrizzleErrorCode',
+			required: true,
+		},
+		status: {
+			description: 'HTTP-like status. Derived from `code` unless set explicitly.',
+			type: 'number',
+			required: true,
+		},
+		message: {
+			description: 'Human-readable message.',
+			type: 'string',
+			required: true,
+		},
+		driver: {
+			description: 'Detected driver, when the error came from the database.',
+			type: '"pg" | "sqlite" | "mysql" | "unknown" | undefined',
+		},
+		dialect: {
+			description: 'SQL dialect in use, when known.',
+			type: 'string | undefined',
+		},
+		table: {
+			description: 'Table involved, when detectable.',
+			type: 'string | undefined',
+		},
+		column: {
+			description: 'Column involved, when detectable.',
+			type: 'string | undefined',
+		},
+		constraint: {
+			description: 'Violated constraint, when detectable.',
+			type: 'string | undefined',
+		},
+		operation: {
+			description: 'Operation that failed, for example `"create"` or `"transaction"`.',
+			type: 'string | undefined',
+		},
+		sqlState: {
+			description: 'SQLSTATE or driver error code from the database.',
+			type: 'string | undefined',
+		},
+		errno: {
+			description: 'Driver errno (MySQL), when present.',
+			type: 'number | undefined',
+		},
+		stage: {
+			description: 'Lifecycle stage where the error occurred.',
+			type: 'string | undefined',
+		},
+		hookName: {
+			description: 'Name of the hook that failed, for hook errors.',
+			type: 'string | undefined',
+		},
+		details: {
+			description: 'Extra structured data, for example `{ database: DatabaseErrorInfo }` or the offending values.',
+			type: 'Record<string, unknown> | undefined',
+		},
+		cause: {
+			description: 'The original error, when one was wrapped.',
+			type: 'unknown',
+		},
+	}}
+/>
+
+### Static helpers
+
+| Helper | Description |
+| --- | --- |
+| `BetterDrizzleError.is(error)` | Type guard, same as `error instanceof BetterDrizzleError`. |
+| `BetterDrizzleError.from(error, overrides?)` | Normalizes any value. An existing `BetterDrizzleError` is cloned with the overrides applied. A value that looks like a database error (an object with a string `message`, `code`, or `sqlState`, or a numeric `errno`, which includes plain `Error` instances) becomes `DATABASE_ERROR` with the parsed driver, constraint, table, and column. Anything else becomes `UNKNOWN`. The original value is kept as `cause`. |
+| `BetterDrizzleError.fromDatabaseError(error, overrides?)` | Always parses the value with `getDatabaseErrorInfo` and returns `DATABASE_ERROR` (unless `overrides.code` is set), with the parsed info under `details.database`. |
+
+Instances also have `withCause(cause)` and `withDetails(details)`, which return a new error (details are shallow-merged), and `toJSON()`, which returns a plain object with every field except `cause`.
+
+```ts
+try {
+	await db.insert(users).values(data);
+} catch (error) {
+	throw BetterDrizzleError.fromDatabaseError(error, {
+		operation: 'create',
+		table: 'users',
+	});
+}
+```
+
+### Error codes
+
+`BetterDrizzleErrorCode` is an exported string enum. The status column is the default `status` for each code; any code not given a specific status defaults to `500`.
+
+| Area | Code | Status | Meaning |
+| --- | --- | --- | --- |
+| Results | `RESULT_NOT_FOUND` | 404 | `.throw()` found no matching row. |
+| Results | `REPOSITORY_NOT_FOUND` | 500 | `repository(name)` matched no schema key or table name. |
+| Database | `DATABASE_ERROR` | 500 | The database rejected the statement (unique, foreign key, not null, and so on). |
+| Database | `DIALECT_INFERENCE_FAILED` | 500 | The SQL dialect could not be inferred from the Drizzle client. |
+| Database | `JSONB_QUERY_UNSUPPORTED` | 400 | A JSONB path filter was used on a dialect other than PostgreSQL. |
+| Operations | `OPERATION_ERROR` | 500 | An operation received invalid input or failed, for example an invalid `batchSize` or a bad cursor. |
+| Operations | `UNKNOWN` | 500 | An uncategorized error. |
+| Hooks | `HOOK_ERROR` | 500 | A lifecycle hook threw. |
+| Plugins | `PLUGIN_DIALECT_UNSUPPORTED` | 500 | A plugin does not support the current dialect. |
+| Plugins | `PLUGIN_DUPLICATE_ID` | 500 | Two plugins share the same `id`. |
+| Plugins | `PLUGIN_EXTENSION_CONFLICT` | 500 | Two plugins or extensions add the same client property. |
+| Plugins | `PLUGIN_OPERATION_ARG_CONFLICT` | 500 | Two plugins add the same operation arg field. |
+| Plugins | `PLUGIN_REQUIRED_COLUMN_MISSING` | 500 | A model lacks a column a plugin requires. |
+| Plugins | `PLUGIN_REQUIRED_COLUMN_TYPE` | 500 | A required column exists with a different Drizzle type. |
+| Raw SQL | `RAW_DISABLED` | 500 | Raw SQL is disabled with `raw.enabled: false`. |
+| Raw SQL | `RAW_UNSAFE_DISABLED` | 500 | `$rawUnsafe()` was called without `raw.allowUnsafe: true`. |
+| Raw SQL | `RAW_COMMENT_REQUIRED` | 400 | `raw.requireComment` is on and the call has no `options.comment`. |
+| Raw SQL | `RAW_INVALID_QUERY` | 400 | `$raw` / `$executeRaw` got something other than a tagged template or Drizzle SQL object. |
+| Raw SQL | `RAW_UNSAFE_PLACEHOLDER_MISMATCH` | 400 | The `?` placeholder count does not match the params count. |
+| Raw SQL | `RAW_UNSUPPORTED_OPTION` | 400 | A raw option is not supported by the dialect. |
+| Raw SQL | `RAW_TIMEOUT` | 408 | A raw query (or `.explain()` with `timeoutMs`) timed out. |
+| Raw SQL | `RAW_ABORTED` | 408 | A raw query was aborted through its `AbortSignal`. |
+| Transactions | `TRANSACTION_ROLLBACK` | 409 | The transaction was rolled back with `tx.rollback()`. |
+| Transactions | `TRANSACTION_TIMEOUT` | 408 | The transaction exceeded `timeoutMs`. |
+| Transactions | `TRANSACTION_ABORTED` | 408 | The transaction was aborted through its `AbortSignal`. |
+| Transactions | `TRANSACTION_UNSUPPORTED_OPTION` | 400 | A transaction option is not supported by the dialect. |
+| Transactions | `TRANSACTIONS_UNSUPPORTED` | 500 | The Drizzle client does not support transactions. |
+| Transactions | `AFTER_COMMIT_OUTSIDE_TRANSACTION` | 500 | `afterCommit()` was called outside a transaction. |
+| Transactions | `AFTER_ROLLBACK_OUTSIDE_TRANSACTION` | 500 | `afterRollback()` was called outside a transaction. |
+| Locks | `LOCK_NOT_SUPPORTED` | 400 | The dialect or query shape does not support the requested row lock. |
+| Locks | `LOCK_REQUIRES_TRANSACTION` | 400 | `locks.transactionsOnly: true` is set and the locked read ran outside a transaction. |
+| Locks | `LOCK_TIMEOUT` | 409 | The lock could not be acquired in time, including `NOWAIT` failures. |
+| Internal | `TABLE_RUNTIME_NOT_FOUND` | 500 | Internal: table metadata is missing. |
+| Internal | `TRANSACTION_LIFECYCLE_STATE_MISSING` | 500 | Internal: transaction lifecycle state is missing. |
+| Internal | `TRANSACTION_RUNTIME_NOT_INITIALIZED` | 500 | Internal: the transaction runtime was not initialized. |
+
 ## `BetterDrizzleTransactionRollbackError`
 
-Thrown when a [transaction](/docs/advanced/transactions) is explicitly rolled back via `tx.rollback(reason)`. The `reason` you pass is available on the error:
+Thrown when a [transaction](/docs/advanced/transactions) is explicitly rolled back via `tx.rollback(reason)`. It extends `BetterDrizzleError` with code `TRANSACTION_ROLLBACK` (status `409`). The `reason` you pass is available as `error.reason` (also as `cause` and `details.reason`), and a non-empty string reason becomes the message:
 
 ```ts
 import { BetterDrizzleTransactionRollbackError } from 'better-drizzle';
@@ -100,13 +253,3 @@ try {
 	}
 }
 ```
-
-## Lock-related error codes
-
-Locked reads throw normal `BetterDrizzleError` instances with specific codes:
-
-| Code | Meaning |
-| --- | --- |
-| `LOCK_NOT_SUPPORTED` | The dialect or query shape does not support the requested row lock. |
-| `LOCK_REQUIRES_TRANSACTION` | The client was configured with `locks.transactionsOnly: true` and the read ran outside a transaction. |
-| `LOCK_TIMEOUT` | The database could not acquire the requested lock in time, including `NOWAIT` failures. |

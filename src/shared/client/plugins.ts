@@ -614,11 +614,16 @@ export const initializePlugins = <
 		const requiredColumns = plugin.config?.requires?.columns;
 		if (requiredColumns?.length)
 			for (const model of Object.values(context.models) as Array<{
-				hasColumn(column: string): boolean;
+				columns: Record<
+					string,
+					{ columnType: string; dataType: string }
+				>;
 				name: string;
 			}>)
-				for (const requirement of requiredColumns)
-					if (!model.hasColumn(requirement.column))
+				for (const requirement of requiredColumns) {
+					const column = model.columns[requirement.column];
+					if (!column) {
+						if (requirement.optional) continue;
 						throw new BetterDrizzleError({
 							code: BetterDrizzleErrorCode.PluginRequiredColumnMissing,
 							column: requirement.column,
@@ -626,6 +631,26 @@ export const initializePlugins = <
 							table: model.name,
 							details: { pluginId: plugin.id },
 						});
+					}
+					const { type } = requirement;
+					if (
+						type &&
+						column.columnType !== type &&
+						column.dataType !== type
+					)
+						throw new BetterDrizzleError({
+							code: BetterDrizzleErrorCode.PluginRequiredColumnType,
+							column: requirement.column,
+							message: `Plugin "${plugin.id}" requires column "${requirement.column}" on model "${model.name}" to be "${type}", got "${column.columnType}" (${column.dataType}).`,
+							table: model.name,
+							details: {
+								columnType: column.columnType,
+								dataType: column.dataType,
+								expected: type,
+								pluginId: plugin.id,
+							},
+						});
+				}
 
 		if (plugin.operationArgs)
 			for (const kind of Object.keys(

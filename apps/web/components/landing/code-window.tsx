@@ -1,6 +1,7 @@
+import { cn } from 'cnfast';
+
 import { CopyButton } from '@/components/copy-button';
 import { highlight } from '@/lib/highlight';
-import { cn } from '@/lib/utils';
 
 /**
  * A server-rendered "editor window": traffic-light header with an optional file

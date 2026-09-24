@@ -38,12 +38,12 @@ Mutation scenarios use deterministic data pools or restore state between iterati
 
 `bench:report` is the suite that produces the numbers published on the docs site.
 
-Absolute timings drift between runs with machine load — the same operation can read 53 µs on an idle machine and 93 µs under load. Single-run absolute numbers are therefore not publishable. The report addresses this in two ways:
+Absolute timings drift between runs with machine load - the same operation can read 53 µs on an idle machine and 93 µs under load. Single-run absolute numbers are therefore not publishable. The report addresses this in two ways:
 
 - **Interleaving.** Both sides of a pair are sampled inside the same window, alternating which one leads, so a warming or cooling machine cannot systematically favour one side.
 - **Median of samples.** Each side is measured over several samples and the median is reported, discarding outliers from unrelated system activity.
 
-Measurement itself is delegated to mitata's engine — the same one behind `bun run bench` — so warmup, JIT settling, GC accounting, and outlier trimming match the other suites. Only the scheduling around it belongs to the report.
+Measurement itself is delegated to mitata's engine - the same one behind `bun run bench` - so warmup, JIT settling, GC accounting, and outlier trimming match the other suites. Only the scheduling around it belongs to the report.
 
 Ratios are stable across runs even when absolute values are not, so **overhead percentages are the publishable figure**; treat absolute microseconds as machine-specific.
 
@@ -53,10 +53,10 @@ Ratios are stable across runs even when absolute values are not, so **overhead p
 
 It validates **two** kinds of parity before timing:
 
-1. **Row parity** — both sides return the same rows, compared with `deepStrictEqual`.
-2. **Plan parity** — both sides reach those rows the same way. The suite runs `EXPLAIN` on each side (using `.explain()` for the better-drizzle side) and asserts that either both use the expression index or neither does. Matching rows through an index scan on one side and a sequential scan on the other would not be a fair comparison.
+1. **Row parity** - both sides return the same rows, compared with `deepStrictEqual`.
+2. **Plan parity** - both sides reach those rows the same way. The suite runs `EXPLAIN` on each side (using `.explain()` for the better-drizzle side) and asserts that either both use the expression index or neither does. Matching rows through an index scan on one side and a sequential scan on the other would not be a fair comparison.
 
-This suite is I/O bound: the cost is dominated by PostgreSQL planning, execution, and row transfer, so run-to-run variance is high and the two sides land within noise of each other. Use it to prove that the typed API compiles to the same query, **not** as a source of wrapper-overhead figures — those come from the in-memory SQLite suites.
+This suite is I/O bound: the cost is dominated by PostgreSQL planning, execution, and row transfer, so run-to-run variance is high and the two sides land within noise of each other. Use it to prove that the typed API compiles to the same query, **not** as a source of wrapper-overhead figures - those come from the in-memory SQLite suites.
 
 ### Memory benchmark
 
@@ -83,7 +83,7 @@ The transaction group follows the same parity principle. Each paired benchmark w
 
 ### Manual Drizzle reference
 
-This is a **lower-level reference**. Raw Drizzle queries that intentionally do less work — flat joins, no relation resolution, no pagination metadata. These numbers show what is possible without the wrapper, but they are not a fair overhead claim because the work is different.
+This is a **lower-level reference**. Raw Drizzle queries that intentionally do less work - flat joins, no relation resolution, no pagination metadata. These numbers show what is possible without the wrapper, but they are not a fair overhead claim because the work is different.
 
 **Do not compare the manual reference group against the repository API as if they were equivalent.**
 
@@ -108,7 +108,7 @@ Hardware: AMD Ryzen 5 7520U. Runtime: Bun 1.3.14. Database: SQLite in-memory.
 | Simple transaction | 312.00 µs | 350.95 µs | +12.5% |
 | Multi-op transaction | 725.98 µs | 724.15 µs | -0.3% |
 | Read-only transaction | 230.92 µs | 281.35 µs | +21.8% |
-| Nested transaction (savepoint) | — | 650.22 µs | — |
+| Nested transaction (savepoint) | - | 650.22 µs | - |
 
 The table above is a historical Bun 1.3.14 snapshot. After the cursor optimization, five interleaved mitata p50 samples on Bun 1.4.0 / Intel i7-13620H measured cursor pagination at 156 µs for exact raw Drizzle and 162 µs for better-drizzle (+3.8%). The data-only Drizzle reference measured 133 µs and does not compute the same navigation metadata.
 
@@ -134,7 +134,7 @@ Same hardware. 2000 read iterations, 600 mixed read iterations, 1200 write itera
 - **Reads** are within 0–18% of raw Drizzle at the API-parity level. Point lookup, offset pagination, and active count are actually faster through the wrapper due to optimized fast paths.
 - **Writes** are within 4% of raw Drizzle, with the wrapper slightly faster for both update and create+delete roundtrips.
 - **Transactions** show mixed results. Simple and multi-op transactions are within 12% overhead, while read-only transactions have higher overhead due to the wrapper's transaction lifecycle setup. The nested transaction (savepoint) is a better-drizzle-only feature with no raw Drizzle parity equivalent, running at 650 µs.
-- **Memory overhead is negative** for reads and writes — `better-drizzle` uses less heap and RSS than raw Drizzle in those workloads. Transaction memory is higher due to the lifecycle state management required for hooks and savepoints.
+- **Memory overhead is negative** for reads and writes - `better-drizzle` uses less heap and RSS than raw Drizzle in those workloads. Transaction memory is higher due to the lifecycle state management required for hooks and savepoints.
 - The **manual Drizzle reference** group shows that raw hand-written joins are faster (as expected), but they return flat shapes and skip relation resolution. The parity group is the fair comparison.
 
 ## How to run

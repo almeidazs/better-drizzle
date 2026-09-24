@@ -6,7 +6,7 @@ seoTitle: 'Hooks - Drizzle ORM Lifecycle Middleware'
 seoDescription: 'Lifecycle hooks for Drizzle ORM queries and mutations: auditing, tracing, metrics, and request-scoped logging with beforeCreate, afterQuery, and onError.'
 ---
 
-Client hooks are the side-effect layer around Better operations. They are optional — if you do not need them, do not pass them. They are ideal for cross-cutting concerns you do not want duplicated in every call:
+Client hooks are the side-effect layer around Better operations. They are optional - if you do not need them, do not pass them. They are ideal for cross-cutting concerns you do not want duplicated in every call:
 
 - audit trails
 - tracing and metrics
@@ -39,14 +39,14 @@ const client = better(db, {
 
 <Tabs items={['CRUD & query', 'Transaction', 'Raw SQL', 'Errors']}>
 	<Tab value="CRUD & query">
-		- `beforeCreate` / `afterCreate`
-		- `beforeUpdate` / `afterUpdate`
-		- `beforeDelete` / `afterDelete`
-		- `beforeQuery` / `afterQuery`
+		| Hook | `action` values |
+		| --- | --- |
+		| `beforeCreate` / `afterCreate` | `create`, `createMany`, `upsert`, `upsertMany` |
+		| `beforeUpdate` / `afterUpdate` | `update`, `updateMany`, `updateEach` |
+		| `beforeDelete` / `afterDelete` | `delete`, `deleteMany` |
+		| `beforeQuery` / `afterQuery` | `findMany`, `findFirst`, `findOne`, `findUnique`, `count`, `exists`, `paginate`, `cursor` |
 
-		Query hooks cover `findMany`, `findFirst`, `findOne`, `findUnique`,
-		`count`, `exists`, and `paginate`. Create/update/delete hooks also fire for
-		the matching half of `upsert`.
+		`upsert` fires the create hooks only, with `action: 'upsert'`.
 	</Tab>
 	<Tab value="Transaction">
 		- `beforeTransaction`
@@ -60,10 +60,65 @@ const client = better(db, {
 		- `onRawError`
 	</Tab>
 	<Tab value="Errors">
-		- `onError` — fires when any operation or hook throws, with the `action`,
-		`args`, `error`, and the `stage` it failed in.
+		- `onError` - fires when an operation or a CRUD/query hook throws.
 	</Tab>
 </Tabs>
+
+Hook return values are ignored. A hook that throws fails the call (a throwing before hook also prevents the database call). `onError` receives the error with code `HOOK_ERROR`; the caller gets a `BetterDrizzleError` with code `OPERATION_ERROR` that keeps the original message, `hookName`, and `stage`. `$withoutPlugins()` skips plugins, not client hooks.
+
+## Hook context
+
+### CRUD and query hooks
+
+<TypeTable
+	type={{
+		action: { type: 'string', description: 'The operation, e.g. `create` or `findMany`.' },
+		table: { type: 'string', description: 'Schema key of the table.' },
+		args: { type: 'object', description: 'The call args, after plugin transforms.' },
+		meta: { type: 'Meta | undefined', description: 'Merged `$withContext(...)` and per-call `meta`.' },
+		repository: { type: 'Delegate', description: 'The delegate for this table.' },
+		tableInstance: { type: 'Table', description: 'The Drizzle table object.' },
+		tableConfig: { type: 'object', description: 'Relational config for the table.' },
+		schema: { type: 'Schema', description: 'The full Drizzle schema.' },
+		db: { type: 'unknown', description: 'The bound Drizzle instance (the transaction inside `transaction(...)`).' },
+		options: { type: 'BetterClientOptions', description: 'Options passed to `better(...)`.' },
+		isInTransaction: { type: 'boolean', description: 'Whether the call runs inside a transaction.' },
+		transaction: { type: 'TransactionClient | null', description: 'The transaction client, or `null`.' },
+		transactionContext: { type: 'Record<string, unknown> | undefined', description: 'The `context` passed to `transaction(...)`.' },
+		afterCommit: { type: '(callback) => void', description: 'Queue a callback for after commit. Throws outside a transaction.' },
+		afterRollback: { type: '(callback) => void', description: 'Queue a callback for after rollback. Throws outside a transaction.' },
+		result: { type: 'unknown', description: 'After hooks only. The operation result.' },
+		row: { type: 'object | null', description: 'After hooks only, for `create`, `upsert`, `update`, `delete`, `findFirst`, `findOne`, and `findUnique`. Same value as `result`.' },
+		rows: { type: 'object[]', description: '`afterQuery` only, for `findMany`. Same value as `result`.' },
+	}}
+/>
+
+Batch writes (`createMany`, `updateMany`, `updateEach`, `deleteMany`, `upsertMany`) have `result` only, a `{ count, data? }` summary.
+
+### `onError`
+
+`onError` receives the same fields as the CRUD context (without `result`, `row`, and `rows`), plus:
+
+<TypeTable
+	type={{
+		error: { type: 'BetterDrizzleError', description: 'The normalized error.' },
+		stage: { type: "'beforeHook' | 'operation' | 'afterHook'", description: 'Where the error happened.' },
+		hookName: { type: 'string | undefined', description: 'The hook that threw, e.g. `beforeCreate`. Unset when the operation itself failed.' },
+	}}
+/>
+
+It also fires when `.throw()` finds no row (`RESULT_NOT_FOUND`, stage `operation`). Errors thrown inside `onError` are swallowed.
+
+### Transaction hooks
+
+All four receive `client` (the transaction client), `name`, `comment`, `depth` (`1` for the outer transaction, higher for savepoints), `attempt` (starts at `1`), `meta`, `transactionOptions`, `transactionContext`, `isInTransaction: true`, `db`, `schema`, `options`, `afterCommit`, and `afterRollback`.
+
+- `afterTransactionRollback` adds `reason`: the `rollback(...)` reason, or the error.
+- `onTransactionError` adds `error`. It fires before `afterTransactionRollback`, and not for an explicit `rollback()`.
+
+### Raw hooks
+
+`beforeRaw`, `afterRaw`, and `onRawError` receive `action` (`'raw' | 'executeRaw' | 'rawUnsafe'`), `query` (rendered SQL text), `sql`, `rawOptions`, `name`, `comment`, `timeoutMs`, `signal`, `map`, `meta`, `isInTransaction`, `transaction`, `transactionContext`, `db`, `schema`, `options`, `afterCommit`, and `afterRollback`. `afterRaw` adds `result`, and `onRawError` adds `error`.
 
 ## Request metadata with `meta`
 
@@ -131,7 +186,7 @@ const client = better(db, {
 ## Hooks vs plugins
 
 <Callout title="Observe with hooks, change behavior with plugins">
-	Client hooks should **observe and coordinate** — logging, tracing, metrics.
+	Client hooks should **observe and coordinate** - logging, tracing, metrics.
 	If you want to *mutate* an operation (rewrite the `where`, inject fields, add
 	delegate methods, expose typed operation args), that is
 	[plugin](/docs/plugins/writing-plugins) territory.

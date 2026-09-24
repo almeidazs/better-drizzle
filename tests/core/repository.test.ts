@@ -178,3 +178,19 @@ describe('client - table delegates', () => {
 		}
 	});
 });
+
+describe('cursor() without orderBy', () => {
+	test('pages forward by primary key', async () => {
+		const {
+			data: first,
+			pagination: { nextCursor },
+		} = await ctx.better.users.cursor({ limit: 2 });
+		const { data: second } = await ctx.better.users.cursor({
+			after: nextCursor as { id: number },
+			limit: 2,
+		});
+
+		expect(first.map((user) => user.id)).toEqual([1, 2]);
+		expect(second.map((user) => user.id)).toEqual([3, 4]);
+	});
+});

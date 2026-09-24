@@ -10,6 +10,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 		<DocsLayout
 			tree={source.getPageTree()}
 			{...baseOptions()}
+			links={[]}
 			slots={{ header: DocsSiteHeader }}
 			sidebar={{ defaultOpenLevel: 1 }}
 		>

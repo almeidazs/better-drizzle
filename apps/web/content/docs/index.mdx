@@ -1,6 +1,6 @@
 ---
 title: Introduction
-description: Minimal, type-safe repository helpers for Drizzle ORM — keep the type-safety, drop the repetitive query glue.
+description: Minimal, type-safe repository helpers for Drizzle ORM - keep the type-safety, drop the repetitive query glue.
 icon: Sparkles
 seoTitle: 'Type-safe Repository API for Drizzle ORM'
 seoDescription: 'better-drizzle adds a type-safe repository API to Drizzle ORM: findMany, nested relation filters, pagination, upsert, hooks, and plugins without hiding Drizzle.'
@@ -43,7 +43,7 @@ const posts = await client.posts.findMany({
 
 <Callout title="Type-safety, all the way down">
 	Every delegate is generated from your Drizzle schema. Filters, projections,
-	relation includes, and return payloads are all inferred — `posts` above is
+	relation includes, and return payloads are all inferred - `posts` above is
 	typed as the post row plus its `author`, no casts required.
 </Callout>
 
@@ -58,7 +58,7 @@ Drizzle is excellent when you want explicit, SQL-first control. It gets repetiti
 - consistent CRUD return shapes
 - nested `where` filters across relations
 
-better-drizzle packages those patterns into a repository-style API — without replacing Drizzle itself.
+better-drizzle packages those patterns into a repository-style API - without replacing Drizzle itself.
 
 ## What you get
 
@@ -77,7 +77,7 @@ better-drizzle packages those patterns into a repository-style API — without r
 		metadata tailored to the strategy.
 	</Card>
 	<Card title="First-class plugins" href="/docs/plugins/overview">
-		Timestamps, soft delete, and your own — with transforms, hooks, and typed
+		Timestamps, soft delete, and your own - with transforms, hooks, and typed
 		operation args.
 	</Card>
 	<Card title="Hooks & transactions" href="/docs/advanced/transactions">
@@ -96,7 +96,7 @@ better-drizzle packages those patterns into a repository-style API — without r
 1. You define tables and relations with **Drizzle**.
 2. You create a normal **Drizzle client** with your driver of choice.
 3. You wrap it once with **`better(db, { schema })`**.
-4. You call typed delegates from your services — and drop down to raw SQL whenever it reads better.
+4. You call typed delegates from your services - and drop down to raw SQL whenever it reads better.
 
 ## Next steps
 
@@ -104,7 +104,7 @@ better-drizzle packages those patterns into a repository-style API — without r
 	<Card title="Get started" href="/docs/getting-started">
 		Install, define a schema, and run your first queries.
 	</Card>
-	<Card title="Compare with raw Drizzle" href="/docs/comparison">
-		See the before/after, and what better-drizzle does and does not change.
+	<Card title="Why better-drizzle?" href="/docs/why">
+		What you gain over raw Drizzle, and the few cases where raw Drizzle still wins.
 	</Card>
 </Cards>

@@ -16,13 +16,17 @@ import { getMDXComponents } from '@/mdx-components';
 
 type PageParams = { params: Promise<{ slug?: string[] }> };
 type DocsPageData = {
-	body: ComponentType<{ components?: ReturnType<typeof getMDXComponents> }>;
 	description?: string;
 	full?: boolean;
+	load(): Promise<{
+		body: ComponentType<{
+			components?: ReturnType<typeof getMDXComponents>;
+		}>;
+		toc?: ComponentProps<typeof DocsPage>['toc'];
+	}>;
 	seoDescription?: string;
 	seoTitle?: string;
 	title: string;
-	toc?: ComponentProps<typeof DocsPage>['toc'];
 };
 
 export default async function Page(props: PageParams) {
@@ -32,7 +36,7 @@ export default async function Page(props: PageParams) {
 	if (!page) notFound();
 
 	const data = page.data as typeof page.data & DocsPageData;
-	const MDX = data.body;
+	const { body: MDX, toc } = await data.load();
 	const url = `${SITE_URL}${page.url}`;
 	const breadcrumb = [
 		{ name: SITE_NAME, url: SITE_URL },
@@ -41,7 +45,7 @@ export default async function Page(props: PageParams) {
 	if (page.slugs.length > 0) breadcrumb.push({ name: data.title, url });
 
 	return (
-		<DocsPage toc={data.toc} full={data.full}>
+		<DocsPage toc={toc} full={data.full}>
 			<JsonLd
 				data={{
 					'@context': 'https://schema.org',

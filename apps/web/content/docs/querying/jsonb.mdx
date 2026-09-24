@@ -6,7 +6,7 @@ seoTitle: 'PostgreSQL JSONB Filters for Drizzle ORM'
 seoDescription: 'Query PostgreSQL JSONB columns in Drizzle ORM with type-safe dot-path predicates generated from the column TypeScript type, with index-friendly SQL.'
 ---
 
-JSONB columns are where type safety usually goes to die. Settings, feature flags, billing metadata, event payloads — the data is structured, but every query against it turns into a hand-written `sql` string with operators, path arrays, and casts that TypeScript cannot check.
+JSONB columns are where type safety usually goes to die. Settings, feature flags, billing metadata, event payloads - the data is structured, but every query against it turns into a hand-written `sql` string with operators, path arrays, and casts that TypeScript cannot check.
 
 better-drizzle closes that gap. Declare the shape once with Drizzle's `$type<T>()`, and every scalar leaf inside the document becomes a **typed dot path** you can filter on with the same operators you already use for regular columns:
 
@@ -459,7 +459,7 @@ const enterpriseOrders = await db
 
 ### Every helper that takes `where`
 
-The same filter object works for counting, existence checks, pagination, and bulk writes — no separate API to learn:
+The same filter object works for counting, existence checks, pagination, and bulk writes - no separate API to learn:
 
 ```ts
 const onTrial = { settings: { json: { 'plan.trial': true } } } as const;
@@ -491,7 +491,7 @@ Each predicate is guarded by `jsonb_typeof`. If one row stores `"seats": "42"` (
 
 ### Missing keys never match
 
-A path that does not exist in the document evaluates to SQL `NULL`, so **no JSON filter matches it — including `not` and `notIn`**:
+A path that does not exist in the document evaluates to SQL `NULL`, so **no JSON filter matches it - including `not` and `notIn`**:
 
 ```ts
 // Only rows whose document has a `referrer` key that is not 'partner'.

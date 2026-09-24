@@ -1,6 +1,6 @@
 ---
 title: Plugins overview
-description: Package setup logic, query transforms, typed operation args, and reusable client/model extensions — without wrapping better() yourself.
+description: Package setup logic, query transforms, typed operation args, and reusable client/model extensions - without wrapping better() yourself.
 icon: Blocks
 seoTitle: 'Plugins - Extend Drizzle ORM Clients'
 seoDescription: 'The better-drizzle plugin system for Drizzle ORM: setup logic, query transforms, lifecycle hooks, typed operation args, and client and model extensions.'
@@ -43,7 +43,7 @@ await client.users.restore({ where: { id: 1 } }); // plugin-added method
 	</Card>
 	<Card title="Timestamps" href="/docs/plugins/timestamps">
 		Manage `createdAt` / `updatedAt` consistently on create, update, and
-		upsert — or stay out of the way when the database owns them.
+		upsert - or stay out of the way when the database owns them.
 	</Card>
 	<Card title="Zod" href="/docs/plugins/zod">
 		Generate per-table Zod schemas, expose them on `$zod`, and validate
@@ -95,7 +95,7 @@ Order matters when:
 - a lifecycle hook emits audit events that depend on already-transformed data
 
 <Callout title="Keep plugins narrow">
-	Strong plugins do one thing well — soft delete, timestamps, audit metadata,
+	Strong plugins do one thing well - soft delete, timestamps, audit metadata,
 	multitenancy filters, a few model helpers. If a plugin starts replacing most
 	of the repository behavior, it is probably too broad.
 </Callout>

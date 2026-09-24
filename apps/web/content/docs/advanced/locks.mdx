@@ -75,8 +75,8 @@ Using them on MySQL throws `LOCK_NOT_SUPPORTED`.
 
 These control what happens when a locked row is already held by another transaction:
 
-- **`skipLocked: true`** — skip rows that are locked, return only unlocked rows
-- **`noWait: true`** — fail immediately if any requested row is locked
+- **`skipLocked: true`** - skip rows that are locked, return only unlocked rows
+- **`noWait: true`** - fail immediately if any requested row is locked
 
 They are **mutually exclusive**.
 Enabling both throws an error.
@@ -116,7 +116,7 @@ try {
 		},
 	});
 } catch (error) {
-	// LOCK_TIMEOUT — the row was locked by another transaction
+	// LOCK_TIMEOUT - the row was locked by another transaction
 }
 ```
 
@@ -132,7 +132,7 @@ try {
 		.limit(1)
 		.for('update', { noWait: true });
 } catch (error) {
-	// PostgreSQL 55P03 / MySQL 3572 — the row was locked by another transaction
+	// PostgreSQL 55P03 / MySQL 3572 - the row was locked by another transaction
 }
 ```
 

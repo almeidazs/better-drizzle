@@ -1,6 +1,6 @@
 ---
 title: Writing a plugin
-description: definePlugin — typed operation args, transforms, lifecycle hooks, client and model extensions, and plugin state.
+description: definePlugin - typed operation args, transforms, lifecycle hooks, client and model extensions, and plugin state.
 icon: Wrench
 seoTitle: 'Writing a Plugin with definePlugin'
 seoDescription: 'Build a custom Drizzle ORM plugin with definePlugin: typed operation args, query transforms, lifecycle hooks, client and model extensions, and state.'
@@ -27,7 +27,7 @@ export const myPlugin = definePlugin({
 | `name` / `version` / `description` | metadata surfaced to setup and extensions |
 | `config` | supported `dialects` and model `requires` (fail-fast checks) |
 | `operationArgs` | extra **typed** arguments added to delegate methods |
-| `setup(ctx)` | runs once at bootstrap — validation, hook/transform registration |
+| `setup(ctx)` | runs once at bootstrap - validation, hook/transform registration |
 | `hooks` | lifecycle observers (CRUD, query, transaction, raw) |
 | `transform(op)` | mutate an operation before it executes |
 | `extendClient(ctx)` | add top-level client methods |
@@ -60,97 +60,240 @@ For each call, registered transforms and hooks run against the bound delegate (o
 
 ## A realistic example
 
-This plugin adds a typed `traceId` arg to `findMany`, a `withDeleted()` state toggle, a `forceDelete()` helper that bypasses plugins, and a transform that hides soft-deleted rows:
+A multi-tenant app needs every query on tenant-owned tables to stay inside the current tenant. Doing that by hand means remembering `tenantId` in every `where` and every insert. A single missed filter leaks another customer's data.
+
+This plugin does it in one place:
+
+- Tables without a `tenantId` column, such as `plans`, are left alone.
+- Reads, updates, and deletes get `tenantId = <current tenant>` added to their `where`.
+- Inserts and upserts get the current tenant written into the row, even if the caller passed another one.
+- Updates cannot move a row to another tenant.
+- A call without a tenant fails instead of running unscoped. System jobs opt out with `meta.system`.
 
 ```ts
+import { BetterDrizzleError, BetterDrizzleErrorCode } from 'better-drizzle';
 import { definePlugin } from 'better-drizzle/plugins';
 
-export const traceAndVisibility = definePlugin({
-	id: '@example/trace-and-visibility',
-	name: 'Trace And Visibility',
-	description: 'Adds trace metadata and a withDeleted state flag.',
-	operationArgs: {
-		findMany: {
-			traceId: undefined as string | undefined,
-		},
-	},
-	extendModel({ client, model }) {
-		if (!model.hasColumn('deletedAt')) return;
+type Row = Record<string, unknown>;
 
-		return {
-			withDeleted() {
-				return client.$withState({ withDeleted: true });
-			},
-			forceDelete(id: number) {
-				return client.$withoutPlugins().delete({ where: { id } } as never);
-			},
-		};
-	},
-	hooks: {
-		beforeQuery(ctx) {
-			if (ctx.action === 'findMany' && ctx.args.traceId) {
-				console.log('trace', ctx.args.traceId);
+// Operations whose `where` must be limited to the current tenant.
+const SCOPED_KINDS = new Set([
+	'findMany', 'findFirst', 'findOne', 'findUnique',
+	'count', 'exists', 'paginate', 'cursor',
+	'update', 'updateMany', 'updateEach', 'delete', 'deleteMany',
+]);
+
+export const tenantScope = ({ column = 'tenantId' } = {}) =>
+	definePlugin({
+		id: '@acme/tenant-scope',
+		name: 'Tenant scope',
+		description: 'Scopes every query on tenant-owned tables to meta.tenantId.',
+		transform(operation) {
+			if (!operation.model.hasColumn(column)) return operation;
+
+			const { tenantId, system } = (operation.meta ?? {}) as {
+				tenantId?: string;
+				system?: boolean;
+			};
+			if (system) return operation;
+			if (tenantId === undefined)
+				throw new BetterDrizzleError({
+					code: BetterDrizzleErrorCode.OperationError,
+					message: `${operation.table}.${operation.kind}() needs meta.tenantId.`,
+					operation: operation.kind,
+					table: operation.table,
+				});
+
+			if (SCOPED_KINDS.has(operation.kind))
+				operation.where = (
+					operation.where
+						? { AND: [operation.where, { [column]: tenantId }] }
+						: { [column]: tenantId }
+				) as typeof operation.where;
+
+			switch (operation.kind) {
+				case 'create':
+					(operation.data as Row)[column] = tenantId;
+					break;
+				case 'createMany':
+				case 'upsertMany':
+					for (const row of operation.data as Row[]) row[column] = tenantId;
+					break;
+				case 'upsert':
+					(operation.data as { create: Row }).create[column] = tenantId;
+					break;
+				case 'update':
+				case 'updateMany':
+					delete (operation.data as Row)[column];
 			}
-		},
-	},
-	transform(operation) {
-		if (!operation.model.hasColumn('deletedAt')) return operation;
-		if (operation.state.withDeleted) return operation;
-		if (
-			operation.kind !== 'findMany' &&
-			operation.kind !== 'findFirst' &&
-			operation.kind !== 'count'
-		) {
+
 			return operation;
-		}
+		},
+	});
+```
 
-		operation.where = (
-			operation.where
-				? { AND: [operation.where, { deletedAt: null }] }
-				: { deletedAt: null }
-		) as typeof operation.where;
+The tenant comes from `meta`, so set it once per request with `$withContext(...)`:
 
-		return operation;
+```ts
+const db = better(drizzleDb, { schema, plugins: [tenantScope()] });
+
+// once per request, e.g. in middleware
+const tenantDb = db.$withContext({ tenantId: session.tenantId });
+
+await tenantDb.projects.findMany(); // ... WHERE tenant_id = ?
+await tenantDb.projects.updateMany({ data: { archived: true } }); // this tenant's rows only
+await tenantDb.projects.create({
+	data: { name: 'Roadmap', tenantId: body.tenantId }, // replaced by the session tenant
+});
+
+await db.projects.findMany(); // throws: projects.findMany() needs meta.tenantId.
+await db.$withContext({ system: true }).projects.count(); // cross-tenant job
+```
+
+Transactions inherit the context, so `tenantDb.transaction((tx) => ...)` stays scoped too.
+
+<Callout type="warn" title="What the transform does not cover">
+	Transforms see the root query only. Relations loaded through `include` or a
+	relation `select` are not filtered, so keep child rows consistent with their
+	parent's tenant or filter the relation explicitly. Raw SQL and
+	`$withoutPlugins()` also bypass the plugin.
+</Callout>
+
+## Typed operation args
+
+`operationArgs` adds fields to specific operations, keyed by operation kind. Their types flow from the delegate call into your transforms and hooks. This is how the soft-delete plugin exposes `deleted` and `mode`:
+
+```ts
+operationArgs: {
+	findMany: { deleted: undefined as 'with' | 'without' | 'only' | undefined },
+	delete: { mode: undefined as 'soft' | 'hard' | undefined },
+},
+```
+
+Only the types matter. The values are placeholders and are never read at runtime. Supported keys:
+
+- reads: `findMany`, `findFirst`, `findOne`, `findUnique`, `count`, `exists`, `paginate`, `cursor`
+- writes: `create`, `createMany`, `update`, `updateMany`, `updateEach`, `delete`, `deleteMany`, `upsert`, `upsertMany`
+
+Each field name belongs to one plugin per operation. If two plugins declare the same key on the same operation, bootstrap fails with `PLUGIN_OPERATION_ARG_CONFLICT`.
+
+## Transforms
+
+`transform(operation)` runs for every operation kind, after the plugin's before hooks. It receives the live operation input (the same fields as a [hook context](#hook-context), without `client` and `result`). Mutate it, or return an object whose fields are merged back onto it. Returning `undefined` leaves the operation unchanged. It does not skip the call.
+
+These fields are written back to the call's args after all transforms run:
+
+- `where`, `select`, `include`, `orderBy`, `take`, `skip`, `cursor`
+- `data` for `create`, `createMany`, `upsertMany`, `update`, `updateMany`, and `updateEach`
+- `data.create` and `data.update` for `upsert`
+
+Other args, such as `upsertMany.update`, can be changed through `operation.args`, which is a shallow copy of the caller's args.
+
+Transforms see the root query only. Relations loaded through `include` or a relation `select` are not transformed.
+
+## Hooks
+
+`hooks` (or `ctx.addHook(...)` in `setup()`) registers lifecycle hooks. Every hook can be async.
+
+| Hook | Runs for | Return value |
+| --- | --- | --- |
+| `beforeCreate` | `create`, `createMany`, `upsert`, `upsertMany` | any value except `undefined` replaces `data` |
+| `beforeUpdate` | `update`, `updateMany`, `updateEach` | any value except `undefined` replaces `data` |
+| `beforeDelete` | `delete`, `deleteMany` | any value except `undefined` skips the database call and becomes the result |
+| `beforeQuery` | `findMany`, `findFirst`, `findOne`, `findUnique`, `count`, `exists`, `paginate`, `cursor` | any value except `undefined` skips the database call and becomes the result |
+| `afterCreate` / `afterUpdate` / `afterDelete` / `afterQuery` | same kinds as the matching before hook | ignored |
+| `beforeTransaction`, `afterTransactionCommit`, `afterTransactionRollback`, `onTransactionError` | `transaction(...)` | ignored |
+| `beforeRaw`, `afterRaw`, `onRawError` | `$raw`, `$executeRaw`, `$rawUnsafe` | ignored |
+
+`upsert` runs the create hooks only, with `kind: 'upsert'` and `data: { create, update }`. Plugins have no `onError` hook. Use `onError` in [client hooks](/docs/advanced/hooks) for that.
+
+```ts
+definePlugin({
+	id: '@acme/slugs',
+	hooks: {
+		beforeCreate(ctx) {
+			if (ctx.kind !== 'create' || !ctx.model.hasColumn('slug')) return;
+			const data = ctx.data as Record<string, unknown>;
+			return { ...data, slug: String(data.title).toLowerCase() };
+		},
+		beforeQuery(ctx) {
+			// short-circuit: count() never hits the database
+			if (ctx.kind === 'count' && ctx.state.cachedCount !== undefined)
+				return ctx.state.cachedCount as number;
+		},
 	},
 });
 ```
 
-Using it — the `traceId` arg and `withDeleted()` helper are both typed:
+### Execution order
 
-```ts
-const client = better(db, { schema, plugins: [traceAndVisibility] });
+For one delegate call:
 
-const visible = await client.users.findMany({ traceId: 'req_123' });
-const all = await client.users.withDeleted().findMany({ traceId: 'req_123' });
-```
+1. plugin before hooks, in plugin order
+2. plugin transforms, in plugin order
+3. client before hook
+4. the database call, skipped when a `beforeDelete` or `beforeQuery` returned a value
+5. client after hook
+6. plugin after hooks, in plugin order
 
-## Typed operation args
+Every before hook runs even after one returns an override. The last override wins.
 
-`operationArgs` adds fields to specific operations, keyed by operation kind. Their types flow from the delegate call all the way into your transforms and hooks — this is how the soft-delete plugin exposes `deleted` and `mode` in a fully typed way.
+<Callout type="warn" title="Hook contexts are copies">
+	Each hook receives a shallow copy of the operation input. Reassigning
+	`ctx.where` inside a hook has no effect. Return new `data` from
+	`beforeCreate` / `beforeUpdate`, or use a transform to rewrite `where`,
+	`select`, and the other query fields.
+</Callout>
 
-```ts
-operationArgs: {
-	findMany: { deleted: 'without' as 'with' | 'without' | 'only' },
-	delete: { mode: 'soft' as 'soft' | 'hard' },
-},
-```
+### Hook context
 
-Supported operation keys cover the full delegate/client surface, including:
+CRUD and query hooks (and transforms) receive:
 
-- reads: `findMany`, `findFirst`, `findOne`, `findUnique`, `count`, `exists`, `paginate`
-- writes: `create`, `createMany`, `update`, `updateMany`, `delete`, `deleteMany`, `upsert`, `upsertMany`
+<TypeTable
+	type={{
+		kind: { type: 'string', description: 'Operation kind, e.g. `findMany` or `upsertMany`.' },
+		table: { type: 'string', description: 'Schema key of the table.' },
+		model: { type: 'PluginModelInfo', description: '`name`, `dbName`, `columns`, and `hasColumn(column)`.' },
+		args: { type: 'object', description: 'Shallow copy of the call args, including plugin operation args.' },
+		where: { type: 'object | undefined', description: 'Present when the args contain `where`. Same for `select`, `include`, `orderBy`, `take`, `skip`, and `cursor`.' },
+		data: { type: 'object | object[] | undefined', description: 'Write payload. For `upsert` it is `{ create, update }`.' },
+		meta: { type: 'Meta | undefined', description: 'Merged `$withContext(...)` and per-call `meta`.' },
+		state: { type: 'PluginState', description: 'State set with `$withState(...)`.' },
+		schema: { type: 'Schema', description: 'The full Drizzle schema.' },
+		dialect: { type: "'pg' | 'mysql' | 'sqlite'", description: 'Detected dialect.' },
+		db: { type: 'unknown', description: 'The bound Drizzle instance (the transaction inside `transaction(...)`).' },
+		options: { type: 'BetterClientOptions', description: 'Options passed to `better(...)`.' },
+		isInTransaction: { type: 'boolean', description: 'Whether the call runs inside a transaction.' },
+		transaction: { type: 'TransactionClient | null', description: 'The transaction client, or `null`.' },
+		transactionContext: { type: 'Record<string, unknown> | undefined', description: 'The `context` passed to `transaction(...)`.' },
+		afterCommit: { type: '(callback) => void', description: 'Queue a callback for after commit. Throws `AFTER_COMMIT_OUTSIDE_TRANSACTION` outside a transaction.' },
+		afterRollback: { type: '(callback) => void', description: 'Queue a callback for after rollback. Throws `AFTER_ROLLBACK_OUTSIDE_TRANSACTION` outside a transaction.' },
+		client: { type: 'Delegate', description: 'Hooks only. The delegate for this table, with the current state.' },
+		result: { type: 'unknown', description: 'After hooks only. The operation result.' },
+	}}
+/>
 
-That matters for plugins like timestamps, soft delete, or custom bulk-write policies that need to extend `upsertMany` as well as the simpler CRUD methods.
+Transaction hooks receive `client` (the transaction client), `attempt`, `depth`, `name`, `comment`, `meta`, `transactionOptions`, `transactionContext`, `dialect`, `models`, `schema`, `db`, `options`, `isInTransaction: true`, `afterCommit`, and `afterRollback`. `afterTransactionRollback` adds `reason`, and `onTransactionError` adds `error`.
 
-## Transforms
+Raw hooks receive `action` (`'raw' | 'executeRaw' | 'rawUnsafe'`), `query` (rendered SQL text), `sql`, `rawOptions`, `name`, `comment`, `timeoutMs`, `signal`, `map`, `meta`, `result` (in `afterRaw`), `error` (in `onRawError`), plus `dialect`, `schema`, `db`, `options`, `isInTransaction`, `transaction`, `transactionContext`, `afterCommit`, and `afterRollback`.
 
-A `transform` receives the operation and returns a (possibly modified) operation — or `undefined` to skip it. Common uses: rewriting `where` for visibility, injecting `data`, or enforcing a tenant filter. Read `operation.kind`, `operation.where`, `operation.data`, `operation.state`, and `operation.model` to decide.
-
-For create-shaped operations, that includes `upsert` and `upsertMany`, which lets plugins modify batch upsert payloads and conflict-update strategies in a typed way.
+Client hooks run before plugin hooks for transaction and raw events.
 
 ## Setup and fail-fast requirements
 
-`setup()` is the place for one-time validation and registering hooks/transforms via `ctx.addHook` / `ctx.addTransform`. You can also declare hard requirements so an incompatible model fails at bootstrap rather than at runtime:
+`setup(ctx)` runs once per `better(...)` call, in plugin order. Use it for one-time validation and to register hooks and transforms.
+
+| `ctx` member | Purpose |
+| --- | --- |
+| `addHook(hooks)` | register a hooks object, same shape as `hooks` |
+| `addTransform(fn)` | register a transform, same shape as `transform` |
+| `models` | model registry keyed by schema key: `name`, `dbName`, `columns`, `hasColumn()` |
+| `isColumnExists(model, column)` | `true` when the model exists and has the column |
+| `dialect` | `'pg'`, `'mysql'`, or `'sqlite'` |
+| `schema` | the full Drizzle schema |
+| `plugin` | this plugin's `id`, `name`, `version`, `description`, and `options` |
+
+`config` declares requirements that are checked at bootstrap, before `setup()` runs:
 
 ```ts
 definePlugin({
@@ -164,16 +307,46 @@ definePlugin({
 });
 ```
 
+Each `requires.columns` entry takes `column` (required), `optional`, and `type`. The check runs against every model in the schema. With `optional: true`, models without the column pass; use `model.hasColumn(...)` in hooks and transforms to skip them. `type` is matched against the column's Drizzle `columnType` (such as `'PgTimestamp'`) or `dataType` (such as `'date'` or `'string'`) whenever the column exists.
+
+`better(...)` throws a `BetterDrizzleError` with one of these codes when a plugin is invalid:
+
+| Code | Cause |
+| --- | --- |
+| `PLUGIN_DUPLICATE_ID` | two plugins share an `id` |
+| `PLUGIN_DIALECT_UNSUPPORTED` | the dialect is not in `config.dialects` |
+| `PLUGIN_REQUIRED_COLUMN_MISSING` | a model lacks a required (non-`optional`) `config.requires.columns` column |
+| `PLUGIN_REQUIRED_COLUMN_TYPE` | a required column exists but its `columnType` / `dataType` does not match `type` |
+| `PLUGIN_OPERATION_ARG_CONFLICT` | two plugins declare the same operation arg on one operation |
+| `PLUGIN_EXTENSION_CONFLICT` | an extension key collides with an existing client or delegate key |
+
 ## Client and model extensions
 
-- `extendClient(ctx)` returns an object merged onto the client — new top-level methods.
-- `extendModel(ctx)` returns an object merged onto each delegate — model-specific helpers (like `restore()` on soft-deletable tables). Return nothing to skip a model.
+- `extendClient(ctx)` returns an object merged onto the client - new top-level methods. `ctx` has `client`, `db`, `dialect`, `models`, `plugin`, and `schema`.
+- `extendModel(ctx)` returns an object merged onto each delegate - model-specific helpers (like `restore()` on soft-deletable tables). `ctx` has `client` (the delegate), `db`, `dialect`, `model`, `plugin`, and `schema`. Return nothing to skip a model.
 
-Both receive the dialect, schema, model registry, and a bound client/delegate.
+Extensions cannot replace existing keys. A collision fails with `PLUGIN_EXTENSION_CONFLICT`.
+
+## `definePlugin` generics
+
+`definePlugin(...)` infers everything from the object you pass. Set the generics explicitly only when inference is not enough:
+
+```ts
+definePlugin<Options, ClientExtension, ModelExtension, State, OperationArgs, ModelExtensionResolver>({ ... });
+```
+
+| Parameter | Types |
+| --- | --- |
+| `Options` | the `options` field |
+| `ClientExtension` | what `extendClient` returns |
+| `ModelExtension` | what `extendModel` returns |
+| `State` | `state` in hooks and transforms |
+| `OperationArgs` | the `operationArgs` map |
+| `ModelExtensionResolver` | a generic function type for model extensions that depend on the current table (the Zod plugin uses it for `$zod`) |
 
 ## Bypassing plugins
 
-Two delegate escape hatches are especially useful from inside plugins — and from application code:
+Two delegate escape hatches are especially useful from inside plugins - and from application code:
 
 ### `$withState(state)`
 

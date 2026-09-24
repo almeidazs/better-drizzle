@@ -96,29 +96,8 @@ const isEmptyWhere = (
 const toNumber = (value: unknown) =>
 	typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 
-const getLimit = (context: OperationContext) => {
-	const args = [context.limit, context.take];
-	for (const value of args) {
-		const resolved = toNumber(value);
-		if (resolved !== undefined) return resolved;
-	}
-
-	if (context.operation === 'paginate') {
-		const record = asRecord(context.query);
-		const pageSize = toNumber(record?.perPage);
-		if (pageSize !== undefined) return pageSize;
-	}
-
-	if (context.operation === 'cursor') {
-		const record = asRecord(context.query);
-		const first = toNumber(record?.first);
-		if (first !== undefined) return first;
-		const last = toNumber(record?.last);
-		if (last !== undefined) return last;
-	}
-
-	return undefined;
-};
+const getLimit = (context: OperationContext) =>
+	toNumber(context.limit) ?? toNumber(context.take);
 
 const getIncludeStats = (
 	include: unknown,
@@ -184,6 +163,9 @@ const hasPrimaryKeyOrder = (context: OperationContext) => {
 };
 
 const getLockRecord = (lock: unknown) => asRecord(lock);
+
+const isRaw = (context: OperationContext) =>
+	context.operation === 'raw' || context.operation === 'executeRaw';
 
 const getQueryVerb = (query: string) =>
 	query
@@ -637,7 +619,7 @@ const evaluators: Partial<Record<RuleKey, RuleEvaluator>> = {
 	},
 	requireRawComment(context, options, emit) {
 		const rule = normalizeRule(options.requireRawComment);
-		if (context.operation !== 'raw') return;
+		if (!isRaw(context)) return;
 		const comment = context.rawComment?.trim();
 		emitIf(
 			!comment || comment.length < (rule.options.minLength ?? 1),
@@ -651,7 +633,7 @@ const evaluators: Partial<Record<RuleKey, RuleEvaluator>> = {
 	},
 	requireRawTimeout(context, options, emit) {
 		const rule = normalizeRule(options.requireRawTimeout);
-		if (context.operation !== 'raw') return;
+		if (!isRaw(context)) return;
 		const timeout = context.rawTimeoutMs;
 		emitIf(
 			timeout === undefined,
@@ -692,7 +674,7 @@ const evaluators: Partial<Record<RuleKey, RuleEvaluator>> = {
 	},
 	noRawMutation(context, options, emit) {
 		const rule = normalizeRule(options.noRawMutation);
-		if (context.operation !== 'raw' || !context.queryText) return;
+		if (!isRaw(context) || !context.queryText) return;
 		emitIf(
 			isMutationQuery(context.queryText, rule.options.allow),
 			context,
@@ -704,7 +686,7 @@ const evaluators: Partial<Record<RuleKey, RuleEvaluator>> = {
 	},
 	noRawWithoutTransaction(context, options, emit) {
 		const rule = normalizeRule(options.noRawWithoutTransaction);
-		if (context.operation !== 'raw' || context.isInTransaction) return;
+		if (!isRaw(context) || context.isInTransaction) return;
 		if (
 			rule.options.onlyMutations &&
 			(!context.queryText || !isMutationQuery(context.queryText))

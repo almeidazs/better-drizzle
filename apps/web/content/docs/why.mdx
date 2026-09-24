@@ -1,0 +1,179 @@
+---
+title: Why better-drizzle?
+description: What you gain over raw Drizzle, what stays exactly the same, and the few cases where raw Drizzle is still the right tool.
+icon: Lightbulb
+seoTitle: 'Why better-drizzle? Drizzle ORM, upgraded'
+seoDescription: 'Why use better-drizzle on top of Drizzle ORM: typed relation loading, pagination, safe writes, transactions, and plugins with near-zero overhead.'
+---
+
+Drizzle is an excellent SQL builder. Application code, though, asks the same questions over and over: load this row with its relations, give me page 2 with totals, update these rows in one statement, run all of it in a transaction. With raw Drizzle, every one of those is glue you write by hand.
+
+better-drizzle generates a repository API from **the Drizzle schema you already have**. It adds no schema language, no codegen step, and no second connection. Queries compile to Drizzle and run on your driver, and raw Drizzle stays one line away.
+
+## The same feature, both ways
+
+A typical endpoint: *page 2 of active users, 20 per page, each with their 3 latest published posts and their total post count.*
+
+```ts tab="better-drizzle" tab-group="orm"
+const page = await client.users.paginate({
+	where: { active: true },
+	orderBy: { name: 'asc' },
+	limit: 20,
+	skip: 20,
+	include: {
+		posts: {
+			where: { published: true },
+			orderBy: { id: 'desc' },
+			take: 3,
+			select: { id: true, title: true },
+		},
+		_count: { select: { posts: true } },
+	},
+});
+// { data: [...], pagination: { page, perPage, total, pageCount, hasNext, hasPrevious } }
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { and, asc, count, eq, inArray, lte, sql } from 'drizzle-orm';
+
+const perPage = 20;
+const skip = 20;
+const where = eq(users.active, true);
+
+const [[{ total }], userRows] = await Promise.all([
+	db.select({ total: count() }).from(users).where(where),
+	db
+		.select()
+		.from(users)
+		.where(where)
+		.orderBy(asc(users.name))
+		.limit(perPage)
+		.offset(skip),
+]);
+const userIds = userRows.map((user) => user.id);
+
+// "3 latest per user" needs a window function
+const ranked = db
+	.select({
+		id: posts.id,
+		title: posts.title,
+		authorId: posts.authorId,
+		rank: sql<number>`row_number() over (partition by ${posts.authorId} order by ${posts.id} desc)`.as('rank'),
+	})
+	.from(posts)
+	.where(and(eq(posts.published, true), inArray(posts.authorId, userIds)))
+	.as('ranked');
+
+const [postRows, postCounts] = await Promise.all([
+	db.select().from(ranked).where(lte(ranked.rank, 3)).orderBy(asc(ranked.rank)),
+	db
+		.select({ authorId: posts.authorId, value: count() })
+		.from(posts)
+		.where(inArray(posts.authorId, userIds))
+		.groupBy(posts.authorId),
+]);
+
+// stitch the tree, drop linking columns, and compute page metadata
+const pageNumber = Math.floor(skip / perPage) + 1;
+const pageCount = Math.ceil(total / perPage);
+const page = {
+	data: userRows.map((user) => ({
+		...user,
+		posts: postRows
+			.filter((post) => post.authorId === user.id)
+			.map(({ id, title }) => ({ id, title })),
+		_count: {
+			posts: postCounts.find((row) => row.authorId === user.id)?.value ?? 0,
+		},
+	})),
+	pagination: {
+		type: 'offset' as const,
+		page: pageNumber,
+		perPage,
+		total,
+		pageCount,
+		hasNext: pageNumber < pageCount,
+		hasPrevious: pageNumber > 1,
+	},
+};
+```
+
+Both versions are fully typed. In the raw version, though, the filters are written twice, the join keys are managed by hand, and a code reviewer has to check the pagination math. The better-drizzle call infers its result type from the `include` and `select` you wrote. It has the same shape in every endpoint, and the relation paths come from your schema, not from hand-written joins.
+
+## What you gain
+
+### Relations without join glue
+
+- `include` and `select` load related rows at any depth. Each level accepts its own `where`, `orderBy`, `take`, `skip`, and `cursor`, and per-parent limits run in SQL.
+- Many-to-many relations are inferred from simple junction tables.
+- `_count` adds relation totals as a subquery in the same statement, with no extra round-trip.
+- Relation filters (`some`, `every`, `none`, `is`, `isNot`) replace hand-built `exists` subqueries.
+- The batched loader issues one query per relation node. On the relation graph benchmark it is [~9× faster](/docs/performance/benchmarks) than the equivalent hand-written code.
+
+See [Relations](/docs/querying/relations).
+
+### Reads that answer the real question
+
+- `findUnique`, `findFirst`, `count`, and `exists` cover the lookups you write every day, with no `[0]` unwrapping.
+- `paginate()` and `cursor()` return `{ data, pagination }` with exact metadata, including correct `hasNext`/`hasPrevious` on cursor pages.
+- `.throw()` turns a nullable result into an error when the row is required.
+- `.explain()` shows the query plan on PostgreSQL, MySQL, and SQLite without running the query.
+
+### Writes that use the database, not loops
+
+- `upsert` uses native `ON CONFLICT` when it can, not a read followed by a write.
+- `upsertMany` does batched native upserts.
+- `updateEach` updates many rows with different values in one `CASE` statement.
+- `createMany` has `skipDuplicates`.
+- `connect`, `disconnect`, and `set` attach and detach related rows inside an implicit transaction.
+
+See [Create, update & delete](/docs/writing/crud) and [Relation writes](/docs/writing/relation-writes).
+
+### Transactions you don't have to babysit
+
+- Nested transactions become savepoints automatically, even on Bun SQLite, whose native Drizzle transaction callback is synchronous.
+- Transactions support retries, explicit `rollback()`, and `afterCommit` / `afterRollback` callbacks.
+- The `tx` client passed to the callback is a full better-drizzle client: delegates, raw SQL, and plugins all run inside the transaction.
+
+See [Transactions](/docs/advanced/transactions).
+
+### Errors you can branch on
+
+Database failures are normalized into a `BetterDrizzleError` with a stable `code`, plus `table`, `column`, and `constraint` when the driver reports them. Unique violations and foreign key failures look the same on every dialect. See [Error handling](/docs/advanced/error-handling).
+
+### Cross-cutting behavior in one place
+
+- `meta` and `$withContext()` carry request and tenant context into every query and hook.
+- Hooks cover auditing, tracing, and metrics.
+- Official plugins handle [timestamps](/docs/plugins/timestamps), [soft delete](/docs/plugins/soft-delete), [Zod validation](/docs/plugins/zod), and [runtime guardrails](/docs/plugins/rules), such as blocking an unfiltered `deleteMany`. The [ESLint plugin](/docs/plugins/eslint) runs the static subset of those checks in your editor.
+
+### Near-zero cost
+
+The wrapper is benchmarked against raw Drizzle doing the same work. Reads land within ~9%, writes within ~5%, and relation loading is faster. See [Benchmarks](/docs/performance/benchmarks) for how the numbers are measured.
+
+## What stays exactly the same
+
+- **Your schema.** Tables and relations stay plain Drizzle.
+- **Your driver.** PostgreSQL, MySQL, or SQLite; the dialect is detected.
+- **Your escape hatches.** Pass a Drizzle `sql` fragment straight into `where`, or use [`$raw` / `$executeRaw`](/docs/advanced/raw-sql).
+- **Your existing code.** better-drizzle wraps your Drizzle client, so current queries keep working. You can [migrate](/docs/guides/migrating-from-drizzle) one call site at a time.
+
+## When to reach for raw Drizzle
+
+The delegate API models the queries applications repeat. A handful of query shapes are better written as SQL, and for those raw Drizzle is the right tool:
+
+- **Reporting and analytics.** `GROUP BY` with aggregates, window functions over the result, and CTEs. The delegate API has `count`, but no `groupBy` or `sum`.
+- **Set-based statements.** `INSERT ... SELECT`, `UPDATE ... FROM`, and other statements that move data between tables in one pass.
+- **Dialect-specific features the API does not model.** Full-text search ranking, custom operators, or extension functions, when they go beyond a `sql` fragment inside `where`.
+- **A measured hot path.** Parity overhead tops out around 11%, on read-only transactions. When a profiler shows that margin matters, hand-tune that one query.
+
+<Callout title="It is not all-or-nothing">
+	The Better client and your Drizzle `db` share the same connection. Inside
+	`client.transaction(...)`, `tx.$raw` and `tx.$executeRaw` run in the same
+	transaction as your repository calls. Use the delegate API by default and
+	drop to SQL only for the query that needs it.
+</Callout>
+
+## Compared to a full ORM
+
+If you have used Prisma, the delegate API will feel familiar: `findMany`, `where`, `include`, `select`, `upsert`. The difference is that better-drizzle derives that surface from your Drizzle schema at the type level and compiles to Drizzle queries. There is no separate schema file, no `generate` step, and no query engine process. You keep Drizzle's model and SQL-first control, and gain the ergonomics.

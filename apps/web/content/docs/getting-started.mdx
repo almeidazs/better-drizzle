@@ -55,7 +55,7 @@ bun add better-drizzle drizzle-orm
 
 ## Define a schema
 
-better-drizzle reads your Drizzle schema — including relations — to generate each table's typed API. A small `users → posts` schema:
+better-drizzle reads your Drizzle schema - including relations - to generate each table's typed API. A small `users → posts` schema:
 
 ```ts title="schema.ts"
 import { relations } from 'drizzle-orm';
@@ -120,7 +120,7 @@ const db = drizzle(sqlite, { schema });
 export const client = better(db, { schema });
 ```
 
-The dialect (SQLite, PostgreSQL, MySQL) is detected from your Drizzle instance — the same `client` API works across all three.
+The dialect (SQLite, PostgreSQL, MySQL) is detected from your Drizzle instance - the same `client` API works across all three.
 
 ## Run your first queries
 

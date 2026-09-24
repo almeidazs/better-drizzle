@@ -6,40 +6,167 @@ seoTitle: 'Dynamic Repositories - Resolve Tables by Name'
 seoDescription: 'Resolve a Drizzle ORM table repository at runtime with repository(), by TypeScript schema key or database table name, for generic admin and CRUD code.'
 ---
 
-When the table is only known at runtime, `client.repository(name)` keeps the call site clean while staying typed.
+When the table is only known at runtime, `client.repository(name)` returns the same delegate you would get from `client.users`.
 
 ```ts
-const repo = client.repository('users');
+const users = client.repository('users');
 
-const users = await repo.findMany({
-	where: { active: true },
-});
+const { data, pagination } = await users.paginate({ limit: 20 });
 ```
 
-## Why it exists
+## Schema key or table name
 
-It is useful when:
-
-- a generic admin endpoint serves multiple resources
-- a helper receives the model name as a parameter
-- you want to resolve by **TypeScript schema key** *or* by **database table name**
+Both names resolve to the same delegate object. With `users = sqliteTable('app_users', ...)` in the schema:
 
 ```ts
-async function listByRepository(
-	name: 'users' | 'posts',
-	query: { take?: number },
+client.repository('users') === client.users; // true, schema key
+client.repository('app_users') === client.users; // true, database table name
+```
+
+The accepted names are typed. `BetterRepositoryKey<typeof schema>` is the union of every schema key and database table name, and it is what `repository()` accepts:
+
+```ts
+import type { BetterRepositoryKey } from 'better-drizzle';
+
+type RepositoryName = BetterRepositoryKey<typeof schema>;
+// 'users' | 'app_users' | 'posts' | 'app_posts' | ...
+```
+
+The return type follows the name: `repository('app_users')` is typed as the `users` delegate.
+
+## When the name does not exist
+
+An unknown name throws a `BetterDrizzleError`:
+
+| Field | Value |
+| --- | --- |
+| `code` | `REPOSITORY_NOT_FOUND` |
+| `status` | `500` |
+| `message` | `Repository "<name>" not found.` |
+| `details` | `{ name }` |
+
+The status is 500 because, for typed code, a missing repository is a programming error. When the name comes from a URL or job payload, check it against an allowlist first and answer 404 yourself, instead of letting user input reach `repository()`:
+
+```ts
+import type { BetterRepositoryKey } from 'better-drizzle';
+
+export const resources = [
+	'users',
+	'posts',
+] as const satisfies readonly BetterRepositoryKey<typeof schema>[];
+
+export type Resource = (typeof resources)[number];
+
+export const isResource = (name: string): name is Resource =>
+	(resources as readonly string[]).includes(name);
+```
+
+The `satisfies` clause fails to compile if an entry is not a real repository name, and the allowlist also keeps tables such as sessions or audit logs out of generic endpoints.
+
+## Inside transactions and scoped clients
+
+`repository()` exists on every client, and resolves against that client:
+
+- `tx.repository('users')` returns the transaction-bound delegate (`tx.users`), so its queries run inside the transaction.
+- `scoped.repository('users')` on a `$withContext()` clone carries the scoped `meta`.
+
+```ts
+export async function purge(
+	requestId: string,
+	idsByResource: Record<Resource, number[]>,
 ) {
-	const repo = client.repository(name);
-	return repo.findMany({ take: query.take ?? 20 });
+	await client.$withContext({ requestId }).transaction(async (tx) => {
+		for (const name of resources) {
+			const { count } = await tx.repository(name).deleteMany({
+				where: { id: { in: idsByResource[name] } },
+			});
+			log.info('purged', { name, count });
+		}
+	});
 }
 ```
 
-<Callout title="Both names work">
-	`repository('users')` accepts either the schema key (`users`) or the database
-	table name. The returned delegate is the same one you would get from
-	`client.users`.
-</Callout>
+Inside the callback, use `tx.repository(name)`, not `client.repository(name)`: only the transaction client's delegates are bound to the transaction.
+
+## Example: generic admin list endpoint
+
+One handler serves every allowlisted resource with offset pagination:
+
+```ts tab="better-drizzle" tab-group="orm"
+export async function listResource(name: string, page: number, perPage = 25) {
+	if (!isResource(name)) return null; // map to 404
+
+	const { data, pagination } = await client.repository(name).paginate({
+		limit: perPage,
+		skip: (page - 1) * perPage,
+		orderBy: [{ id: 'asc' }],
+	});
+
+	return { data, pagination };
+}
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { asc, count } from 'drizzle-orm';
+
+const tables = { users, posts } as const;
+
+export async function listResource(name: string, page: number, perPage = 25) {
+	if (!(name in tables)) return null; // map to 404
+	const table = tables[name as keyof typeof tables];
+	const skip = (page - 1) * perPage;
+
+	const [data, [{ total }]] = await Promise.all([
+		db.select().from(table).orderBy(asc(table.id)).limit(perPage).offset(skip),
+		db.select({ total: count() }).from(table),
+	]);
+
+	return {
+		data,
+		pagination: {
+			type: 'offset',
+			page,
+			perPage,
+			total,
+			pageCount: Math.ceil(total / perPage),
+			hasNext: skip + data.length < total,
+			hasPrevious: page > 1,
+		},
+	};
+}
+```
+
+`paginate()` takes `limit` and `skip`, not a page number; it derives `page` and `pageCount` for the response.
+
+## Example: export job
+
+A background job walks every allowlisted table in primary-key order with `cursor()`, so each batch is one indexed query regardless of table size:
+
+```ts
+export async function exportAll(write: (name: Resource, rows: unknown[]) => Promise<void>) {
+	const db = client.$withContext({ job: 'nightly-export' });
+
+	for (const name of resources) {
+		let after: { id: number } | undefined;
+
+		do {
+			const { data, pagination } = await db.repository(name).cursor({
+				limit: 1_000,
+				after,
+				orderBy: [{ id: 'asc' }],
+			});
+
+			await write(name, data);
+			after = (pagination.nextCursor ?? undefined) as { id: number } | undefined;
+		} while (after);
+	}
+}
+```
+
+`cursor()` without `orderBy` pages by primary key ascending. Pass `orderBy` when you need another order, ending with a unique column.
 
 ## Rule of thumb
 
-Prefer direct property access (`client.users`) when the table is known statically — it reads better and needs no string. Use `repository()` when dynamic dispatch is the actual requirement.
+- Prefer `client.users` when the table is known statically. It reads better and needs no string.
+- Use `repository()` when dispatch by name is the requirement: admin panels, generic CRUD routes, export or backfill jobs.
+- Keep the arguments table-agnostic. `where`, `select`, `orderBy`, and `data` are typed per table, so options that only one table understands belong in code that uses that table's delegate directly.

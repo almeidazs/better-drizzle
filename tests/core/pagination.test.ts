@@ -272,12 +272,12 @@ describe('cursor - cursor pagination', () => {
 
 	test('cursor infers orderBy from after when none is provided', async () => {
 		const page = await ctx.better.users.cursor({
-			after: { id: 4 },
+			after: { id: 2 },
 			limit: 2,
 		});
 
-		expect(page.data.map((row) => row.id)).toEqual([3, 2]);
-		expect(page.pagination.nextCursor).toEqual({ id: 2 });
+		expect(page.data.map((row) => row.id)).toEqual([3, 4]);
+		expect(page.pagination.nextCursor).toEqual({ id: 4 });
 		expect(page.pagination.previousCursor).toEqual({ id: 3 });
 	});
 

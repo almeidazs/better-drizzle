@@ -6,7 +6,7 @@ seoTitle: 'Rules Plugin - Runtime Guardrails for Drizzle'
 seoDescription: 'Runtime guardrails for Drizzle ORM: block unsafe raw SQL, unfiltered deletes and updates, unbounded pagination, unlocked reads, and missing tenant context.'
 ---
 
-`better-drizzle/rules` is the first-party guardrails plugin for Better Drizzle. It validates operations at runtime through plugin hooks and turns unsafe patterns into warnings or errors without forcing you to wrap every repository call manually.
+`better-drizzle/rules` is the first-party guardrails plugin for Better Drizzle. It inspects every repository, raw SQL, and transaction call before it runs, and turns unsafe patterns into warnings or errors. You don't have to wrap each call yourself.
 
 ## Install
 
@@ -48,104 +48,394 @@ bun add better-drizzle
 
 ## Usage
 
+Start from a preset and override what you need:
+
 ```ts
 import { better } from 'better-drizzle';
-import { rules } from 'better-drizzle/rules';
-
-const client = better(db, {
-	schema,
-	plugins: [
-		rules({
-			noRawUnsafe: true,
-			noUpdateManyWithoutWhere: true,
-			requireOrderByForCursor: true,
-			maxLimit: {
-				level: 'warn',
-				value: 500,
-			},
-		}),
-	],
-});
-```
-
-## Rule levels
-
-Every rule accepts four shapes:
-
-- `true` => error
-- `false` => off
-- `'warn' | 'error' | 'off'`
-- an object with `level` plus rule-specific options
-
-```ts
-rules({
-	noRawUnsafe: true,
-	requireRawTimeout: {
-		level: 'error',
-		maxTimeoutMs: 30_000,
-	},
-	maxLimit: {
-		level: 'warn',
-		value: 500,
-	},
-});
-```
-
-## Presets
-
-The package exports three preset helpers:
-
-- `safe()`
-- `recommended()`
-- `strict()`
-
-```ts
-import { recommended, rules } from 'better-drizzle/rules';
+import { rules, safe } from 'better-drizzle/rules';
 
 const client = better(db, {
 	schema,
 	plugins: [
 		rules(
-			recommended({
-				noRawUnsafe: true,
+			safe({
+				maxLimit: { level: 'error', value: 200 },
 			}),
 		),
 	],
 });
 ```
 
-## What it can enforce
-
-Today the plugin can validate:
-
-- destructive writes without `where`
-- empty `where` clauses
-- unbounded `findMany()` calls
-- missing or oversized `limit` values
-- cursor and pagination order requirements
-- include depth and include relation-count limits
-- row lock guardrails like `skipLocked` prerequisites
-- raw SQL policies like `noRawUnsafe`, `requireRawComment`, `requireRawTimeout`, `noRawMutation`, and `noRawWithoutTransaction`
-- tenant-context checks based on `meta` and `$withContext(...)`
-- explicit selection of sensitive fields when those fields are visible in `select`
-
-## Reporting
-
-Warnings can be reported without throwing:
+You can also list rules by hand. Any rule you leave out is off:
 
 ```ts
 rules({
-	noRawUnsafe: 'warn',
-	reporter: {
-		warn(violation) {
-			console.warn(violation.rule, violation.operation, violation.model);
+	noRawUnsafe: true,
+	noUpdateManyWithoutWhere: true,
+	requireOrderByForCursor: true,
+	maxLimit: { level: 'warn', value: 500 },
+});
+```
+
+## Rule settings
+
+Every rule accepts the same setting shapes:
+
+| Setting | Meaning |
+| --- | --- |
+| `true` | `'error'` with default options |
+| `false` or `'off'` | disabled |
+| `'warn'` | reported, the operation still runs |
+| `'error'` | reported, then the operation throws |
+| `{ level?, ...options }` | rule-specific options; `level` defaults to `'error'` when omitted |
+
+```ts
+rules({
+	noRawUnsafe: true,
+	noUnboundedFindMany: 'warn',
+	requireRawTimeout: { level: 'error', maxTimeoutMs: 30_000 },
+	maxLimit: { value: 500 }, // level defaults to 'error'
+});
+```
+
+## Plugin options
+
+These options control how violations are handled. They sit next to the rules in the same object.
+
+<TypeTable
+	type={{
+		enabled: {
+			description: 'Global switch. When false, the plugin stays installed but no rule is evaluated.',
+			type: 'boolean',
+			default: 'true',
 		},
+		throwOnError: {
+			description: 'Whether error-level violations throw a BetterDrizzleError. When false they are only reported.',
+			type: 'boolean',
+			default: 'true',
+		},
+		warnOnViolation: {
+			description: 'Whether warn-level violations are sent to reporter.warn. When false, warnings only reach onViolation.',
+			type: 'boolean',
+			default: 'true',
+		},
+		reporter: {
+			description: 'Receives violations by level. Use it to plug in pino, winston, or your monitoring client.',
+			type: '{ warn?(violation): void; error?(violation): void }',
+		},
+		onViolation: {
+			description: 'Called for every violation, whatever its level, before reporter and before throwing. May be async.',
+			type: '(violation: RulesViolation) => void | Promise<void>',
+		},
+	}}
+/>
+
+## Presets
+
+The package exports three presets. Each builds on the previous one:
+
+- `safe()` blocks destructive writes, unsafe raw SQL, and broken lock or cursor usage.
+- `recommended()` is `safe()` plus limits on includes and raw timeouts, sensitive-field checks, and a required tenant context.
+- `strict()` is `recommended()` with higher levels, lower limits, and the tenant, reason, and ordering rules.
+
+<Callout type="warn" title="recommended() and strict() require a tenant context">
+	Both presets enable `requireTenantContext` at `'error'`. Every operation, including raw SQL and transactions, then throws unless `meta.tenantId` is set (for example through `db.$withContext({ tenantId })`) or `meta.system` is truthy. If your app is not multi-tenant, turn it off: `recommended({ requireTenantContext: false })`.
+</Callout>
+
+This table shows the level each preset sets. `off` means the preset does not enable the rule.
+
+| Rule | `safe()` | `recommended()` | `strict()` |
+| --- | --- | --- | --- |
+| `noDeleteManyWithoutWhere` | error | error | error |
+| `noUpdateManyWithoutWhere` | error | error | error |
+| `noDeleteWithoutWhere` | error | error | error |
+| `noUpdateWithoutWhere` | error | error | error |
+| `noEmptyWhere` | error | error | error |
+| `noUnboundedFindMany` | warn | warn | error |
+| `requireExplicitLimit` | off | off | warn |
+| `maxLimit` | warn, 1000 | warn, 1000 | error, 500 |
+| `requireOrderByForLimit` | off | off | warn |
+| `requireOrderByForPagination` | off | off | warn |
+| `requireOrderByForCursor` | error | error | error |
+| `requireStableOrderByForCursor` | off | warn | error |
+| `maxIncludeDepth` | off | warn, 3 | error, 2 |
+| `maxIncludeRelations` | off | warn, 5 | error, 3 |
+| `requireTransactionForLock` | warn | warn | error |
+| `noLockWithInclude` | error | error | error |
+| `noInvalidLockCombination` | error | error | error |
+| `requireOrderByForSkipLocked` | off | warn | error |
+| `requireLimitForSkipLocked` | error | error | error |
+| `noRawUnsafe` | error | error | error |
+| `requireRawComment` | off | off | warn, 8 chars |
+| `requireRawTimeout` | off | warn | error |
+| `noRawMutation` | off | warn | error |
+| `noRawWithoutTransaction` | off | off | warn, mutations only |
+| `requireTimeoutForLongRunningOperation` | off | warn, max 60s | error, max 30s |
+| `requireTenantContext` | off | error | error |
+| `noTenantBypassWithoutSystem` | off | off | error |
+| `noTenantColumnOverride` | off | off | error |
+| `requireTenantOnCreate` | off | off | error |
+| `requireTenantOnUpdate` | off | off | error |
+| `requireTenantOnDelete` | off | off | error |
+| `noSensitiveSelect` | off | error | error |
+| `requireExplicitSensitiveAccessReason` | off | off | error |
+| `noHardDeleteOnSoftDeleteModel` | off | error | error |
+| `requireHardDeleteReason` | off | off | error |
+| `noQueryDeletedWithoutExplicitOptIn` | off | off | warn |
+| `noSystemModeWithoutReason` | off | warn | error |
+
+The presets also set some rules that are [not enforced yet](#not-enforced-yet). Those settings have no effect today.
+
+### Preset options in detail
+
+Some preset entries set options beyond the level:
+
+- `noEmptyWhere` checks only `update`, `updateMany`, `delete`, and `deleteMany`. It treats a missing `where` and an empty `AND: []` / `OR: []` as empty.
+- `noUnboundedFindMany` allows a `findMany` that has `take` or `limit`. `safe()` and `recommended()` also allow it when there is a `where`; `strict()` does not.
+- `maxLimit` applies to `findMany`, `paginate`, and `cursor`.
+- `requireStableOrderByForCursor` is set with `requirePrimaryKeyInOrderBy: false`, so it never fires in any preset. Set `requirePrimaryKeyInOrderBy: true` to use it.
+- `requireRawTimeout` uses `defaultTimeoutMs: 5000` and `maxTimeoutMs: 30000`.
+- `noRawMutation` allows statements that start with `create extension` or `refresh materialized view`.
+- `requireTenantContext` uses `allowSystem: true`.
+- `noSensitiveSelect` allows the select when the call passes `withSensitive: true`.
+- `noHardDeleteOnSoftDeleteModel` allows a hard delete when a reason is given.
+- `noQueryDeletedWithoutExplicitOptIn` in `strict()` requires a reason when a call reads deleted rows.
+
+### Overriding a preset
+
+Every preset takes an overrides object. The merge is shallow: an override replaces the preset's whole setting for that rule, it does not merge into it.
+
+```ts
+recommended({
+	// Replaces the preset's { level: 'warn', value: 1000, applyTo: [...] }.
+	// level is now 'error' and applyTo falls back to the rule defaults.
+	maxLimit: { value: 200 },
+	requireTenantContext: false,
+});
+```
+
+To combine several configs yourself, use `merge`. It takes an options object:
+
+- `extends`: one config or an array of configs, applied in order.
+- `rules`: overrides applied last, on top of every `extends` entry.
+
+The merge is shallow here too. `undefined`, `null`, and `false` entries are skipped, so you can add a config conditionally:
+
+```ts
+import { merge, rules, safe } from 'better-drizzle/rules';
+
+rules(
+	merge({
+		extends: [safe(), process.env.NODE_ENV === 'production' && { throwOnError: false }],
+		rules: { noRawMutation: 'warn' },
+	}),
+);
+```
+
+## Scoping rules to models
+
+Most model rules accept `models` and `ignoreModels`. Names are matched against the schema table key.
+
+```ts
+rules({
+	noUnboundedFindMany: {
+		level: 'error',
+		ignoreModels: ['countries', 'currencies'],
+	},
+	requireTenantContext: {
+		models: ['invoices', 'customers'],
 	},
 });
 ```
 
-For `error` rules, the plugin throws a `BetterDrizzleError` unless `throwOnError: false` is configured.
+The scope type also has an `operations` field, but only `noEmptyWhere`, `requireExplicitLimit`, and `requireTimeoutForLongRunningOperation` read it. `maxLimit` uses `applyTo` instead. Raw SQL and transactions have no model, so `models` and `ignoreModels` never exclude them.
+
+## Rule reference
+
+Every rule below is enforced today. Defaults are the values used when you configure a rule without that option.
+
+### Destructive writes
+
+| Rule | Fires when | Options |
+| --- | --- | --- |
+| `noDeleteManyWithoutWhere` | `deleteMany` has no `where` | scope |
+| `noUpdateManyWithoutWhere` | `updateMany` has no `where` | scope |
+| `noDeleteWithoutWhere` | `delete` has no `where` | scope |
+| `noUpdateWithoutWhere` | `update` has no `where` | scope |
+| `noEmptyWhere` | `where` is `{}`, or missing, or an empty `AND`/`OR` (depending on options) | `operations` (default: all), `treatUndefinedAsEmpty` (default `true`), `treatEmptyAndOrAsEmpty` (default `false`), scope |
+
+The `*WithoutWhere` rules only catch a missing `where`. Pair them with `noEmptyWhere` to also catch `where: {}`.
+
+<Callout type="warn">
+	With no `operations` set, `noEmptyWhere` checks every operation, and a missing `where` counts as empty. A plain `findMany()` or `count()` then violates it. Set `operations` to limit it to writes, as the presets do.
+</Callout>
+
+### Reads and pagination
+
+| Rule | Fires when | Options |
+| --- | --- | --- |
+| `noUnboundedFindMany` | `findMany` has neither an allowed bound nor a `where` | `allowWithWhere`, `allowWithLimit`, `allowWithTake`, `allowSmallStaticModels`, scope (all flags default to `false`) |
+| `requireExplicitLimit` | the operation has no `take`/`limit` | `operations` (default `['findMany']`), scope |
+| `maxLimit` | the resolved limit is above `value` | `value` (required), `applyTo` (default `['findMany', 'paginate', 'cursor']`), scope |
+| `requireOrderByForLimit` | any read with `take`/`limit` has no `orderBy` | scope |
+| `requireOrderByForPagination` | `paginate` has no `orderBy` | scope |
+| `requireOrderByForCursor` | `cursor` has no `orderBy` | scope |
+| `requireStableOrderByForCursor` | `cursor` orders by columns that don't include `id` | `requirePrimaryKeyInOrderBy` (must be `true` for the rule to fire), `allowAppendPrimaryKey`, scope |
+| `maxIncludeDepth` | `include` nests deeper than `value` | `value` (required), scope |
+| `maxIncludeRelations` | `include` loads more than `value` relations in total, nested ones included | `value` (required), scope |
+
+The resolved limit is `take` or `limit`. With `noUnboundedFindMany`, `allowWithLimit` accepts either `take` or `limit`, and `allowSmallStaticModels` currently behaves like `allowWithWhere`.
+
+### Row locks
+
+| Rule | Fires when | Options |
+| --- | --- | --- |
+| `requireTransactionForLock` | a read uses `lock` outside a transaction | scope |
+| `noLockWithInclude` | a read uses `lock` together with a non-empty `include` | scope |
+| `noInvalidLockCombination` | `lock` sets both `skipLocked` and `noWait` | scope |
+| `requireOrderByForSkipLocked` | `lock.skipLocked` is used without `orderBy` | scope |
+| `requireLimitForSkipLocked` | `lock.skipLocked` is used without a limit | scope |
+
+### Raw SQL
+
+| Rule | Fires when | Options |
+| --- | --- | --- |
+| `noRawUnsafe` | `$rawUnsafe` is called | none |
+| `requireRawComment` | the raw call has no `comment`, or it is shorter than `minLength` | `minLength` (default `1`) |
+| `requireRawTimeout` | the raw call has no `timeoutMs`, or it is above `defaultTimeoutMs` or `maxTimeoutMs` | `defaultTimeoutMs`, `maxTimeoutMs` |
+| `noRawMutation` | the SQL starts with `insert`, `update`, `delete`, `replace`, `create`, `alter`, `drop`, or `truncate` | `allow`: statement prefixes to allow |
+| `noRawWithoutTransaction` | the raw call runs outside a transaction | `onlyMutations` (default `false`) |
+| `requireTimeoutForLongRunningOperation` | a `$raw`, `$rawUnsafe`, or `$executeRaw` call has no `timeoutMs`, or it is above `maxTimeoutMs` | `operations` (default `['raw', 'executeRaw', 'explain']`), `defaultTimeoutMs`, `maxTimeoutMs` |
+
+```ts
+await db.$raw(sql`select * from reports where id = ${id}`, {
+	comment: 'monthly report lookup',
+	timeoutMs: 2000,
+});
+```
+
+The raw rules check `$raw`, `$rawUnsafe`, and `$executeRaw`, except `noRawUnsafe`, which only fires on `$rawUnsafe`. Because `$executeRaw` exists for writes, `noRawMutation` flags every mutation sent through it; use `allow` for the statements you expect.
+
+`requireRawTimeout` reports a timeout above `defaultTimeoutMs` at the rule's own level. When the rule is `'error'`, `defaultTimeoutMs` works as the real ceiling.
+
+### Multi-tenant safety
+
+Tenant rules read the tenant from the merged operation `meta` first, then from the transaction `context`.
+
+```ts
+const tenantDb = db.$withContext({ tenantId: session.tenantId });
+await tenantDb.invoices.findMany({ where: { status: 'open' } });
+
+// Background jobs that must cross tenants:
+const systemDb = db.$withContext({ system: true, reason: 'nightly billing' });
+```
+
+| Rule | Fires when | Options |
+| --- | --- | --- |
+| `requireTenantContext` | the tenant key is missing, on any operation | `contextKey` (default `'tenantId'`), `allowSystem`: skip when `meta.system` is truthy, scope |
+| `noTenantBypassWithoutSystem` | the call passes `bypassTenant: true` without a system flag in `meta` | `systemContextKey` (default `'system'`) |
+| `noTenantColumnOverride` | `data` sets the tenant column to a value different from the current tenant | `tenantColumn` (default `'tenantId'`), `contextKey` (defaults to `tenantColumn`), scope |
+| `requireTenantOnCreate` | a tenant is set but a `create`, `createMany`, `upsert`, or `upsertMany` row has no `tenantId` | scope |
+| `requireTenantOnUpdate` | a tenant is set but an `update`, `updateMany`, `updateEach`, or `upsert` has no `where` | scope |
+| `requireTenantOnDelete` | a tenant is set but a `delete` or `deleteMany` has no `where` | scope |
+
+The three `requireTenantOn*` rules always look for the `tenantId` key and column; they don't read `contextKey`. They don't add the tenant filter for you either. They only check that the payload has the column, or that the write has a `where`.
+
+### Sensitive fields
+
+| Rule | Fires when | Options |
+| --- | --- | --- |
+| `noSensitiveSelect` | `select` picks a sensitive field | `allowWithSensitive`, `withSensitiveArg` (default `'withSensitive'`), scope |
+| `requireExplicitSensitiveAccessReason` | a sensitive field is selected with `withSensitive: true` but no reason | `withSensitiveArg` (default `'withSensitive'`), `reasonArg` (default `'reason'`), scope |
+
+The sensitive field names are fixed: `password`, `passwordHash`, `secret`, `secrets`, `token`, `tokens`, `apiKey`, `apiKeys`, and `ssn`. Only top-level `select` keys set to `true` are checked.
+
+### Soft delete and system mode
+
+These rules pair with [`better-drizzle/soft-delete`](/docs/plugins/soft-delete), which adds the `mode` and `deleted` call arguments.
+
+| Rule | Fires when | Options |
+| --- | --- | --- |
+| `noHardDeleteOnSoftDeleteModel` | `delete` is called with `mode: 'hard'` | `allowWithReason`, `allowWithContextKey`: skip when this `meta` key is truthy, scope |
+| `requireHardDeleteReason` | `delete` is called with `mode: 'hard'` and no reason | `reasonArg` (default `'reason'`), scope |
+| `noQueryDeletedWithoutExplicitOptIn` | a call reads deleted rows (`deleted: 'with'` or `'only'`) without a reason | `requireReason` (must be `true` for the rule to fire), `reasonArg` (default `'reason'`), scope |
+| `noSystemModeWithoutReason` | the call passes `system: true` without a reason | `reasonArg` (default `'reason'`) |
+
+Only `delete` is checked for hard deletes; `deleteMany` is not.
+
+### Where opt-in flags are read
+
+Rules look for their flags in these places:
+
+- **Reasons** (`reason` or your `reasonArg`): the call arguments first, then `meta`, then the transaction `context`. Pass them through `meta` to stay type-safe: `{ meta: { reason: 'GDPR export' } }`.
+- **`withSensitive`, `bypassTenant`, and `system`**: only the call arguments. The core delegate types don't declare these fields, so you need another plugin that declares them through `operationArgs`, or a cast.
+- **Tenant and system keys**: `meta` first, then the transaction `context`.
+
+## Violations and errors
+
+Each violation reaches your handlers as a `RulesViolation`:
+
+```ts
+type RulesViolation = {
+	rule: string; // e.g. 'noDeleteManyWithoutWhere'
+	level: 'warn' | 'error';
+	message: string;
+	operation?: RulesOperation; // 'findMany', 'raw', 'transaction', ...
+	model?: string;
+	path?: readonly string[]; // e.g. ['where'] or ['select', 'password']
+	query?: { where?; data?; select?; include?; orderBy?; limit?; lock? };
+	context?: Record<string, unknown>;
+	meta?: Record<string, unknown>;
+};
+```
+
+```ts
+rules({
+	...recommended(),
+	reporter: {
+		warn: (v) => logger.warn({ rule: v.rule, model: v.model }, v.message),
+		error: (v) => logger.error({ rule: v.rule, model: v.model }, v.message),
+	},
+	onViolation: (v) => metrics.increment('db.rule_violation', { rule: v.rule }),
+});
+```
+
+Handlers run in this order:
+
+1. `onViolation` receives every violation.
+2. `reporter.warn` receives warnings, unless `warnOnViolation: false`.
+3. `reporter.error` receives errors, and then the plugin throws, unless `throwOnError: false`.
+
+The thrown error is a `BetterDrizzleError` with code `OperationError`. Its `message` is the violation message, and `details` holds `rule`, `level`, `operation`, `model`, `path`, `query`, and `meta`. The operation stops at the first error-level violation.
+
+```ts
+import { BetterDrizzleError } from 'better-drizzle';
+
+try {
+	await db.users.deleteMany();
+} catch (error) {
+	if (error instanceof BetterDrizzleError && error.details?.rule === 'noDeleteManyWithoutWhere') {
+		// handle the blocked write
+	}
+}
+```
+
+## Not enforced yet
+
+The types, and some presets, accept the rules below, but the plugin does not evaluate them yet. Setting them has no effect. They are reserved so configs keep working once support lands.
+
+- `noSensitiveFieldsInLogs`
+- `requireRestoreReason`
+- `noWithoutPlugins`, `noPluginBypassWithoutReason`
+- `requireAuditContext`, `noAuditLogForIgnoredModelWrite`
+- `maxNestedWriteDepth`, `requireTransactionForNestedWrite`
+- `requireUniqueWhereForConnect`, `requireUniqueWhereForConnectOrCreate`, `noAmbiguousNestedRelation`
+- `requireWhereForAggregate`, `requireLimitForGroupBy`, `maxGroupByLimit`, `requireOrderByForGroupByLimit`
+- `noDynamicPreparedShape`, `noPreparedNameConflict`
+- `noUnsupportedDialectFeature`, `noSilentDialectFallback`
 
 ## Current boundary
 
-The plugin is intentionally runtime-only and hook-driven. If the current Better Drizzle hook payload does not expose enough information to evaluate a rule safely, that rule is ignored instead of guessed.
+The plugin runs only at runtime, through `before*` hooks, and reads only what the hook payload contains. If a rule can't be evaluated from that payload, it is skipped instead of guessed. Rules run on the root query only; `where`, `orderBy`, or `take` inside a nested `include` are not checked.
+
+For editor and CI feedback on the parts that can be checked statically, see the [ESLint plugin](/docs/plugins/eslint).

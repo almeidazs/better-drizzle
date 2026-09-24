@@ -127,7 +127,7 @@ await db.transaction(async (tx) => {
 
 ## Lifecycle callbacks
 
-Register side effects that fire after the transaction settles — the right place for "send the email only if the write actually committed":
+Register side effects that fire after the transaction settles - the right place for "send the email only if the write actually committed":
 
 ```ts tab="better-drizzle" tab-group="orm"
 await client.transaction(async (tx) => {
@@ -194,7 +194,7 @@ for (let attempt = 1; ; attempt += 1) {
 }
 ```
 
-`on` accepts `'connectionError'`, `'deadlock'`, and `'serializationFailure'`; it defaults to all three. `delayMs` can be a fixed number or a function of the attempt (1-indexed).
+`attempts` is the total number of tries, so it must be at least `2` for any retry to happen (`1` or less disables retries). `on` accepts `'connectionError'`, `'deadlock'`, and `'serializationFailure'`; it defaults to all three. `delayMs` can be a fixed number or a function of the attempt (1-indexed) and defaults to `0` (retry immediately). An explicit `tx.rollback()` is never retried.
 
 ## Options
 
@@ -207,13 +207,14 @@ await client.transaction(
 		timeoutMs: 1000,
 		name: 'users-list',
 		comment: 'users.list.transaction',
-		context: { requestId: 'req_123' },
+		meta: { requestId: 'req_123' },
+		context: { source: 'admin' },
 	},
 );
 ```
 
 ```ts tab="Drizzle" tab-group="orm"
-// PostgreSQL; no timeout, name, comment, or context equivalents
+// PostgreSQL; no timeout, name, comment, meta, or context equivalents
 await db.transaction(
 	async (tx) => tx.select().from(users).limit(10),
 	{
@@ -230,6 +231,7 @@ await db.transaction(
 | `retries` | automatic retry configuration |
 | `timeoutMs` | abort after a duration |
 | `signal` | an `AbortSignal` that rolls back on abort |
+| `meta` | metadata merged over the client's `$withContext()` defaults for every operation, raw call, and lifecycle hook inside the transaction |
 | `context` | custom context merged into the transaction scope |
 | `name` | name for the transaction / savepoint |
 | `comment` | comment attached to the transaction |
