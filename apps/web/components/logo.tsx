@@ -1,6 +1,5 @@
+import { cn } from 'cnfast';
 import Image from 'next/image';
-
-import { cn } from '@/lib/utils';
 
 // `icon.png` has a white wordmark; `icon-light.png` is the same art with a dark
 // wordmark for the light theme.

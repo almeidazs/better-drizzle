@@ -1,4 +1,3 @@
-import * as Twoslash from 'fumadocs-twoslash/ui';
 import { Callout } from 'fumadocs-ui/components/callout';
 import { Card, Cards } from 'fumadocs-ui/components/card';
 import { Step, Steps } from 'fumadocs-ui/components/steps';
@@ -17,7 +16,6 @@ import { ShinyCodeBlock } from '@/components/shiny-code-block';
 export function getMDXComponents(components?: MDXComponents): MDXComponents {
 	return {
 		...defaultMdxComponents,
-		...Twoslash,
 		pre: ShinyCodeBlock,
 		Callout,
 		Card,

@@ -1,5 +1,6 @@
 'use client';
 
+import { cn } from 'cnfast';
 import { useDocsLayout } from 'fumadocs-ui/layouts/docs';
 import { useHomeLayout } from 'fumadocs-ui/layouts/home';
 import { SidebarIcon } from 'lucide-react';
@@ -10,7 +11,6 @@ import { FaGithub } from 'react-icons/fa';
 
 import { Logo } from '@/components/logo';
 import { formatGithubStars } from '@/lib/github';
-import { cn } from '@/lib/utils';
 
 const NAV_LINKS = [
 	{ href: '/docs', label: 'Documentation' },
