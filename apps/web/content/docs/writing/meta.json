@@ -1,5 +1,0 @@
-{
-	"title": "Writing",
-	"icon": "PenLine",
-	"pages": ["crud", "relation-writes", "throwing-results"]
-}

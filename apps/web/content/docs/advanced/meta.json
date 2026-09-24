@@ -1,5 +1,0 @@
-{
-	"title": "Core concepts",
-	"icon": "Layers",
-	"pages": ["transactions", "locks", "raw-sql", "hooks", "error-handling"]
-}
