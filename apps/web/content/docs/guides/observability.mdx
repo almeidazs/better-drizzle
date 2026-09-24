@@ -1,0 +1,468 @@
+---
+title: Logging and observability
+description: Query timings, slow-query warnings, error and raw SQL logs, transaction events, request correlation, and OpenTelemetry spans built on hooks.
+icon: Activity
+seoTitle: 'Drizzle ORM Logging and OpenTelemetry'
+seoDescription: 'Log Drizzle ORM queries with timings, flag slow queries, record errors, correlate requests with $withContext, and emit OpenTelemetry spans from hooks.'
+---
+
+better-drizzle has no built-in logger. It gives you [client hooks](/docs/advanced/hooks) around every operation, raw SQL call, and transaction. Every recipe on this page is a few hooks that you write once and pass to `better(...)`. At the end, the same hooks are packaged as a [plugin](/docs/plugins/writing-plugins).
+
+A client with no hooks skips the hook machinery entirely. Each hook you add costs an `await` per call, so register only the ones you use.
+
+## Query logging with duration
+
+Hooks do not carry a timer, so you add one. The before hook and the after hook of one call receive the same `ctx.args` object, even after plugin transforms. That makes `ctx.args` a key for a `WeakMap`:
+
+```ts title="lib/db.ts"
+import { better } from 'better-drizzle';
+
+type Meta = { requestId?: string; userId?: string };
+type OperationContext = {
+	action: string;
+	table: string;
+	args: unknown;
+	meta?: Meta;
+};
+
+const started = new WeakMap<object, number>();
+
+const start = (ctx: OperationContext) => {
+	started.set(ctx.args as object, performance.now());
+};
+
+const elapsed = (args: unknown) => {
+	const at = started.get(args as object);
+	if (at === undefined) return undefined;
+
+	started.delete(args as object);
+	return performance.now() - at;
+};
+
+const logOperation = (ctx: OperationContext) => {
+	console.info('db', {
+		action: ctx.action,
+		table: ctx.table,
+		ms: elapsed(ctx.args),
+		requestId: ctx.meta?.requestId,
+	});
+};
+
+export const client = better<typeof schema, Meta>(db, {
+	schema,
+	hooks: {
+		beforeQuery: start,
+		afterQuery: logOperation,
+		beforeCreate: start,
+		afterCreate: logOperation,
+		beforeUpdate: start,
+		afterUpdate: logOperation,
+		beforeDelete: start,
+		afterDelete: logOperation,
+	},
+});
+```
+
+Notes:
+
+- `action` tells operations apart within one hook: `findMany`, `count`, `createMany`, `updateEach`, and so on. `upsert` only fires the create hooks.
+- The `WeakMap` does not hold on to failed calls: if an operation throws and no after hook runs, the entry is garbage-collected with its `args`. Two concurrent calls that pass the very same args object would share an entry, so build args per call.
+- The time covers the database work, including relation loading. Plugin before hooks and transforms run earlier, so they are not included.
+- `.explain()` does not run query hooks, so plans you inspect do not show up in these logs.
+
+## Slow-query warnings
+
+Use the same timer and log at a higher level above a threshold:
+
+```ts
+const SLOW_MS = 200;
+
+const logOperation = (ctx: OperationContext) => {
+	const ms = elapsed(ctx.args);
+	if (ms === undefined) return;
+
+	const entry = {
+		action: ctx.action,
+		table: ctx.table,
+		ms: Math.round(ms),
+		requestId: ctx.meta?.requestId,
+	};
+
+	if (ms >= SLOW_MS) console.warn('slow db operation', entry);
+	else console.debug('db', entry);
+};
+```
+
+Keep argument values out of the log line. `ctx.args.where` and `ctx.args.data` often hold emails, tokens, or other personal data. To find out why a query is slow, run it again with [`.explain()`](/docs/querying/explain).
+
+## Error logging
+
+`onError` fires when an operation fails, when a CRUD or query hook throws, and when `.throw()` finds no row. `ctx.error` is always a `BetterDrizzleError`:
+
+```ts
+import { type BetterDrizzleError, better } from 'better-drizzle';
+
+export const client = better<typeof schema, Meta>(db, {
+	schema,
+	hooks: {
+		// ...timing hooks from above
+		onError(ctx) {
+			const error = ctx.error as BetterDrizzleError;
+
+			console.error('db error', {
+				action: ctx.action,
+				table: ctx.table,
+				stage: ctx.stage,
+				hookName: ctx.hookName,
+				code: error.code,
+				status: error.status,
+				message: error.message,
+				ms: elapsed(ctx.args),
+				requestId: ctx.meta?.requestId,
+			});
+		},
+	},
+});
+```
+
+| Field | Meaning |
+| --- | --- |
+| `stage` | `'beforeHook'`, `'operation'`, or `'afterHook'` |
+| `hookName` | the hook that threw, such as `beforeCreate`; unset when the operation itself failed |
+| `error.code` | a `BetterDrizzleErrorCode`, such as `RESULT_NOT_FOUND` or `OPERATION_ERROR` |
+| `error.driver`, `error.constraint`, `error.sqlState` | filled in when the error came from the database driver |
+
+`error.toJSON()` returns all of these fields as a plain object, which structured loggers can take as is. Errors thrown inside `onError` are swallowed, so a broken logger does not change the result of the call.
+
+`onError` does not cover raw SQL or transactions. They have their own hooks, shown below.
+
+## Raw SQL logging
+
+`beforeRaw`, `afterRaw`, and `onRawError` wrap `$raw`, `$executeRaw`, and `$rawUnsafe`. All three receive the same `ctx.rawOptions` object for one call, so it can key the timer:
+
+```ts
+const rawStarted = new WeakMap<object, number>();
+
+const rawElapsed = (key: object) => {
+	const at = rawStarted.get(key);
+	rawStarted.delete(key);
+	return at === undefined ? undefined : performance.now() - at;
+};
+
+export const client = better<typeof schema, Meta>(db, {
+	schema,
+	hooks: {
+		beforeRaw(ctx) {
+			rawStarted.set(ctx.rawOptions, performance.now());
+		},
+		afterRaw(ctx) {
+			console.info('raw sql', {
+				action: ctx.action,
+				name: ctx.name,
+				query: ctx.query,
+				rows:
+					ctx.action === 'executeRaw'
+						? ctx.result.rowsAffected
+						: ctx.result.length,
+				ms: rawElapsed(ctx.rawOptions),
+				requestId: ctx.meta?.requestId,
+			});
+		},
+		onRawError(ctx) {
+			console.error('raw sql failed', {
+				action: ctx.action,
+				name: ctx.name,
+				query: ctx.query,
+				error: ctx.error,
+				ms: rawElapsed(ctx.rawOptions),
+			});
+		},
+	},
+});
+```
+
+`ctx.query` is the rendered SQL with `$1`, `$2` placeholders. Parameter values are not in it, so it is safe to log. Pass `name` (and, on PostgreSQL, `comment`) in the raw options to make log lines searchable:
+
+```ts
+const rows = await client.$raw(sql`select id from users where active = ${true}`, {
+	name: 'active-user-ids',
+});
+```
+
+## Transaction lifecycle
+
+The four transaction hooks give you start, commit, rollback, and failure. For one transaction, all of them receive the same `ctx.client` (the transaction client), which keys the timer:
+
+```ts
+const txStarted = new WeakMap<object, number>();
+
+const txElapsed = (key: object) => {
+	const at = txStarted.get(key);
+	txStarted.delete(key);
+	return at === undefined ? undefined : performance.now() - at;
+};
+
+export const client = better<typeof schema, Meta>(db, {
+	schema,
+	hooks: {
+		beforeTransaction(ctx) {
+			txStarted.set(ctx.client, performance.now());
+		},
+		afterTransactionCommit(ctx) {
+			console.info('tx commit', {
+				name: ctx.name,
+				depth: ctx.depth,
+				attempt: ctx.attempt,
+				ms: txElapsed(ctx.client),
+				requestId: ctx.meta?.requestId,
+			});
+		},
+		onTransactionError(ctx) {
+			console.error('tx error', { name: ctx.name, error: ctx.error });
+		},
+		afterTransactionRollback(ctx) {
+			console.warn('tx rollback', {
+				name: ctx.name,
+				depth: ctx.depth,
+				attempt: ctx.attempt,
+				reason: ctx.reason instanceof Error ? ctx.reason.message : ctx.reason,
+				ms: txElapsed(ctx.client),
+			});
+		},
+	},
+});
+```
+
+- `depth` is `1` for the outer transaction and higher for savepoints.
+- `attempt` starts at `1` and goes up with each [retry](/docs/advanced/transactions). Each attempt gets its own transaction client, so each is timed separately.
+- When the callback throws, `onTransactionError` fires first, then `afterTransactionRollback`. An explicit `tx.rollback(reason)` fires only `afterTransactionRollback`, with a `BetterDrizzleTransactionRollbackError` as `reason`.
+- Operations inside the transaction still go through the CRUD hooks, with `ctx.isInTransaction` set to `true`.
+
+## Request correlation
+
+Pass a request id in `meta` and every hook sees it. `$withContext(...)` sets it once per request instead of on every call:
+
+```ts
+export const handle = async (request: Request) => {
+	const scoped = client.$withContext({
+		requestId: request.headers.get('x-request-id') ?? crypto.randomUUID(),
+	});
+
+	const user = await scoped.users.findUnique({ where: { id: 1 } });
+	const { count } = await scoped.posts.updateMany({
+		where: { authorId: 1 },
+		data: { archived: true },
+	});
+
+	return Response.json({ user, archived: count });
+};
+```
+
+The scoped `meta` reaches CRUD hooks, `onError`, raw hooks, and transaction hooks, including operations on the transaction client. Per-call `meta` and `transaction(..., { meta })` are shallow-merged on top, so a single call can add or override keys. See [framework integration](/docs/guides/frameworks) for middleware in Next.js, Hono, Express, and Fastify.
+
+## OpenTelemetry spans
+
+The same keys work for spans. This example uses `@opentelemetry/api` and leaves exporting to whatever SDK your application already sets up:
+
+```ts title="lib/db-tracing.ts"
+import { type Span, SpanStatusCode, trace } from '@opentelemetry/api';
+import type { BetterDrizzleError } from 'better-drizzle';
+
+const tracer = trace.getTracer('app-db');
+const spans = new WeakMap<object, Span>();
+
+type OperationContext = { action: string; table: string; args: unknown };
+
+export const startSpan = (ctx: OperationContext) => {
+	const span = tracer.startSpan(`${ctx.action} ${ctx.table}`, {
+		attributes: {
+			'db.system.name': 'postgresql',
+			'db.collection.name': ctx.table,
+			'db.operation.name': ctx.action,
+		},
+	});
+
+	spans.set(ctx.args as object, span);
+};
+
+export const endSpan = (ctx: OperationContext) => {
+	const span = spans.get(ctx.args as object);
+	if (!span) return;
+
+	spans.delete(ctx.args as object);
+	span.end();
+};
+
+export const failSpan = (ctx: OperationContext & { error: unknown }) => {
+	const span = spans.get(ctx.args as object);
+	if (!span) return;
+
+	const error = ctx.error as BetterDrizzleError;
+	spans.delete(ctx.args as object);
+	span.recordException(error);
+	span.setAttribute('error.type', error.code);
+	span.setStatus({ code: SpanStatusCode.ERROR, message: error.message });
+	span.end();
+};
+```
+
+```ts title="lib/db.ts"
+import { endSpan, failSpan, startSpan } from './db-tracing';
+
+export const client = better(db, {
+	schema,
+	hooks: {
+		beforeQuery: startSpan,
+		afterQuery: endSpan,
+		beforeCreate: startSpan,
+		afterCreate: endSpan,
+		beforeUpdate: startSpan,
+		afterUpdate: endSpan,
+		beforeDelete: startSpan,
+		afterDelete: endSpan,
+		onError: failSpan,
+	},
+});
+```
+
+- `tracer.startSpan(...)` uses the active context as the parent. With a context manager registered (the Node SDK registers one), database spans nest under the current request span.
+- The attribute names follow the OpenTelemetry database semantic conventions. Match the version your backend expects, and set `db.system.name` to your database.
+- For raw SQL, key the span by `ctx.rawOptions` and add `'db.query.text': ctx.query`. For transactions, key it by `ctx.client`.
+- `onError` also fires for `.throw()` after a read has already finished. By then the span has ended and been removed from the map, so `failSpan` returns early.
+
+## SQL text from Drizzle
+
+CRUD hooks work at the operation level: action, table, args, and result. They do not show the generated SQL. When you need the statements themselves, turn on Drizzle's own logger on the database you pass to `better(...)`:
+
+```ts
+const db = drizzle(pool, {
+	schema,
+	logger: {
+		logQuery(query, params) {
+			console.debug('sql', { query, params: params.length });
+		},
+	},
+});
+```
+
+`logger: true` prints every query with its parameters. Avoid that in production if parameters can hold personal data.
+
+## Packaging as a plugin
+
+Once the hooks settle, move them into a plugin so every service installs the same thing with one line. Plugin hooks receive `kind` (the operation), `table`, `args`, and `meta`, like client hooks:
+
+```ts title="lib/observability.ts"
+import { definePlugin } from 'better-drizzle/plugins';
+
+type Entry = Record<string, unknown>;
+type Options = {
+	slowMs?: number;
+	log?: (level: 'info' | 'warn' | 'error', message: string, entry: Entry) => void;
+};
+
+export const observability = ({
+	slowMs = 200,
+	log = (level, message, entry) => console[level](message, entry),
+}: Options = {}) => {
+	const started = new WeakMap<object, number>();
+
+	const start = (key: object) => {
+		started.set(key, performance.now());
+	};
+
+	const stop = (key: object) => {
+		const at = started.get(key);
+		started.delete(key);
+		return at === undefined ? undefined : performance.now() - at;
+	};
+
+	const finish = (ctx: {
+		kind: string;
+		table: string;
+		args: unknown;
+		meta?: Record<string, unknown>;
+	}) => {
+		const ms = stop(ctx.args as object);
+		if (ms === undefined) return;
+
+		log(ms >= slowMs ? 'warn' : 'info', 'db', {
+			kind: ctx.kind,
+			table: ctx.table,
+			ms: Math.round(ms),
+			requestId: ctx.meta?.requestId,
+		});
+	};
+
+	return definePlugin({
+		id: 'app/observability',
+		hooks: {
+			beforeQuery(ctx) {
+				start(ctx.args);
+			},
+			afterQuery: finish,
+			beforeCreate(ctx) {
+				start(ctx.args);
+			},
+			afterCreate: finish,
+			beforeUpdate(ctx) {
+				start(ctx.args);
+			},
+			afterUpdate: finish,
+			beforeDelete(ctx) {
+				start(ctx.args);
+			},
+			afterDelete: finish,
+			beforeRaw(ctx) {
+				start(ctx.rawOptions);
+			},
+			afterRaw(ctx) {
+				log('info', 'raw sql', {
+					name: ctx.name,
+					query: ctx.query,
+					ms: stop(ctx.rawOptions),
+					requestId: ctx.meta?.requestId,
+				});
+			},
+			onRawError(ctx) {
+				log('error', 'raw sql failed', {
+					name: ctx.name,
+					query: ctx.query,
+					error: ctx.error,
+					ms: stop(ctx.rawOptions),
+				});
+			},
+			beforeTransaction(ctx) {
+				start(ctx.client);
+			},
+			afterTransactionCommit(ctx) {
+				log('info', 'tx commit', {
+					depth: ctx.depth,
+					attempt: ctx.attempt,
+					ms: stop(ctx.client),
+				});
+			},
+			afterTransactionRollback(ctx) {
+				log('warn', 'tx rollback', {
+					depth: ctx.depth,
+					attempt: ctx.attempt,
+					ms: stop(ctx.client),
+				});
+			},
+		},
+	});
+};
+```
+
+```ts
+export const client = better(db, {
+	schema,
+	plugins: [observability({ slowMs: 100 })],
+});
+```
+
+Differences from client hooks:
+
+- **Before hooks must return nothing.** In a plugin, a value returned from `beforeCreate` or `beforeUpdate` replaces the write data, and a value returned from `beforeQuery` or `beforeDelete` replaces the result and skips the database call. Use block bodies, as above, so the hooks return `undefined`.
+- **No `onError`.** Plugins cannot observe failed CRUD operations. Keep an `onError` client hook next to the plugin for error logs. Raw and transaction failures are covered by `onRawError` and `onTransactionError`.
+- **`$withoutPlugins()` skips it.** Calls made through `$withoutPlugins()` are not logged by the plugin. Client hooks still see them.
+- **Order matters.** Plugins run in `plugins` array order. Put this one first so its timer also covers the other plugins' before hooks and transforms.
