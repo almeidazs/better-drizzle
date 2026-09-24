@@ -80,7 +80,7 @@ const BETTER_CODE = `const rows = await client.posts.findMany({
   take: 20,
 });`;
 
-const PLUGINS_CODE = `// one package — every plugin is a subpath export
+const PLUGINS_CODE = `// one package - every plugin is a subpath export
 import { better } from 'better-drizzle';
 import { recommended, rules } from 'better-drizzle/rules';
 import { softDelete } from 'better-drizzle/soft-delete';
@@ -113,12 +113,12 @@ const FEATURES = [
 	{
 		icon: Filter,
 		title: 'Typed nested filters',
-		body: 'Query across relations with some / every / none / is — inferred from your Drizzle schema, no subqueries by hand. Typed JSONB path filters on PostgreSQL.',
+		body: 'Query across relations with some / every / none / is - inferred from your Drizzle schema, no subqueries by hand. Typed JSONB path filters on PostgreSQL.',
 	},
 	{
 		icon: Layers,
 		title: 'Batched relation loading',
-		body: 'Nested include and select run one query per relation node — no N+1, no cartesian blowup. Project relation totals with _count without an extra round-trip.',
+		body: 'Nested include and select run one query per relation node - no N+1, no cartesian blowup. Project relation totals with _count without an extra round-trip.',
 	},
 	{
 		icon: GitBranch,
@@ -133,7 +133,7 @@ const FEATURES = [
 	{
 		icon: ScanSearch,
 		title: 'Query plans, inline',
-		body: 'Every read helper is a thenable with .explain(). Get a structured, cross-dialect plan — including deferred relation stages — without running the query twice.',
+		body: 'Every read helper is a thenable with .explain(). Get a structured, cross-dialect plan - including deferred relation stages - without running the query twice.',
 	},
 	{
 		icon: Lock,
@@ -143,12 +143,12 @@ const FEATURES = [
 	{
 		icon: Blocks,
 		title: 'First-class plugins',
-		body: 'Rules, Zod, timestamps, and soft delete ship in the box — with transforms, lifecycle hooks, and typed operation args you can add yourself.',
+		body: 'Rules, Zod, timestamps, and soft delete ship in the box - with transforms, lifecycle hooks, and typed operation args you can add yourself.',
 	},
 	{
 		icon: ShieldCheck,
 		title: 'Guardrails, static and runtime',
-		body: 'better-drizzle/eslint catches what a linter can see; better-drizzle/rules enforces the rest at runtime — raw SQL, destructive writes, unbounded reads.',
+		body: 'better-drizzle/eslint catches what a linter can see; better-drizzle/rules enforces the rest at runtime - raw SQL, destructive writes, unbounded reads.',
 	},
 	{
 		icon: Terminal,
@@ -211,7 +211,7 @@ export default function HomePage() {
 							Keep Drizzle&rsquo;s type-safety. Drop the
 							repetitive query glue. better-drizzle wraps your
 							client and gives every table reads, writes, relation
-							loading, pagination, hooks, and plugins — without
+							loading, pagination, hooks, and plugins - without
 							giving up the metal.
 						</p>
 						<div className="mt-7 w-full">
@@ -253,7 +253,7 @@ export default function HomePage() {
 					</h2>
 					<p className="text-fd-muted-foreground mt-4">
 						Both are fully typed. The difference is the dozens of
-						these you write across a codebase — and which one
+						these you write across a codebase - and which one
 						you&rsquo;d rather read.
 					</p>
 				</div>
@@ -284,7 +284,7 @@ export default function HomePage() {
 							Everything you rewrite, once
 						</h2>
 						<p className="text-fd-muted-foreground mt-4">
-							A consistent repository API per table — the patterns
+							A consistent repository API per table - the patterns
 							every service ends up re-implementing, generated
 							from your schema and kept typed.
 						</p>
@@ -316,7 +316,7 @@ export default function HomePage() {
 					<p className="text-fd-muted-foreground mt-4">
 						Measured against raw Drizzle with fair, API-parity
 						comparisons. Relation loading is <em>faster</em> through
-						the wrapper; the rest stays close — and where it
+						the wrapper; the rest stays close - and where it
 						doesn&rsquo;t, the benchmarks say so.
 					</p>
 				</div>
@@ -443,7 +443,7 @@ export default function HomePage() {
 						</h2>
 						<p className="text-fd-muted-foreground mt-4">
 							Rules, Zod, timestamps, and soft delete ship as
-							official plugins — all inside the one{' '}
+							official plugins - all inside the one{' '}
 							<code className="text-brand">better-drizzle</code>{' '}
 							package. They add typed arguments, rewrite
 							operations, and extend delegates, so behavior lives

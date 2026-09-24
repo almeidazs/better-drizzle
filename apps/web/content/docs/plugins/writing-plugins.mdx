@@ -1,6 +1,6 @@
 ---
 title: Writing a plugin
-description: definePlugin — typed operation args, transforms, lifecycle hooks, client and model extensions, and plugin state.
+description: definePlugin - typed operation args, transforms, lifecycle hooks, client and model extensions, and plugin state.
 icon: Wrench
 seoTitle: 'Writing a Plugin with definePlugin'
 seoDescription: 'Build a custom Drizzle ORM plugin with definePlugin: typed operation args, query transforms, lifecycle hooks, client and model extensions, and state.'
@@ -27,7 +27,7 @@ export const myPlugin = definePlugin({
 | `name` / `version` / `description` | metadata surfaced to setup and extensions |
 | `config` | supported `dialects` and model `requires` (fail-fast checks) |
 | `operationArgs` | extra **typed** arguments added to delegate methods |
-| `setup(ctx)` | runs once at bootstrap — validation, hook/transform registration |
+| `setup(ctx)` | runs once at bootstrap - validation, hook/transform registration |
 | `hooks` | lifecycle observers (CRUD, query, transaction, raw) |
 | `transform(op)` | mutate an operation before it executes |
 | `extendClient(ctx)` | add top-level client methods |
@@ -115,7 +115,7 @@ export const traceAndVisibility = definePlugin({
 });
 ```
 
-Using it — the `traceId` arg and `withDeleted()` helper are both typed:
+Using it - the `traceId` arg and `withDeleted()` helper are both typed:
 
 ```ts
 const client = better(db, { schema, plugins: [traceAndVisibility] });
@@ -126,7 +126,7 @@ const all = await client.users.withDeleted().findMany({ traceId: 'req_123' });
 
 ## Typed operation args
 
-`operationArgs` adds fields to specific operations, keyed by operation kind. Their types flow from the delegate call all the way into your transforms and hooks — this is how the soft-delete plugin exposes `deleted` and `mode` in a fully typed way.
+`operationArgs` adds fields to specific operations, keyed by operation kind. Their types flow from the delegate call all the way into your transforms and hooks - this is how the soft-delete plugin exposes `deleted` and `mode` in a fully typed way.
 
 ```ts
 operationArgs: {
@@ -144,7 +144,7 @@ That matters for plugins like timestamps, soft delete, or custom bulk-write poli
 
 ## Transforms
 
-A `transform` receives the operation and returns a (possibly modified) operation — or `undefined` to skip it. Common uses: rewriting `where` for visibility, injecting `data`, or enforcing a tenant filter. Read `operation.kind`, `operation.where`, `operation.data`, `operation.state`, and `operation.model` to decide.
+A `transform` receives the operation and returns a (possibly modified) operation - or `undefined` to skip it. Common uses: rewriting `where` for visibility, injecting `data`, or enforcing a tenant filter. Read `operation.kind`, `operation.where`, `operation.data`, `operation.state`, and `operation.model` to decide.
 
 For create-shaped operations, that includes `upsert` and `upsertMany`, which lets plugins modify batch upsert payloads and conflict-update strategies in a typed way.
 
@@ -166,14 +166,14 @@ definePlugin({
 
 ## Client and model extensions
 
-- `extendClient(ctx)` returns an object merged onto the client — new top-level methods.
-- `extendModel(ctx)` returns an object merged onto each delegate — model-specific helpers (like `restore()` on soft-deletable tables). Return nothing to skip a model.
+- `extendClient(ctx)` returns an object merged onto the client - new top-level methods.
+- `extendModel(ctx)` returns an object merged onto each delegate - model-specific helpers (like `restore()` on soft-deletable tables). Return nothing to skip a model.
 
 Both receive the dialect, schema, model registry, and a bound client/delegate.
 
 ## Bypassing plugins
 
-Two delegate escape hatches are especially useful from inside plugins — and from application code:
+Two delegate escape hatches are especially useful from inside plugins - and from application code:
 
 ### `$withState(state)`
 

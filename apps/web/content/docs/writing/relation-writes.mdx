@@ -9,7 +9,7 @@ seoDescription: 'Connect, disconnect, and set related rows from a single Drizzle
 Single-row `create`, `update`, and `upsert` accept relation commands alongside
 scalar columns. Instead of resolving a foreign key yourself and issuing a
 second statement, you describe the link you want and better-drizzle resolves
-it — inside one transaction.
+it - inside one transaction.
 
 ```ts tab="better-drizzle" tab-group="orm"
 const post = await client.posts.create({
@@ -61,17 +61,17 @@ you are creating or updating.
 
 | Command | To-one on `create` | To-one on `update` | To-many on `create` | To-many on `update` |
 | --- | --- | --- | --- | --- |
-| `connect` | Yes — one selector | Yes — one selector | Yes — one or many selectors | Yes — one or many selectors |
-| `disconnect` | — | `true` | — | Yes — one or many selectors |
-| `set` | — | one selector or `null` | — | an array of selectors |
+| `connect` | Yes - one selector | Yes - one selector | Yes - one or many selectors | Yes - one or many selectors |
+| `disconnect` | - | `true` | - | Yes - one or many selectors |
+| `set` | - | one selector or `null` | - | an array of selectors |
 
 <Callout type="info" title="set is exclusive">
 	`set` replaces the entire relation, so it cannot be combined with `connect`
-	or `disconnect` for that same relation. The type system enforces this —
+	or `disconnect` for that same relation. The type system enforces this -
 	mixing them is a compile error, not a runtime surprise.
 </Callout>
 
-## `connect` — attach existing rows
+## `connect` - attach existing rows
 
 `connect` links rows that already exist. On a to-one relation it takes a
 single selector; on a to-many relation it takes one selector or an array.
@@ -133,7 +133,7 @@ await client.posts.update({
 		tags: { connect: [{ slug: 'release-notes' }] },
 	},
 });
-// inserts into post_tags — you never name the junction table
+// inserts into post_tags - you never name the junction table
 ```
 
 ```ts tab="Drizzle" tab-group="orm"
@@ -152,7 +152,7 @@ await db.transaction(async (tx) => {
 });
 ```
 
-## `disconnect` — detach without deleting
+## `disconnect` - detach without deleting
 
 `disconnect` breaks the link and leaves both rows in place. The shape differs
 by cardinality, because a to-one relation has nothing to select:
@@ -195,11 +195,11 @@ await db.transaction(async (tx) => {
 <Callout type="warn">
 	Disconnecting a to-one relation nulls its foreign key, so it only works
 	when the column is nullable. On a `notNull()` foreign key the operation
-	fails and the whole write rolls back — use `set` to point it somewhere
+	fails and the whole write rolls back - use `set` to point it somewhere
 	else instead.
 </Callout>
 
-## `set` — replace the whole relation
+## `set` - replace the whole relation
 
 `set` makes the relation exactly what you pass, connecting what is missing and
 disconnecting what is no longer listed. It is the right command for "these are
@@ -350,7 +350,7 @@ await db.transaction(async (tx) => {
 
 The root mutation and every relation change run in a single implicit
 transaction, unless the call is already inside
-[`client.transaction()`](/docs/advanced/transactions) — in which case it joins
+[`client.transaction()`](/docs/advanced/transactions) - in which case it joins
 the transaction you opened.
 
 That means partial relation writes cannot be observed. A missing selector, an
@@ -366,7 +366,7 @@ await client.transaction(async (tx) => {
 		},
 	});
 
-	// same transaction — no nested implicit one is opened
+	// same transaction - no nested implicit one is opened
 	await tx.posts.update({
 		where: { id: post.id },
 		data: { tags: { connect: [{ slug: 'draft' }] } },
@@ -412,7 +412,7 @@ the same as in a plain write.
 
 `createMany`, `updateMany`, `updateEach`, and `upsertMany` do **not** accept
 relation commands. They are native-first batch statements, and resolving
-per-row relation selectors would quietly turn them into loops — exactly the
+per-row relation selectors would quietly turn them into loops - exactly the
 cost they exist to avoid.
 
 When you need relation writes across many rows, loop the single-row API inside

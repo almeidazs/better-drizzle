@@ -98,13 +98,13 @@ Operators available inside `where`, by column type. A bare value means `equals`;
 ## Projections
 
 ```ts
-// select — narrows, scalars + relations
+// select - narrows, scalars + relations
 { select: { id: true, author: { select: { name: true } } } }
 
-// include — keeps all scalars, adds relations
+// include - keeps all scalars, adds relations
 { include: { author: true } }
 
-// relation counts — available only in include
+// relation counts - available only in include
 { include: { _count: { select: { comments: true } } } }
 ```
 

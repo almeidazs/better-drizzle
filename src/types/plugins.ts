@@ -39,9 +39,9 @@ type MaybePromise<T> = T | Promise<T>;
 
 /**
  * Supported SQL dialects that plugins can target.
- * - `'pg'` — PostgreSQL
- * - `'mysql'` — MySQL / MariaDB
- * - `'sqlite'` — SQLite
+ * - `'pg'` - PostgreSQL
+ * - `'mysql'` - MySQL / MariaDB
+ * - `'sqlite'` - SQLite
  */
 export type PluginDialect = 'pg' | 'mysql' | 'sqlite';
 

@@ -6,7 +6,7 @@ seoTitle: 'Hooks - Drizzle ORM Lifecycle Middleware'
 seoDescription: 'Lifecycle hooks for Drizzle ORM queries and mutations: auditing, tracing, metrics, and request-scoped logging with beforeCreate, afterQuery, and onError.'
 ---
 
-Client hooks are the side-effect layer around Better operations. They are optional — if you do not need them, do not pass them. They are ideal for cross-cutting concerns you do not want duplicated in every call:
+Client hooks are the side-effect layer around Better operations. They are optional - if you do not need them, do not pass them. They are ideal for cross-cutting concerns you do not want duplicated in every call:
 
 - audit trails
 - tracing and metrics
@@ -60,7 +60,7 @@ const client = better(db, {
 		- `onRawError`
 	</Tab>
 	<Tab value="Errors">
-		- `onError` — fires when any operation or hook throws, with the `action`,
+		- `onError` - fires when any operation or hook throws, with the `action`,
 		`args`, `error`, and the `stage` it failed in.
 	</Tab>
 </Tabs>
@@ -131,7 +131,7 @@ const client = better(db, {
 ## Hooks vs plugins
 
 <Callout title="Observe with hooks, change behavior with plugins">
-	Client hooks should **observe and coordinate** — logging, tracing, metrics.
+	Client hooks should **observe and coordinate** - logging, tracing, metrics.
 	If you want to *mutate* an operation (rewrite the `where`, inject fields, add
 	delegate methods, expose typed operation args), that is
 	[plugin](/docs/plugins/writing-plugins) territory.

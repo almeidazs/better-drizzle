@@ -296,8 +296,8 @@ export type SortOrder = 'asc' | 'desc';
 
 /**
  * Query mode controlling case sensitivity for string comparisons.
- * - `'default'` — case-sensitive
- * - `'insensitive'` — case-insensitive
+ * - `'default'` - case-sensitive
+ * - `'insensitive'` - case-insensitive
  *
  * @example
  * ```ts

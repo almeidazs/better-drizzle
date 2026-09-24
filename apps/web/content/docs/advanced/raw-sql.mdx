@@ -1,6 +1,6 @@
 ---
 title: Raw SQL
-description: Escape hatches for raw SQL — $raw for reads, $executeRaw for writes, and $rawUnsafe when you opt in.
+description: Escape hatches for raw SQL - $raw for reads, $executeRaw for writes, and $rawUnsafe when you opt in.
 icon: Terminal
 seoTitle: 'Raw SQL in Drizzle ORM - $raw & $executeRaw'
 seoDescription: 'Run raw SQL with Drizzle sql templates: $raw for reads, $executeRaw for writes, and $rawUnsafe behind an explicit opt-in, with hooks and metadata.'
@@ -16,7 +16,7 @@ The delegate API covers routine work; raw SQL covers the rest. better-drizzle ke
 
 ## `$raw`
 
-As a tagged template — interpolated values are bound as parameters, not concatenated:
+As a tagged template - interpolated values are bound as parameters, not concatenated:
 
 ```ts tab="better-drizzle" tab-group="orm"
 const rows = await client.$raw<{ id: number; email: string }>`
@@ -83,7 +83,7 @@ result.rowCount;
 
 ## Row mapping and options
 
-The `sql`-object form of `$raw` accepts options — including a `map` function applied to each row, plus tracing metadata and a timeout:
+The `sql`-object form of `$raw` accepts options - including a `map` function applied to each row, plus tracing metadata and a timeout:
 
 ```ts tab="better-drizzle" tab-group="orm"
 import { sql } from 'drizzle-orm';

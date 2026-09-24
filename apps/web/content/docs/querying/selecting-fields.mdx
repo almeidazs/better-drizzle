@@ -1,6 +1,6 @@
 ---
 title: Selecting fields
-description: where vs select vs include — which rows qualify, and which fields survive.
+description: where vs select vs include - which rows qualify, and which fields survive.
 icon: Columns3
 seoTitle: 'Selecting Fields - select vs include'
 seoDescription: 'Choose columns and relations in Drizzle ORM queries: where filters rows, select picks fields, include loads relations. Fully typed results.'
@@ -14,7 +14,7 @@ Three options control a query's result, and they solve different problems:
 | "Only these scalar and relation fields" | `select` |
 | "The full row, plus these relations" | `include` |
 
-`where` filters rows. `select` and `include` shape the payload — and the return type is inferred from whichever you use.
+`where` filters rows. `select` and `include` shape the payload - and the return type is inferred from whichever you use.
 
 ## `where` filters rows
 
@@ -30,7 +30,7 @@ import { eq } from 'drizzle-orm';
 await db.select().from(posts).where(eq(posts.published, true));
 ```
 
-Without `select` or `include`, you get the full row for each table — all scalar columns, no relations.
+Without `select` or `include`, you get the full row for each table - all scalar columns, no relations.
 
 ## `select` narrows the payload
 
@@ -81,7 +81,7 @@ const rows = await db
 Reach for `include` when a handler wants the model *plus* related records.
 
 <Callout title="Pick one">
-	`select` and `include` are mutually exclusive on a single query level — use
+	`select` and `include` are mutually exclusive on a single query level - use
 	`select` to narrow, or `include` to keep-and-extend. (You can still narrow a
 	relation **inside** an `include`; see below.)
 </Callout>
@@ -115,7 +115,7 @@ const rows = await db
 	.leftJoin(users, eq(posts.authorId, users.id));
 ```
 
-The nested object accepts the same `where`, `select`, `orderBy`, and `take` you would use on a top-level query — so you can filter and order related rows too.
+The nested object accepts the same `where`, `select`, `orderBy`, and `take` you would use on a top-level query - so you can filter and order related rows too.
 
 ## A note on API boundaries
 

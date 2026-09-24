@@ -6,7 +6,7 @@ seoTitle: 'Multi-tenancy with Drizzle ORM'
 seoDescription: 'Build multi-tenant apps with Drizzle ORM: thread tenant IDs and request metadata through hooks, plugins, and transactions with $withContext.'
 ---
 
-better-drizzle does not impose a multitenancy model, but it gives you enough surface to thread request metadata through cleanly — and to enforce tenant scoping with a plugin when you want it automatic.
+better-drizzle does not impose a multitenancy model, but it gives you enough surface to thread request metadata through cleanly - and to enforce tenant scoping with a plugin when you want it automatic.
 
 ## Attach metadata with `meta`
 
@@ -64,7 +64,7 @@ await scoped.users.create({
 });
 ```
 
-The returned client is a clone — the original client is unaffected. Nested `$withContext` calls stack, and the scoped metadata is inherited into transactions.
+The returned client is a clone - the original client is unaffected. Nested `$withContext` calls stack, and the scoped metadata is inherited into transactions.
 
 ## Transaction context
 

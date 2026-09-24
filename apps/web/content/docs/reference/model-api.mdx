@@ -1,6 +1,6 @@
 ---
 title: Model delegate
-description: Every method on a table delegate — reads, writes, pagination, and the plugin-related helpers.
+description: Every method on a table delegate - reads, writes, pagination, and the plugin-related helpers.
 icon: Table2
 seoTitle: 'Model Delegate API Reference'
 seoDescription: 'Every method on a better-drizzle table delegate: findMany, findUnique, create, update, upsert, delete, paginate, cursor, count, and batch operations.'
@@ -20,7 +20,7 @@ A model delegate is what you get from `client.users`, `client.posts`, or `client
 | `exists` | `(args?: ExistsArgs)` | `boolean` |
 | `paginate` | `(args: PaginationArgs)` | `PaginationResult<Row>` |
 
-`ThrowingResult<T>` is a `Promise<T | null>` with a `.throw()` method — see [throwing results](/docs/writing/throwing-results). All read args are documented in [query options](/docs/reference/query-options).
+`ThrowingResult<T>` is a `Promise<T | null>` with a `.throw()` method - see [throwing results](/docs/writing/throwing-results). All read args are documented in [query options](/docs/reference/query-options).
 
 ## Writes
 
@@ -35,7 +35,7 @@ A model delegate is what you get from `client.users`, `client.posts`, or `client
 | `delete` | `(args: { where, select?, include?, meta? })` | `ThrowingResult<Row>` |
 | `deleteMany` | `(args: { where?, meta? })` | `BatchResult<never>` |
 
-`BatchResult<T>` is `{ count: number; data?: T[] }` — `data` is populated when the driver supports `RETURNING`.
+`BatchResult<T>` is `{ count: number; data?: T[] }` - `data` is populated when the driver supports `RETURNING`.
 
 ## Less obvious write options
 
@@ -112,7 +112,7 @@ These exist on every delegate and are mostly used by [plugins](/docs/plugins/wri
 | `$withState(state)` | clone the delegate with merged plugin state |
 | `$withoutPlugins()` | clone the delegate with all plugin transforms/hooks bypassed |
 
-Plugins can also **add** methods here — for example the soft-delete plugin adds `restore()` and `restoreById()` to compatible models.
+Plugins can also **add** methods here - for example the soft-delete plugin adds `restore()` and `restoreById()` to compatible models.
 
 `$withState()` and `$withoutPlugins()` are not just for plugin authors. They are also useful in application code when you need a one-off state flag or an intentional bypass for repair/admin flows.
 

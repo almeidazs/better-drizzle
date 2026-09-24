@@ -19,7 +19,7 @@ Everything ships in one package, so there is a single version line to track.
 | `typescript` peer | `^5` |
 | Node | `>=18` |
 
-`0.30.0` is the tested floor — `0.29.5` fails the workspace typecheck.
+`0.30.0` is the tested floor - `0.29.5` fails the workspace typecheck.
 
 ## Entrypoints
 
@@ -62,7 +62,7 @@ Upgrading from the scoped `@better-drizzle/*` packages? See the
 | relation writes: `disconnect`, `set` | Yes | Yes | Yes |
 | relation loading combined with `lock` | Rejected | N/A | Rejected |
 
-Relation loading and row locks are mutually exclusive by design — Drizzle's
+Relation loading and row locks are mutually exclusive by design - Drizzle's
 relational path does not expose lock configuration, so the combination fails
 fast instead of silently dropping the lock.
 
@@ -148,7 +148,7 @@ Typed JSONB filters require `jsonb(...).$type<T>()` and support scalar dot paths
 | `better-drizzle/soft-delete` | Yes | Yes | Yes |
 | `better-drizzle/zod` | Yes | Yes | Yes |
 
-`better-drizzle/eslint` is dialect-independent — it is a static linter, not a
+`better-drizzle/eslint` is dialect-independent - it is a static linter, not a
 runtime plugin.
 
 ## Policy

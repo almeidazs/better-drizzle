@@ -35,7 +35,7 @@ import { type BenchmarkContext, createBenchmarkContext } from './setup';
 /**
  * Absolute timings drift with machine load between runs, but the raw/better
  * ratio is stable. This report interleaves both sides inside one sampling
- * window so drift cancels, then reports the median ratio across samples —
+ * window so drift cancels, then reports the median ratio across samples -
  * numbers that survive being run on a different machine.
  */
 type Operation = (context: BenchmarkContext) => Promise<unknown>;
@@ -84,7 +84,7 @@ const median = (values: readonly number[]) => {
 /**
  * Measurement is delegated to mitata's engine so warmup, JIT settling, GC
  * accounting and outlier trimming match `bun run bench` exactly. Only the
- * scheduling around it — interleaving and the median across samples — is ours.
+ * scheduling around it - interleaving and the median across samples - is ours.
  */
 const timeOnce = async (operation: Operation, context: BenchmarkContext) => {
 	const stats = await measure(async () => {

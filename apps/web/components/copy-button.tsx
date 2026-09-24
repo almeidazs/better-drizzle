@@ -22,7 +22,7 @@ export function CopyButton({
 			setCopied(true);
 			setTimeout(() => setCopied(false), 1500);
 		} catch {
-			// clipboard can be unavailable (e.g. insecure context) — fail quietly
+			// clipboard can be unavailable (e.g. insecure context) - fail quietly
 		}
 	}
 

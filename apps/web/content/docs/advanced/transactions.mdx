@@ -127,7 +127,7 @@ await db.transaction(async (tx) => {
 
 ## Lifecycle callbacks
 
-Register side effects that fire after the transaction settles — the right place for "send the email only if the write actually committed":
+Register side effects that fire after the transaction settles - the right place for "send the email only if the write actually committed":
 
 ```ts tab="better-drizzle" tab-group="orm"
 await client.transaction(async (tx) => {
