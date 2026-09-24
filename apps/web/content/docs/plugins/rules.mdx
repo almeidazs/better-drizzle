@@ -314,7 +314,7 @@ await db.$raw(sql`select * from reports where id = ${id}`, {
 });
 ```
 
-The first five rules check `$raw` and `$rawUnsafe`. `$executeRaw` is only checked by `requireTimeoutForLongRunningOperation`.
+The raw rules check `$raw`, `$rawUnsafe`, and `$executeRaw`, except `noRawUnsafe`, which only fires on `$rawUnsafe`. Because `$executeRaw` exists for writes, `noRawMutation` flags every mutation sent through it; use `allow` for the statements you expect.
 
 `requireRawTimeout` reports a timeout above `defaultTimeoutMs` at the rule's own level. When the rule is `'error'`, `defaultTimeoutMs` works as the real ceiling.
 

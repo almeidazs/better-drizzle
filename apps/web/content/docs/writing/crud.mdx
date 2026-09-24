@@ -284,11 +284,29 @@ WHERE id IN (1, 2)
 | --- | --- | --- | --- |
 | `by` | `TableColumn` | Yes | Drizzle column instance used to match rows (e.g., `users.id`) |
 | `data` | `Row[]` | Yes | Source rows containing the `by` column value plus any extra fields |
-| `update` | `object` | Yes | Per-column callbacks `(row) => value` that resolve the new value for each row |
+| `update` | `object` | Yes | Per-column callbacks `(row) => value \| SQL` that resolve the new value for each row |
 | `where` | `WhereArg` | No | Extra filter combined with the generated `by IN (...)` predicate |
 | `select` | `SelectInput` | No | Scalar column projection for returned rows (relation `include` not supported) |
 | `onEmpty` | `'return' \| 'throw'` | No | Behavior when `data` is empty. Defaults to `'return'` |
 | `meta` | `Meta` | No | Custom metadata forwarded to hooks |
+
+A callback can return a Drizzle `SQL` value instead of a plain value. It is placed in that row's `CASE` branch as is, so it can call SQL functions or reference columns. Returning `undefined` throws.
+
+```ts
+import { sql } from 'drizzle-orm';
+
+const { count } = await client.users.updateEach({
+	by: users.id,
+	data: [
+		{ id: 1, name: 'alice' },
+		{ id: 2, name: 'bob' },
+	],
+	update: {
+		name: (row) => sql`upper(${row.name})`,
+		city: () => sql`coalesce(${users.city}, 'Unknown')`,
+	},
+});
+```
 
 ### Return type
 
@@ -527,7 +545,7 @@ For bulk create-or-update flows, use `upsertMany` instead of looping over `upser
 ```ts tab="better-drizzle" tab-group="orm"
 import { sql } from 'drizzle-orm';
 
-const result = await client.users.upsertMany({
+const { count, data } = await client.users.upsertMany({
 	data: [
 		{ email: 'alice@example.com', name: 'Alice', active: true },
 		{ email: 'bob@example.com', name: 'Bob', active: false },
@@ -567,14 +585,14 @@ const rows = await db
 	})
 	.returning({ id: users.id, email: users.email, name: users.name });
 
-const result = { count: rows.length, data: rows };
+const count = rows.length;
 ```
 
 `upsertMany` is designed around native conflict handling, not userland loops.
 
-- `target` is required
+- `target` is required: one column key (`'email'`) or an array of keys (`['tenantId', 'email']`)
 - `update` can be `'all'`, a column list, an object, or a function
-- `batchSize` chunks large inserts without changing the API
+- `batchSize` chunks large inserts without changing the API. It must be a positive integer, otherwise the call throws `batchSize must be a positive integer.`
 - `where` is available for SQL-only conflict-update predicates
 - relation `include` is intentionally not supported
 

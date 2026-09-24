@@ -117,21 +117,58 @@ const input = client.users.$zod.create.parse(req.body);
 
 ## Validation behavior
 
-The plugin can validate:
+Validation runs in plugin hooks. `validate` in the plugin options turns each check on or off:
 
-- create and batch create payloads
-- update, updateMany, and updateEach payloads
-- upsert and upsertMany payloads
-- query args such as `where`, `orderBy`, `select`, `include`, `paginate`, and `cursor`
-- result shapes after writes and reads
+| Key | Default | Validates |
+| --- | --- | --- |
+| `create`, `createMany` | `true` | the `data` payload |
+| `update`, `updateMany`, `updateEach` | `true` | `data` and `where` |
+| `upsert` | `true` | `create`, `update`, and `where` |
+| `upsertMany` | `true` | `data` and the conflict `update` |
+| `result` | `true` | results of writes and reads, except `count`, `exists`, `delete`, and `deleteMany` |
+| `findMany`, `findFirst`, `findOne`, `findUnique` | `false` | the query args |
+| `count`, `exists`, `paginate`, `cursor` | `false` | the call args |
+| `delete`, `deleteMany` | `false` | the call args |
+| `query` | `false` | turns on args validation for every read, `delete`, and `deleteMany` |
 
-Per-call validation can be disabled with `validate: false`:
+Parsed write payloads replace the originals, so coercion and schema transforms reach the database.
+
+### Per call
+
+Every delegate operation accepts a typed `validate?: boolean` arg: `findMany`, `findFirst`, `findOne`, `findUnique`, `count`, `exists`, `paginate`, `cursor`, `create`, `createMany`, `update`, `updateMany`, `updateEach`, `upsert`, `upsertMany`, `delete`, and `deleteMany`.
+
+- `validate: false` skips every check for that call, including `result`.
+- `validate: true` forces the payload or args check, and the `result` check where the operation has one.
+- omitted, the plugin options (or the defaults above) apply.
 
 ```ts
 await client.users.create({
 	data: req.body,
 	validate: false,
 });
+```
+
+### Validation errors
+
+A failed parse throws a `BetterDrizzleError` with code `OPERATION_ERROR`, `table` set to the schema key, and a message such as `Zod validation failed for create payload on "users".` The Zod issues are in `details`:
+
+```ts
+{
+	pluginId: 'better-drizzle/zod',
+	issues: [
+		{ code: 'invalid_type', message: 'Invalid input: expected string, received number', path: 'name' },
+	],
+}
+```
+
+`path` is the Zod issue path joined with `.`, for example `data.email`. The exact `message` text comes from your Zod version.
+
+```ts
+import { BetterDrizzleError } from 'better-drizzle';
+
+const isZodError = (error: unknown): error is BetterDrizzleError =>
+	error instanceof BetterDrizzleError &&
+	error.details?.pluginId === 'better-drizzle/zod';
 ```
 
 ## Schema customization
@@ -167,3 +204,20 @@ zod({
 - The plugin strips non-column keys before handing write payloads to Drizzle.
 - Schema-only extension fields such as `password` are valid during parsing but are not forwarded to the database write.
 - `better-drizzle/zod` is runtime validation. It complements, but does not replace, TypeScript types.
+
+## Exports
+
+`better-drizzle/zod` exports `zod` (also the default export), `version`, and these types:
+
+| Type | Describes |
+| --- | --- |
+| `ZodPluginOptions` | options passed to `zod(...)` |
+| `ZodPluginValidateOptions` | the `validate` map |
+| `ZodPluginBehavior` | the `behavior` block |
+| `ZodPluginTableSchemasConfig` | one entry of `schemas` |
+| `BetterDrizzleZodModelSchemas` | the `$zod` object of a table |
+| `BetterDrizzleZodModelExtension` | `{ $zod }` added to each delegate |
+| `BetterDrizzleZodModelExtensionResolver` | the per-table model extension resolver |
+| `ZodPluginQueryInput` | `findMany` / `findFirst` / `findOne` / `findUnique` args without `meta` |
+| `ZodPluginPaginationInput` | `paginate` args without `meta` |
+| `ZodPluginCursorInput` | `cursor` args without `meta` |

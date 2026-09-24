@@ -64,30 +64,43 @@ const client = better(db, {
 });
 ```
 
-Every option is optional. `timestamps()` with no arguments uses the defaults:
+## Options
 
-- `createdAt: 'createdAt'`
-- `updatedAt: 'updatedAt'`
-- `mode: 'app'`
+Every option is optional.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `createdAt` | `'createdAt'` | column set on insert |
+| `updatedAt` | `'updatedAt'` | column set on insert and update |
+| `mode` | `'app'` | `'app'` sets the columns in plugin hooks; `'database'` registers no hooks |
 
 ## Modes
 
 ### `mode: 'app'`
 
-The plugin fills timestamp columns before the database call:
+The plugin fills timestamp columns before the database call. Values are JavaScript `Date` objects, one `now` per call.
 
 | Operation | Behavior |
 | --- | --- |
 | `create` | sets `createdAt` and `updatedAt` |
-| `createMany` | sets both for each row |
-| `update` | refreshes `updatedAt` |
-| `upsert` | sets both on the create payload, refreshes `updatedAt` on update |
+| `createMany` | sets both on every row |
+| `update` / `updateMany` | sets `updatedAt` |
+| `updateEach` | adds an `updatedAt` resolver to `update`, so every matched row gets the same `now` |
+| `upsert` | sets both on `create`, sets `updatedAt` on `update` |
+| `upsertMany` | sets both on every row; on conflict, `createdAt` is never updated and `updatedAt` is |
+| reads, `delete`, `deleteMany` | untouched |
+
+For `upsertMany`, the conflict `update` is rewritten by shape: `'all'` becomes every column except `createdAt`, a column list drops `createdAt` and adds `updatedAt`, an object drops `createdAt` and sets `updatedAt`, and a function result gets the same treatment.
+
+The plugin always writes its own values. A `createdAt` or `updatedAt` passed by the caller is overwritten:
 
 ```ts
 const { createdAt, updatedAt } = await client.posts.create({
-	data: { title: 'Hello' },
-}); // both are Date
+	data: { title: 'Hello', createdAt: new Date('2020-01-01') },
+}); // both are the current time, not 2020
 ```
+
+Use `$withoutPlugins()` for a one-off write that must keep caller-provided timestamps, such as a data import.
 
 ### `mode: 'database'`
 
@@ -101,6 +114,8 @@ In this mode it adds effectively zero runtime behavior; the database stays the s
 
 ## Custom column names
 
+Names are the property keys in your Drizzle table definition, not the database column names.
+
 ```ts
 timestamps({
 	createdAt: 'created_at',
@@ -110,6 +125,6 @@ timestamps({
 
 ## Behavior details
 
-- Models missing the configured columns are skipped automatically.
+- Each column is handled on its own: a table with only `updatedAt` gets only `updatedAt`, and tables with neither are skipped.
 - It only mutates write payloads - reads, filters, and result shapes are untouched.
-- Works the same for single writes, batch writes, and upserts.
+- Soft deletes from `better-drizzle/soft-delete` run beneath the plugins, so they do not change `updatedAt`.

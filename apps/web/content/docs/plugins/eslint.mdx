@@ -82,73 +82,106 @@ The ESLint plugin only analyzes direct and obvious Better Drizzle call sites suc
 
 It does not try to infer transaction state, runtime `meta`, dialect-specific behavior, or complex wrapper functions.
 
-## Supported Rules
+## Rules
 
-Every rule accepts the same boolean/severity shorthand as the runtime plugin where applicable:
+Rule IDs use the `better-drizzle/` prefix. The preset columns show the level each preset sets, with its options where they matter.
 
-- `true` => error
-- `false` => off
-- `'warn' | 'error' | 'off'`
-- an object with `level` plus rule-specific options
+### Destructive writes
 
-### Destructive Writes
+| Rule | Reports | safe | recommended | strict |
+| --- | --- | --- | --- | --- |
+| `better-drizzle/no-delete-many-without-where` | `deleteMany` without `where` | error | error | error |
+| `better-drizzle/no-update-many-without-where` | `updateMany` without `where` | error | error | error |
+| `better-drizzle/no-delete-without-where` | `delete` without `where` | error | error | error |
+| `better-drizzle/no-update-without-where` | `update` without `where` | error | error | error |
+| `better-drizzle/no-empty-where` | an empty `where` on the listed `operations` | error | error | error |
 
-| Rule | Options |
-| --- | --- |
-| `noDeleteManyWithoutWhere` | none |
-| `noUpdateManyWithoutWhere` | none |
-| `noDeleteWithoutWhere` | none |
-| `noUpdateWithoutWhere` | none |
-| `noEmptyWhere` | `operations`, `treatUndefinedAsEmpty`, `treatEmptyAndOrAsEmpty` |
+### Reads and pagination
 
-### Reads and Pagination
+| Rule | Reports | safe | recommended | strict |
+| --- | --- | --- | --- | --- |
+| `better-drizzle/no-unbounded-find-many` | `findMany` with no `limit` or `take` (safe and recommended also accept a `where`) | warn | warn | error |
+| `better-drizzle/require-explicit-limit` | listed `operations` with no `limit`, `take`, `perPage`, `first`, or `last` | off | off | warn |
+| `better-drizzle/max-limit` | a literal limit above `value` | warn (1000) | warn (1000) | error (500) |
+| `better-drizzle/require-order-by-for-limit` | a limit without `orderBy` | off | off | warn |
+| `better-drizzle/require-order-by-for-pagination` | `paginate` without `orderBy` | off | off | warn |
+| `better-drizzle/require-order-by-for-cursor` | `cursor` without `orderBy` | error | error | error |
+| `better-drizzle/require-stable-order-by-for-cursor` | `cursor` whose `orderBy` lacks `id`, only when `requirePrimaryKeyInOrderBy: true` | off | warn | error |
 
-| Rule | Options |
-| --- | --- |
-| `noUnboundedFindMany` | `allowWithWhere`, `allowWithLimit`, `allowWithTake`, `allowSmallStaticModels` |
-| `requireExplicitLimit` | `operations` |
-| `maxLimit` | `value`, `applyTo` |
-| `requireOrderByForLimit` | none |
-| `requireOrderByForPagination` | none |
-| `requireOrderByForCursor` | none |
-| `requireStableOrderByForCursor` | `requirePrimaryKeyInOrderBy` |
+### Includes and locks
 
-### Includes and Locks
-
-| Rule | Options |
-| --- | --- |
-| `maxIncludeDepth` | `value` |
-| `maxIncludeRelations` | `value` |
-| `noLockWithInclude` | none |
-| `noInvalidLockCombination` | none |
-| `requireOrderByForSkipLocked` | none |
-| `requireLimitForSkipLocked` | none |
+| Rule | Reports | safe | recommended | strict |
+| --- | --- | --- | --- | --- |
+| `better-drizzle/max-include-depth` | `include` nested deeper than `value` | off | warn (3) | error (2) |
+| `better-drizzle/max-include-relations` | more `include` relations than `value` | off | warn (5) | error (3) |
+| `better-drizzle/no-lock-with-include` | `lock` together with `include` | error | error | error |
+| `better-drizzle/no-invalid-lock-combination` | `skipLocked` together with `noWait` | error | error | error |
+| `better-drizzle/require-order-by-for-skip-locked` | `skipLocked` without `orderBy` | off | warn | error |
+| `better-drizzle/require-limit-for-skip-locked` | `skipLocked` without a limit | error | error | error |
 
 ### Raw SQL
 
+| Rule | Reports | safe | recommended | strict |
+| --- | --- | --- | --- | --- |
+| `better-drizzle/no-raw-unsafe` | any `$rawUnsafe(...)` call | error | error | error |
+| `better-drizzle/require-raw-comment` | a raw call without a `comment` of at least `minLength` characters | off | off | warn (8) |
+| `better-drizzle/require-raw-timeout` | a raw call without `timeoutMs`, or above `defaultTimeoutMs` / `maxTimeoutMs` | off | warn | error |
+| `better-drizzle/no-raw-mutation` | raw SQL starting with a write verb, unless it starts with an `allow` prefix | off | warn | error |
+
+### Sensitive fields and plugin bypass
+
+| Rule | Reports | safe | recommended | strict |
+| --- | --- | --- | --- | --- |
+| `better-drizzle/no-sensitive-select` | `select` with a sensitive field set to `true` (the presets allow it when the call passes `withSensitive: true`) | off | error | error |
+| `better-drizzle/require-explicit-sensitive-access-reason` | a sensitive select with `withSensitive: true` but no `reason` string | off | off | error |
+| `better-drizzle/no-without-plugins` | any `$withoutPlugins()` call | off | warn | warn |
+| `better-drizzle/no-plugin-bypass-without-reason` | a `$withoutPlugins()` call whose args have no `reason` string | off | warn | error |
+
+The sensitive field list is fixed: `apiKey`, `apiKeys`, `password`, `passwordHash`, `secret`, `secrets`, `ssn`, `token`, `tokens`. Only literal `true` values in an inline `select` object are matched.
+
+## Configuring rules
+
+In an ESLint `rules` block, use standard ESLint severities: `'off'`, `'warn'`, `'error'` (or `0`, `1`, `2`), or `[severity, options]`. The `true` / `false` and `{ level }` shorthands belong to the runtime [`better-drizzle/rules`](/docs/plugins/rules) plugin and do not work here.
+
+```ts
+import betterDrizzle from 'better-drizzle/eslint';
+
+export default [
+	...betterDrizzle.configs.recommended,
+	{
+		rules: {
+			'better-drizzle/no-without-plugins': 'off',
+			'better-drizzle/max-limit': ['error', { value: 200 }],
+			'better-drizzle/no-raw-mutation': ['warn', { allow: ['refresh materialized view'] }],
+		},
+	},
+];
+```
+
+Rule options:
+
 | Rule | Options |
 | --- | --- |
-| `noRawUnsafe` | none |
-| `requireRawComment` | `minLength` |
-| `requireRawTimeout` | `defaultTimeoutMs`, `maxTimeoutMs` |
-| `noRawMutation` | `allow` |
+| `no-empty-where` | `operations`, `treatUndefinedAsEmpty`, `treatEmptyAndOrAsEmpty` |
+| `no-unbounded-find-many` | `allowWithWhere`, `allowWithLimit`, `allowWithTake`, `allowSmallStaticModels` |
+| `require-explicit-limit` | `operations` |
+| `max-limit` | `value`, `applyTo` |
+| `require-stable-order-by-for-cursor` | `requirePrimaryKeyInOrderBy` |
+| `max-include-depth` / `max-include-relations` | `value` |
+| `require-raw-comment` | `minLength` |
+| `require-raw-timeout` | `defaultTimeoutMs`, `maxTimeoutMs` |
+| `no-raw-mutation` | `allow` |
+| `no-sensitive-select` | `allowWithSensitive`, `withSensitiveArg` |
+| `require-explicit-sensitive-access-reason` | `withSensitiveArg`, `reasonArg` |
+| `no-plugin-bypass-without-reason` | `reasonArg` |
 
-### Sensitive Fields and Plugin Bypass
-
-| Rule | Options |
-| --- | --- |
-| `noSensitiveSelect` | `allowWithSensitive`, `withSensitiveArg` |
-| `requireExplicitSensitiveAccessReason` | `withSensitiveArg`, `reasonArg` |
-| `noWithoutPlugins` | none |
-| `noPluginBypassWithoutReason` | `reasonArg` |
+The other rules take no options.
 
 ## Presets
 
-- `safe`
-- `recommended`
-- `strict`
+`safe`, `recommended`, and `strict` are flat-config arrays, also available as `configs.safe`, `configs.recommended`, and `configs.strict`. Each one sets the TypeScript parser for `**/*.{ts,tsx,mts,cts}`, registers the plugin, and enables the levels above.
 
-These presets mirror the statically-safe subset of `better-drizzle/rules`. Runtime-only rules such as tenant context, transaction state, and dialect handling remain in `better-drizzle/rules`.
+They are generated from the runtime presets of `better-drizzle/rules`, limited to the statically checkable rules. Runtime-only rules such as tenant context, transaction state, and dialect handling stay in `better-drizzle/rules`.
 
 ## Example
 

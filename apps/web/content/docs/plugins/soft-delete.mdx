@@ -67,24 +67,32 @@ const client = better(db, {
 });
 ```
 
-Every option is optional. Defaults:
+## Options
 
-- `column: 'deletedAt'`
-- `deletedByColumn: 'deletedById'`
-- `defaults.mode: 'soft'`
-- `defaults.visibility: 'without'`
+Every option is optional. Column names are the property keys in your Drizzle table definition, not the database column names.
 
-## Reads exclude deleted rows by default
+| Option | Default | Description |
+| --- | --- | --- |
+| `column` | `'deletedAt'` | column that marks a row as deleted; tables without it are ignored |
+| `deletedByColumn` | `'deletedById'` | column written from the `deletedBy` arg and cleared on restore, when the table has it |
+| `defaults.mode` | `'soft'` | `delete()` mode when the call passes no `mode` |
+| `defaults.visibility` | `'without'` | read visibility when the call passes no `deleted`: `'without'` or `'with'` |
 
-`findMany`, `findFirst`, `count`, and `exists` filter out soft-deleted rows automatically:
+## What is filtered
+
+| Operation | Behavior |
+| --- | --- |
+| `findMany`, `findFirst`, `count`, `exists` | deleted rows hidden; accept `deleted: 'without' \| 'with' \| 'only'` |
+| `findOne`, `findUnique`, `paginate`, `cursor` | not filtered, deleted rows are returned |
+| `update`, `updateMany`, `updateEach`, `upsert`, `upsertMany` | not filtered, deleted rows can be updated |
+| `delete` | soft by default: sets `column` instead of deleting |
+| `deleteMany` | always a hard delete |
+| relations loaded with `include` or a relation `select` | not filtered |
+
+Add `{ deletedAt: null }` to the `where` yourself for the operations that are not filtered.
 
 ```ts
 await client.users.findMany(); // visible rows only
-```
-
-Opt in per query with the typed `deleted` arg:
-
-```ts
 await client.users.findMany({ deleted: 'with' }); // include deleted
 await client.users.findMany({ deleted: 'only' }); // only deleted
 await client.users.count({ deleted: 'with' });
@@ -96,7 +104,7 @@ await client.users.count({ deleted: 'with' });
 // Soft delete (default)
 await client.users.delete({ where: { id: 1 } });
 
-// Record who deleted it (when the column exists)
+// Record who deleted it (when deletedByColumn exists)
 await client.users.delete({ where: { id: 1 }, deletedBy: 'admin_42' });
 
 // Force a real, physical delete
@@ -107,11 +115,15 @@ await client.users.restore({ where: { id: 1 } });
 await client.users.restoreById(1);
 ```
 
+A soft `delete()` runs an `update` of the same `where`, then returns the updated row (or `null`), so it still has `.throw()`. Its `where` is not filtered, so deleting an already deleted row sets a new timestamp.
+
 ## Behavior details
 
-- Models without the configured column are ignored automatically.
-- `deletedBy` is written only when the configured column exists on the model.
-- `restore()` and `restoreById()` bypass plugin transforms so they can always clear the soft-delete fields directly.
+- The timestamp is an ISO 8601 string (`new Date().toISOString()`) when the column's Drizzle data type is `string`, such as a SQLite `text` column. Otherwise it is a `Date`.
+- `deletedBy` is written only when the call passes it and the table has `deletedByColumn`.
+- `restore()` and `restoreById()` exist only on tables with `column`. They set `column` (and `deletedByColumn`, when present) to `null` through `$withoutPlugins().update(...)`. Both accept `select`, `include`, and `meta`.
+- `restoreById(id)` matches the `id` column. Tables whose primary key is named differently should use `restore({ where })`.
+- The inner update runs through `$withoutPlugins()`, so other plugins (such as timestamps) do not see it. Client `beforeUpdate` / `afterUpdate` hooks still fire for it, before the delete hooks.
 - `mode: 'hard'` falls back to the built-in physical delete.
 
 <Callout title="Need a one-off hard delete elsewhere?">
