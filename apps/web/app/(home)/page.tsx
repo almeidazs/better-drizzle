@@ -197,7 +197,7 @@ export default function HomePage() {
 			<JsonLd data={STRUCTURED_DATA} />
 			<section className="relative overflow-hidden">
 				<div className="bd-grid pointer-events-none absolute inset-0" />
-				<div className="relative mx-auto grid max-w-6xl items-center gap-12 px-6 py-20 lg:grid-cols-2 lg:py-28">
+				<div className="relative mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 px-6 py-20 lg:grid-cols-2 lg:py-28">
 					<div className="bd-rise flex flex-col items-start">
 						<span className="border-fd-border bg-fd-card/60 text-fd-muted-foreground inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium backdrop-blur">
 							<Logo className="w-10" />
@@ -257,7 +257,7 @@ export default function HomePage() {
 						you&rsquo;d rather read.
 					</p>
 				</div>
-				<div className="mt-12 grid items-start gap-6 lg:grid-cols-2">
+				<div className="mt-12 grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
 					<div className="flex flex-col gap-3">
 						<span className="text-fd-muted-foreground text-sm font-medium">
 							Raw Drizzle
@@ -289,7 +289,7 @@ export default function HomePage() {
 							from your schema and kept typed.
 						</p>
 					</div>
-					<div className="border-fd-border bg-fd-border mt-12 grid gap-px overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-3">
+					<div className="border-fd-border bg-fd-border mt-12 grid grid-cols-1 gap-px overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-3">
 						{FEATURES.map((feature) => (
 							<div
 								key={feature.title}
@@ -320,7 +320,7 @@ export default function HomePage() {
 						doesn&rsquo;t, the benchmarks say so.
 					</p>
 				</div>
-				<div className="border-fd-border bg-fd-border mt-12 grid gap-px overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-4">
+				<div className="border-fd-border bg-fd-border mt-12 grid grid-cols-1 gap-px overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-4">
 					{STATS.map((stat) => (
 						<div
 							key={stat.label}
@@ -357,7 +357,7 @@ export default function HomePage() {
 						choice does not change.
 					</p>
 				</div>
-				<div className="border-fd-border bg-fd-border mt-10 grid gap-px overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-4">
+				<div className="border-fd-border bg-fd-border mt-10 grid grid-cols-1 gap-px overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-4">
 					<div className="bg-fd-background relative flex items-center gap-4 p-6">
 						<div className="absolute top-3 right-4 inline-flex items-center gap-1 rounded-full border border-rose-200/70 bg-rose-50 px-2 py-1 text-[10px] font-semibold tracking-[0.16em] text-rose-700 uppercase dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200">
 							OUR SPONSOR
@@ -436,7 +436,7 @@ export default function HomePage() {
 			</section>
 
 			<section className="bg-fd-card/30">
-				<div className="mx-auto grid max-w-6xl items-center gap-12 px-6 py-20 lg:grid-cols-2">
+				<div className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 px-6 py-20 lg:grid-cols-2">
 					<div>
 						<h2 className="text-3xl font-semibold tracking-tight">
 							Plugins do the cross-cutting work
@@ -469,13 +469,13 @@ export default function HomePage() {
 				</div>
 			</section>
 
-			<section className="bg-[#111111] text-white">
+			<section className="border-fd-border bg-fd-card border-y">
 				<div className="mx-auto max-w-6xl px-6 py-24">
 					<div className="mx-auto max-w-2xl text-center">
 						<h2 className="text-4xl font-semibold tracking-tight">
 							Our Sponsors
 						</h2>
-						<p className="mt-4 text-lg text-white/72">
+						<p className="text-fd-muted-foreground mt-4 text-lg">
 							Thanks to companies backing better-drizzle and the
 							work around it.
 						</p>
@@ -485,7 +485,7 @@ export default function HomePage() {
 							href="https://neon.com"
 							target="_blank"
 							rel="noreferrer"
-							className="group inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-6 py-4 transition-colors duration-200 hover:border-[#3cf2b2]/40 hover:bg-white/[0.06]"
+							className="group border-fd-border bg-fd-background inline-flex items-center gap-3 rounded-2xl border px-6 py-4 transition-colors duration-200 hover:border-[#3cf2b2]/60"
 						>
 							<Image
 								src="https://neon.com/brand/neon-logomark-dark-color.svg"
@@ -494,7 +494,7 @@ export default function HomePage() {
 								width={40}
 								height={40}
 							/>
-							<span className="text-2xl font-semibold tracking-tight text-white">
+							<span className="text-fd-foreground text-2xl font-semibold tracking-tight">
 								Neon
 							</span>
 						</a>
@@ -504,7 +504,7 @@ export default function HomePage() {
 							href="https://github.com/sponsors/almeidazs"
 							target="_blank"
 							rel="noreferrer"
-							className="inline-flex items-center justify-center rounded-lg border border-white/12 bg-white/[0.06] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/[0.1]"
+							className="border-fd-border bg-fd-background text-fd-foreground hover:bg-fd-accent inline-flex items-center justify-center rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
 						>
 							Become a sponsor
 						</a>
@@ -513,7 +513,7 @@ export default function HomePage() {
 			</section>
 
 			<footer>
-				<div className="mx-auto grid max-w-7xl gap-12 px-6 py-14 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+				<div className="mx-auto grid max-w-7xl grid-cols-1 gap-12 px-6 py-14 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
 					<div>
 						<Logo className="w-28" />
 						<p className="text-fd-muted-foreground mt-5 max-w-xs text-sm">
@@ -556,7 +556,7 @@ export default function HomePage() {
 							</a>
 						</nav>
 					</div>
-					<div className="grid gap-10 sm:grid-cols-3">
+					<div className="grid grid-cols-1 gap-10 sm:grid-cols-3">
 						<div>
 							<h3 className="text-fd-foreground text-lg font-semibold">
 								Documentation
