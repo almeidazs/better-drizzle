@@ -1,12 +1,12 @@
 ---
 title: Explain
-description: Inspect query plans without executing queries using .explain() on any read operation.
+description: Inspect the query plan of any read operation with .explain().
 icon: ScanSearch
 seoTitle: 'Explain - Drizzle ORM Query Plans'
 seoDescription: 'Inspect SQL query plans for any Drizzle ORM read with .explain(): EXPLAIN ANALYZE on PostgreSQL, EXPLAIN QUERY PLAN on SQLite, and MySQL EXPLAIN.'
 ---
 
-Every read operation in Better Drizzle returns an **explainable result** -- a lazy promise that exposes an `.explain()` method. Calling `.explain()` inspects the query plan the database would execute, without actually running the query.
+Every read operation in Better Drizzle returns an **explainable result**: a normal promise with an extra `.explain()` method. Calling `.explain()` sends an `EXPLAIN` for the compiled SQL and returns the plan.
 
 ## Basic usage
 
@@ -14,9 +14,9 @@ Chain `.explain()` off any read call to get the query plan:
 
 ```ts tab="better-drizzle" tab-group="orm"
 const {
-  driver, // "sqlite" | "pg" | "mysql"
-  operation, // "findMany"
-  statements, // array of ExplainStatement
+	driver, // "sqlite" | "pg" | "mysql"
+	operation, // "findMany"
+	statements, // array of ExplainStatement
 } = await client.users.findMany({ where: { active: true } }).explain();
 ```
 
@@ -28,35 +28,37 @@ const query = db.select().from(users).where(eq(users.active, true));
 const plan = await db.execute(sql`EXPLAIN ${query}`);
 ```
 
-The real query never runs. You can safely call `.explain()` in tests, diagnostics, or monitoring without side effects.
+## What runs, and when
 
-## Lazy execution
-
-The result of a read call is a **deferred promise**. The actual database query starts only when you `.then()`, `.catch()`, or `.finally()` it:
+- Calling a read method starts the read right away, on the next microtask, whether or not you await it. `.explain()` does not delay or cancel it.
+- `.explain()` runs a separate `EXPLAIN` statement for each SQL statement the read would send. Query hooks do not run for it.
+- A plain `EXPLAIN` (the default) only plans the statement. With `analyze: true`, PostgreSQL (`EXPLAIN (ANALYZE true)`) and MySQL (`EXPLAIN ANALYZE`) **execute** the statement to collect real timings. SQLite ignores `analyze`.
 
 ```ts
 const result = client.users.findMany({ where: { active: true } });
 
-// At this point, no query has been sent to the database
-
-const plan = await result.explain({ analyze: true });
-// Still no real query -- only the EXPLAIN ran
-
+// the read above has already been scheduled
+const { statements } = await result.explain();
 const users = await result;
-// NOW the real query runs
 ```
 
-This means you can inspect the plan and decide whether to run the query at all.
+<Callout type="warn" title="analyze executes the query">
+	Reads have no side effects, but `analyze: true` still costs a full query
+	execution. Avoid it on hot paths and against large tables in production.
+</Callout>
 
 ## Result shape
 
-`ExplainResult` contains three fields:
+`ExplainResult` contains four fields:
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `driver` | `'sqlite' \| 'pg' \| 'mysql'` | The dialect that produced the plan |
 | `operation` | `string` | The operation name (e.g. `"findMany"`, `"paginate"`) |
 | `statements` | `ExplainStatement[]` | One or more statement details |
+| `deferredRelations` | `object[]` | Relation queries from `include` / relation `select` that depend on root rows, so they are described but not explained |
+
+Each `deferredRelations` entry has `path`, `table`, `cardinality` (`'one' \| 'many'`), `filtered`, `sorted`, `paginated`, and `through` (the junction table, for many-to-many).
 
 Each `ExplainStatement` contains:
 
@@ -73,14 +75,14 @@ Each `ExplainStatement` contains:
 
 Most operations produce a single statement. Two exceptions:
 
-**`paginate`** produces two -- the data query and the count query:
+**`paginate`** produces two: the data query and the count query.
 
 ```ts
 const result = await client.users
-  .paginate({ limit: 10, orderBy: { id: 'asc' } })
-  .explain();
+	.paginate({ limit: 10, orderBy: { id: 'asc' } })
+	.explain();
 
-console.log(result.statements.map(s => s.key));
+console.log(result.statements.map((s) => s.key));
 // ["data", "total"]
 ```
 
@@ -88,14 +90,14 @@ console.log(result.statements.map(s => s.key));
 
 ```ts
 const result = await client.users
-  .cursor({
-    after: previousCursor,
-    limit: 25,
-    orderBy: { id: 'asc' },
-  })
-  .explain();
+	.cursor({
+		after: previousCursor,
+		limit: 25,
+		orderBy: { id: 'asc' },
+	})
+	.explain();
 
-console.log(result.statements.map(s => s.key));
+console.log(result.statements.map((s) => s.key));
 // ["data"] for a populated primary-key page
 ```
 
@@ -105,45 +107,45 @@ Pass an `ExplainOptions` object to control the `EXPLAIN` output:
 
 ```ts
 const plan = await client.users
-  .findMany({ where: { active: true } })
-  .explain({
-    analyze: true,
-    verbose: true,
-    costs: false,
-    timing: true,
-    summary: false,
-    name: 'users.findMany',
-    comment: 'active user lookup',
-    timeoutMs: 5000,
-  });
+	.findMany({ where: { active: true } })
+	.explain({
+		analyze: true,
+		verbose: true,
+		costs: false,
+		timing: true,
+		summary: false,
+		name: 'users.findMany',
+		comment: 'active user lookup',
+		timeoutMs: 5000,
+	});
 ```
 
 ### Options reference
 
 | Option | Type | PostgreSQL | MySQL | SQLite | Description |
 | --- | --- | --- | --- | --- | --- |
-| `analyze` | `boolean` | Yes | Yes | ignored | Run the query and report actual execution statistics |
+| `analyze` | `boolean` | Yes | Yes | ignored | Execute the statement and report actual execution statistics |
 | `verbose` | `boolean` | Yes | ignored | ignored | Include output schema of each plan node |
 | `costs` | `boolean` | Yes | ignored | ignored | When `false`, omit estimated startup and total cost |
 | `timing` | `boolean` | Yes | ignored | ignored | When `false`, omit actual time even with `analyze` |
 | `summary` | `boolean` | Yes | ignored | ignored | When `false`, omit the summary line |
-| `name` | `string` | Yes | ignored | ignored | Prepared statement name |
-| `comment` | `string` | Yes | ignored | ignored | SQL comment prepended to the query (sanitized) |
-| `timeoutMs` | `number` | Yes | Yes | Yes | Timeout in ms for the EXPLAIN execution itself |
+| `name` | `string` | label only | ignored | ignored | A label for the call. Reported in `appliedOptions` on PostgreSQL but not added to the SQL |
+| `comment` | `string` | Yes | ignored | ignored | Block comment prepended to the explained query (`*/` is escaped) |
+| `timeoutMs` | `number` | Yes | Yes | Yes | Timeout for the EXPLAIN itself. Throws `RAW_TIMEOUT`; `0` or less throws immediately |
 
 <Callout type="info">
-  Unsupported options are silently ignored. Check `statement.ignoredOptions`
-  to detect when a flag had no effect on the current dialect.
+	Unsupported options are silently ignored. Check `statement.ignoredOptions`
+	to detect when a flag had no effect on the current dialect.
 </Callout>
 
 ## Checking applied vs ignored options
 
 ```ts
 const {
-  statements: [stmt],
+	statements: [stmt],
 } = await client.users
-  .findMany({ where: { active: true } })
-  .explain({ analyze: true, verbose: true });
+	.findMany({ where: { active: true } })
+	.explain({ analyze: true, verbose: true });
 
 // On SQLite, both are ignored
 console.log(stmt.ignoredOptions); // ["analyze", "verbose"]
@@ -158,12 +160,12 @@ console.log(stmt.appliedOptions); // { analyze: true, verbose: true }
 
 ```ts
 const client = better(db, {
-  schema,
-  plugins: [forceActivePlugin], // injects { active: true } into every findMany
+	schema,
+	plugins: [forceActivePlugin], // injects { active: true } into every findMany
 });
 
 const {
-  statements: [{ sql }],
+	statements: [{ sql }],
 } = await client.users.findMany({ where: { id: 1 } }).explain();
 
 // The SQL includes the plugin-injected active filter
@@ -172,8 +174,8 @@ console.log(sql);
 ```
 
 <Callout type="warn">
-  Query hooks (`beforeQuery`, `afterQuery`) are **skipped** during `.explain()`.
-  Only plugin transforms apply.
+	Query hooks (`beforeQuery`, `afterQuery`) are **skipped** during `.explain()`.
+	Only plugin transforms apply.
 </Callout>
 
 ## Cross-dialect behavior
@@ -181,12 +183,12 @@ console.log(sql);
 | Feature | PostgreSQL | MySQL | SQLite |
 | --- | --- | --- | --- |
 | EXPLAIN prefix | `EXPLAIN (OPTIONS) ...` | `EXPLAIN [ANALYZE] ...` | `EXPLAIN QUERY PLAN ...` |
-| `analyze` | Runs query with stats | Runs query with stats | ignored |
+| `analyze` | Executes the statement | Executes the statement | ignored |
 | `verbose` | Extra columns | ignored | ignored |
 | `costs` | Toggle cost display | ignored | ignored |
 | `timing` | Toggle timing | ignored | ignored |
 | `summary` | Toggle summary | ignored | ignored |
-| `name` | Prepared statement name | ignored | ignored |
+| `name` | Reported as applied, not sent | ignored | ignored |
 | `comment` | Prepended as block comment | ignored | ignored |
 | `timeoutMs` | Yes | Yes | Yes |
 

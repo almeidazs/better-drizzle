@@ -3,7 +3,7 @@ title: Model delegate
 description: Every method on a table delegate - reads, writes, pagination, and the plugin-related helpers.
 icon: Table2
 seoTitle: 'Model Delegate API Reference'
-seoDescription: 'Every method on a better-drizzle table delegate: findMany, findUnique, create, update, upsert, delete, paginate, cursor, count, and batch operations.'
+seoDescription: 'Every method on a better-drizzle table delegate for Drizzle ORM: findMany, findUnique, create, update, updateEach, upsert, delete, paginate, and cursor.'
 ---
 
 A model delegate is what you get from `client.users`, `client.posts`, or `client.repository(name)`. Every table has the same surface, typed against its own columns and relations.
@@ -18,18 +18,22 @@ A model delegate is what you get from `client.users`, `client.posts`, or `client
 | `findUnique` | `(args: QueryArgs)` | `ThrowingResult<Row>` |
 | `count` | `(args?: CountArgs)` | `number` |
 | `exists` | `(args?: ExistsArgs)` | `boolean` |
-| `paginate` | `(args: PaginationArgs)` | `PaginationResult<Row>` |
+| `paginate` | `(args: PaginationArgs)` | `OffsetPaginationResult<Row>` |
+| `cursor` | `(args: CursorArgs)` | `CursorPaginationResult<Row>` |
 
-`ThrowingResult<T>` is a `Promise<T | null>` with a `.throw()` method - see [throwing results](/docs/writing/throwing-results). All read args are documented in [query options](/docs/reference/query-options).
+Every read returns an explainable result: a normal promise with an extra `.explain(options?)` method that returns the query plan. See [explain](/docs/querying/explain).
+
+`ThrowingResult<T>` is an explainable `Promise<T | null>` with a `.throw()` method - see [throwing results](/docs/writing/throwing-results). All read args are documented in [query options](/docs/reference/query-options), and pagination results in [pagination](/docs/querying/pagination).
 
 ## Writes
 
 | Method | Signature | Returns |
 | --- | --- | --- |
-| `create` | `(args: { data, skipDuplicates?, select?, include?, meta? })` | `Row \| null` when `skipDuplicates` skips |
+| `create` | `(args: { data, skipDuplicates?, select?, include?, meta? })` | `Row`, or `Row \| null` when `skipDuplicates` is set |
 | `createMany` | `(args: { data: Row[], skipDuplicates?, select?, include?, meta? })` | `BatchResult<Row>` |
 | `update` | `(args: { where, data, select?, include?, meta? })` | `ThrowingResult<Row>` |
 | `updateMany` | `(args: { where?, data, meta? })` | `BatchResult<never>` |
+| `updateEach` | `(args: { by, data, update, where?, select?, onEmpty?, meta? })` | `BatchResult<Row>` |
 | `upsert` | `(args: { where, create, update, select?, include?, meta? })` | `Row` |
 | `upsertMany` | `(args: { data, target, update, select?, batchSize?, where?, meta? })` | `BatchResult<Row>` |
 | `delete` | `(args: { where, select?, include?, meta? })` | `ThrowingResult<Row>` |
@@ -61,6 +65,30 @@ if (!maybeUser) {
 ```
 
 When a single-row `create` is skipped, it returns `null`. For `createMany`, `count` reflects only rows that were actually inserted.
+
+### `updateEach`
+
+`updateEach` updates many rows with a different value per row in a single `UPDATE ... SET column = CASE ... END` statement. `by` is the column (the Drizzle column object) used to match each input row, and `update` maps columns to a function that returns the new value for a row.
+
+```ts
+const { count, data } = await client.users.updateEach({
+	by: users.id,
+	data: [
+		{ id: 1, name: 'Alice' },
+		{ id: 2, name: 'Bob' },
+	],
+	update: {
+		name: (row) => row.name,
+	},
+	select: { id: true, name: true },
+});
+```
+
+- every input row must include the `by` value, and `by` values must be unique
+- each resolver must return a value (or a Drizzle `SQL`); `undefined` throws
+- `where` is combined with the generated `by in (...)` filter
+- `select` is scalar-only
+- an empty `data` array returns `{ count: 0 }`, or throws with `onEmpty: 'throw'`
 
 ### `upsertMany`
 

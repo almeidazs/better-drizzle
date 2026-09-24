@@ -112,37 +112,50 @@ A relation value can be `true` or a nested read-args object (with its own `where
 
 ## Pagination arguments
 
-`paginate` accepts everything above plus:
+`paginate` accepts everything above plus `limit`. Only `limit`, `take`, and `skip` control the page:
 
 <TypeTable
 	type={{
 		limit: {
-			description: 'Max rows per page.',
+			description: 'Rows per page. Used when `take` is not set.',
 			type: 'number',
+			default: '10',
+		},
+		take: {
+			description: 'Rows per page. Wins over `limit` when both are set.',
+			type: 'number',
+		},
+		skip: {
+			description: 'Rows to skip before the page starts.',
+			type: 'number',
+			default: '0',
 		},
 	}}
 />
 
-It returns `{ data, pagination: { type, page, perPage, total, pageCount, hasNext, hasPrevious } }`.
+There is no `page` or `perPage` input. It returns `{ data, pagination: { type, page, perPage, total, pageCount, hasNext, hasPrevious } }`, where `perPage` is the resolved page size and `page` is `Math.floor(skip / perPage) + 1`.
 
 `cursor` accepts everything above plus:
 
 <TypeTable
 	type={{
 		limit: {
-			description: 'Max rows per page.',
+			description: 'Rows per page. Falls back to `take`.',
 			type: 'number',
+			default: '10',
 		},
 		after: {
-			description: 'Cursor token to read rows after.',
+			description: 'Cursor object to read rows after, for example a previous `nextCursor`.',
 			type: 'CursorInput',
 		},
 		before: {
-			description: 'Cursor token to read rows before.',
+			description: 'Cursor object to read rows before, for example a previous `previousCursor`.',
 			type: 'CursorInput',
 		},
 	}}
 />
+
+Pass `after` or `before`, never both. Both take a cursor object, such as a previous `nextCursor` / `previousCursor`. Without `orderBy`, pages are ordered by primary key ascending.
 
 It returns `{ data, pagination: { type, hasNext, hasPrevious, nextCursor, previousCursor } }`. See [pagination](/docs/querying/pagination).
 
@@ -165,8 +178,61 @@ Read args are only part of the API surface. The write methods add a few importan
 | --- | --- |
 | `createMany` | `data[]`, `skipDuplicates?`, `select?`, `include?`, `meta?` |
 | `updateMany` | `where?`, `data`, `meta?` |
+| `updateEach` | `by`, `data[]`, `update`, `where?`, `select?`, `onEmpty?`, `meta?` |
 | `deleteMany` | `where?`, `meta?` |
 | `upsertMany` | `data[]`, `target`, `update`, `select?`, `batchSize?`, `where?`, `meta?` |
+
+### `updateEach` details
+
+<TypeTable
+	type={{
+		by: {
+			description: 'Drizzle column used to match each input row. Values must be present and unique across `data`.',
+			type: 'Column',
+			required: true,
+		},
+		data: {
+			description: 'Source rows. Each row must include the `by` value.',
+			type: 'Row[]',
+			required: true,
+		},
+		update: {
+			description: 'Map of column to a function returning the new value (or a Drizzle `SQL`) for a row. At least one column is required.',
+			type: '{ [column]: (row) => value | SQL }',
+			required: true,
+		},
+		where: {
+			description: 'Extra filter combined with the generated `by in (...)` filter.',
+			type: 'WhereInput | SQL',
+		},
+		select: {
+			description: 'Scalar projection for the returned rows.',
+			type: 'SelectInput',
+		},
+		onEmpty: {
+			description: 'What to do when `data` is empty: return `{ count: 0 }` or throw.',
+			type: '"return" | "throw"',
+			default: '"return"',
+		},
+		meta: {
+			description: 'Custom metadata forwarded to hooks and plugins.',
+			type: 'Record<string, unknown>',
+		},
+	}}
+/>
+
+```ts
+const { count } = await client.users.updateEach({
+	by: users.id,
+	data: [
+		{ id: 1, active: false },
+		{ id: 2, active: true },
+	],
+	update: {
+		active: (row) => row.active,
+	},
+});
+```
 
 ### `upsertMany` details
 
@@ -195,5 +261,7 @@ await client.users.upsertMany({
 - an explicit column list
 - an explicit update object
 - a function receiving `{ excluded, sql, table }`
+
+`target` is a single column name (`'email'`) or an array of column names (`['email']`). `batchSize` splits `data` into chunks and must be a positive integer, otherwise the call throws `OPERATION_ERROR`.
 
 `where` must be a Drizzle `SQL` fragment. It is not the same as the normal structured `where` filter used by reads and single-row writes.
