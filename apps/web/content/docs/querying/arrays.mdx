@@ -266,11 +266,14 @@ const authors = await client.users.findMany({
 const drizzlePosts = { tags: { has: 'drizzle' } } as const;
 
 const total = await client.posts.count({ where: drizzlePosts });
+
 const any = await client.posts.exists({ where: drizzlePosts });
+
 const {
 	data,
 	pagination: { hasNext },
 } = await client.posts.paginate({ where: drizzlePosts, limit: 20 });
+
 const { count } = await client.posts.updateMany({
 	where: drizzlePosts,
 	data: { flags: ['featured'] },
