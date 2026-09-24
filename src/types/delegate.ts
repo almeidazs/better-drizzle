@@ -1207,7 +1207,13 @@ export type BetterDrizzleModelDelegate<
 		>,
 	>(
 		args: Args,
-	): Promise<PayloadForArgs<Schema, Name, Args>>;
+	): Promise<
+		Args extends { skipDuplicates: infer Skip }
+			? Skip extends false | undefined
+				? PayloadForArgs<Schema, Name, Args>
+				: PayloadForArgs<Schema, Name, Args> | null
+			: PayloadForArgs<Schema, Name, Args>
+	>;
 	/**
 	 * Inserts multiple rows in a single statement.
 	 *
