@@ -30,6 +30,11 @@ body {
 	overflow-x: clip;
 }
 
+::selection {
+	background-color: var(--brand);
+	color: var(--brand-contrast);
+}
+
 .dark {
 	--brand: #c5f74f;
 	--brand-strong: #e1ff97;
