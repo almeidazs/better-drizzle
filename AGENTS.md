@@ -208,7 +208,7 @@
   - `benchmark/schema.ts`: benchmark schema
   - `benchmark/report.ts`: generates the published overhead tables
   - `benchmark/jsonb.ts`: PostgreSQL JSONB path filters, row **and** plan parity
-- **Absolute timings are not publishable**: the same operation reads 53 µs idle and 93 µs under load. Only the raw/better ratio is stable across runs. `benchmark/report.ts` interleaves both sides in one sampling window (alternating which leads) and takes the median across samples; measurement is delegated to mitata's engine so warmup/JIT/GC handling matches `bun run bench`. A hand-rolled timing loop was tried first and disagreed with mitata by ~30 points on point lookup — do not hand-roll timing here.
+- **Absolute timings are not publishable**: the same operation reads 53 µs idle and 93 µs under load. Only the raw/better ratio is stable across runs. `benchmark/report.ts` interleaves both sides in one sampling window (alternating which leads) and takes the median across samples; measurement is delegated to mitata's engine so warmup/JIT/GC handling matches `bun run bench`. A hand-rolled timing loop was tried first and disagreed with mitata by ~30 points on point lookup - do not hand-roll timing here.
 - **Measured, reproducible across runs, published on the docs site** (everything sits within ~10% at parity except the relation win):
   - `cursor()` uses one indexed data query with an inline `EXISTS` navigation check for populated single-primary-key pages; empty pages and complex queries retain an exact fallback probe. The API-parity Drizzle scenario must compute the same navigation flags, while the data-only query stays in the manual reference group.
   - relation graph reads are ~9x *faster* than the equivalent raw code, via the batched loader
@@ -284,6 +284,7 @@
 
 - **README sync**: the root `README.md` and `README.md` are intended to stay aligned. If one changes, update the other unless there is a clear package-specific reason not to.
 - **Performance claims**: tie claims to benchmark shape and avoid vague “faster” language without context.
+- **Result access in examples**: destructure results (`const { data, pagination: { total, hasNext } } = await ...`) instead of assigning them to a variable and reading `page.pagination.total` line by line.
 - **Examples**: prefer real API examples that match the current exported API and benchmarked usage patterns.
 - **Documentation**: add focused pages under `apps/web/content/docs` instead of duplicating API guidance in a separate catalog.
 
@@ -322,6 +323,7 @@
 - The docs site under `apps/web` uses `fumadocs-ui` layouts with custom header slots.
 - If a custom docs header replaces Fumadocs' default `Header`, it must participate in the docs grid with `[grid-area:header]` and the docs shell should keep `--fd-header-height` in sync, otherwise mobile/tablet layouts can collapse the main content into a narrow column.
 - For narrow screens, `#nd-docs-layout` may need an explicit single-column grid override because Fumadocs' default docs grid keeps sidebar/toc tracks in the template even when those panes are visually hidden.
+- The docs sidebar is a basic-to-advanced learning path defined entirely in `apps/web/content/docs/meta.json`: `---Step---` separators plus nested page paths such as `querying/reads`. Folders stay on disk only to keep URLs stable. Only `plugins`, `reference`, and `performance` keep their own `meta.json` and render as collapsible groups. The prev/next footer follows the same order, so put new pages at the right step there.
 - Docs code blocks render through `apps/web/components/shiny-code-block.tsx` (the `pre` override in `mdx-components.tsx`): clicking anywhere on a block copies it and plays the `bd-code-flash` sweep from `app/global.css`.
 - SEO: titles use ` - ` as separator (never an em dash); site-wide constants/keywords live in `apps/web/lib/seo.ts`. Every docs page sets `seoTitle` (≤45 chars, the template appends ` - better-drizzle`) and `seoDescription` (110-160 chars, mentioning Drizzle ORM) in frontmatter; the visible `title`/`description` stay short. OG images come from `app/opengraph-image.tsx` and `app/og/docs/[...slug]/route.tsx`.
 - API examples pair a better-drizzle block with a raw Drizzle equivalent using Fumadocs' built-in code tabs: adjacent fences with ```` ```ts tab="better-drizzle" tab-group="orm" ```` then ```` ```ts tab="Drizzle" tab-group="orm" ````. better-drizzle comes first; the shared `tab-group` syncs and persists the selection. Skip setup/schema/plugin-config blocks.
