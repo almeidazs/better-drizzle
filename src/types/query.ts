@@ -537,8 +537,10 @@ export type CursorArgs<
 		CursorPaginationOptions<SelectModelFor<Schema, Name>>,
 		'after' | 'before'
 	> & {
-		after?: CursorInput<Schema, Name> | string;
-		before?: CursorInput<Schema, Name> | string;
+		/** Cursor object (e.g. a previous `nextCursor`) to page forward from. */
+		after?: CursorInput<Schema, Name>;
+		/** Cursor object (e.g. a previous `previousCursor`) to page backward from. */
+		before?: CursorInput<Schema, Name>;
 	};
 
 type RelationPayloadFromArg<
