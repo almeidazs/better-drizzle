@@ -1,0 +1,343 @@
+---
+title: Array filters
+description: Typed PostgreSQL array queries - membership, containment, overlap, emptiness, and length - on native array columns.
+icon: Brackets
+seoTitle: 'PostgreSQL Array Filters for Drizzle ORM'
+seoDescription: 'Filter PostgreSQL array columns in Drizzle ORM with typed has, hasEvery, hasSome, containedBy, isEmpty, and length operators that compile to index-friendly SQL.'
+---
+
+PostgreSQL arrays are the simplest way to store tags, roles, permissions, or feature flags on a row. Querying them is another story: `@>`, `&&`, `<@`, `cardinality()`, and a parameter that has to be cast to the right array type. None of it is checked by TypeScript, and every call site gets it slightly differently.
+
+better-drizzle gives native array columns their own **typed filter**. The operators read like what you mean, the element type comes from your schema, and every filter compiles to the same PostgreSQL operators you would write by hand:
+
+```ts tab="better-drizzle" tab-group="orm"
+const posts = await client.posts.findMany({
+	where: {
+		tags: { has: 'drizzle', length: { lte: 5 } },
+		editors: { hasSome: [currentUserId] },
+		flags: { hasNone: ['archived', 'spam'] },
+	},
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { and, arrayContains, arrayOverlaps, not, sql } from 'drizzle-orm';
+
+const rows = await db
+	.select()
+	.from(posts)
+	.where(
+		and(
+			arrayContains(posts.tags, ['drizzle']),
+			sql`cardinality(${posts.tags}) <= ${5}`,
+			arrayOverlaps(posts.editors, [currentUserId]),
+			not(arrayOverlaps(posts.flags, ['archived', 'spam'])),
+		),
+	);
+```
+
+What you get:
+
+- **Operators named after the question.** `has`, `hasEvery`, `hasSome`, `hasNone`, `containedBy`, `isEmpty`, and `length` instead of `@>`, `&&`, `<@`, and `cardinality()`.
+- **Element types from your schema.** A `text[]` column takes strings, an `integer[]` takes numbers, and an enum array only accepts its enum values, with autocomplete.
+- **Correct parameter binding.** Values are bound as arrays of the column's own type, so enum and `uuid` arrays work without manual casts.
+- **Index-friendly SQL.** Containment and overlap compile to `@>`, `&&`, and `<@`, which a GIN index serves directly.
+- **Everywhere `where` works.** `findMany`, `count`, `exists`, `paginate`, `cursor`, `updateMany`, `deleteMany`, and relation filters.
+- **Fail fast outside PostgreSQL.** An array filter on another dialect throws instead of silently matching nothing.
+
+## Define array columns
+
+Use Drizzle's `.array()` on any PostgreSQL column. Nothing else is needed: better-drizzle detects native array columns and switches their `where` type to the array filter.
+
+```ts title="schema.ts"
+import { integer, pgEnum, pgTable, text, uuid } from 'drizzle-orm/pg-core';
+
+export const role = pgEnum('role', ['admin', 'editor', 'viewer']);
+
+export const posts = pgTable('posts', {
+	id: integer('id').primaryKey(),
+	title: text('title').notNull(),
+	tags: text('tags').array().notNull(),
+	editors: uuid('editors').array().notNull(),
+	roles: role('roles').array().notNull(),
+	scores: integer('scores').array(),
+	flags: text('flags').array(),
+});
+```
+
+Only native array columns get these operators. A `jsonb` column typed as an array (`jsonb().$type<string[]>()`) is JSON, not a PostgreSQL array, so it keeps the regular [JSONB filters](/docs/querying/jsonb).
+
+## Operators
+
+| Operator | Matches rows where the array... | SQL |
+| --- | --- | --- |
+| a plain array | equals the value exactly | `column = $1` |
+| `equals` | equals the value exactly (`null` matches `IS NULL`) | `column = $1` |
+| `has` | contains this element | `column @> ARRAY[$1]` |
+| `hasEvery` | contains every listed element | `column @> $1` |
+| `hasSome` | contains at least one listed element | `column && $1` |
+| `hasNone` | contains none of the listed elements | `NOT (column && $1)` |
+| `containedBy` | has only elements from the list | `column <@ $1` |
+| `isEmpty` | is empty (`true`) or has at least one element (`false`) | `cardinality(column) = 0` / `> 0` |
+| `length` | has this many elements, or a range | `cardinality(column) = $1` |
+| `not` | does not equal a value, is not `null`, or does not match a nested filter | `NOT (...)` |
+
+`length` accepts a number or the comparable operators: `equals`, `in`, `notIn`, `lt`, `lte`, `gt`, `gte`, and `not`.
+
+Operators in the same filter object are combined with `AND`.
+
+## Examples
+
+### Exact equality
+
+Pass an array directly, or use `equals`. Equality is exact: same elements, same order, same duplicates.
+
+```ts tab="better-drizzle" tab-group="orm"
+await client.posts.findMany({ where: { tags: ['drizzle', 'orm'] } });
+await client.posts.findMany({ where: { tags: { equals: ['drizzle', 'orm'] } } });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+await db.select().from(posts).where(eq(posts.tags, ['drizzle', 'orm']));
+```
+
+### Membership with `has`
+
+The most common question: does this row's array contain a value?
+
+```ts tab="better-drizzle" tab-group="orm"
+const admins = await client.users.findMany({
+	where: { roles: { has: 'admin' } }, // 'admin' | 'editor' | 'viewer'
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { arrayContains } from 'drizzle-orm';
+
+const admins = await db
+	.select()
+	.from(users)
+	.where(arrayContains(users.roles, ['admin']));
+```
+
+### All, any, or none of a list
+
+```ts tab="better-drizzle" tab-group="orm"
+// tagged with both
+await client.posts.findMany({ where: { tags: { hasEvery: ['drizzle', 'postgres'] } } });
+
+// tagged with either
+await client.posts.findMany({ where: { tags: { hasSome: ['drizzle', 'prisma'] } } });
+
+// tagged with neither
+await client.posts.findMany({ where: { flags: { hasNone: ['archived', 'spam'] } } });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { arrayContains, arrayOverlaps, not } from 'drizzle-orm';
+
+await db.select().from(posts).where(arrayContains(posts.tags, ['drizzle', 'postgres']));
+
+await db.select().from(posts).where(arrayOverlaps(posts.tags, ['drizzle', 'prisma']));
+
+await db.select().from(posts).where(not(arrayOverlaps(posts.flags, ['archived', 'spam'])));
+```
+
+### Only allowed values with `containedBy`
+
+`containedBy` is the inverse of `hasEvery`: every element in the row must come from your list. It is a natural fit for permission checks.
+
+```ts tab="better-drizzle" tab-group="orm"
+// posts whose roles are all ones the current user can manage
+await client.posts.findMany({
+	where: { roles: { containedBy: ['editor', 'viewer'] } },
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { arrayContained } from 'drizzle-orm';
+
+await db
+	.select()
+	.from(posts)
+	.where(arrayContained(posts.roles, ['editor', 'viewer']));
+```
+
+### Empty and non-empty arrays
+
+```ts tab="better-drizzle" tab-group="orm"
+const untagged = await client.posts.findMany({ where: { tags: { isEmpty: true } } });
+const tagged = await client.posts.findMany({ where: { tags: { isEmpty: false } } });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { sql } from 'drizzle-orm';
+
+const untagged = await db.select().from(posts).where(sql`cardinality(${posts.tags}) = 0`);
+const tagged = await db.select().from(posts).where(sql`cardinality(${posts.tags}) > 0`);
+```
+
+### Element counts with `length`
+
+```ts tab="better-drizzle" tab-group="orm"
+await client.posts.findMany({ where: { tags: { length: 3 } } });
+await client.posts.findMany({ where: { tags: { length: { gte: 2, lte: 5 } } } });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { and, sql } from 'drizzle-orm';
+
+await db.select().from(posts).where(sql`cardinality(${posts.tags}) = ${3}`);
+await db
+	.select()
+	.from(posts)
+	.where(
+		and(
+			sql`cardinality(${posts.tags}) >= ${2}`,
+			sql`cardinality(${posts.tags}) <= ${5}`,
+		),
+	);
+```
+
+### Negation
+
+`not` takes a value, `null`, or a nested array filter:
+
+```ts
+// does not equal this exact array
+await client.posts.findMany({ where: { tags: { not: ['draft'] } } });
+
+// has a value at all
+await client.posts.findMany({ where: { scores: { not: null } } });
+
+// does not contain 'admin'
+await client.users.findMany({ where: { roles: { not: { has: 'admin' } } } });
+```
+
+### Combining operators
+
+Every operator in one object must hold. Mix them freely, and use `AND` / `OR` / `NOT` across columns like any other filter:
+
+```ts
+await client.posts.findMany({
+	where: {
+		tags: { has: 'drizzle', hasNone: ['deprecated'], length: { lte: 5 } },
+		OR: [
+			{ editors: { hasSome: [currentUserId] } },
+			{ roles: { has: 'viewer' } },
+		],
+	},
+});
+```
+
+### Enum and `uuid` arrays
+
+Values are bound as an array of the column's own type, so enum and `uuid` arrays need no casts, and the element type narrows to the enum's values:
+
+```ts
+await client.posts.findMany({
+	where: {
+		roles: { hasEvery: ['admin', 'editor'] }, // typos fail to compile
+		editors: { has: '00000000-0000-0000-0000-000000000001' },
+	},
+});
+```
+
+### Inside relation filters
+
+Array filters work anywhere a `where` is accepted, including nested relation filters:
+
+```ts
+const authors = await client.users.findMany({
+	where: {
+		posts: { some: { tags: { has: 'drizzle' } } },
+	},
+	include: {
+		posts: { where: { tags: { hasSome: ['drizzle', 'postgres'] } } },
+	},
+});
+```
+
+### Every helper that takes `where`
+
+```ts
+const drizzlePosts = { tags: { has: 'drizzle' } } as const;
+
+const total = await client.posts.count({ where: drizzlePosts });
+const any = await client.posts.exists({ where: drizzlePosts });
+const {
+	data,
+	pagination: { hasNext },
+} = await client.posts.paginate({ where: drizzlePosts, limit: 20 });
+const { count } = await client.posts.updateMany({
+	where: drizzlePosts,
+	data: { flags: ['featured'] },
+});
+```
+
+## Semantics worth knowing
+
+### `NULL` arrays never match an operator
+
+A `NULL` array is not an empty array. `has`, `hasEvery`, `hasSome`, `hasNone`, `containedBy`, `isEmpty`, `length`, and a nested `not` all evaluate to SQL `NULL` for it, so the row is left out, even for `hasNone` and `isEmpty: false`.
+
+Match `NULL` explicitly with `equals: null` (or `null`) and exclude it with `not: null`:
+
+```ts
+await client.posts.findMany({ where: { scores: null } }); // IS NULL
+await client.posts.findMany({ where: { scores: { not: null } } }); // IS NOT NULL
+```
+
+### Containment ignores order and duplicates
+
+`has`, `hasEvery`, `hasSome`, `hasNone`, and `containedBy` treat the array as a set, as PostgreSQL does: `['a', 'b']` contains `['b', 'a']`, and duplicates do not change the result. Exact equality (a plain array or `equals`) compares order and duplicates too.
+
+### Empty lists
+
+An empty list is valid and follows PostgreSQL:
+
+| Filter | Matches |
+| --- | --- |
+| `hasEvery: []` | every non-`NULL` array |
+| `hasSome: []` | nothing |
+| `hasNone: []` | every non-`NULL` array |
+| `containedBy: []` | only empty arrays |
+
+### `length` counts every element
+
+`length` and `isEmpty` use PostgreSQL `cardinality()`, which counts all elements across every dimension, so a 2x3 array has a length of 6. Duplicates are counted.
+
+## Indexing arrays
+
+Containment and overlap (`has`, `hasEvery`, `hasSome`, `containedBy`) are served by a GIN index on the column:
+
+```sql
+create index posts_tags_gin on posts using gin (tags);
+```
+
+better-drizzle generates the same `@>` / `&&` / `<@` predicates you would write by hand, so the planner makes the same choice for both. The `bun run bench:arrays` suite checks exactly that: identical rows and a plan that uses the GIN index on both sides. Use [`.explain()`](/docs/querying/explain) to check your own queries:
+
+```ts
+const {
+	statements: [plan],
+} = await client.posts.findMany({ where: { tags: { has: 'drizzle' } } }).explain();
+```
+
+`hasNone` is a negated overlap, which a GIN index cannot narrow down. For frequent `length` or `isEmpty` filters, add an expression index:
+
+```sql
+create index posts_tags_count on posts ((cardinality(tags)));
+```
+
+## Validation with Zod
+
+The [Zod plugin](/docs/plugins/zod) understands array columns: create and update schemas expect arrays of the element type, and `where` schemas accept the array filter operators with the same element type.
+
+## Limits and dialect support
+
+- **PostgreSQL only.** An array filter object on SQLite or MySQL throws `ARRAY_QUERY_UNSUPPORTED` (status 400). Plain equality with an array value still goes through the regular filter path.
+- **Native array columns only.** JSON columns typed as arrays use the [JSONB filters](/docs/querying/jsonb) instead.
+- **Whole-element comparisons.** Operators compare array elements for equality. Predicates on individual elements, such as "any score above 10", need raw SQL with `ANY` / `unnest`, which you can pass as a Drizzle `sql` fragment in `where`.
+- **No ordering by array contents.** `orderBy` takes scalar columns.

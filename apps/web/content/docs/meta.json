@@ -22,6 +22,7 @@
 		"advanced/locks",
 		"---Advanced queries---",
 		"querying/jsonb",
+		"querying/arrays",
 		"querying/explain",
 		"advanced/raw-sql",
 		"---Customize---",

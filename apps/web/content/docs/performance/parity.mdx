@@ -91,6 +91,7 @@ The report uses the median of each side's samples and publishes `better / raw` a
 | `bun run bench:report` | Verifies read parity, then prints the interleaved, median-of-samples Markdown tables used on the benchmarks page. |
 | `bun run bench:all` | `bench`, `bench:full`, and `bench:memory` in sequence. |
 | `bun run bench:jsonb` | PostgreSQL JSONB path filters with row parity and plan parity (both sides must use, or both skip, the expression index). Needs `DATABASE_URL`. |
+| `bun run bench:arrays` | PostgreSQL native array containment with raw Drizzle row parity. Needs `DATABASE_URL` and a GIN index. |
 
 ```bash
 bun run bench:verify
