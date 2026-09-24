@@ -105,11 +105,32 @@ export default defineConfig({
 	},
 });
 
+// Object keys (`where:`, `select:`, `id: true`) are most identifiers in the
+// samples and their hovers add little, but each one is a full quick-info
+// request against better-drizzle's generic types. Skip them.
+function isObjectKey(code: string, identifier: string, start: number) {
+	let end = start + identifier.length;
+	while (code[end] === ' ' || code[end] === '?') end++;
+	if (code[end] !== ':') return false;
+	let before = start - 1;
+	while (before >= 0 && /\s/.test(code[before] ?? '')) before--;
+	return code[before] === '{' || code[before] === ',';
+}
+
 function twoslashTransformer() {
 	return transformerTwoslash({
-		explicitTrigger: false,
-		twoslasher: (code, extension, options) =>
-			twoslash(TWOSLASH_PREFIX + code, extension, options),
+		// Drizzle comparison tabs stay plain; hovers only on better-drizzle samples.
+		filter: (lang, _code, options) =>
+			(lang === 'ts' || lang === 'tsx') &&
+			!String(options.meta?.__raw ?? '').includes('tab="Drizzle"'),
+		twoslasher: (code, extension, options) => {
+			const full = TWOSLASH_PREFIX + code;
+			return twoslash(full, extension, {
+				...options,
+				shouldGetHoverInfo: (identifier, start) =>
+					!isObjectKey(full, identifier, start),
+			});
+		},
 		typesCache: createFileSystemTypesCache(),
 		// A sample that twoslash cannot process falls back to plain highlighting.
 		onTwoslashError: () => {},
