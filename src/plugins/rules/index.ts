@@ -1,6 +1,6 @@
 export { default, rules } from './shared/plugin';
 
-export { mergeRules, recommended, safe, strict } from './shared/presets';
+export { merge, recommended, safe, strict } from './shared/presets';
 
 export type * from './types';
 
