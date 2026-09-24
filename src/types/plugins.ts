@@ -67,9 +67,12 @@ export type PluginExtension = Record<string, unknown>;
 export type PluginColumnRequirement = {
 	/** The column name that must exist. */
 	column: string;
-	/** When `true`, the plugin can operate without this column. */
+	/** When `true`, models without this column are allowed; `type` is still checked when the column exists. */
 	optional?: boolean;
-	/** Expected Drizzle column type name (for informational purposes). */
+	/**
+	 * Expected Drizzle column type, matched against the column's `columnType`
+	 * (e.g. `'PgTimestamp'`) or `dataType` (e.g. `'date'`, `'string'`).
+	 */
 	type?: string;
 };
 

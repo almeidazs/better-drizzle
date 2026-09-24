@@ -72,6 +72,8 @@ export enum BetterDrizzleErrorCode {
 	PluginOperationArgConflict = 'PLUGIN_OPERATION_ARG_CONFLICT',
 	/** A required column is missing on a model. */
 	PluginRequiredColumnMissing = 'PLUGIN_REQUIRED_COLUMN_MISSING',
+	/** A required column exists but its Drizzle `columnType`/`dataType` does not match. */
+	PluginRequiredColumnType = 'PLUGIN_REQUIRED_COLUMN_TYPE',
 	/** `options.comment` is required when `raw.requireComment` is enabled. */
 	RawCommentRequired = 'RAW_COMMENT_REQUIRED',
 	/** A raw query was aborted via `AbortSignal`. */
