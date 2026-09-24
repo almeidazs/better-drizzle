@@ -18,6 +18,9 @@ export const docs = defineDocs({
 export default defineConfig({
 	mdxOptions: {
 		rehypeCodeOptions: {
+			// The default JS regex engine mis-colors the first line of the first
+			// dual-theme block it highlights (every light token turns keyword red).
+			engine: 'oniguruma',
 			themes: {
 				light: 'github-light',
 				dark: 'github-dark',
