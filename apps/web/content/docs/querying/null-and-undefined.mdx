@@ -1,0 +1,346 @@
+---
+title: null and undefined
+description: undefined means "no condition" and "leave unchanged"; null means SQL NULL. How each behaves in where, relation filters, JSON paths, and data.
+icon: CircleSlash
+seoTitle: 'null vs undefined in Drizzle ORM Queries'
+seoDescription: 'How better-drizzle treats null and undefined in Drizzle ORM where filters, relation filters, JSONB paths, and create/update data, plus safe conditional filters.'
+---
+
+better-drizzle gives the two values different meanings:
+
+- **`undefined` means "nothing here".** In `where`, the field adds no condition. In `data`, the column is not written.
+- **`null` means SQL `NULL`.** In `where`, it compiles to `IS NULL`. In `data`, it writes `NULL`.
+
+The examples on this page add one nullable column to the users table from [Getting started](/docs/getting-started):
+
+```ts title="schema.ts"
+export const users = sqliteTable('users', {
+	id: integer('id').primaryKey(),
+	email: text('email').notNull().unique(),
+	name: text('name').notNull(),
+	active: integer('active', { mode: 'boolean' }).notNull().default(true),
+	bio: text('bio'), // nullable
+});
+```
+
+## At a glance
+
+| Input | Effect |
+| --- | --- |
+| `where: { bio: undefined }` | no condition for `bio` |
+| `where: { bio: null }` | `bio IS NULL` |
+| `where: { bio: { equals: null } }` | `bio IS NULL` |
+| `where: { bio: { not: null } }` | `NOT (bio IS NULL)` |
+| `where: {}` or no `where` | no `WHERE` clause |
+| `data: { bio: undefined }` | `bio` is not written |
+| `data: { bio: null }` | `bio` is set to `NULL` |
+
+## `undefined` in `where`
+
+A field whose value is `undefined` is skipped. It adds nothing to the SQL, as if the key were not there:
+
+```ts
+await client.users.findMany({
+	where: { active: true, name: undefined },
+});
+// WHERE active = 1
+```
+
+The same applies everywhere a condition can appear:
+
+- `where: undefined`, `where: {}`, and a `where` whose fields are all `undefined` produce no `WHERE` clause
+- operator keys set to `undefined` (`gt`, `in`, `contains`, `not`, and the rest) are skipped: `{ id: { gt: undefined } }` adds nothing
+- `AND`, `OR`, and `NOT` drop entries that compile to nothing, and an empty combinator is dropped as a whole
+- JSON path entries set to `undefined` are skipped
+
+<Callout type="warn" title="Empty OR and AND match every row">
+	`OR: []` and `AND: []` add no condition, so they match every row. So does an
+	`OR` whose entries are all empty, such as `OR: [{ email: input.email }, { name: input.name }]`
+	when both inputs are `undefined`. An `OR` with one empty entry and one real
+	entry keeps only the real one.
+</Callout>
+
+<Callout type="warn" title="equals: undefined is not skipped">
+	`{ equals: undefined }` is the one exception. It is compiled to `column = ?`
+	with an `undefined` parameter instead of being dropped. Leave the key out
+	rather than setting it to `undefined`.
+</Callout>
+
+### Empty filters on reads return unfiltered results
+
+Because an all-`undefined` `where` is no filter at all, a read with a missing identifier does not fail. It returns rows it was not meant to:
+
+```ts
+const userId: number | undefined = session.userId; // undefined here
+
+await client.users.findMany({ where: { id: userId } });
+// every user
+
+await client.users.findUnique({ where: { id: userId } });
+// some row of the table, not null
+```
+
+`findUnique`, `findFirst`, and `findOne` all return the first matching row, and with no condition any row matches. Check identifiers before you query:
+
+```ts
+if (userId === undefined) throw new Error('Not signed in');
+
+const user = await client.users.findUnique({ where: { id: userId } }).throw();
+```
+
+## `null` in `where`
+
+On a nullable column, `null` compiles to `IS NULL`. `equals: null` does the same, and `not: null` negates it:
+
+```ts tab="better-drizzle" tab-group="orm"
+const withoutBio = await client.users.findMany({
+	where: { bio: null },
+});
+
+const withBio = await client.users.findMany({
+	where: { bio: { not: null } },
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { isNotNull, isNull } from 'drizzle-orm';
+
+const withoutBio = await db.select().from(users).where(isNull(users.bio));
+
+const withBio = await db.select().from(users).where(isNotNull(users.bio));
+```
+
+`null` is only accepted where the column's type includes `null`. On a `notNull()` column such as `name`, `name: null` is a type error.
+
+### Negation and `NULL`
+
+Other comparisons follow SQL's rules for `NULL`, so rows with a `NULL` value do not match them, negated or not:
+
+- `bio: { not: 'hello' }` compiles to `NOT (bio = 'hello')`, which leaves out rows where `bio` is `NULL`
+- `bio: { in: ['a', null] }` compiles to `bio IN ('a', NULL)`, which never matches a `NULL` row
+
+Add the `NULL` case explicitly when you want it:
+
+```ts
+await client.users.findMany({
+	where: {
+		OR: [{ bio: { not: 'hello' } }, { bio: null }],
+	},
+});
+```
+
+## Relation filters
+
+Relation filters treat `null` and empty objects like this:
+
+| Filter | Matches |
+| --- | --- |
+| `author: { is: null }` | rows with no related row (`NOT EXISTS`) |
+| `author: { isNot: null }` | rows with a related row (`EXISTS`) |
+| `author: { is: {} }` | rows with a related row |
+| `posts: { some: {} }` | rows with at least one related row |
+| `posts: { none: {} }` | rows with no related rows |
+| `posts: { every: {} }` | rows with no related rows (see below) |
+| `posts: {}` or `posts: undefined` | no condition |
+
+```ts
+// Users who have not written anything yet
+const newUsers = await client.users.findMany({
+	where: { posts: { none: {} } },
+});
+
+// Posts whose author row does not exist (useful with a nullable foreign key)
+const orphans = await client.posts.findMany({
+	where: { author: { is: null } },
+});
+```
+
+<Callout type="warn" title="every: {} is not a match-all">
+	`every` compiles to "no related row fails the condition". With an empty
+	condition, every related row counts as failing, so `every: {}` matches only
+	rows that have no related rows at all. Always give `every` a real condition.
+</Callout>
+
+See [Relations](/docs/querying/relations) for the full relation filter API.
+
+## JSON `null` vs SQL `NULL`
+
+A JSONB column can hold SQL `NULL` (no document), and a document can hold JSON `null` at a path. They are filtered differently:
+
+```ts
+// The column itself is SQL NULL (nullable jsonb column)
+await client.accounts.findMany({
+	where: { settings: null },
+});
+// settings IS NULL
+
+// The document stores an explicit JSON null at the path
+await client.accounts.findMany({
+	where: { settings: { json: { nickname: null } } },
+});
+// jsonb_typeof(settings #> '{nickname}') = 'null'
+```
+
+A path filter set to `null` does not match documents where the key is missing. See [JSONB filters](/docs/querying/jsonb#json-null-values) for `not: null` and [missing keys](/docs/querying/jsonb#missing-keys-never-match).
+
+In `data`, `null` for the whole column writes SQL `NULL`. `null` values inside the object are serialized as JSON `null`.
+
+## `undefined` and `null` in `data`
+
+Write payloads are passed to Drizzle's `insert().values()` and `update().set()`, and follow Drizzle's rules:
+
+| | `create` / `createMany` | `update` / `updateMany` |
+| --- | --- | --- |
+| key missing or `undefined` | column default (`$defaultFn`, SQL default, or `NULL`) | column not changed |
+| `null` | `NULL` | set to `NULL` |
+
+```ts tab="better-drizzle" tab-group="orm"
+// Only name changes; bio keeps its value
+await client.users.update({
+	where: { id: 1 },
+	data: { name: input.name, bio: undefined },
+});
+
+// bio is cleared
+await client.users.update({
+	where: { id: 1 },
+	data: { bio: null },
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+await db
+	.update(users)
+	.set({ name: input.name, bio: undefined })
+	.where(eq(users.id, 1));
+
+await db.update(users).set({ bio: null }).where(eq(users.id, 1));
+```
+
+This makes optional form fields safe to pass straight through: an `undefined` field is left alone, and only an explicit `null` clears a value.
+
+If every field in an update is `undefined`, there is nothing to set and Drizzle throws `No values to set` (for `updateMany`, only when some row matches).
+
+For relations, `null` is a relation command rather than a column value: `author: { set: null }` and `author: { disconnect: true }` null the foreign key. See [Relation writes](/docs/writing/relation-writes).
+
+## Conditional filters
+
+Since `undefined` fields are skipped, a filter built from optional inputs needs no `if` chains. Map each input to a condition or to `undefined`:
+
+```ts tab="better-drizzle" tab-group="orm"
+import type { WhereInput } from 'better-drizzle';
+
+type UserSearch = {
+	active?: boolean;
+	search?: string;
+	hasPosts?: boolean;
+};
+
+export function searchUsers(input: UserSearch) {
+	const where = {
+		active: input.active,
+		name: input.search ? { contains: input.search } : undefined,
+		posts: input.hasPosts ? { some: {} } : undefined,
+	} satisfies WhereInput<typeof schema, 'users'>;
+
+	return client.users.findMany({ where, orderBy: { id: 'asc' } });
+}
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { and, asc, eq, exists, like } from 'drizzle-orm';
+
+export function searchUsers(input: UserSearch) {
+	return db
+		.select()
+		.from(users)
+		.where(
+			and(
+				input.active === undefined
+					? undefined
+					: eq(users.active, input.active),
+				input.search ? like(users.name, `%${input.search}%`) : undefined,
+				input.hasPosts
+					? exists(
+							db
+								.select({ one: posts.id })
+								.from(posts)
+								.where(eq(posts.authorId, users.id)),
+						)
+					: undefined,
+			),
+		)
+		.orderBy(asc(users.id));
+}
+```
+
+With no inputs, `searchUsers({})` returns every user. That is the intended result for a search screen, and exactly the wrong one for a write.
+
+Check what a filter compiles to with [`.explain()`](/docs/querying/explain) before relying on it:
+
+```ts
+const { statements } = await client.users
+	.findMany({ where: { active: undefined, name: 'Ada' } })
+	.explain();
+// statements[0].sql contains only the name condition
+```
+
+## Writes with missing filters
+
+For `update`, `updateMany`, `delete`, and `deleteMany`, a `where` that compiles to no condition is not run. The call returns `null` (`update`, `delete`) or `{ count: 0 }` (`updateMany`, `deleteMany`) and touches no rows.
+
+An `update` whose `data` contains [relation writes](/docs/writing/relation-writes) is the exception: it first looks up the target row, so an empty `where` throws when the table has more than one row and updates the only row when it has exactly one.
+
+The risk is a **partly** empty filter. The remaining conditions still apply, so the write reaches more rows than intended:
+
+```ts
+const userId: number | undefined = input.userId; // undefined here
+
+await client.users.updateMany({
+	where: { id: userId, active: true },
+	data: { active: false },
+});
+// WHERE active = 1: every active user is deactivated
+```
+
+A plugin that adds a condition, such as tenant scoping, has the same effect: an otherwise empty `where` becomes the plugin's filter, and the write applies to every row it matches.
+
+To update or delete every row on purpose, say so with an explicit condition:
+
+```ts
+import { sql } from 'drizzle-orm';
+
+await client.users.updateMany({
+	where: sql`1 = 1`,
+	data: { active: false },
+});
+```
+
+### Guardrails
+
+The [rules plugin](/docs/plugins/rules) can reject these calls before they run:
+
+- `noUpdateManyWithoutWhere` and `noDeleteManyWithoutWhere` catch an `updateMany` / `deleteMany` with no `where`; `noUpdateWithoutWhere` and `noDeleteWithoutWhere` do the same for `update` / `delete`
+- `noEmptyWhere` also catches `where: {}`, and with `treatEmptyAndOrAsEmpty` an empty `AND: []` / `OR: []`
+
+```ts
+import { rules } from 'better-drizzle/rules';
+
+const client = better(db, {
+	schema,
+	plugins: [
+		rules({
+			noDeleteManyWithoutWhere: true,
+			noUpdateManyWithoutWhere: true,
+			noEmptyWhere: {
+				level: 'error',
+				operations: ['update', 'updateMany', 'delete', 'deleteMany'],
+			},
+		}),
+	],
+});
+```
+
+These rules look at the shape of `where`, not at its values. `{ id: undefined }` has a key, so it is not empty to them. Validate identifiers in your own code before they reach a query.
