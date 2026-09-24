@@ -1,9 +1,9 @@
 ---
-title: Array filters
-description: Typed PostgreSQL array queries - membership, containment, overlap, emptiness, and length - on native array columns.
+title: PostgreSQL arrays
+description: Typed PostgreSQL array filters and atomic mutations on native array columns.
 icon: Brackets
-seoTitle: 'PostgreSQL Array Filters for Drizzle ORM'
-seoDescription: 'Filter PostgreSQL array columns in Drizzle ORM with typed has, hasEvery, hasSome, containedBy, isEmpty, and length operators that compile to index-friendly SQL.'
+seoTitle: 'PostgreSQL Arrays for Drizzle ORM'
+seoDescription: 'Filter and atomically mutate PostgreSQL array columns in Drizzle ORM with typed membership, containment, length, append, replace, and unique-add operators.'
 ---
 
 PostgreSQL arrays are the simplest way to store tags, roles, permissions, or feature flags on a row. Querying them is another story: `@>`, `&&`, `<@`, `cardinality()`, and a parameter that has to be cast to the right array type. None of it is checked by TypeScript, and every call site gets it slightly differently.
@@ -280,6 +280,83 @@ const { count } = await client.posts.updateMany({
 });
 ```
 
+## Mutate arrays
+
+Array mutations are PostgreSQL-only, atomic updates. They work in `update`,
+`updateMany`, `updateEach`, `upsert`, and explicit-object or callback
+`upsertMany` updates. A field takes either its normal replacement value or one
+mutation object.
+
+```ts tab="better-drizzle" tab-group="orm"
+await client.posts.update({
+	where: { id: postId },
+	data: {
+		tags: { append: ['drizzle', 'orm'] },
+		roles: { prepend: 'editor' },
+		flags: { remove: ['archived', 'spam'] },
+		scores: {
+			replace: [
+				{ from: 0, to: 1 },
+				{ from: -1, to: 0 },
+			],
+		},
+	},
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq, sql } from 'drizzle-orm';
+
+await db
+	.update(posts)
+	.set({
+		tags: sql`array_cat(${posts.tags}, ${sql.param(['drizzle', 'orm'], posts.tags)})`,
+		roles: sql`array_prepend(${'editor'}, ${posts.roles})`,
+		flags: sql`array_remove(array_remove(${posts.flags}, ${'archived'}), ${'spam'})`,
+		scores: sql`array_replace(array_replace(${posts.scores}, ${0}, ${1}), ${-1}, ${0})`,
+	})
+	.where(eq(posts.id, postId));
+```
+
+`addUnique` adds only values that are not already present. It is still one SQL
+statement, preserves the order of the first input occurrence, and leaves
+duplicates that already exist in the stored array untouched:
+
+```ts tab="better-drizzle" tab-group="orm"
+await client.posts.update({
+	where: { id: postId },
+	data: { tags: { addUnique: ['drizzle', 'orm', 'drizzle'] } },
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq, sql } from 'drizzle-orm';
+
+const values = ['drizzle', 'orm', 'drizzle'];
+await db
+	.update(posts)
+	.set({
+		tags: sql`case when ${posts.tags} is null then ${posts.tags} else array_cat(${posts.tags}, coalesce((select array_agg(item order by position) from (select item, min(position) as position from unnest(${sql.param(values, posts.tags)}::text[]) with ordinality as input(item, position) where not (${posts.tags} @> array[item]) group by item) as missing), ${posts.tags}[0:0])) end`,
+	})
+	.where(eq(posts.id, postId));
+```
+
+Use exactly one operator per field. Mutation lists must contain at least one
+non-`null` item. `replace` accepts either one `{ from, to }` pair or a list of
+pairs, which runs from left to right. `remove` removes every occurrence, as
+PostgreSQL's `array_remove()` does. Direct replacement remains available:
+
+```ts
+await client.posts.update({
+	where: { id: postId },
+	data: { tags: [] },
+});
+```
+
+For a `NULL` stored array, PostgreSQL's native functions keep their native
+semantics. `addUnique` also leaves `NULL` unchanged rather than treating it as
+an empty array.
+
 ## Semantics worth knowing
 
 ### `NULL` arrays never match an operator
@@ -314,25 +391,160 @@ An empty list is valid and follows PostgreSQL:
 
 ## Indexing arrays
 
-Containment and overlap (`has`, `hasEvery`, `hasSome`, `containedBy`) are served by a GIN index on the column:
+<Callout type="warn" title="Add a GIN index to every array column you filter">
+	Without one, `has`, `hasEvery`, `hasSome`, and `containedBy` scan the whole
+	table and run the operator on every row. The query gets slower as the table
+	grows, no matter how few rows match.
+</Callout>
 
-```sql
-create index posts_tags_gin on posts using gin (tags);
+### Why GIN
+
+A regular B-tree index orders whole values, so it can answer "is the array exactly `['a', 'b']`" but not "does the array contain `'a'`". A GIN (Generalized Inverted Index) index stores every element separately, pointing at the rows that contain it, like the index at the back of a book. A containment or overlap query then reads only the lists for the elements you ask about, instead of opening every row.
+
+PostgreSQL's default GIN operator class for arrays (`array_ops`) supports exactly the operators better-drizzle generates:
+
+| Filter | Operator | Uses the GIN index |
+| --- | --- | --- |
+| `has`, `hasEvery` | `@>` | yes |
+| `hasSome` | `&&` | yes |
+| `containedBy` | `<@` | yes |
+| a plain array / `equals` | `=` | yes |
+| `hasNone` | `NOT (... && ...)` | no, a negation cannot be narrowed by the index |
+| `isEmpty`, `length` | `cardinality()` | no, use an expression index (below) |
+
+### Create it with Drizzle
+
+Declare the index next to the table and generate the migration with drizzle-kit as usual. The API changed in drizzle-orm 0.31:
+
+<Tabs items={['drizzle-orm 0.31+', 'drizzle-orm 0.30']}>
+
+<Tab value="drizzle-orm 0.31+">
+
+```ts title="schema.ts"
+import { index, integer, pgTable, text } from 'drizzle-orm/pg-core';
+
+export const posts = pgTable(
+	'posts',
+	{
+		id: integer('id').primaryKey(),
+		tags: text('tags').array().notNull(),
+		roles: text('roles').array().notNull(),
+	},
+	(table) => [
+		index('posts_tags_gin').using('gin', table.tags),
+		index('posts_roles_gin').using('gin', table.roles),
+	],
+);
 ```
 
-better-drizzle generates the same `@>` / `&&` / `<@` predicates you would write by hand, so the planner makes the same choice for both. The `bun run bench:arrays` suite checks exactly that: identical rows and a plan that uses the GIN index on both sides. Use [`.explain()`](/docs/querying/explain) to check your own queries:
+</Tab>
+
+<Tab value="drizzle-orm 0.30">
+
+```ts title="schema.ts"
+import { sql } from 'drizzle-orm';
+import { index, integer, pgTable, text } from 'drizzle-orm/pg-core';
+
+export const posts = pgTable(
+	'posts',
+	{
+		id: integer('id').primaryKey(),
+		tags: text('tags').array().notNull(),
+		roles: text('roles').array().notNull(),
+	},
+	(table) => ({
+		tagsGin: index('posts_tags_gin').on(table.tags).using(sql`gin`),
+		rolesGin: index('posts_roles_gin').on(table.roles).using(sql`gin`),
+	}),
+);
+```
+
+</Tab>
+
+</Tabs>
+
+Both produce the same SQL:
+
+```sql
+create index "posts_tags_gin" on "posts" using gin ("tags");
+```
+
+On a large table that is already in production, build the index without blocking writes with `create index concurrently`. It cannot run inside a transaction, and Drizzle's migrator wraps migrations in one, so run that statement as a one-off script outside the migrator. `.concurrently()` on the index builder only changes the generated SQL.
+
+### Check that the index is used
+
+better-drizzle generates the same `@>` / `&&` / `<@` predicates you would write by hand, so the planner makes the same choice for both. The `bun run bench:arrays` suite checks exactly that: identical rows and a plan that uses the GIN index on both sides. Use [`.explain()`](/docs/querying/explain) on your own queries and look for a `Bitmap Index Scan` on the GIN index:
 
 ```ts
 const {
 	statements: [plan],
-} = await client.posts.findMany({ where: { tags: { has: 'drizzle' } } }).explain();
+} = await client.posts
+	.findMany({ where: { tags: { has: 'drizzle' } } })
+	.explain();
 ```
 
-`hasNone` is a negated overlap, which a GIN index cannot narrow down. For frequent `length` or `isEmpty` filters, add an expression index:
+```text
+Bitmap Heap Scan on posts
+  Recheck Cond: (tags @> '{drizzle}'::text[])
+  ->  Bitmap Index Scan on posts_tags_gin
+        Index Cond: (tags @> '{drizzle}'::text[])
+```
+
+A `Seq Scan on posts` instead means there is no usable index, or that the table is small enough that PostgreSQL decided scanning it is cheaper. On tiny tables that is expected and fine.
+
+### Benchmark parity
+
+`bun run bench:arrays` seeds 100,000 rows, validates result parity against a
+manual Drizzle statement for the GIN-backed `has` predicate and `addUnique`,
+then benchmarks every mutation with the same `UPDATE … RETURNING` shape.
+
+On PostgreSQL 16, Bun 1.4.0, and a local 13th-gen i7, one run measured:
+
+| Operation | Drizzle | better-drizzle |
+| --- | ---: | ---: |
+| `has` with GIN | 2.54 ms | 2.19 ms |
+| `addUnique` | 1.32 ms | 1.24 ms |
+| `append` | 1.22 ms | 1.90 ms |
+| `prepend` | 1.24 ms | 2.12 ms |
+| `remove` | 879 µs | 804 µs |
+| `replace` | 995 µs | 1.03 ms |
+
+Absolute timings vary with hardware, cache state, and PostgreSQL settings; use
+the paired ratio from your own run. The native mutations remain one atomic SQL
+statement. `append` and `prepend` intentionally expose the normal repository
+update overhead because they grow the measured row; they are not a claim that
+the SQL primitive itself is slower.
+
+### Length and emptiness
+
+`length` and `isEmpty` compile to `cardinality(column)`, which the GIN index cannot serve. If you filter on them often, add an expression index. drizzle-orm 0.31+ accepts an `sql` expression in `on()`; on 0.30, add it in a SQL migration:
+
+<Tabs items={['drizzle-orm 0.31+', 'SQL migration']}>
+
+<Tab value="drizzle-orm 0.31+">
+
+```ts title="schema.ts"
+(table) => [
+	index('posts_tags_gin').using('gin', table.tags),
+	index('posts_tags_count').on(sql`cardinality(${table.tags})`),
+],
+```
+
+</Tab>
+
+<Tab value="SQL migration">
 
 ```sql
 create index posts_tags_count on posts ((cardinality(tags)));
 ```
+
+</Tab>
+
+</Tabs>
+
+### Trade-offs
+
+GIN indexes are larger than B-tree indexes and make writes to the column slower, because each element gets its own entry. PostgreSQL softens this with a pending list (`fastupdate`, on by default) that batches new entries. For read-heavy filters such as tags, roles, and permissions, the trade is almost always worth it. For a write-heavy column you rarely filter on, skip the index.
 
 ## Validation with Zod
 
