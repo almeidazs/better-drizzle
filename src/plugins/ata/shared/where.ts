@@ -84,26 +84,53 @@ const valueOrFilter = (
 	return { anyOf: [schema, { $ref: ref }] };
 };
 
-/** The where clause for one table's columns. */
-export const createWhereSchema = (
+/**
+ * The clause's definitions, and the reference that names it.
+ *
+ * The clause refers to itself through AND, OR and NOT. Spelling that as
+ * `$ref: '#'` only works while the clause is the whole document: nested under
+ * a query argument, `#` would name the argument object instead. So the clause
+ * is a definition like any other and refers to itself by name, which lets a
+ * caller hoist these definitions into whatever document it is building.
+ *
+ * `prefix` keeps two tables' definitions apart in one document.
+ */
+export const whereDefinitions = (
 	columns: Record<string, AnyColumn>,
-): JsonSchema => {
-	const $defs: Record<string, JsonSchema> = {};
+	prefix = '',
+): { defs: Record<string, JsonSchema>; ref: string } => {
+	const clause = `${prefix}where`;
+	const self = `#/$defs/${clause}`;
+	const defs: Record<string, JsonSchema> = {};
 	const properties: Record<string, JsonSchema> = {
-		AND: { items: { $ref: '#' }, type: 'array' },
+		AND: { items: { $ref: self }, type: 'array' },
 		NOT: {
-			anyOf: [{ $ref: '#' }, { items: { $ref: '#' }, type: 'array' }],
+			anyOf: [{ $ref: self }, { items: { $ref: self }, type: 'array' }],
 		},
-		OR: { items: { $ref: '#' }, type: 'array' },
+		OR: { items: { $ref: self }, type: 'array' },
 	};
 
 	for (const [name, column] of Object.entries(columns)) {
 		const { schema, residue } = columnToSchema(column);
 		const kind = filterKindFor(schema);
-		const defName = `filter_${name}`;
-		$defs[defName] = filterBody(kind, schema, `#/$defs/${defName}`);
+		const defName = `${prefix}filter_${name}`;
+		defs[defName] = filterBody(kind, schema, `#/$defs/${defName}`);
 		properties[name] = valueOrFilter(schema, residue, `#/$defs/${defName}`);
 	}
 
-	return { $defs, additionalProperties: false, properties, type: 'object' };
+	defs[clause] = {
+		additionalProperties: false,
+		properties,
+		type: 'object',
+	};
+
+	return { defs, ref: self };
+};
+
+/** The where clause for one table's columns, as a document of its own. */
+export const createWhereSchema = (
+	columns: Record<string, AnyColumn>,
+): JsonSchema => {
+	const { defs, ref } = whereDefinitions(columns);
+	return { $defs: defs, $ref: ref };
 };

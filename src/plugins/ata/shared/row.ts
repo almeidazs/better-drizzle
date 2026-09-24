@@ -9,6 +9,16 @@ type RowError = {
 	message: string;
 };
 
+/**
+ * Which row a validator is for.
+ *
+ * `select` is a row as it comes back: every non-nullable column is present.
+ * `create` is a row on the way in: a column the database fills in, a default or
+ * a generated key, is optional even though it is not nullable. `update` is a
+ * patch, so nothing is required.
+ */
+export type RowMode = 'create' | 'select' | 'update';
+
 export type RowValidator = {
 	/** The JSON Schema ata compiles. Columns with a residue appear as `{}`. */
 	schema: {
@@ -20,6 +30,32 @@ export type RowValidator = {
 	residues: Record<string, ResidueKind>;
 	validate(row: unknown): { valid: boolean; errors?: RowError[] };
 };
+
+/**
+ * Whether a column has to be present.
+ *
+ * A generated column is never written, so it is not required on the way in and
+ * is dropped from a create payload by the caller. A column with a default is
+ * supplied by the database when it is left out, so requiring it here would
+ * refuse a payload the database would have accepted.
+ */
+const isRequired = (
+	column: AnyColumn,
+	nullable: boolean,
+	mode: RowMode,
+): boolean => {
+	if (mode === 'update') return false;
+	if (nullable) return false;
+	if (mode === 'select') return true;
+	if (column.hasDefault) return false;
+	return !isGenerated(column);
+};
+
+const isGenerated = (column: AnyColumn): boolean =>
+	Boolean(
+		(column as { generated?: unknown }).generated ??
+		(column as { generatedIdentity?: unknown }).generatedIdentity,
+	);
 
 /**
  * A validator for one table's rows.
@@ -35,6 +71,7 @@ export type RowValidator = {
  */
 export const createRowValidator = (
 	columns: Record<string, AnyColumn>,
+	mode: RowMode = 'select',
 ): RowValidator => {
 	const properties: Record<string, Record<string, unknown>> = {};
 	const required: string[] = [];
@@ -43,7 +80,7 @@ export const createRowValidator = (
 	for (const [name, column] of Object.entries(columns)) {
 		const { schema, residue, nullable } = columnToSchema(column);
 		properties[name] = schema;
-		if (!nullable) required.push(name);
+		if (isRequired(column, nullable, mode)) required.push(name);
 		if (residue) residues[name] = residue;
 	}
 

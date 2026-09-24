@@ -6,6 +6,7 @@ import {
 	boolean,
 	integer,
 	pgTable,
+	serial,
 	timestamp,
 	varchar,
 } from 'drizzle-orm/pg-core';
@@ -105,5 +106,44 @@ describe('createRowValidator', () => {
 		expect(r.errors?.every((e) => e.instancePath !== '/created')).toBe(
 			true,
 		);
+	});
+});
+
+// Three shapes of the same table: what comes back, what goes in, and a patch.
+describe('createRowValidator modes', () => {
+	const posts = pgTable('posts', {
+		id: serial('id').primaryKey(),
+		title: varchar('title', { length: 200 }).notNull(),
+		views: integer('views').notNull().default(0),
+		note: varchar('note', { length: 200 }),
+	});
+	const cols = getTableColumns(posts);
+
+	const select = createRowValidator(cols, 'select');
+	const create = createRowValidator(cols, 'create');
+	const update = createRowValidator(cols, 'update');
+
+	test('select requires every non-nullable column', () => {
+		expect(select.schema.required.sort()).toEqual(['id', 'title', 'views']);
+	});
+
+	test('create does not require what the database fills in', () => {
+		// id is a serial and views has a default, so only title is required
+		expect(create.schema.required).toEqual(['title']);
+		expect(create.validate({ title: 'hello' }).valid).toBe(true);
+		expect(create.validate({}).valid).toBe(false);
+	});
+
+	test('update requires nothing, because it is a patch', () => {
+		expect(update.schema.required).toEqual([]);
+		expect(update.validate({}).valid).toBe(true);
+		expect(update.validate({ views: 3 }).valid).toBe(true);
+	});
+
+	test('the column types still hold in every mode', () => {
+		expect(create.validate({ title: 'a', views: 'many' }).valid).toBe(
+			false,
+		);
+		expect(update.validate({ views: 'many' }).valid).toBe(false);
 	});
 });

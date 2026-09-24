@@ -56,6 +56,16 @@
 				"default": "./dist/index.cjs"
 			}
 		},
+		"./ata": {
+			"import": {
+				"types": "./dist/ata.d.ts",
+				"default": "./dist/ata.js"
+			},
+			"require": {
+				"types": "./dist/ata.d.cts",
+				"default": "./dist/ata.cjs"
+			}
+		},
 		"./eslint": {
 			"import": {
 				"types": "./dist/eslint.d.ts",
@@ -132,7 +142,7 @@
 		"docs:dev": "bun run --filter @better-drizzle/web dev",
 		"docs:build": "bun run --filter @better-drizzle/web build",
 		"pack": "bun run build && npm pack --dry-run --ignore-scripts",
-		"test": "bun test tests/core tests/rules tests/eslint tests/timestamps tests/soft-delete tests/zod",
+		"test": "bun test tests/core tests/rules tests/eslint tests/timestamps tests/soft-delete tests/zod tests/ata",
 		"test:mysql": "bun test tests/core/where.mysql.test.ts",
 		"test:integration": "bun test tests/core/integration",
 		"bench:jsonb": "DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required} bun run benchmark/jsonb.ts",
