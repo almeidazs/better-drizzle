@@ -11,7 +11,7 @@ PostgreSQL arrays are the simplest way to store tags, roles, permissions, or fea
 better-drizzle gives native array columns their own **typed filter**. The operators read like what you mean, the element type comes from your schema, and every filter compiles to the same PostgreSQL operators you would write by hand:
 
 ```ts tab="better-drizzle" tab-group="orm"
-const posts = await client.posts.findMany({
+const rows = await client.posts.findMany({
 	where: {
 		tags: { has: 'drizzle', length: { lte: 5 } },
 		editors: { hasSome: [currentUserId] },
@@ -279,6 +279,53 @@ const { count } = await client.posts.updateMany({
 	data: { flags: ['featured'] },
 });
 ```
+
+## Filter array elements
+
+Use `some`, `every`, and `none` when the question is about a predicate on an
+individual element rather than exact membership. Their nested filter is typed
+from the array element: numeric arrays expose comparisons, string arrays expose
+patterns and `mode`, and enum arrays keep their literal values.
+
+```ts tab="better-drizzle" tab-group="orm"
+const posts = await client.posts.findMany({
+	where: {
+		scores: { some: { gt: 100 } },
+		ages: { every: { gte: 0 } },
+		emails: {
+			some: { endsWith: '@rockfeller.com.br', mode: 'insensitive' },
+		},
+		flags: { none: { equals: 'archived' } },
+	},
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { sql } from 'drizzle-orm';
+
+const rows = await db
+	.select()
+	.from(posts)
+	.where(sql`
+		${posts.scores} is not null
+		and exists (select 1 from unnest(${posts.scores}) as array_element where (array_element > ${100}) is true)
+		and ${posts.ages} is not null
+		and not exists (select 1 from unnest(${posts.ages}) as array_element where (array_element >= ${0}) is not true)
+	`);
+```
+
+An empty array has no matching element, so `some` is false while `every` and
+`none` are true. A `NULL` array never matches these operators. A `NULL` item
+does not satisfy the nested predicate: it fails `every`, is ignored by `some`,
+and does not prevent `none`.
+
+For `some` equality/list predicates and `every` equality/list predicates,
+better-drizzle emits PostgreSQL array operators (`@>`, `&&`, `<@`) that a GIN
+index can use. `none` is a negated containment/overlap condition, so the
+normal GIN operator class cannot narrow it selectively. Comparisons, patterns,
+compound filters, and nested `not` use `unnest()`; they also cannot use that
+GIN path. Use a normalized child table when those predicates are a primary
+access path on a large dataset.
 
 ## Mutate arrays
 
