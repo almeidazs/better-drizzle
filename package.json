@@ -150,7 +150,8 @@
 		"test:jsonb": "bun test tests/core/jsonb.pg.test.ts",
 		"test:arrays": "bun test tests/core/arrays.pg.test.ts",
 		"bench:report": "bun run benchmark/report.ts",
-		"bench:validation": "bun run benchmark/validation.ts"
+		"bench:validation": "bun run benchmark/validation.ts",
+		"bench:validation-e2e": "bun run benchmark/validation-e2e.ts"
 	},
 	"devDependencies": {
 		"@commitlint/config-conventional": "^21.1.0",
