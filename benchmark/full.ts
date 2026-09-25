@@ -5,6 +5,7 @@ import { bench, do_not_optimize, group, run, summary } from 'mitata';
 
 import {
 	betterActiveCount,
+	betterAtomicUpdateAndLoad,
 	betterComplexJoinEquivalent,
 	betterCursorPaginate,
 	betterExists,
@@ -17,6 +18,7 @@ import {
 	betterRelationGraph,
 	betterSimpleTransaction,
 	rawActiveCount,
+	rawAtomicUpdateAndLoad,
 	rawComplexRelationFilter,
 	rawCursorPaginate,
 	rawExists,
@@ -386,6 +388,11 @@ const writePairs = (raw: BenchmarkContext, better: BenchmarkContext) => {
 	const rawExtended = createExtendedOperations(raw, 'raw');
 	const betterExtended = createExtendedOperations(better, 'better');
 	return [
+		[
+			'atomic update + reload',
+			() => rawAtomicUpdateAndLoad(raw),
+			() => betterAtomicUpdateAndLoad(better),
+		],
 		[
 			'createMany + deleteMany',
 			rawExtended.batchCreateDelete,

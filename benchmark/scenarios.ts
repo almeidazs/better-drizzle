@@ -368,6 +368,23 @@ export const betterUpdateAndLoad = async (context: BenchmarkContext) => {
 	});
 };
 
+export const rawAtomicUpdateAndLoad = async (context: BenchmarkContext) => {
+	const id = nextUpdateId(context);
+	const rows = await context.raw
+		.update(benchWrites)
+		.set({ value: sql`${benchWrites.value} + ${1}` })
+		.where(eq(benchWrites.id, id))
+		.returning();
+
+	return rows[0] ?? null;
+};
+
+export const betterAtomicUpdateAndLoad = async (context: BenchmarkContext) =>
+	betterClient(context).benchWrites.update({
+		data: { value: { increment: 1 } },
+		where: { id: nextUpdateId(context) },
+	});
+
 export const rawComplexRelationFilter = async (context: BenchmarkContext) =>
 	context.raw
 		.select({

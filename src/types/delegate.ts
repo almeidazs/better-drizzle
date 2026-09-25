@@ -169,6 +169,25 @@ export type PgArrayMutationInput<T> =
 			addUnique: PgArrayMutationValues<T>;
 	  };
 
+/** Atomic mutations supported by numeric columns. */
+export type NumericMutationInput = AtLeastOne<{
+	decrement?: number;
+	divide?: number;
+	increment?: number;
+	multiply?: number;
+	set?: number;
+}>;
+
+/** Atomic mutation supported by boolean columns. */
+export type BooleanMutationInput = { toggle: true };
+
+type ScalarUpdateValue<T> =
+	NonNullable<T> extends number
+		? T | NumericMutationInput
+		: NonNullable<T> extends boolean
+			? T | BooleanMutationInput
+			: T;
+
 /** Partial scalar data accepted by update operations. */
 export type UpdateScalarDataInput<
 	Schema extends AnySchema,
@@ -181,7 +200,7 @@ export type UpdateScalarDataInput<
 		?
 				| InsertModelFor<Schema, Name>[K]
 				| PgArrayMutationInput<InsertModelFor<Schema, Name>[K]>
-		: InsertModelFor<Schema, Name>[K];
+		: ScalarUpdateValue<InsertModelFor<Schema, Name>[K]>;
 }>;
 
 /** Partial scalar update data plus nested relation mutation commands. */
@@ -467,7 +486,7 @@ export type UpdateEachUpdateMap<
 				| SelectModelFor<Schema, Name>[K]
 				| PgArrayMutationInput<SelectModelFor<Schema, Name>[K]>
 				| SQL
-		: SelectModelFor<Schema, Name>[K] | SQL;
+		: ScalarUpdateValue<SelectModelFor<Schema, Name>[K]> | SQL;
 }>;
 
 /**
@@ -652,7 +671,7 @@ export type UpsertManyUpdateValue<
 				| InsertModelFor<Schema, Name>[K]
 				| PgArrayMutationInput<InsertModelFor<Schema, Name>[K]>
 				| SQL
-		: InsertModelFor<Schema, Name>[K] | SQL;
+		: ScalarUpdateValue<InsertModelFor<Schema, Name>[K]> | SQL;
 }>;
 
 /**

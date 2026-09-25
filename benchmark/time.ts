@@ -2,6 +2,7 @@ import { bench, do_not_optimize, group, run, summary } from 'mitata';
 
 import {
 	betterActiveCount,
+	betterAtomicUpdateAndLoad,
 	betterComplexJoinEquivalent,
 	betterCreateDeleteRoundtrip,
 	betterCursorPaginate,
@@ -17,6 +18,7 @@ import {
 	betterSimpleTransaction,
 	betterUpdateAndLoad,
 	rawActiveCount,
+	rawAtomicUpdateAndLoad,
 	rawComplexJoinFlat,
 	rawComplexRelationFilter,
 	rawCreateDeleteBare,
@@ -99,6 +101,11 @@ group('api parity: writes', () => {
 			do_not_optimize(await rawUpdateAndLoad(rawContext)));
 		bench('better: update + reload', async () =>
 			do_not_optimize(await betterUpdateAndLoad(betterContext)));
+
+		bench('drizzle: atomic update + reload', async () =>
+			do_not_optimize(await rawAtomicUpdateAndLoad(rawContext)));
+		bench('better: atomic update + reload', async () =>
+			do_not_optimize(await betterAtomicUpdateAndLoad(betterContext)));
 	});
 });
 

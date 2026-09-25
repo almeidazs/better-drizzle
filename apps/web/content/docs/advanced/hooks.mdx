@@ -89,6 +89,7 @@ Hook return values are ignored. A hook that throws fails the call (a throwing be
 		afterRollback: { type: '(callback) => void', description: 'Queue a callback for after rollback. Throws outside a transaction.' },
 		result: { type: 'unknown', description: 'After hooks only. The operation result.' },
 		row: { type: 'object | null', description: 'After hooks only, for `create`, `upsert`, `update`, `delete`, `findFirst`, `findOne`, and `findUnique`. Same value as `result`.' },
+		compiled: { type: 'Readonly<Record<string, unknown>> | undefined', description: 'After create/update hooks only. The final atomic `SET` expressions when the write used atomic mutations.' },
 		rows: { type: 'object[]', description: '`afterQuery` only, for `findMany`. Same value as `result`.' },
 	}}
 />

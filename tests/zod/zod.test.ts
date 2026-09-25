@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { better } from 'better-drizzle';
 import { sql } from 'drizzle-orm';
-import { integer, pgTable, text } from 'drizzle-orm/pg-core';
+import { boolean, integer, pgTable, text } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 
 import { zod as betterZod } from '../../src/plugins/zod';
@@ -143,6 +143,33 @@ describe('better-drizzle/zod - PostgreSQL array update schemas', () => {
 				.success,
 		).toBe(false);
 		expect(where?.safeParse({ tags: { none: 'a' } }).success).toBe(false);
+	});
+});
+
+describe('better-drizzle/zod - scalar atomic update schemas', () => {
+	test('accepts numeric and boolean envelopes and rejects invalid operands', () => {
+		const accounts = pgTable('zod_atomic_accounts', {
+			active: boolean('active').notNull(),
+			balance: integer('balance').notNull(),
+			id: integer('id').primaryKey(),
+		});
+		const schema = createZodSchemasRegistry({ accounts }, {}).get(
+			'accounts',
+		)?.schemas.update;
+
+		expect(
+			schema?.safeParse({
+				active: { toggle: true },
+				balance: { increment: 2, multiply: 3 },
+			}).success,
+		).toBe(true);
+		expect(schema?.safeParse({ balance: {} }).success).toBe(false);
+		expect(schema?.safeParse({ balance: { divide: 0 } }).success).toBe(
+			false,
+		);
+		expect(schema?.safeParse({ active: { toggle: false } }).success).toBe(
+			false,
+		);
 	});
 });
 

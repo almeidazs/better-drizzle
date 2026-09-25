@@ -273,6 +273,78 @@ describe('hooks - create', () => {
 });
 
 describe('hooks - update', () => {
+	test('afterUpdate receives compiled atomic expressions', async () => {
+		const sqlite = new Database(':memory:');
+		sqlite.exec(
+			`PRAGMA journal_mode = MEMORY; PRAGMA foreign_keys = ON; ${createTablesSql}`,
+		);
+		sqlite.exec(
+			"INSERT INTO hook_users VALUES (1, 'a@test.com', 'A', 20, 1)",
+		);
+		let compiled: Readonly<Record<string, unknown>> | undefined;
+		const client = better(drizzle(sqlite, { schema }), {
+			schema,
+			hooks: { afterUpdate: (context) => (compiled = context.compiled) },
+		});
+
+		await client.users.update({
+			data: { age: { increment: 1 } },
+			where: { id: 1 },
+		});
+
+		expect(compiled?.age).toBeDefined();
+		sqlite.close();
+	});
+
+	test('afterCreate receives compiled expressions only for atomic upsertMany updates', async () => {
+		const sqlite = new Database(':memory:');
+		sqlite.exec(
+			`PRAGMA journal_mode = MEMORY; PRAGMA foreign_keys = ON; ${createTablesSql}`,
+		);
+		sqlite.exec(
+			"INSERT INTO hook_users VALUES (1, 'a@test.com', 'A', 20, 1)",
+		);
+		const compiled: Array<Readonly<Record<string, unknown>> | undefined> =
+			[];
+		const client = better(drizzle(sqlite, { schema }), {
+			schema,
+			hooks: {
+				afterCreate: (context) => compiled.push(context.compiled),
+			},
+		});
+
+		await client.users.upsertMany({
+			data: [
+				{
+					active: true,
+					age: 1,
+					email: 'a@test.com',
+					id: 1,
+					name: 'Ignored',
+				},
+			],
+			target: 'email',
+			update: { age: { increment: 1 } },
+		});
+		await client.users.upsertMany({
+			data: [
+				{
+					active: true,
+					age: 1,
+					email: 'a@test.com',
+					id: 1,
+					name: 'Updated',
+				},
+			],
+			target: 'email',
+			update: { name: 'Updated' },
+		});
+
+		expect(compiled[0]?.age).toBeDefined();
+		expect(compiled[1]).toBeUndefined();
+		sqlite.close();
+	});
+
 	test('beforeUpdate and afterUpdate fire on update', async () => {
 		const events: HookEvent[] = [];
 		const { client, sqlite } = createHookContext(events);

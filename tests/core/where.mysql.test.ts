@@ -75,4 +75,20 @@ describe.skipIf(!MYSQL_URL)('relation where - Many (mysql)', () => {
 		});
 		expect(names(result)).toEqual(['Alice', 'Bob', 'Diana']);
 	});
+
+	test('upsert applies an atomic conflict update natively', async () => {
+		const result = await ctx.better.users.upsert({
+			create: {
+				active: true,
+				age: 25,
+				email: 'alice@example.com',
+				id: 1,
+				name: 'Ignored',
+			},
+			update: { age: { increment: 3 } },
+			where: { id: 1 },
+		});
+
+		expect(result).toMatchObject({ age: 28, id: 1 });
+	});
 });
