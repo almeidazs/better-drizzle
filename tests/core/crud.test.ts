@@ -363,6 +363,39 @@ describe('update', () => {
 		const fresh = await ctx.better.users.findFirst({ where: { id: 1 } });
 		expect(fresh?.age).toBe(99);
 	});
+
+	test('composes numeric mutations and toggles booleans atomically', async () => {
+		const updated = await ctx.better.users.update({
+			data: {
+				active: { toggle: true },
+				age: { decrement: 2, increment: 4, multiply: 3, set: 10 },
+			},
+			where: { id: 1 },
+		});
+
+		expect(updated).toMatchObject({ active: false, age: 8 });
+	});
+
+	test('rejects invalid numeric mutation operands before executing SQL', async () => {
+		await expect(
+			ctx.better.users.update({
+				data: { age: { divide: 0 } },
+				where: { id: 1 },
+			}),
+		).rejects.toThrow('divide cannot be zero');
+	});
+
+	test('validates scalar envelopes before an unmatched relation write returns', async () => {
+		await expect(
+			ctx.better.users.update({
+				data: {
+					age: { divide: 0 },
+					posts: { connect: { id: 1 } },
+				},
+				where: { id: 9999 },
+			}),
+		).rejects.toThrow('divide cannot be zero');
+	});
 });
 
 describe('updateMany', () => {
@@ -402,6 +435,30 @@ describe('updateMany', () => {
 		const inactiveCount = all.filter((u) => !u.active).length;
 		expect(inactiveCount).toBe(0);
 	});
+
+	test('updates every matched numeric column from its persisted value', async () => {
+		const result = await ctx.better.users.updateMany({
+			data: { age: { increment: 5 } },
+			where: { id: { in: [1, 2] } },
+		});
+
+		expect(result.count).toBe(2);
+		expect(
+			await ctx.better.users.findMany({
+				orderBy: { id: 'asc' },
+				where: { id: { in: [1, 2] } },
+			}),
+		).toMatchObject([{ age: 30 }, { age: 35 }]);
+	});
+
+	test('validates atomic envelopes even when no rows match', async () => {
+		await expect(
+			ctx.better.users.updateMany({
+				data: { age: { divide: 0 } },
+				where: { id: 9999 },
+			}),
+		).rejects.toThrow('divide cannot be zero');
+	});
 });
 
 describe('updateEach', () => {
@@ -428,6 +485,34 @@ describe('updateEach', () => {
 		expect(rows[0]?.age).toBe(26);
 		expect(rows[1]?.name).toBe('Bob Two');
 		expect(rows[1]?.age).toBe(31);
+	});
+
+	test('accepts atomic mutation envelopes from update callbacks', async () => {
+		await ctx.better.users.updateEach({
+			by: ctx.schema.users.id,
+			data: [
+				{ id: 1, delta: 2 },
+				{ id: 2, delta: 4 },
+			],
+			update: { age: (row) => ({ increment: row.delta as number }) },
+		});
+
+		expect(
+			await ctx.better.users.findMany({
+				orderBy: { id: 'asc' },
+				where: { id: { in: [1, 2] } },
+			}),
+		).toMatchObject([{ age: 27 }, { age: 34 }]);
+	});
+
+	test('validates updateEach envelopes before checking matched rows', async () => {
+		await expect(
+			ctx.better.users.updateEach({
+				by: ctx.schema.users.id,
+				data: [{ id: 9999 }],
+				update: { age: () => ({ divide: 0 }) },
+			}),
+		).rejects.toThrow('divide cannot be zero');
 	});
 
 	test('supports select projection and extra where filter', async () => {
@@ -587,6 +672,22 @@ describe('upsert', () => {
 		expect(result?.name).toBe('Alice Upserted');
 	});
 
+	test('applies an atomic update to the persisted conflict row', async () => {
+		const result = await ctx.better.users.upsert({
+			create: {
+				age: 1,
+				active: true,
+				email: 'alice@example.com',
+				id: 1,
+				name: 'Ignored',
+			},
+			update: { age: { increment: 3 } },
+			where: { id: 1 },
+		});
+
+		expect(result).toMatchObject({ age: 28, id: 1 });
+	});
+
 	test('upsert with select returns only selected fields', async () => {
 		const result = await ctx.better.users.upsert({
 			where: { name: 'Bob' },
@@ -672,6 +773,28 @@ describe('upsertMany', () => {
 			name: 'Batch New',
 			age: 22,
 			active: true,
+		});
+	});
+
+	test('applies atomic envelopes on conflict', async () => {
+		await ctx.better.users.upsertMany({
+			data: [
+				{
+					age: 1,
+					active: true,
+					email: 'alice@example.com',
+					id: 1,
+					name: 'Ignored',
+				},
+			],
+			target: 'email',
+			update: { age: { increment: 2 } },
+		});
+
+		expect(
+			await ctx.better.users.findFirst({ where: { id: 1 } }),
+		).toMatchObject({
+			age: 27,
 		});
 	});
 
