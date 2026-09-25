@@ -15,6 +15,7 @@
 		"querying/pagination",
 		"---Write data---",
 		"writing/crud",
+		"writing/atomic-updates",
 		"writing/relation-writes",
 		"writing/throwing-results",
 		"---Transactions & errors---",

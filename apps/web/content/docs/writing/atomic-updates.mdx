@@ -1,0 +1,78 @@
+---
+title: Atomic updates
+description: Update counters and flags atomically in the database.
+icon: Sigma
+seoTitle: 'Atomic Updates with Drizzle ORM'
+seoDescription: 'Use Better Drizzle atomic updates for Drizzle ORM counters and booleans without reading values into application code.'
+---
+
+Atomic update envelopes read and write a column in one database statement. They are useful for balances, counters, retry counts, and flags that may be changed concurrently.
+
+```ts tab="better-drizzle" tab-group="orm"
+const account = await client.accounts.update({
+	where: { id },
+	data: {
+		balance: { increment: 100 },
+		loginCount: { increment: 1 },
+		retries: { decrement: 1 },
+		locked: { toggle: true },
+	},
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+const [account] = await db
+	.update(accounts)
+	.set({
+		balance: sql`${accounts.balance} + 100`,
+		loginCount: sql`${accounts.loginCount} + 1`,
+		retries: sql`${accounts.retries} - 1`,
+		locked: sql`not ${accounts.locked}`,
+	})
+	.where(eq(accounts.id, id))
+	.returning();
+```
+
+## Operators
+
+Numeric columns accept `increment`, `decrement`, `multiply`, `divide`, and `set`. Boolean columns accept `toggle: true`. Direct values remain valid.
+
+Several numeric operators may be combined. Better Drizzle always applies them in this order: `set`, `increment`, `decrement`, `multiply`, then `divide`.
+
+```ts
+await client.accounts.update({
+	where: { id },
+	data: { balance: { set: 10, increment: 4, multiply: 3 } }, // 42
+});
+```
+
+`divide: 0`, non-finite operands, empty envelopes, and operators used on incompatible columns fail before SQL is sent. `NULL` and integer-division behavior remain those of the selected database.
+
+## Supported writes
+
+Use atomic envelopes in `update`, `updateMany`, `updateEach`, `upsert`, and `upsertMany`. In `updateEach`, return the envelope from the column callback:
+
+```ts
+await client.accounts.updateEach({
+	by: accounts.id,
+	data: [{ id: 1, delta: 5 }],
+	update: { balance: (row) => ({ increment: row.delta }) },
+});
+```
+
+PostgreSQL, SQLite, and MySQL support atomic updates wherever the underlying write API is available. `upsertMany` itself remains unavailable on MySQL.
+
+## Hooks
+
+After an atomic write, post-write hooks receive a readonly `compiled` object containing the final `SET` expressions. Plugins still receive the declarative envelope before execution.
+
+```ts
+const client = better(db, {
+	schema,
+	hooks: {
+		afterUpdate({ compiled }) {
+			console.log(compiled);
+		},
+	},
+});
+```
