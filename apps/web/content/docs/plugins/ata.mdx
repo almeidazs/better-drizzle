@@ -143,6 +143,24 @@ The plugin reads each column and writes the constraint it can prove:
 
 The `where` clause is recursive in two places, a filter's `not` and the whole clause through `AND`, `OR` and `NOT`. Both are written with `$defs` and local `$ref`, so a clause of any depth is still one compiled validator and one pass.
 
+## Array columns
+
+An array column's element is a column in its own right on the drizzle side, so `text('tags').array()` becomes `{ "type": "array", "items": { "type": "string" } }`. The element keeps its own constraints, so `varchar('tags', { length: 20 }).array()` carries the `maxLength` on the items.
+
+The element is not nullable even though drizzle's base column reports `notNull: false`, because that is an artifact of how the base column is built rather than a statement about entries: drizzle's own inferred type for `text('tags').array().notNull()` is `string[]`, and assigning `['x', null]` to it is a type error.
+
+The where clause carries the array filters the core compiles: `has` for one element, `hasEvery`, `hasSome`, `hasNone` and `containedBy` for a list of them, `isEmpty`, `length` (a number or a comparison on one), `equals` for the whole array, `not`, and `some`, `none` and `every` for a filter on the element. Passing an element where a list belongs, or the reverse, is refused rather than coerced.
+
+An element predicate has to constrain something, which is how the core avoids a clause that silently matches every row:
+
+```ts
+await db.posts.findMany({ where: { tags: { some: {} } } });                   // refused
+await db.posts.findMany({ where: { tags: { some: { mode: 'insensitive' } } } }); // refused
+await db.posts.findMany({ where: { tags: { some: { contains: 'a' } } } });    // fine
+```
+
+An array whose element ata cannot describe, `timestamp().array()`, is an array in the schema and a residue per entry: the clause still checks the operator shape, and the row validator judges each entry, naming the index of the one that failed.
+
 ## The three types JSON Schema cannot describe
 
 `Date`, `BigInt` and `Buffer` are JavaScript runtime types, not JSON shapes. Rather than reach for a custom keyword, which would move the whole schema onto ata's interpreted engine and give up most of the reason to use it, those columns ask the schema for nothing and are checked by a predicate that runs only on rows ata has already accepted.

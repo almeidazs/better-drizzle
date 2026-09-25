@@ -32,10 +32,11 @@ type JsonSchema = Record<string, unknown>;
 const STRING_OPS = ['contains', 'endsWith', 'startsWith'] as const;
 const COMPARABLE_OPS = ['gt', 'gte', 'lt', 'lte'] as const;
 
-type FilterKind = 'boolean' | 'comparable' | 'plain' | 'string';
+type FilterKind = 'array' | 'boolean' | 'comparable' | 'plain' | 'string';
 
 const filterKindFor = (schema: JsonSchema): FilterKind => {
 	const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
+	if (type === 'array') return 'array';
 	if (type === 'string') return schema.format === 'uuid' ? 'plain' : 'string';
 	if (type === 'integer' || type === 'number') return 'comparable';
 	if (type === 'boolean') return 'boolean';
@@ -44,6 +45,71 @@ const filterKindFor = (schema: JsonSchema): FilterKind => {
 	if (schema.type === undefined && schema.enum === undefined)
 		return 'comparable';
 	return 'plain';
+};
+
+/**
+ * The element type inside an array column's schema. `{}` when the element is a
+ * residue, which is exactly the case where nothing is claimed about it.
+ */
+const elementOf = (value: JsonSchema): JsonSchema => {
+	const items = value.items;
+	return items && typeof items === 'object' ? (items as JsonSchema) : {};
+};
+
+/**
+ * The filters for an array column.
+ *
+ * `has` takes one element and `hasEvery`, `hasSome`, `hasNone` and `containedBy`
+ * take a list of them, which is the distinction a caller most often gets wrong,
+ * so both spellings are checked rather than accepted interchangeably. `some`,
+ * `none` and `every` take a filter on the element, and the core refuses an empty
+ * one: a predicate that constrains nothing silently matches every row. `mode`
+ * alone does not count as saying something, so the exclusion is written as the
+ * one object shape that is forbidden, an object whose only key may be `mode`.
+ */
+const arrayFilterBody = (
+	value: JsonSchema,
+	ref: string,
+	elementRef: string,
+) => {
+	const element = elementOf(value);
+	const list = { items: element, type: 'array' };
+
+	return {
+		additionalProperties: false,
+		properties: {
+			containedBy: list,
+			equals: value,
+			every: { $ref: elementRef },
+			has: element,
+			hasEvery: list,
+			hasNone: list,
+			hasSome: list,
+			isEmpty: { type: 'boolean' },
+			length: {
+				anyOf: [
+					{ type: 'integer' },
+					filterBody('comparable', { type: 'integer' }, ref),
+				],
+			},
+			none: { $ref: elementRef },
+			not: { anyOf: [value, { $ref: ref }] },
+			some: { $ref: elementRef },
+		},
+		type: 'object',
+	};
+};
+
+const elementPredicate = (value: JsonSchema, ref: string): JsonSchema => {
+	const element = elementOf(value);
+	return {
+		allOf: [
+			filterBody(filterKindFor(element), element, ref),
+			// not "an object whose keys are all `mode`", which is how the core
+			// spells "this predicate has to constrain something".
+			{ not: { additionalProperties: false, properties: { mode: {} } } },
+		],
+	};
 };
 
 const filterBody = (kind: FilterKind, value: JsonSchema, ref: string) => {
@@ -114,8 +180,23 @@ export const whereDefinitions = (
 		const { schema, residue } = columnToSchema(column);
 		const kind = filterKindFor(schema);
 		const defName = `${prefix}filter_${name}`;
-		defs[defName] = filterBody(kind, schema, `#/$defs/${defName}`);
-		properties[name] = valueOrFilter(schema, residue, `#/$defs/${defName}`);
+		const self = `#/$defs/${defName}`;
+
+		if (kind === 'array') {
+			// The element predicate is recursive through its own `not`, so it is a
+			// definition of its own rather than inlined twice.
+			const elementName = `${prefix}element_${name}`;
+			const elementRef = `#/$defs/${elementName}`;
+			defs[elementName] = elementPredicate(schema, elementRef);
+			defs[defName] = arrayFilterBody(schema, self, elementRef);
+			// A bare array is the whole value, so the union is the plain one even
+			// for a residue element: the array-ness is still checked.
+			properties[name] = { anyOf: [schema, { $ref: self }] };
+			continue;
+		}
+
+		defs[defName] = filterBody(kind, schema, self);
+		properties[name] = valueOrFilter(schema, residue, self);
 	}
 
 	defs[clause] = {

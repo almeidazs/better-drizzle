@@ -28,6 +28,8 @@ export type RowValidator = {
 	};
 	/** Column name to the kind of check ata cannot express. */
 	residues: Record<string, ResidueKind>;
+	/** Of those, the columns whose residue applies to each array element. */
+	residueArrays: Record<string, true>;
 	validate(row: unknown): { valid: boolean; errors?: RowError[] };
 };
 
@@ -50,6 +52,9 @@ const isRequired = (
 	if (column.hasDefault) return false;
 	return !isGenerated(column);
 };
+
+const kindName = (kind: ResidueKind): string =>
+	kind === 'buffer' ? 'Buffer' : kind === 'date' ? 'valid Date' : 'BigInt';
 
 const isGenerated = (column: AnyColumn): boolean =>
 	Boolean(
@@ -76,12 +81,15 @@ export const createRowValidator = (
 	const properties: Record<string, Record<string, unknown>> = {};
 	const required: string[] = [];
 	const residues: Record<string, ResidueKind> = {};
+	const residueArrays: Record<string, true> = {};
 
 	for (const [name, column] of Object.entries(columns)) {
-		const { schema, residue, nullable } = columnToSchema(column);
+		const { schema, residue, residueInArray, nullable } =
+			columnToSchema(column);
 		properties[name] = schema;
 		if (isRequired(column, nullable, mode)) required.push(name);
 		if (residue) residues[name] = residue;
+		if (residue && residueInArray) residueArrays[name] = true;
 	}
 
 	const schema = { type: 'object' as const, properties, required };
@@ -89,6 +97,7 @@ export const createRowValidator = (
 	const residueEntries = Object.entries(residues);
 
 	return {
+		residueArrays,
 		residues,
 		schema,
 		validate(row) {
@@ -114,11 +123,30 @@ export const createRowValidator = (
 				// already been judged by the schema; the predicate speaks only about
 				// a value that is present and not null.
 				if (value === null || value === undefined) continue;
+
+				// An array's residue belongs to its entries, not to the array. The
+				// schema has already established that the value is an array, so what
+				// is left is to judge each entry, and to name the one that failed.
+				if (residueArrays[name]) {
+					if (!Array.isArray(value)) continue;
+					const bad = value.findIndex(
+						(item) => !checkResidue(kind, item),
+					);
+					if (bad !== -1) {
+						errors.push({
+							instancePath: `/${name}/${bad}`,
+							keyword: 'type',
+							message: `must be a ${kindName(kind)}`,
+						});
+					}
+					continue;
+				}
+
 				if (!checkResidue(kind, value)) {
 					errors.push({
 						instancePath: `/${name}`,
 						keyword: 'type',
-						message: `must be a ${kind === 'buffer' ? 'Buffer' : kind === 'date' ? 'valid Date' : 'BigInt'}`,
+						message: `must be a ${kindName(kind)}`,
 					});
 				}
 			}

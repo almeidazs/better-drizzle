@@ -21,6 +21,12 @@ export type ColumnSchema = {
 	schema: Record<string, unknown>;
 	/** Present when the column's type is a JS value ata cannot describe. */
 	residue?: ResidueKind;
+	/**
+	 * The residue belongs to each element, not to the value. Set for an array
+	 * whose element is undescribable: an array of `Date` is a valid array, and it
+	 * is each entry that has to be a `Date`.
+	 */
+	residueInArray?: boolean;
 	/** The column accepts null. */
 	nullable: boolean;
 };
@@ -44,6 +50,44 @@ const withNull = (
 ): Record<string, unknown> => {
 	if (!nullable || typeof schema.type !== 'string') return schema;
 	return { ...schema, type: [schema.type, 'null'] };
+};
+
+const withoutNull = (
+	schema: Record<string, unknown>,
+): Record<string, unknown> => {
+	if (!Array.isArray(schema.type)) return schema;
+	const types = schema.type.filter((t) => t !== 'null');
+	if (types.length === schema.type.length) return schema;
+	return { ...schema, type: types.length === 1 ? types[0] : types };
+};
+
+/**
+ * An array column's element is a column in its own right on the drizzle side,
+ * reachable as `baseColumn`, so the schema for `text[]` is the schema for `text`
+ * wrapped in an array. A residue on the element carries up: an array of `Date`
+ * is as undescribable as one `Date`, and the predicate that judges it has to see
+ * the array.
+ */
+const arraySchema = (
+	column: AnyColumn,
+	nullable: boolean,
+): ColumnSchema | null => {
+	const base = (column as { baseColumn?: AnyColumn }).baseColumn;
+	if (!base) return null;
+
+	const element = columnToSchema(base);
+	// drizzle's base column carries `notNull: false` because nothing sets it, not
+	// because the elements may be null. Its own inferred type says otherwise:
+	// `text('tags').array().notNull()` is `string[]`, and assigning
+	// `['x', null]` to it is a type error. So the element keeps its type and
+	// loses the nullability the base column never meant.
+	const schema = withNull(
+		{ items: withoutNull(element.schema), type: 'array' },
+		nullable,
+	);
+	return element.residue
+		? { nullable, residue: element.residue, residueInArray: true, schema }
+		: { nullable, schema };
 };
 
 const stringSchema = (column: AnyColumn): Record<string, unknown> => {
@@ -89,6 +133,12 @@ export const columnToSchema = (column: AnyColumn): ColumnSchema => {
 		const values: unknown[] = [...enumValues];
 		if (nullable) values.push(null);
 		return { nullable, schema: { enum: values } };
+	}
+
+	// Before the scalar kinds, since an array of anything is an array first.
+	if (column.dataType === 'array') {
+		const array = arraySchema(column, nullable);
+		if (array) return array;
 	}
 
 	if (column.dataType === 'boolean')
