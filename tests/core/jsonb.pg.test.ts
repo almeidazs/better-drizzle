@@ -71,11 +71,11 @@ describe.skipIf(!DATABASE_URL)('JSONB where (PostgreSQL)', () => {
 		const rows = await db.events.findMany({
 			where: {
 				AND: [
-					{ metadata: { json: { 'profile.age': { gte: 40 } } } },
-					{ metadata: { json: { 'profile.active': true } } },
+					{ metadata: { 'profile.age': { gte: 40 } } },
+					{ metadata: { 'profile.active': true } },
 					{
 						metadata: {
-							json: { 'profile.name': { startsWith: 'User 1' } },
+							'profile.name': { startsWith: 'User 1' },
 						},
 					},
 				],
@@ -96,10 +96,8 @@ describe.skipIf(!DATABASE_URL)('JSONB where (PostgreSQL)', () => {
 		const inRows = await db.events.findMany({
 			where: {
 				metadata: {
-					json: {
-						'profile.name': { in: ['User 1', 'User 2', 'User 3'] },
-						'profile.age': { in: [19, 20] },
-					},
+					'profile.name': { in: ['User 1', 'User 2', 'User 3'] },
+					'profile.age': { in: [19, 20] },
 				},
 			},
 		});
@@ -108,13 +106,13 @@ describe.skipIf(!DATABASE_URL)('JSONB where (PostgreSQL)', () => {
 		]);
 
 		const empty = await db.events.findMany({
-			where: { metadata: { json: { 'profile.name': { in: [] } } } },
+			where: { metadata: { 'profile.name': { in: [] } } },
 		});
 		expect(empty).toEqual([]);
 
 		const notIn = await db.events.count({
 			where: {
-				metadata: { json: { 'profile.active': { notIn: [true] } } },
+				metadata: { 'profile.active': { notIn: [true] } },
 			},
 		});
 		expect(notIn).toBe(5000);
@@ -122,11 +120,9 @@ describe.skipIf(!DATABASE_URL)('JSONB where (PostgreSQL)', () => {
 		const insensitive = await db.events.findMany({
 			where: {
 				metadata: {
-					json: {
-						'profile.name': {
-							startsWith: 'user 999',
-							mode: 'insensitive',
-						},
+					'profile.name': {
+						startsWith: 'user 999',
+						mode: 'insensitive',
 					},
 				},
 			},
@@ -137,14 +133,26 @@ describe.skipIf(!DATABASE_URL)('JSONB where (PostgreSQL)', () => {
 
 		const sensitive = await db.events.count({
 			where: {
-				metadata: { json: { 'profile.name': { startsWith: 'user' } } },
+				metadata: { 'profile.name': { startsWith: 'user' } },
 			},
 		});
 		expect(sensitive).toBe(0);
 	});
 
+	test('preserves ordinary JSON document equality', async () => {
+		const metadata: Metadata = {
+			profile: { active: false, age: 19, name: 'User 1' },
+		};
+		const rows = await db.events.findMany({ where: { metadata } });
+
+		expect(rows.map((row) => row.id)).toEqual([1]);
+	});
+
 	test('matches an equivalent raw PostgreSQL predicate', async () => {
 		const betterRows = await db.events.findMany({
+			where: { metadata: { 'profile.age': { gte: 60 } } },
+		});
+		const legacyRows = await db.events.findMany({
 			where: { metadata: { json: { 'profile.age': { gte: 60 } } } },
 		});
 		const rawRows = await drizzle(client, { schema })
@@ -155,6 +163,9 @@ describe.skipIf(!DATABASE_URL)('JSONB where (PostgreSQL)', () => {
 			);
 		expect(betterRows.map((row) => row.id)).toEqual(
 			rawRows.map((row) => row.id),
+		);
+		expect(legacyRows.map((row) => row.id)).toEqual(
+			betterRows.map((row) => row.id),
 		);
 	});
 });

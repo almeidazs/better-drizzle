@@ -547,3 +547,18 @@ export type JsonWhereInput<T> =
 					JsonPathValue<T, Path>
 				>;
 			};
+
+type JsonDottedPathValue =
+	| string
+	| number
+	| bigint
+	| boolean
+	| null
+	| StringFilter<string>
+	| ComparableFilter<number | bigint>
+	| BooleanFilter<boolean>;
+
+export type JsonDottedWhereInput = {
+	[path: `${string}.${string}`]: JsonDottedPathValue;
+	json?: never;
+};

@@ -15,6 +15,25 @@ declare const db: BetterDrizzleClient<{ events: typeof events }>;
 void db.events.findMany({
 	where: {
 		metadata: {
+			'profile.age': { gte: 18 },
+			'profile.name': { contains: 'Ana' },
+			'profile.active': true,
+		},
+	},
+});
+void db.events.findMany({
+	where: {
+		metadata: {
+			'profile.age': {
+				// @ts-expect-error paths only accept JSON scalar filter operators
+				matches: '18',
+			},
+		},
+	},
+});
+void db.events.findMany({
+	where: {
+		metadata: {
 			json: {
 				'profile.age': { gte: 18 },
 				'profile.name': { contains: 'Ana' },

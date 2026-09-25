@@ -167,6 +167,17 @@ const isJsonWhereFilter = (
 ): value is { json: Record<string, unknown> } =>
 	isPlainObject(value) && isPlainObject(value.json);
 
+const isJsonPathShorthand = (
+	value: unknown,
+): value is Record<string, unknown> => {
+	if (!isPlainObject(value) || isScalarFilter(value)) return false;
+	const keys = Object.keys(value);
+	return keys.length > 0 && keys.every((key) => key.includes('.'));
+};
+
+const isPgJsonbColumn = (column: AnyColumn) =>
+	(column as { columnType?: string }).columnType === 'PgJsonb';
+
 const isPgArrayColumn = (column: AnyColumn) =>
 	(column as { columnType?: string }).columnType === 'PgArray';
 
@@ -859,7 +870,12 @@ export const compileWhereInput = <Schema extends AnySchema, Meta>(
 			? aliasedTableColumn(column, context.rootAlias)
 			: column;
 
-		if (isJsonWhereFilter(value)) {
+		const jsonPaths = isJsonWhereFilter(value)
+			? value.json
+			: isPgJsonbColumn(column) && isJsonPathShorthand(value)
+				? value
+				: undefined;
+		if (jsonPaths) {
 			if (context.dialect !== 'pg')
 				throw new BetterDrizzleError({
 					code: BetterDrizzleErrorCode.JsonbQueryUnsupported,
@@ -869,11 +885,11 @@ export const compileWhereInput = <Schema extends AnySchema, Meta>(
 						'JSONB path filters are only supported by PostgreSQL.',
 					table: context.tableName,
 				});
-			for (const path in value.json) {
+			for (const path in jsonPaths) {
 				const clause = compileJsonPathFilter(
 					field,
 					path,
-					value.json[path],
+					jsonPaths[path],
 				);
 				if (clause) conditions.push(clause);
 			}

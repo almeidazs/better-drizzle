@@ -28,7 +28,11 @@ type JsonbKeysFor<Schema extends AnySchema, Name extends TableKey<Schema>> = {
 type JsonbWhereField<T> =
 	| T
 	| import('./utils').ScalarFilter<T>
-	| { json: import('./utils').JsonWhereInput<T> };
+	| import('./utils').JsonDottedWhereInput
+	| {
+			/** @deprecated Pass dotted JSON paths directly on the JSONB column. */
+			json: import('./utils').JsonWhereInput<T>;
+	  };
 
 type RelationWhereInput<
 	Schema extends AnySchema,
