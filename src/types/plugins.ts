@@ -429,6 +429,7 @@ type PluginAfterHookContext<
 	OperationArgs extends Partial<PluginOperationArgsExtensionMap>,
 	Kind extends PluginHookKind,
 > = PluginBeforeHookContext<Schema, Name, Meta, State, OperationArgs, Kind> & {
+	compiled?: Readonly<Record<string, unknown>>;
 	result: PluginOperationResultMap<Schema, Name, Meta>[Kind];
 };
 

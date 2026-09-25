@@ -54,6 +54,7 @@ import {
 	updateRecord,
 	upsertManyRecords,
 	upsertRecord,
+	getCompiledUpdateSet,
 } from './operations';
 import {
 	createPluginState,
@@ -174,6 +175,7 @@ export const createModelDelegate = <
 		afterPayload,
 		beforeHookName,
 		beforePayload,
+		compiled,
 		kind,
 		operation,
 	}: {
@@ -191,6 +193,9 @@ export const createModelDelegate = <
 			| 'beforeQuery'
 			| 'beforeUpdate';
 		beforePayload?: (operationArgs: Args) => unknown;
+		compiled?: (
+			operationArgs: Args,
+		) => Readonly<Record<string, unknown>> | undefined;
 		kind:
 			| 'count'
 			| 'create'
@@ -273,6 +278,7 @@ export const createModelDelegate = <
 				state,
 				delegate,
 				result,
+				compiled?.(operationArgs),
 			);
 
 			assertTransactionNotAborted();
@@ -778,6 +784,9 @@ export const createModelDelegate = <
 						afterPayload: (result, resolvedArgs) =>
 							({
 								...hookContext('update', resolvedArgs),
+								compiled: getCompiledUpdateSet(
+									resolvedArgs.data,
+								),
 								result,
 								row: result,
 							}) as AfterUpdateHookContext<Schema, Meta, Plugins>,
@@ -788,6 +797,8 @@ export const createModelDelegate = <
 								resolvedArgs,
 							) as BeforeUpdateHookContext<Schema, Meta, Plugins>,
 						kind: 'update',
+						compiled: (resolvedArgs) =>
+							getCompiledUpdateSet(resolvedArgs.data),
 						operation: (resolvedArgs) =>
 							updateRecord(context, tableName, resolvedArgs),
 					}),
@@ -813,6 +824,7 @@ export const createModelDelegate = <
 				afterPayload: (result, resolvedArgs) =>
 					({
 						...hookContext('updateMany', resolvedArgs),
+						compiled: getCompiledUpdateSet(resolvedArgs.data),
 						result,
 					}) as AfterUpdateHookContext<Schema, Meta, Plugins>,
 				beforeHookName: 'beforeUpdate',
@@ -822,6 +834,8 @@ export const createModelDelegate = <
 						resolvedArgs,
 					) as BeforeUpdateHookContext<Schema, Meta, Plugins>,
 				kind: 'updateMany',
+				compiled: (resolvedArgs) =>
+					getCompiledUpdateSet(resolvedArgs.data),
 				operation: (resolvedArgs) =>
 					updateManyRecords(context, tableName, resolvedArgs),
 			}),
@@ -839,6 +853,7 @@ export const createModelDelegate = <
 				afterPayload: (result, resolvedArgs) =>
 					({
 						...hookContext('updateEach', resolvedArgs),
+						compiled: getCompiledUpdateSet(resolvedArgs.update),
 						result,
 					}) as AfterUpdateHookContext<Schema, Meta, Plugins>,
 				beforeHookName: 'beforeUpdate',
@@ -848,6 +863,8 @@ export const createModelDelegate = <
 						resolvedArgs,
 					) as BeforeUpdateHookContext<Schema, Meta, Plugins>,
 				kind: 'updateEach',
+				compiled: (resolvedArgs) =>
+					getCompiledUpdateSet(resolvedArgs.update),
 				operation: (resolvedArgs) =>
 					updateEachRecords(context, tableName, resolvedArgs),
 			}),
@@ -934,6 +951,9 @@ export const createModelDelegate = <
 					afterPayload: (result, resolvedArgs) =>
 						({
 							...hookContext('upsert', resolvedArgs),
+							compiled:
+								getCompiledUpdateSet(resolvedArgs) ??
+								getCompiledUpdateSet(resolvedArgs.update),
 							result,
 							row: result,
 						}) as AfterCreateHookContext<Schema, Meta, Plugins>,
@@ -944,6 +964,9 @@ export const createModelDelegate = <
 							resolvedArgs,
 						) as BeforeCreateHookContext<Schema, Meta, Plugins>,
 					kind: 'upsert',
+					compiled: (resolvedArgs) =>
+						getCompiledUpdateSet(resolvedArgs) ??
+						getCompiledUpdateSet(resolvedArgs.update),
 					operation: (resolvedArgs) =>
 						upsertRecord(context, tableName, resolvedArgs),
 				}),
@@ -962,6 +985,7 @@ export const createModelDelegate = <
 				afterPayload: (result, resolvedArgs) =>
 					({
 						...hookContext('upsertMany', resolvedArgs),
+						compiled: getCompiledUpdateSet(resolvedArgs),
 						result,
 					}) as AfterCreateHookContext<Schema, Meta, Plugins>,
 				beforeHookName: 'beforeCreate',
@@ -971,6 +995,7 @@ export const createModelDelegate = <
 						resolvedArgs,
 					) as BeforeCreateHookContext<Schema, Meta, Plugins>,
 				kind: 'upsertMany',
+				compiled: (resolvedArgs) => getCompiledUpdateSet(resolvedArgs),
 				operation: (resolvedArgs) =>
 					upsertManyRecords(context, tableName, resolvedArgs),
 			}),

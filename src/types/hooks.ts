@@ -369,6 +369,7 @@ type CreateHookContext<
 		CreateHookArgsForAction<Schema, Name, Meta, Plugins, Action>,
 		Action
 	> & {
+		compiled?: Readonly<Record<string, unknown>>;
 		result: CreateHookResultForAction<Schema, Name, Meta, Plugins, Action>;
 		row?: Action extends 'createMany' | 'upsertMany'
 			? never
@@ -390,6 +391,7 @@ type UpdateHookContext<
 		UpdateHookArgsForAction<Schema, Name, Meta, Plugins, Action>,
 		Action
 	> & {
+		compiled?: Readonly<Record<string, unknown>>;
 		result: UpdateHookResultForAction<Schema, Name, Meta, Plugins, Action>;
 		row?: Action extends 'updateEach' | 'updateMany'
 			? never

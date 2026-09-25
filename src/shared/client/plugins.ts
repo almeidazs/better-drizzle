@@ -994,6 +994,7 @@ export const runPluginAfterHooks = async <
 		Plugins
 	>,
 	result: Result,
+	compiled?: Readonly<Record<string, unknown>>,
 ) => {
 	const bucket = getBucket(context, kind);
 	if (!bucket.hasAfterHooks) return;
@@ -1008,7 +1009,7 @@ export const runPluginAfterHooks = async <
 	);
 
 	for (const hook of bucket.afterHooks) {
-		await hook({ ...input, client: delegate, result });
+		await hook({ ...input, client: delegate, compiled, result });
 	}
 };
 
