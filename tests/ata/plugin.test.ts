@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { relations } from 'drizzle-orm';
 import {
 	boolean,
 	integer,
@@ -9,8 +10,10 @@ import {
 	varchar,
 } from 'drizzle-orm/pg-core';
 
+import { better } from '../../src';
 import { ata } from '../../src/plugins/ata';
 import { createAtaSchemasRegistry } from '../../src/plugins/ata/shared/registry';
+import { createTestContext } from '../core/setup';
 
 // The plugin itself: what it registers, what its registry hands out, and what a
 // hook does with a payload. The hooks are called directly here rather than
@@ -64,6 +67,7 @@ describe('the plugin definition', () => {
 		const hooks = plugin.hooks as Record<string, unknown>;
 		for (const hook of [
 			'afterCreate',
+			'afterUpdate',
 			'afterQuery',
 			'beforeCreate',
 			'beforeDelete',
@@ -71,6 +75,37 @@ describe('the plugin definition', () => {
 			'beforeUpdate',
 		])
 			expect(typeof hooks[hook]).toBe('function');
+	});
+});
+
+describe('runtime integration', () => {
+	test('allows relation projections and relation writes', async () => {
+		const base = createTestContext();
+		const client = better(base.raw, {
+			plugins: [ata()],
+			schema: base.schema,
+		});
+
+		await expect(
+			client.users.findFirst({
+				include: { posts: true },
+				where: { id: 1 },
+			}),
+		).resolves.toMatchObject({ id: 1, posts: expect.any(Array) });
+		await expect(
+			client.users.findMany({
+				validate: true,
+				where: { posts: { some: { published: true } } },
+			}),
+		).resolves.not.toHaveLength(0);
+
+		await expect(
+			client.posts.update({
+				data: { author: { connect: { id: 2 } } },
+				where: { id: 1 },
+			}),
+		).resolves.toMatchObject({ id: 1, userId: 2 });
+		base.close();
 	});
 });
 
@@ -95,6 +130,15 @@ describe('the registry', () => {
 		expect(registry.get('users')?.schemas.residues).toEqual({
 			created: 'date',
 		});
+	});
+
+	test('runs residue checks through compiled operation schemas', () => {
+		expect(
+			registry.getCreate('users').validate({
+				created: 'not a Date',
+				name: 'ada',
+			}).valid,
+		).toBe(false);
 	});
 
 	test('an unknown table does not refuse everything', () => {
@@ -161,6 +205,42 @@ describe('the registry', () => {
 		expect(create.validate({ name: 'ada' }).valid).toBe(true);
 		// age was dropped, so it is no longer a known column
 		expect(create.validate({ name: 'ada', age: 3 }).valid).toBe(false);
+	});
+});
+
+describe('relations', () => {
+	const relationUsers = pgTable('ata_relation_users', {
+		id: serial('id').primaryKey(),
+		name: varchar('name').notNull(),
+	});
+	const relationPosts = pgTable('ata_relation_posts', {
+		id: serial('id').primaryKey(),
+		userId: integer('user_id').notNull(),
+	});
+	const relationUsersRelations = relations(relationUsers, ({ many }) => ({
+		posts: many(relationPosts),
+	}));
+	const registry = createAtaSchemasRegistry({
+		relationPosts,
+		relationUsers,
+		relationUsersRelations,
+	});
+
+	test('discovers Drizzle relations and accepts their projections', () => {
+		expect(registry.get('relationUsers')?.relations).toEqual(['posts']);
+		expect(
+			registry.getQueryArgs('relationUsers').validate({
+				include: { posts: true },
+			}).valid,
+		).toBe(true);
+	});
+
+	test('accepts a requested relation in a result', () => {
+		expect(
+			registry
+				.getResult('relationUsers', false, { include: { posts: true } })
+				.validate({ id: 1, name: 'ada', posts: [] }).valid,
+		).toBe(true);
 	});
 });
 

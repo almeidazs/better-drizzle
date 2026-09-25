@@ -164,6 +164,7 @@ const valueOrFilter = (
 export const whereDefinitions = (
 	columns: Record<string, AnyColumn>,
 	prefix = '',
+	relations: readonly string[] = [],
 ): { defs: Record<string, JsonSchema>; ref: string } => {
 	const clause = `${prefix}where`;
 	const self = `#/$defs/${clause}`;
@@ -199,6 +200,19 @@ export const whereDefinitions = (
 		properties[name] = valueOrFilter(schema, residue, self);
 	}
 
+	for (const name of relations)
+		properties[name] = {
+			additionalProperties: false,
+			properties: {
+				every: { type: 'object' },
+				is: { anyOf: [{ type: 'object' }, { type: 'null' }] },
+				isNot: { anyOf: [{ type: 'object' }, { type: 'null' }] },
+				none: { type: 'object' },
+				some: { type: 'object' },
+			},
+			type: 'object',
+		};
+
 	defs[clause] = {
 		additionalProperties: false,
 		properties,
@@ -211,7 +225,8 @@ export const whereDefinitions = (
 /** The where clause for one table's columns, as a document of its own. */
 export const createWhereSchema = (
 	columns: Record<string, AnyColumn>,
+	relations: readonly string[] = [],
 ): JsonSchema => {
-	const { defs, ref } = whereDefinitions(columns);
+	const { defs, ref } = whereDefinitions(columns, '', relations);
 	return { $defs: defs, $ref: ref };
 };

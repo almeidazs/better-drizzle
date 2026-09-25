@@ -169,7 +169,7 @@ export const createQueryArgsSchema = (
 	relations: readonly string[] = [],
 	shape: ArgsShape = 'query',
 ): JsonSchema => {
-	const where = whereDefinitions(columns);
+	const where = whereDefinitions(columns, '', relations);
 	const orderBy = orderByDefinitions(columns);
 	const cursor = createCursorSchema(columns);
 
@@ -219,8 +219,9 @@ export const createCursorArgsSchema = (
  */
 export const createCountArgsSchema = (
 	columns: Record<string, AnyColumn>,
+	relations: readonly string[] = [],
 ): JsonSchema => {
-	const where = whereDefinitions(columns);
+	const where = whereDefinitions(columns, '', relations);
 	return {
 		$defs: where.defs,
 		additionalProperties: false,
@@ -243,7 +244,7 @@ export const createDeleteArgsSchema = (
 	relations: readonly string[] = [],
 	required = true,
 ): JsonSchema => {
-	const where = whereDefinitions(columns);
+	const where = whereDefinitions(columns, '', relations);
 	const schema: JsonSchema = {
 		$defs: where.defs,
 		additionalProperties: false,

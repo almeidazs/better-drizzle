@@ -303,6 +303,8 @@
     - package internals are intentionally split with a minimal `src/shared/` layout: `validation.ts` for hook parsing/flags, `schema-builder.ts` for Zod shape builders, and `registry.ts` for Drizzle schema traversal plus registry assembly
 - **Plugin typing**:
     - core plugin typing now supports table-specific model extensions through an optional model-extension resolver generic on `definePlugin(...)`; use this when an extension type depends on the current table
+- **ATA plugin**:
+    - `better-drizzle/ata` must derive relations through Drizzle's `extractTablesRelationalConfig` (never invoke a `relations(...).config` callback directly), run Date/BigInt/Buffer residues after JSON Schema validation, and validate relation-aware result envelopes through `afterCreate`, `afterQuery`, and `afterUpdate`
 - **Multi-agent surfaces**:
     - `AGENTS.md` remains the repo-wide source of truth for agent context
     - `CLAUDE.md` and `GEMINI.md` were removed in `71e1758`; do not reintroduce them or reference them in docs

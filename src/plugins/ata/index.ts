@@ -116,6 +116,7 @@ export const ata = <
 					getRegistry(context.schema).getResult(
 						String(context.table),
 						many,
+						context.args,
 					),
 					value,
 					{ operation: 'write result', table: String(context.table) },
@@ -145,9 +146,46 @@ export const ata = <
 					getRegistry(context.schema).getResult(
 						String(context.table),
 						paginated || context.kind === 'findMany',
+						context.args,
 					),
 					value,
 					{ operation: 'query result', table: String(context.table) },
+				);
+			},
+			afterUpdate(context) {
+				if (
+					!shouldValidate(
+						options.validate,
+						'result',
+						validateFlag(context.args),
+					)
+				)
+					return;
+
+				const many =
+					context.kind === 'updateMany' ||
+					context.kind === 'updateEach';
+				const result = context.result as { data?: unknown } | unknown;
+				const value =
+					many &&
+					result &&
+					typeof result === 'object' &&
+					'data' in result
+						? (result as { data?: unknown }).data
+						: context.result;
+				if (many && value === undefined) return;
+
+				validateOrThrow(
+					getRegistry(context.schema).getResult(
+						String(context.table),
+						many,
+						context.args,
+					),
+					value,
+					{
+						operation: 'update result',
+						table: String(context.table),
+					},
 				);
 			},
 			beforeCreate(context): typeof context.data | undefined {
@@ -177,29 +215,63 @@ export const ata = <
 							operation: `${context.kind} payload`,
 							table,
 						});
+					if (
+						context.kind === 'upsertMany' &&
+						context.args.update &&
+						typeof context.args.update === 'object' &&
+						!Array.isArray(context.args.update)
+					)
+						validateOrThrow(
+							getRegistry(context.schema).getUpdate(table),
+							context.args.update,
+							{ operation: 'upsertMany update payload', table },
+						);
 					return context.data;
 				}
 
 				if (context.kind === 'upsert') {
+					const entry = getRegistry(context.schema).get(table);
 					const payload = context.data as
 						| { create?: unknown; update?: unknown }
 						| undefined;
-					validateOrThrow(create, payload?.create, {
-						operation: 'upsert create payload',
-						table,
-					});
+					validateOrThrow(
+						create,
+						stripUnknownColumns(
+							payload?.create,
+							entry?.columns ?? {},
+						),
+						{
+							operation: 'upsert create payload',
+							table,
+						},
+					);
 					validateOrThrow(
 						getRegistry(context.schema).getUpdate(table),
-						payload?.update,
+						stripUnknownColumns(
+							payload?.update,
+							entry?.columns ?? {},
+						),
 						{ operation: 'upsert update payload', table },
 					);
+					if (context.where !== undefined)
+						validateOrThrow(entry?.schemas.where, context.where, {
+							operation: 'upsert where',
+							table,
+						});
 					return context.data;
 				}
 
-				validateOrThrow(create, context.data, {
-					operation: 'create payload',
-					table,
-				});
+				validateOrThrow(
+					create,
+					stripUnknownColumns(
+						context.data,
+						getRegistry(context.schema).get(table)?.columns ?? {},
+					),
+					{
+						operation: 'create payload',
+						table,
+					},
+				);
 				return context.data;
 			},
 			beforeDelete(context) {
@@ -270,6 +342,7 @@ export const ata = <
 
 				const table = String(context.table);
 				const update = getRegistry(context.schema).getUpdate(table);
+				const entry = getRegistry(context.schema).get(table);
 
 				if (context.kind === 'updateEach') {
 					const rows = Array.isArray(context.data)
@@ -280,13 +353,27 @@ export const ata = <
 							operation: 'updateEach payload',
 							table,
 						});
+					if (context.where !== undefined)
+						validateOrThrow(entry?.schemas.where, context.where, {
+							operation: 'updateEach where',
+							table,
+						});
 					return context.data;
 				}
 
-				validateOrThrow(update, context.data, {
-					operation: `${context.kind} payload`,
-					table,
-				});
+				validateOrThrow(
+					update,
+					stripUnknownColumns(context.data, entry?.columns ?? {}),
+					{
+						operation: `${context.kind} payload`,
+						table,
+					},
+				);
+				if (context.where !== undefined)
+					validateOrThrow(entry?.schemas.where, context.where, {
+						operation: `${context.kind} where`,
+						table,
+					});
 				return context.data;
 			},
 		},

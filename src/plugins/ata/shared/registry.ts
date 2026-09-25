@@ -1,5 +1,12 @@
 import { Validator } from 'ata-validator';
-import { type AnyColumn, getTableColumns, is, Table } from 'drizzle-orm';
+import {
+	createTableRelationsHelpers,
+	extractTablesRelationalConfig,
+	type AnyColumn,
+	getTableColumns,
+	is,
+	Table,
+} from 'drizzle-orm';
 
 import type {
 	AtaCompiledSchema,
@@ -7,7 +14,7 @@ import type {
 	BetterDrizzleAtaModelSchemas,
 	JsonSchema,
 } from '../types';
-import type { ResidueKind } from './column';
+import { checkResidue, type ResidueKind } from './column';
 import {
 	createCountArgsSchema,
 	createCursorArgsSchema,
@@ -32,6 +39,7 @@ import { createWhereSchema } from './where';
 
 export type TableEntry = {
 	columns: Record<string, AnyColumn>;
+	residueArrays: Record<string, true>;
 	relations: readonly string[];
 	schemas: BetterDrizzleAtaModelSchemas;
 	tableName: string;
@@ -45,7 +53,11 @@ export type AtaSchemasRegistry = {
 	getDeleteArgs(tableName: string, many: boolean): AtaCompiledSchema;
 	getPaginationArgs(tableName: string): AtaCompiledSchema;
 	getQueryArgs(tableName: string): AtaCompiledSchema;
-	getResult(tableName: string, many: boolean): AtaCompiledSchema;
+	getResult(
+		tableName: string,
+		many: boolean,
+		args?: unknown,
+	): AtaCompiledSchema;
 	getUpdate(tableName: string): AtaCompiledSchema;
 	tables(): readonly string[];
 };
@@ -53,12 +65,56 @@ export type AtaSchemasRegistry = {
 type CompiledSchema = AtaCompiledSchema & { warm(): void };
 
 /** Wrap a JSON Schema in the validator, compiled the first time it is used. */
-const compiled = (schema: JsonSchema): CompiledSchema => {
+const compiled = (
+	schema: JsonSchema,
+	residues?: Record<string, ResidueKind>,
+	residueArrays?: Record<string, true>,
+): CompiledSchema => {
 	let validator: Validator | null = null;
+	const residueEntries = residues ? Object.entries(residues) : [];
 	const get = () => (validator ??= new Validator(schema));
 	return {
 		schema,
-		validate: (value) => get().validate(value),
+		validate(value) {
+			const result = get().validate(value);
+			if (
+				!result.valid ||
+				residueEntries.length === 0 ||
+				!value ||
+				typeof value !== 'object'
+			)
+				return result;
+
+			const rows = Array.isArray(value) ? value : [value];
+			for (const row of rows) {
+				if (!row || typeof row !== 'object') continue;
+				for (const [name, kind] of residueEntries) {
+					const entry = (row as Record<string, unknown>)[name];
+					if (entry === null || entry === undefined) continue;
+					let valid = true;
+					if (residueArrays?.[name]) {
+						valid = Array.isArray(entry);
+						if (valid)
+							for (const item of entry as unknown[])
+								if (!checkResidue(kind, item)) {
+									valid = false;
+									break;
+								}
+					} else valid = checkResidue(kind, entry);
+					if (!valid)
+						return {
+							errors: [
+								{
+									instancePath: `/${name}`,
+									message: `must be a ${kind === 'date' ? 'valid Date' : kind === 'buffer' ? 'Buffer' : 'BigInt'}`,
+								},
+							],
+							valid: false,
+						};
+				}
+			}
+			return result;
+		},
 		warm: () => {
 			get();
 		},
@@ -98,7 +154,11 @@ const rowSchema = (
 	columns: Record<string, AnyColumn>,
 	mode: 'create' | 'select' | 'update',
 	overrides: Record<string, false | JsonSchema> | undefined,
-): { residues: Record<string, ResidueKind>; schema: JsonSchema } => {
+): {
+	residueArrays: Record<string, true>;
+	residues: Record<string, ResidueKind>;
+	schema: JsonSchema;
+} => {
 	const built = createRowValidator(columns, mode);
 	const { properties, required } = applyOverrides(
 		built.schema.properties,
@@ -107,6 +167,7 @@ const rowSchema = (
 	);
 
 	return {
+		residueArrays: built.residueArrays,
 		residues: built.residues,
 		schema: {
 			additionalProperties: false,
@@ -124,35 +185,6 @@ const rowSchema = (
  * declared relations contributes none, and a projection then accepts only its
  * own columns, which is the honest answer rather than accepting any key.
  */
-const relationNames = (
-	schema: Record<string, unknown>,
-	tableName: string,
-): readonly string[] => {
-	const config = (
-		schema as {
-			_?: { relations?: Record<string, Record<string, unknown>> };
-		}
-	)._?.relations?.[tableName];
-	if (config) return Object.keys(config);
-
-	const relations = (schema as Record<string, unknown>)[
-		`${tableName}Relations`
-	] as { config?: unknown } | undefined;
-	if (relations && typeof relations === 'object' && 'table' in relations) {
-		const built = (relations as { config?: () => Record<string, unknown> })
-			.config;
-		if (typeof built === 'function') {
-			try {
-				return Object.keys(built());
-			} catch {
-				return [];
-			}
-		}
-	}
-
-	return [];
-};
-
 export const createAtaSchemasRegistry = <
 	Schema extends Record<string, unknown>,
 >(
@@ -161,6 +193,10 @@ export const createAtaSchemasRegistry = <
 ): AtaSchemasRegistry => {
 	const entries = new Map<string, TableEntry>();
 	const tableNames: string[] = [];
+	const relational = extractTablesRelationalConfig(
+		schema as never,
+		createTableRelationsHelpers,
+	) as { tables: Record<string, { relations: Record<string, unknown> }> };
 
 	for (const [key, value] of Object.entries(schema)) {
 		if (!is(value, Table)) continue;
@@ -172,7 +208,9 @@ export const createAtaSchemasRegistry = <
 		if (!is(table, Table)) return undefined;
 
 		const columns = getTableColumns(table) as Record<string, AnyColumn>;
-		const relations = relationNames(schema, tableName);
+		const relations = Object.keys(
+			relational.tables[tableName]?.relations ?? {},
+		);
 		const overrides = (
 			options.tables as
 				| Record<
@@ -188,10 +226,15 @@ export const createAtaSchemasRegistry = <
 
 		const entry: TableEntry = {
 			columns,
+			residueArrays: selectRow.residueArrays,
 			relations,
 			schemas: {
-				count: compiled(createCountArgsSchema(columns)),
-				create: compiled(create.schema),
+				count: compiled(createCountArgsSchema(columns, relations)),
+				create: compiled(
+					create.schema,
+					create.residues,
+					create.residueArrays,
+				),
 				cursor: compiled(createCursorArgsSchema(columns, relations)),
 				delete: compiled(
 					createDeleteArgsSchema(columns, relations, true),
@@ -205,10 +248,18 @@ export const createAtaSchemasRegistry = <
 				),
 				query: compiled(createQueryArgsSchema(columns, relations)),
 				residues: selectRow.residues,
-				row: compiled(selectRow.schema),
+				row: compiled(
+					selectRow.schema,
+					selectRow.residues,
+					selectRow.residueArrays,
+				),
 				select: compiled(createSelectSchema(columns, relations)),
-				update: compiled(update.schema),
-				where: compiled(createWhereSchema(columns)),
+				update: compiled(
+					update.schema,
+					update.residues,
+					update.residueArrays,
+				),
+				where: compiled(createWhereSchema(columns, relations)),
 			},
 			tableName,
 		};
@@ -237,8 +288,25 @@ export const createAtaSchemasRegistry = <
 	 * the row shape, and only when something asks for it.
 	 */
 	const results = new Map<string, AtaCompiledSchema>();
-	const getResult = (tableName: string, many: boolean): AtaCompiledSchema => {
-		const key = `${tableName}:${many ? 'many' : 'one'}`;
+	const getResult = (
+		tableName: string,
+		many: boolean,
+		args?: unknown,
+	): AtaCompiledSchema => {
+		const input =
+			args && typeof args === 'object'
+				? (args as Record<string, unknown>)
+				: undefined;
+		const projection = input?.select ?? input?.include;
+		const projectionKeys =
+			projection && typeof projection === 'object'
+				? Object.keys(projection as Record<string, unknown>).filter(
+						(key) =>
+							key === '_count' ||
+							!(key in (get(tableName)?.columns ?? {})),
+					)
+				: [];
+		const key = `${tableName}:${many ? 'many' : 'one'}:${projectionKeys.join(',')}`;
 		const known = results.get(key);
 		if (known) return known;
 
@@ -246,11 +314,22 @@ export const createAtaSchemasRegistry = <
 		const row = entry?.schemas.row.schema ?? {};
 		// A projection narrows the row, so a result is checked for the columns it
 		// does carry rather than for the ones it was not asked for.
-		const relaxed = { ...row, required: [] as string[] };
+		const relaxed = {
+			...row,
+			properties: {
+				...((row.properties as
+					| Record<string, JsonSchema>
+					| undefined) ?? {}),
+				...Object.fromEntries(projectionKeys.map((name) => [name, {}])),
+			},
+			required: [] as string[],
+		};
 		const built = compiled(
 			many
 				? { items: relaxed, type: 'array' }
 				: { anyOf: [relaxed, { type: 'null' }] },
+			entry?.schemas.residues,
+			entry?.residueArrays,
 		);
 		results.set(key, built);
 		return built;
