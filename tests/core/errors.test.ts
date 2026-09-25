@@ -224,7 +224,7 @@ describe('getDatabaseErrorInfo', () => {
 
 	test('extracts table and column from SQLite unique constraint', () => {
 		const info = getDatabaseErrorInfo({
-			message: 'UNIQUE constraint failed: users.email',
+			message: 'unique constraint failed: users.email, users.name',
 		});
 		expect(info.table).toBe('users');
 		expect(info.column).toBe('email');

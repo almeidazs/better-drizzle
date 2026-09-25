@@ -555,20 +555,38 @@ const getConstraint = (fields: ErrorWithFields | null, message: string) => {
 };
 
 const getSqliteTableColumn = (message: string) => {
-	const uniqueMatch = message.match(/UNIQUE constraint failed: (.+)$/i);
-	if (uniqueMatch) {
-		const firstRef = uniqueMatch[1]?.split(',')[0]?.trim();
-		const [table, column] = firstRef?.split('.') ?? [];
+	const normalized = message.toLowerCase();
+	const uniquePrefix = 'unique constraint failed: ';
+	if (normalized.startsWith(uniquePrefix)) {
+		const start = uniquePrefix.length;
+		const comma = message.indexOf(',', start);
+		const firstRef = message
+			.slice(start, comma === -1 ? undefined : comma)
+			.trim();
+		const separator = firstRef.indexOf('.');
+		if (separator === -1) return {};
+		const table = firstRef.slice(0, separator);
+		const column = firstRef.slice(separator + 1);
 		return { table, column };
 	}
 
-	const notNullMatch = message.match(
-		/NOT NULL constraint failed: ([^.]+)\.([^\s]+)$/i,
-	);
-	if (notNullMatch)
-		return { table: notNullMatch[1], column: notNullMatch[2] };
-
-	return {};
+	const notNullPrefix = 'not null constraint failed: ';
+	if (!normalized.startsWith(notNullPrefix)) return {};
+	const reference = message.slice(notNullPrefix.length);
+	const separator = reference.indexOf('.');
+	if (separator === -1) return {};
+	const table = reference.slice(0, separator);
+	const column = reference.slice(separator + 1);
+	if (
+		!table ||
+		!column ||
+		column.trim() !== column ||
+		column.includes('\t') ||
+		column.includes('\n') ||
+		column.includes('\r')
+	)
+		return {};
+	return { table, column };
 };
 
 const getColumn = (fields: ErrorWithFields | null, message: string) => {

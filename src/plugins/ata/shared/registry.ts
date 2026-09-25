@@ -91,17 +91,29 @@ const compiled = (
 				for (const [name, kind] of residueEntries) {
 					const entry = (row as Record<string, unknown>)[name];
 					if (entry === null || entry === undefined) continue;
-					let valid = true;
 					if (residueArrays?.[name]) {
-						valid = Array.isArray(entry);
-						if (valid)
-							for (const item of entry as unknown[])
-								if (!checkResidue(kind, item)) {
-									valid = false;
-									break;
-								}
-					} else valid = checkResidue(kind, entry);
-					if (!valid)
+						if (!Array.isArray(entry))
+							return {
+								errors: [
+									{
+										instancePath: `/${name}`,
+										message: `must be a ${kind === 'date' ? 'valid Date' : kind === 'buffer' ? 'Buffer' : 'BigInt'}`,
+									},
+								],
+								valid: false,
+							};
+						for (const item of entry)
+							if (!checkResidue(kind, item))
+								return {
+									errors: [
+										{
+											instancePath: `/${name}`,
+											message: `must be a ${kind === 'date' ? 'valid Date' : kind === 'buffer' ? 'Buffer' : 'BigInt'}`,
+										},
+									],
+									valid: false,
+								};
+					} else if (!checkResidue(kind, entry))
 						return {
 							errors: [
 								{

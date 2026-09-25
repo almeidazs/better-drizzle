@@ -147,7 +147,7 @@ const getOrderByColumns = (orderBy: unknown): string[] => {
 				columns.push(key);
 				continue;
 			}
-			if (asRecord(child) || child === 'asc' || child === 'desc') {
+			if (asRecord(child)) {
 				columns.push(key);
 			}
 		}
