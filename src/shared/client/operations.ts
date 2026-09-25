@@ -58,6 +58,7 @@ import {
 	hydrateRelations,
 	prepareRelationalRead,
 	prepareRelationWrite,
+	splitRelationData,
 } from './relations';
 
 type ResolvedSkipDuplicates = {
@@ -101,6 +102,25 @@ const ARRAY_MUTATION_NAMES = new Set<ArrayMutationName>([
 	'remove',
 	'replace',
 ]);
+
+const compiledUpdateSets = new WeakMap<
+	object,
+	Readonly<Record<string, unknown>>
+>();
+
+const rememberCompiledUpdate = <T extends Record<string, unknown>>(
+	input: object,
+	compiled: T,
+	changed: boolean,
+) => {
+	if (changed) compiledUpdateSets.set(input, compiled);
+	return compiled;
+};
+
+export const getCompiledUpdateSet = (input: unknown) =>
+	typeof input === 'object' && input !== null
+		? compiledUpdateSets.get(input)
+		: undefined;
 
 const isPgArrayColumn = (column: AnyColumn): column is PgArrayColumn =>
 	(column as { columnType?: string }).columnType === 'PgArray';
@@ -342,6 +362,142 @@ const compilePgArrayMutations = (
 	}
 
 	return result ?? data;
+};
+
+const NUMERIC_MUTATION_NAMES = [
+	'set',
+	'increment',
+	'decrement',
+	'multiply',
+	'divide',
+] as const;
+
+const numericMutationError = (
+	runtime: TableRuntime,
+	column: string,
+	operation: string,
+	message: string,
+) =>
+	new BetterDrizzleError({
+		code: BetterDrizzleErrorCode.OperationError,
+		column,
+		message,
+		operation,
+		table: runtime.dbName,
+	});
+
+const compileScalarMutation = (
+	runtime: TableRuntime,
+	columnName: string,
+	column: AnyColumn,
+	operation: string,
+	value: Record<string, unknown>,
+) => {
+	if (column.dataType === 'boolean') {
+		const keys = Object.keys(value);
+		if (keys.length !== 1 || value.toggle !== true)
+			throw numericMutationError(
+				runtime,
+				columnName,
+				operation,
+				'Boolean mutations must specify only toggle: true.',
+			);
+		return sql`not ${column}`;
+	}
+
+	const keys = Object.keys(value);
+	if (!keys.length)
+		throw numericMutationError(
+			runtime,
+			columnName,
+			operation,
+			'Numeric mutations must specify at least one operation.',
+		);
+	for (const key of keys)
+		if (!NUMERIC_MUTATION_NAMES.includes(key as never))
+			throw numericMutationError(
+				runtime,
+				columnName,
+				operation,
+				`Invalid numeric mutation operation "${key}".`,
+			);
+
+	let expression: SQL = sql`${column}`;
+	let hasOperation = false;
+	for (const name of NUMERIC_MUTATION_NAMES) {
+		const input = value[name];
+		if (input === undefined) continue;
+		hasOperation = true;
+		if (typeof input !== 'number' || !Number.isFinite(input))
+			throw numericMutationError(
+				runtime,
+				columnName,
+				operation,
+				`${name} must be a finite number.`,
+			);
+		if (name === 'divide' && input === 0)
+			throw numericMutationError(
+				runtime,
+				columnName,
+				operation,
+				'divide cannot be zero.',
+			);
+
+		const parameter = sql.param(input, column);
+		if (name === 'set') expression = sql`${parameter}`;
+		else if (name === 'increment')
+			expression = sql`${expression} + ${parameter}`;
+		else if (name === 'decrement')
+			expression = sql`${expression} - ${parameter}`;
+		else if (name === 'multiply')
+			expression = sql`${expression} * ${parameter}`;
+		else expression = sql`${expression} / ${parameter}`;
+	}
+	if (!hasOperation)
+		throw numericMutationError(
+			runtime,
+			columnName,
+			operation,
+			'Numeric mutations must specify at least one operation.',
+		);
+
+	return expression;
+};
+
+export const compileUpdateMutations = (
+	runtime: TableRuntime,
+	dialect: string,
+	operation: string,
+	data: Record<string, unknown>,
+) => {
+	const arrayMutations = compilePgArrayMutations(
+		runtime,
+		dialect,
+		operation,
+		data,
+	);
+	let result = arrayMutations === data ? undefined : arrayMutations;
+
+	for (const key in data) {
+		const value = data[key];
+		if (!isSimpleRecord(value) || isSQLWrapper(value)) continue;
+		const column = runtime.columns[key];
+		if (!column || isPgArrayColumn(column)) continue;
+		if (column.dataType !== 'number' && column.dataType !== 'boolean')
+			continue;
+
+		const mutation = compileScalarMutation(
+			runtime,
+			key,
+			column,
+			operation,
+			value,
+		);
+		if (!result) result = { ...data };
+		result[key] = mutation;
+	}
+
+	return rememberCompiledUpdate(data, result ?? data, Boolean(result));
 };
 
 const getSkipDuplicatesConfig = <Schema extends AnySchema>(
@@ -676,6 +832,7 @@ const buildUpdateEachSet = <Schema extends AnySchema, Meta>(
 	const updates = args.update as Record<string, unknown>;
 	const set = Object.create(null) as Record<string, unknown>;
 	let hasColumns = false;
+	let hasMutations = false;
 
 	for (const key in updates) {
 		const resolve = updates[key];
@@ -704,7 +861,7 @@ const buildUpdateEachSet = <Schema extends AnySchema, Meta>(
 					table: runtime.dbName,
 				});
 
-			const mutation =
+			const arrayMutation =
 				isPgArrayColumn(column) &&
 				isSimpleRecord(nextValue) &&
 				!isSQLWrapper(nextValue)
@@ -717,8 +874,24 @@ const buildUpdateEachSet = <Schema extends AnySchema, Meta>(
 							nextValue,
 						)
 					: undefined;
+			const scalarMutation =
+				!arrayMutation &&
+				isSimpleRecord(nextValue) &&
+				!isSQLWrapper(nextValue) &&
+				!isPgArrayColumn(column) &&
+				(column.dataType === 'number' || column.dataType === 'boolean')
+					? compileScalarMutation(
+							runtime,
+							key,
+							column,
+							'updateEach',
+							nextValue,
+						)
+					: undefined;
+			if (arrayMutation || scalarMutation) hasMutations = true;
 			branches[index] = sql`when ${byColumn} = ${row[byKey]} then ${
-				mutation ??
+				arrayMutation ??
+				scalarMutation ??
 				(isSQLWrapper(nextValue)
 					? nextValue
 					: sql.param(nextValue, column))
@@ -746,7 +919,7 @@ const buildUpdateEachSet = <Schema extends AnySchema, Meta>(
 			table: runtime.dbName,
 		});
 
-	return set;
+	return rememberCompiledUpdate(args.update as object, set, hasMutations);
 };
 
 const getAffectedCount = (result: unknown) => {
@@ -1782,6 +1955,7 @@ const upsertManyChunk = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
 	args: UpsertManyArgs<Schema, BetterTableKey<Schema>, Meta>,
+	compiledArgs = args,
 ): Promise<BatchResult<Record<string, unknown>>> => {
 	const runtime = getTableRuntime(context, tableName as string);
 	const targetColumns = getTargetColumns(context, runtime, args.target);
@@ -1789,12 +1963,14 @@ const upsertManyChunk = async <Schema extends AnySchema, Meta>(
 		runtime,
 		args.select as Record<string, unknown> | undefined,
 	);
-	const set = compilePgArrayMutations(
+	const update = buildUpsertManySet(runtime, args, targetColumns);
+	const set = compileUpdateMutations(
 		runtime,
 		context.dialect,
 		'upsertMany',
-		buildUpsertManySet(runtime, args, targetColumns),
+		update,
 	);
+	if (getCompiledUpdateSet(update)) compiledUpdateSets.set(compiledArgs, set);
 
 	if (!Object.keys(set).length)
 		throw new BetterDrizzleError({
@@ -1863,11 +2039,16 @@ export const upsertManyRecords = async <Schema extends AnySchema, Meta>(
 	let data: Record<string, unknown>[] | undefined;
 
 	for (let start = 0; start < args.data.length; start += batchSize) {
-		const chunk = await upsertManyChunk(context, tableName, {
-			...args,
-			batchSize: undefined,
-			data: args.data.slice(start, start + batchSize),
-		});
+		const chunk = await upsertManyChunk(
+			context,
+			tableName,
+			{
+				...args,
+				batchSize: undefined,
+				data: args.data.slice(start, start + batchSize),
+			},
+			args,
+		);
 
 		count += chunk.count;
 		if (chunk.data?.length) {
@@ -1899,6 +2080,11 @@ export const updateRecord = async <Schema extends AnySchema, Meta>(
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
 	if (hasRelationWrites(runtime, args.data)) {
+		const scalar = splitRelationData(
+			runtime,
+			args.data as Record<string, unknown>,
+		).scalar;
+		compileUpdateMutations(runtime, context.dialect, 'update', scalar);
 		const matches = await findManyRecords(context, tableName, {
 			take: 2,
 			where: args.where,
@@ -1929,17 +2115,15 @@ export const updateRecord = async <Schema extends AnySchema, Meta>(
 				primaryWhere,
 			);
 			if (!predicate) return null;
-			await context.db
-				.update(runtime.table)
-				.set(
-					compilePgArrayMutations(
-						runtime,
-						context.dialect,
-						'update',
-						prepared.scalar,
-					),
-				)
-				.where(predicate);
+			const set = compileUpdateMutations(
+				runtime,
+				context.dialect,
+				'update',
+				prepared.scalar,
+			);
+			if (getCompiledUpdateSet(prepared.scalar))
+				compiledUpdateSets.set(args.data as object, set);
+			await context.db.update(runtime.table).set(set).where(predicate);
 			current =
 				(await reloadRecord(context, tableName, current)) ?? current;
 		}
@@ -1952,20 +2136,16 @@ export const updateRecord = async <Schema extends AnySchema, Meta>(
 		);
 		return reloadRecord(context, tableName, current, args);
 	}
+	const set = compileUpdateMutations(
+		runtime,
+		context.dialect,
+		'update',
+		args.data as Record<string, unknown>,
+	);
 	const predicate = getPredicate(context, runtime, tableName, args.where);
 	if (!predicate) return null;
 
-	const builder = context.db
-		.update(runtime.table)
-		.set(
-			compilePgArrayMutations(
-				runtime,
-				context.dialect,
-				'update',
-				args.data as Record<string, unknown>,
-			),
-		)
-		.where(predicate);
+	const builder = context.db.update(runtime.table).set(set).where(predicate);
 
 	if (typeof builder.returning === 'function') {
 		const rows = await builder.returning();
@@ -2041,22 +2221,18 @@ export const updateManyRecords = async <Schema extends AnySchema, Meta>(
 	args: UpdateManyArgs<Schema, BetterTableKey<Schema>, Meta>,
 ): Promise<BatchResult<never>> => {
 	const runtime = getTableRuntime(context, tableName as string);
+	const set = compileUpdateMutations(
+		runtime,
+		context.dialect,
+		'updateMany',
+		args.data as Record<string, unknown>,
+	);
 	const predicate = getPredicate(context, runtime, tableName, args.where);
 	if (!predicate) return { count: 0 };
 
 	const affectedCount = await countRows(context, tableName, args.where);
 	if (affectedCount > 0)
-		await context.db
-			.update(runtime.table)
-			.set(
-				compilePgArrayMutations(
-					runtime,
-					context.dialect,
-					'updateMany',
-					args.data as Record<string, unknown>,
-				),
-			)
-			.where(predicate);
+		await context.db.update(runtime.table).set(set).where(predicate);
 
 	return { count: affectedCount };
 };
@@ -2078,10 +2254,9 @@ export const updateEachRecords = async <Schema extends AnySchema, Meta>(
 	const predicate = getPredicate(context, runtime, tableName, where);
 	if (!predicate) return { count: 0 };
 
+	const set = buildUpdateEachSet(context, runtime, rows.byKey, args);
 	const affectedCount = await countRows(context, tableName, where);
 	if (affectedCount === 0) return { count: 0 };
-
-	const set = buildUpdateEachSet(context, runtime, rows.byKey, args);
 	const selection = getReturningSelection(
 		runtime,
 		args.select as Record<string, unknown> | undefined,
@@ -2193,9 +2368,13 @@ export const upsertRecord = async <Schema extends AnySchema, Meta>(
 	const createData = args.create as Record<string, unknown>;
 	const updateData = args.update as Record<string, unknown>;
 	const insertBuilder = context.db.insert(runtime.table).values(createData);
+	const duplicateKeyUpdate = (
+		insertBuilder as { onDuplicateKeyUpdate?: unknown }
+	).onDuplicateKeyUpdate;
 
 	if (
-		typeof insertBuilder.onConflictDoUpdate === 'function' &&
+		(typeof insertBuilder.onConflictDoUpdate === 'function' ||
+			typeof duplicateKeyUpdate === 'function') &&
 		canUsePrimaryKeyConflict(runtime, args.where, createData)
 	) {
 		const target = getPrimaryKeyTarget(runtime);
@@ -2208,15 +2387,24 @@ export const upsertRecord = async <Schema extends AnySchema, Meta>(
 				select: args.select,
 			} as CreateArgs<Schema, BetterTableKey<Schema>, Meta>);
 
-		const builder = insertBuilder.onConflictDoUpdate({
-			set: compilePgArrayMutations(
-				runtime,
-				context.dialect,
-				'upsert',
-				updateData,
-			),
-			target: conflictTarget,
-		});
+		const set = compileUpdateMutations(
+			runtime,
+			context.dialect,
+			'upsert',
+			updateData,
+		);
+		if (getCompiledUpdateSet(updateData)) compiledUpdateSets.set(args, set);
+		const builder =
+			typeof insertBuilder.onConflictDoUpdate === 'function'
+				? insertBuilder.onConflictDoUpdate({
+						set,
+						target: conflictTarget,
+					})
+				: (
+						duplicateKeyUpdate as (config: {
+							set: Record<string, unknown>;
+						}) => typeof insertBuilder
+					)({ set });
 
 		if (typeof builder.returning === 'function') {
 			const rows = await builder.returning();
