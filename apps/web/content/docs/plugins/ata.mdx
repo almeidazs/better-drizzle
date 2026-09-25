@@ -1,0 +1,199 @@
+---
+title: ata
+description: Describe your Drizzle models as JSON Schema and validate Better Drizzle operations against compiled validators.
+icon: FileJson
+seoTitle: 'ata Plugin - JSON Schema Validation for Drizzle'
+seoDescription: 'Generate JSON Schema from your Drizzle ORM schema for create, update, where, and orderBy inputs, and validate every operation against a compiled validator.'
+---
+
+`better-drizzle/ata` describes each table as [JSON Schema](https://json-schema.org/) and compiles those schemas with [ata](https://ata-validator.com) to validate payloads, query args, and results through plugin hooks.
+
+It sits alongside `better-drizzle/zod` rather than replacing it. Pick this one when you want the description of a table to be data you can move around: the same object that validates a payload can be served to an HTTP layer, written to a file, or used to generate types, because a JSON Schema is a plain object and not a validator's internal representation.
+
+## Install
+
+<Tabs items={['npm', 'pnpm', 'yarn', 'bun']}>
+
+<Tab value="npm">
+
+```bash
+npm install better-drizzle ata-validator
+```
+
+</Tab>
+
+<Tab value="pnpm">
+
+```bash
+pnpm add better-drizzle ata-validator
+```
+
+</Tab>
+
+<Tab value="yarn">
+
+```bash
+yarn add better-drizzle ata-validator
+```
+
+</Tab>
+
+<Tab value="bun">
+
+```bash
+bun add better-drizzle ata-validator
+```
+
+</Tab>
+
+</Tabs>
+
+## Usage
+
+```ts
+import { better } from 'better-drizzle';
+import { ata } from 'better-drizzle/ata';
+
+const client = better(db, {
+	schema,
+	plugins: [
+		ata({
+			validate: {
+				create: true,
+				update: true,
+				upsert: true,
+				result: true,
+			},
+			tables: {
+				users: {
+					columns: {
+						// replace what was derived for one column
+						email: { type: 'string', format: 'email' },
+						// or stop claiming anything about it
+						passwordHash: false,
+					},
+				},
+			},
+		}),
+	],
+});
+```
+
+## `$ata` on every delegate
+
+Each table delegate exposes the generated schemas:
+
+```ts
+client.users.$ata.create;
+client.users.$ata.update;
+client.users.$ata.row;
+client.users.$ata.select;
+client.users.$ata.where;
+client.users.$ata.orderBy;
+client.users.$ata.query;
+client.users.$ata.pagination;
+client.users.$ata.cursor;
+client.users.$ata.count;
+client.users.$ata.delete;
+```
+
+Each one carries both a compiled validator and the schema itself:
+
+```ts
+// validate
+const result = client.users.$ata.create.validate(req.body);
+if (!result.valid) return reply.code(400).send(result.errors);
+
+// or hand the description to something else
+app.post('/users', { schema: { body: client.users.$ata.create.schema } }, handler);
+```
+
+That second line is the reason to reach for this plugin. `schema` is a plain JSON Schema object, so `JSON.stringify` of it is a complete, portable description of the table.
+
+## What is validated, and when
+
+The defaults follow the zod plugin's: what you write is checked, what you read is not.
+
+| Operation | Default |
+| --- | --- |
+| `create`, `createMany`, `upsert`, `upsertMany` | validated |
+| `update`, `updateMany`, `updateEach` | validated |
+| `result` after reads and writes | validated |
+| `findMany`, `findFirst`, `count`, `paginate`, `cursor`, `delete` | not validated |
+
+A query argument is usually built in code TypeScript already checked, so paying for it on every call is not the default. Turn it on per operation, or per call:
+
+```ts
+ata({ validate: { query: true } });
+
+await client.users.findMany({ where: { active: true }, validate: true });
+await client.users.create({ data: req.body, validate: false });
+```
+
+## What the schemas say
+
+The plugin reads each column and writes the constraint it can prove:
+
+- a `varchar(80)` becomes `{ "type": "string", "maxLength": 80 }`
+- a `uuid` becomes `{ "type": "string", "format": "uuid" }`
+- `numeric` and `decimal` become strings, which is what every driver Drizzle supports returns
+- a nullable column becomes `{ "type": ["integer", "null"] }`
+- on `create`, a column with a default or a generated key is not required; on `update`, nothing is
+- `additionalProperties: false` everywhere, so a misspelled column or operator is refused rather than ignored
+
+The `where` clause is recursive in two places, a filter's `not` and the whole clause through `AND`, `OR` and `NOT`. Both are written with `$defs` and local `$ref`, so a clause of any depth is still one compiled validator and one pass.
+
+## Array columns
+
+An array column's element is a column in its own right on the drizzle side, so `text('tags').array()` becomes `{ "type": "array", "items": { "type": "string" } }`. The element keeps its own constraints, so `varchar('tags', { length: 20 }).array()` carries the `maxLength` on the items.
+
+The element is not nullable even though drizzle's base column reports `notNull: false`, because that is an artifact of how the base column is built rather than a statement about entries: drizzle's own inferred type for `text('tags').array().notNull()` is `string[]`, and assigning `['x', null]` to it is a type error.
+
+The where clause carries the array filters the core compiles: `has` for one element, `hasEvery`, `hasSome`, `hasNone` and `containedBy` for a list of them, `isEmpty`, `length` (a number or a comparison on one), `equals` for the whole array, `not`, and `some`, `none` and `every` for a filter on the element. Passing an element where a list belongs, or the reverse, is refused rather than coerced.
+
+An element predicate has to constrain something, which is how the core avoids a clause that silently matches every row:
+
+```ts
+await db.posts.findMany({ where: { tags: { some: {} } } });                   // refused
+await db.posts.findMany({ where: { tags: { some: { mode: 'insensitive' } } } }); // refused
+await db.posts.findMany({ where: { tags: { some: { contains: 'a' } } } });    // fine
+```
+
+An array whose element ata cannot describe, `timestamp().array()`, is an array in the schema and a residue per entry: the clause still checks the operator shape, and the row validator judges each entry, naming the index of the one that failed.
+
+## The three types JSON Schema cannot describe
+
+`Date`, `BigInt` and `Buffer` are JavaScript runtime types, not JSON shapes. Rather than reach for a custom keyword, which would move the whole schema onto ata's interpreted engine and give up most of the reason to use it, those columns ask the schema for nothing and are checked by a predicate that runs only on rows ata has already accepted.
+
+The plugin does not hide which columns those are:
+
+```ts
+client.users.$ata.residues; // { created: 'date', views: 'bigint' }
+```
+
+One gap is worth stating plainly. In a `where` clause, a `Date` has no own keys so it satisfies the operator object, and a bigint is not an object at all, which means a misspelled operator is still caught for both. A `Buffer` is an object whose own keys are indices, so it matches neither, and the clause has to accept anything for that one column. Refusing a real `Buffer` would be worse than accepting a bad operator there.
+
+## Errors
+
+A failure throws the same `BetterDrizzleError` the other plugins throw, with `details.issues` in the same shape, plus a link to the page describing the code:
+
+```ts
+{
+	pluginId: 'better-drizzle/ata',
+	issues: [
+		{
+			code: 'ATA1001',
+			message: 'must be string',
+			path: 'name',
+			docUrl: 'https://ata-validator.com/e/ATA1001',
+		},
+	],
+}
+```
+
+## Notes
+
+- ata validates, it does not transform. There is no coercion step, so a value that passes is the value you handed in, and the plugin returns your payload rather than a rebuilt copy of it.
+- Each table's schemas are compiled the first time something asks for them, not at setup, so a process that touches one table does not pay to compile the rest. Pass `precompile: true` to compile them up front instead.
+- Relation projections are checked for shape, not for the related table's columns, because those columns are not in hand where the projection is built.
+- This is runtime validation. It complements, but does not replace, TypeScript types.

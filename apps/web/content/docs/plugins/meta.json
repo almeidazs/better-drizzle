@@ -6,6 +6,7 @@
 		"timestamps",
 		"soft-delete",
 		"zod",
+		"ata",
 		"rules",
 		"eslint",
 		"writing-plugins"

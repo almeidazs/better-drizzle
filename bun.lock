@@ -10,6 +10,7 @@
         "@types/estree": "^1.0.8",
         "@types/pg": "^8.20.0",
         "@typescript-eslint/parser": "^8.38.0",
+        "ata-validator": "^1.30.1",
         "commitlint": "^21.1.0",
         "eslint": "^9.31.0",
         "lefthook": "^2.0.0",
@@ -27,6 +28,7 @@
       },
       "peerDependencies": {
         "@typescript-eslint/parser": "^8",
+        "ata-validator": "^1.30.1",
         "drizzle-orm": "^0.30.0",
         "eslint": "^9",
         "typescript": "^5",
@@ -34,6 +36,7 @@
       },
       "optionalPeers": [
         "@typescript-eslint/parser",
+        "ata-validator",
         "eslint",
         "zod",
       ],
@@ -67,6 +70,20 @@
   },
   "packages": {
     "@alloc/quick-lru": ["@alloc/quick-lru@5.2.0", "", {}, "sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw=="],
+
+    "@ata-validator/native-darwin-arm64": ["@ata-validator/native-darwin-arm64@1.30.1", "", { "os": "darwin", "cpu": "arm64" }, "sha512-DSLBlm86sEwgiXMjE3qTIbL7hGARDina0P7Cka4sJQa2s7lL0uuehDBZzrsX5I9AGWQypAFtRmw8N+fGzvJNEg=="],
+
+    "@ata-validator/native-darwin-x64": ["@ata-validator/native-darwin-x64@1.30.1", "", { "os": "darwin", "cpu": "x64" }, "sha512-bNbr1K3zIZ41C3xOqSwn/Y0IvtcIrL26uyhoKpmiDitsaZRzlknoZq/1ZJmy4zTziie/0+aDiY5bSHVx2LhMWQ=="],
+
+    "@ata-validator/native-linux-arm64-gnu": ["@ata-validator/native-linux-arm64-gnu@1.30.1", "", { "os": "linux", "cpu": "arm64" }, "sha512-SltLFxPuaNXTV1oLbUdPKSI+PIllypbIS3GlfiA7Cd4oK51f34RCWOxChu6TQxgKsPUhJgnV/hZVRHEz6hrNJA=="],
+
+    "@ata-validator/native-linux-arm64-musl": ["@ata-validator/native-linux-arm64-musl@1.30.1", "", { "os": "linux", "cpu": "arm64" }, "sha512-kF2jANOBkuxcC1FyjQzYWqb3PFK1G3DSmqpraTmbiHgFrfO9nCO27AB9DfdD2C+7n0nWyBBIx4v2vFdqNBlZQg=="],
+
+    "@ata-validator/native-linux-x64-gnu": ["@ata-validator/native-linux-x64-gnu@1.30.1", "", { "os": "linux", "cpu": "x64" }, "sha512-5gJWQ84ZPL4vERPM1edGHpW1egQrGqN5kqNyHuJTXioM/nAFoSXTQ7D2sEX6kN4WxBeCIoDvAOAInce9lilihg=="],
+
+    "@ata-validator/native-linux-x64-musl": ["@ata-validator/native-linux-x64-musl@1.30.1", "", { "os": "linux", "cpu": "x64" }, "sha512-hk61uJpk0WUMAPlkJXtfBt7uhYHLFVzUldMaZpbCbGez68SNMhvWD7OsEkTQczBEy5v4NkzBKLWMwEAFJUX2Og=="],
+
+    "@ata-validator/native-win32-x64": ["@ata-validator/native-win32-x64@1.30.1", "", { "os": "win32", "cpu": "x64" }, "sha512-4zIHki3YeYXDjB4TS3aw1/VLQDH4Ra5aY5tHmeJYb6cwa1BkcvwXJgG35jSTqeEPZSZd6TudBWUqL2RiOzXbiw=="],
 
     "@babel/code-frame": ["@babel/code-frame@7.29.7", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.29.7", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw=="],
 
@@ -655,6 +672,8 @@
     "aria-hidden": ["aria-hidden@1.2.6", "", { "dependencies": { "tslib": "^2.0.0" } }, "sha512-ik3ZgC9dY/lYVVM++OISsaYDeg1tb0VtP5uL3ouh1koGOaUMDPpbFIei4JkFimWUFPn90sbMNMXQAIVOlnYKJA=="],
 
     "astring": ["astring@1.9.0", "", { "bin": { "astring": "bin/astring" } }, "sha512-LElXdjswlqjWrPpJFg1Fx4wpkOCxj1TDHlSV4PlaRxHGWko024xICaa97ZkMfs6DRKlCguiAI+rbXv5GWwXIkg=="],
+
+    "ata-validator": ["ata-validator@1.30.1", "", { "optionalDependencies": { "@ata-validator/native-darwin-arm64": "1.30.1", "@ata-validator/native-darwin-x64": "1.30.1", "@ata-validator/native-linux-arm64-gnu": "1.30.1", "@ata-validator/native-linux-arm64-musl": "1.30.1", "@ata-validator/native-linux-x64-gnu": "1.30.1", "@ata-validator/native-linux-x64-musl": "1.30.1", "@ata-validator/native-win32-x64": "1.30.1" }, "peerDependencies": { "yaml": "^2.0.0" }, "optionalPeers": ["yaml"], "bin": { "ata": "bin/ata.js" } }, "sha512-6P/mdiGibFRrWnJEmACGMqz1L2RdJi/eQawmFHb1T1VjmK/xxvHQPB/kpQcS+QQh9Vc91Lfa2efn5Jxf644D2A=="],
 
     "aws-ssl-profiles": ["aws-ssl-profiles@1.1.2", "", {}, "sha512-NZKeq9AfyQvEeNlN0zSYAaWrmBffJh3IELMZfRpJVWgrpEbtEpnjvzqBPf+mxoI287JohRDoa+/nsfqqiZmF6g=="],
 
