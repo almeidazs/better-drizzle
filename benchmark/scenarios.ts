@@ -12,7 +12,13 @@ import {
 } from 'drizzle-orm';
 
 import { OrderType } from '../src';
-import { benchWrites, comments, posts, users } from './schema';
+import {
+	benchWrites,
+	comments,
+	nullOrderRecords,
+	posts,
+	users,
+} from './schema';
 import type { BenchmarkContext } from './setup';
 
 // oxlint-disable-next-line typescript/no-explicit-any -- Benchmark type erasure.
@@ -42,6 +48,7 @@ const nextUpdateId = (context: BenchmarkContext) => {
 const betterClient = (context: BenchmarkContext) =>
 	context.better as unknown as {
 		benchWrites: Any;
+		nullOrderRecords: Any;
 		posts: Any;
 		transaction<T>(callback: (tx: Any) => Promise<T> | T): Promise<T>;
 		users: Any;
@@ -86,6 +93,19 @@ export const betterFilteredList = async (context: BenchmarkContext) =>
 			age: { gte: 30 },
 			email: { endsWith: '@example.com' },
 		},
+	});
+
+export const rawNullsLastOrder = async (context: BenchmarkContext) =>
+	context.raw
+		.select()
+		.from(nullOrderRecords)
+		.orderBy(sql`${nullOrderRecords.lastSeenAt} asc nulls last`)
+		.limit(25);
+
+export const betterNullsLastOrder = async (context: BenchmarkContext) =>
+	betterClient(context).nullOrderRecords.findMany({
+		orderBy: { lastSeenAt: { direction: 'asc', nulls: 'last' } },
+		take: 25,
 	});
 
 export const rawRelationGraph = async (context: BenchmarkContext) =>

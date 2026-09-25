@@ -13,6 +13,7 @@ import {
 	ilike,
 	inArray,
 	isNull,
+	isNotNull,
 	isSQLWrapper,
 	like,
 	lt,
@@ -68,6 +69,16 @@ const isScalarFilter = (value: unknown): value is Record<string, unknown> => {
 		'not' in value
 	);
 };
+
+export const orderDirection = (value: unknown): 'asc' | 'desc' =>
+	value === 'desc' || (isPlainObject(value) && value.direction === 'desc')
+		? 'desc'
+		: 'asc';
+
+export const orderNulls = (value: unknown): 'first' | 'last' | undefined =>
+	isPlainObject(value) && (value.nulls === 'first' || value.nulls === 'last')
+		? value.nulls
+		: undefined;
 
 const compileSimpleWhere = (
 	runtime: TableRuntime,
@@ -939,12 +950,41 @@ export const compileOrderBy = <Schema extends AnySchema, Meta>(
 
 	for (const entry of entries)
 		for (const key in entry as Record<string, unknown>) {
-			const direction = (entry as Record<string, unknown>)[key];
+			const value = (entry as Record<string, unknown>)[key];
 			const column = context.runtime.columns[key];
 
 			if (!column) continue;
 
-			clauses.push(direction === 'desc' ? desc(column) : asc(column));
+			const direction = orderDirection(value);
+			const nulls = orderNulls(value);
+			if (!nulls) {
+				clauses.push(direction === 'desc' ? desc(column) : asc(column));
+				continue;
+			}
+
+			if (context.dialect === 'mysql') {
+				if (
+					(nulls === 'first' && direction === 'asc') ||
+					(nulls === 'last' && direction === 'desc')
+				) {
+					clauses.push(
+						direction === 'desc' ? desc(column) : asc(column),
+					);
+					continue;
+				}
+
+				clauses.push(
+					nulls === 'first'
+						? desc(isNull(column))
+						: asc(isNull(column)),
+				);
+				clauses.push(direction === 'desc' ? desc(column) : asc(column));
+				continue;
+			}
+
+			clauses.push(
+				sql`${column} ${sql.raw(direction)} nulls ${sql.raw(nulls)}`,
+			);
 		}
 
 	return clauses.length ? clauses : undefined;
@@ -985,11 +1025,21 @@ export const compileCursorWhere = <Schema extends AnySchema, Meta>(
 	const orderEntry = Array.isArray(orderBy) ? orderBy[0] : orderBy;
 
 	if (orderEntry && cursorField in orderEntry)
-		direction = (orderEntry as Record<string, 'asc' | 'desc'>)[cursorField];
+		direction = orderDirection(
+			(orderEntry as Record<string, unknown>)[cursorField],
+		);
 
-	return direction === 'desc'
-		? lt(column, cursorValue)
-		: gt(column, cursorValue);
+	const nulls = orderEntry
+		? orderNulls((orderEntry as Record<string, unknown>)[cursorField])
+		: undefined;
+	const comparison =
+		direction === 'desc'
+			? lt(column, cursorValue)
+			: gt(column, cursorValue);
+	if (!nulls) return comparison;
+	if (cursorValue === null)
+		return nulls === 'first' ? isNotNull(column) : sql`false`;
+	return nulls === 'last' ? or(comparison, isNull(column)) : comparison;
 };
 
 /**
@@ -1203,15 +1253,20 @@ const reverseOrderBy = <Schema extends AnySchema>(
 	const reversed = [];
 
 	for (const entry of entries) {
-		const reversedEntry = Object.create(null) as Record<
-			string,
-			'asc' | 'desc'
-		>;
+		const reversedEntry = Object.create(null) as Record<string, unknown>;
 
 		for (const key in entry as Record<string, unknown>) {
-			const direction = (entry as Record<string, unknown>)[key];
-			if (direction !== 'asc' && direction !== 'desc') continue;
-			reversedEntry[key] = direction === 'asc' ? 'desc' : 'asc';
+			const value = (entry as Record<string, unknown>)[key];
+			const direction = orderDirection(value);
+			const nulls = orderNulls(value);
+			const reversedDirection = direction === 'asc' ? 'desc' : 'asc';
+
+			reversedEntry[key] = nulls
+				? {
+						direction: reversedDirection,
+						nulls: nulls === 'first' ? 'last' : 'first',
+					}
+				: reversedDirection;
 		}
 
 		reversed.push(reversedEntry);

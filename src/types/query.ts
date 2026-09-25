@@ -253,7 +253,12 @@ export type IncludeInput<
 type OrderByField<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
-> = Partial<Record<ScalarKeysFor<Schema, Name>, import('./utils').SortOrder>>;
+> = Partial<
+	Record<
+		ScalarKeysFor<Schema, Name>,
+		import('./utils').SortOrder | import('./utils').SortConfig
+	>
+>;
 
 /**
  * Sort specification for a query result set. Can be a single field map or an
@@ -267,6 +272,11 @@ type OrderByField<
  * // Single field
  * const users = await db.user.findMany({
  *   orderBy: { name: 'asc' },
+ * });
+ *
+ * // Control NULL placement
+ * const activeUsers = await db.user.findMany({
+ *   orderBy: { lastSeenAt: { direction: 'desc', nulls: 'last' } },
  * });
  *
  * // Multiple fields

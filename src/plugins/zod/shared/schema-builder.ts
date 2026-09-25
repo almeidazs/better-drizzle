@@ -497,9 +497,17 @@ export const createOrderBySchema = (
 	behavior: ZodPluginBehavior | undefined,
 ) => {
 	const shape: Record<string, z.ZodTypeAny> = Object.create(null);
+	const direction = z.enum(['asc', 'desc']);
+	const sortConfig = applyUnknownKeys(
+		z.object({
+			direction,
+			nulls: z.enum(['first', 'last']).optional(),
+		}),
+		behavior,
+	);
 
 	for (const key of scalarKeys)
-		shape[key] = z.enum(['asc', 'desc']).optional();
+		shape[key] = z.union([direction, sortConfig]).optional();
 
 	const objectSchema = applyUnknownKeys(z.object(shape), behavior);
 	return z.union([objectSchema, z.array(objectSchema)]);

@@ -49,6 +49,8 @@ import {
 	compileOrderBy,
 	compileWhereInput,
 	countRows,
+	orderDirection,
+	orderNulls,
 } from '../query';
 import { getPrimaryKeyWhere, getTableRuntime, isSimpleRecord } from './context';
 import {
@@ -2572,10 +2574,19 @@ export const buildFastCursorQuery = <Schema extends AnySchema, Meta>(
 	)
 		return;
 	if (entries && !(field in entries[0])) return;
-	const direction = entries
-		? (entries[0] as Record<string, 'asc' | 'desc'>)[field]
-		: 'asc';
-	if (direction !== 'asc' && direction !== 'desc') return;
+	const orderValue = entries
+		? (entries[0] as Record<string, unknown>)[field]
+		: undefined;
+	if (
+		orderValue !== undefined &&
+		orderValue !== 'asc' &&
+		orderValue !== 'desc' &&
+		(!isSimpleRecord(orderValue) ||
+			(orderValue.direction !== 'asc' && orderValue.direction !== 'desc'))
+	)
+		return;
+	if (orderNulls(orderValue)) return;
+	const direction = orderDirection(orderValue);
 
 	const where = args.where
 		? compileFastWhere(runtime, args.where)

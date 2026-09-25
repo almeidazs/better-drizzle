@@ -1,6 +1,17 @@
+import { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { integer, sqliteTable } from 'drizzle-orm/sqlite-core';
+
+import { better } from '../../src';
 import { createTestContext, type TestContext } from './setup';
+
+const nullOrderRecords = sqliteTable('null_order_records', {
+	id: integer('id').primaryKey(),
+	lastSeenAt: integer('last_seen_at'),
+});
+const nullOrderSchema = { nullOrderRecords };
 
 let ctx: TestContext;
 
@@ -306,6 +317,64 @@ describe('where with orderBy', () => {
 		expect(result.length).toBe(2);
 		for (let i = 1; i < result.length; i++)
 			expect(result[i]?.age).toBeLessThanOrEqual(result[i - 1]?.age ?? 0);
+	});
+
+	test('orderBy controls NULL placement', async () => {
+		const sqlite = new Database(':memory:');
+		try {
+			sqlite.exec(
+				'create table null_order_records (id integer primary key, last_seen_at integer)',
+			);
+			sqlite.run(
+				'insert into null_order_records (id, last_seen_at) values (1, null), (2, 100), (3, null), (4, 300), (5, 200)',
+			);
+			const db = better(drizzle(sqlite, { schema: nullOrderSchema }), {
+				schema: nullOrderSchema,
+			});
+
+			const nullsLast = await db.nullOrderRecords.findMany({
+				orderBy: { lastSeenAt: { direction: 'asc', nulls: 'last' } },
+			});
+			expect(
+				nullsLast.slice(-2).every((user) => user.lastSeenAt === null),
+			).toBe(true);
+
+			const nullsFirst = await db.nullOrderRecords.findMany({
+				orderBy: { lastSeenAt: { direction: 'desc', nulls: 'first' } },
+			});
+			expect(
+				nullsFirst
+					.slice(0, 2)
+					.every((user) => user.lastSeenAt === null),
+			).toBe(true);
+
+			const firstPage = await db.nullOrderRecords.cursor({
+				limit: 2,
+				orderBy: { lastSeenAt: { direction: 'asc', nulls: 'last' } },
+			});
+			expect(firstPage.data.map((row) => row.id)).toEqual([2, 5]);
+			expect(firstPage.pagination.nextCursor).toEqual({
+				lastSeenAt: 200,
+			});
+
+			const afterNonNull = await db.nullOrderRecords.cursor({
+				after: firstPage.pagination.nextCursor as {
+					lastSeenAt: number;
+				},
+				limit: 2,
+				orderBy: { lastSeenAt: { direction: 'asc', nulls: 'last' } },
+			});
+			expect(afterNonNull.data.map((row) => row.id)).toEqual([4, 1]);
+
+			const beforeNull = await db.nullOrderRecords.cursor({
+				before: { lastSeenAt: null },
+				limit: 2,
+				orderBy: { lastSeenAt: { direction: 'asc', nulls: 'last' } },
+			});
+			expect(beforeNull.data.map((row) => row.id)).toEqual([5, 4]);
+		} finally {
+			sqlite.close();
+		}
 	});
 });
 

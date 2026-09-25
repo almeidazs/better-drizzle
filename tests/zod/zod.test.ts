@@ -314,6 +314,32 @@ describe('better-drizzle/zod - generated schemas', () => {
 				{ name: 'desc' },
 			]),
 		).toHaveLength(2);
+
+		expect(
+			ctx.client.users.$zod.orderBy.parse({
+				id: { direction: 'desc', nulls: 'last' },
+			}),
+		).toEqual({ id: { direction: 'desc', nulls: 'last' } });
+		expect(
+			ctx.client.users.$zod.orderBy.parse([
+				{ id: { direction: 'asc', nulls: 'first' } },
+				{ name: 'desc' },
+			]),
+		).toHaveLength(2);
+
+		expect(() =>
+			ctx.client.users.$zod.orderBy.parse({
+				id: { direction: 'sideways' },
+			}),
+		).toThrow();
+		expect(() =>
+			ctx.client.users.$zod.orderBy.parse({
+				id: { direction: 'asc', nulls: 'middle' },
+			}),
+		).toThrow();
+		expect(() =>
+			ctx.client.users.$zod.orderBy.parse({ id: { nulls: 'last' } }),
+		).toThrow();
 		ctx.close();
 	});
 

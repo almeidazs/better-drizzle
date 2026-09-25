@@ -9,6 +9,7 @@ import {
 	betterExists,
 	betterFilteredList,
 	betterMultiOpTransaction,
+	betterNullsLastOrder,
 	betterNestedTransaction,
 	betterOffsetPaginate,
 	betterPointLookup,
@@ -28,6 +29,7 @@ import {
 	rawExists,
 	rawFilteredList,
 	rawMultiOpTransaction,
+	rawNullsLastOrder,
 	rawOffsetPaginate,
 	rawPointLookup,
 	rawReadOnlyTransaction,
@@ -41,6 +43,16 @@ import { createBenchmarkContext } from './setup';
 const rawContext = createBenchmarkContext();
 const betterContext = createBenchmarkContext();
 
+const [rawNullsLast, betterNullsLast] = await Promise.all([
+	rawNullsLastOrder(rawContext),
+	betterNullsLastOrder(betterContext),
+]);
+if (
+	rawNullsLast.map((row: { id: number }) => row.id).join(',') !==
+	betterNullsLast.map((row: { id: number }) => row.id).join(',')
+)
+	throw new Error('NULLS LAST benchmark parity validation failed.');
+
 group('api parity: reads', () => {
 	summary(() => {
 		bench('drizzle: point lookup', async () =>
@@ -52,6 +64,11 @@ group('api parity: reads', () => {
 			do_not_optimize(await rawFilteredList(rawContext)));
 		bench('better: filtered list', async () =>
 			do_not_optimize(await betterFilteredList(betterContext)));
+
+		bench('drizzle: NULLS LAST order', async () =>
+			do_not_optimize(await rawNullsLastOrder(rawContext)));
+		bench('better: NULLS LAST order', async () =>
+			do_not_optimize(await betterNullsLastOrder(betterContext)));
 
 		bench('drizzle: relation graph', async () =>
 			do_not_optimize(await rawRelationGraph(rawContext)));

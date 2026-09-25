@@ -294,6 +294,15 @@ export type NonNullish<T> = Exclude<T, null | undefined>;
  */
 export type SortOrder = 'asc' | 'desc';
 
+/** Controls where SQL NULL values appear within a sort direction. */
+export type NullsOrder = 'first' | 'last';
+
+/** Direction and optional SQL NULL placement for one ordered column. */
+export type SortConfig = {
+	direction: SortOrder;
+	nulls?: NullsOrder;
+};
+
 /**
  * Query mode controlling case sensitivity for string comparisons.
  * - `'default'` - case-sensitive

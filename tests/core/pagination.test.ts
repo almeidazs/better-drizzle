@@ -34,7 +34,7 @@ describe('paginate - offset', () => {
 	test('paginate with limit', async () => {
 		const result = await ctx.better.users.paginate({
 			limit: 2,
-			orderBy: [{ id: 'asc' }],
+			orderBy: { id: { direction: 'asc', nulls: 'last' } },
 		});
 
 		expect(result.data.map((row) => row.id)).toEqual([1, 2]);
@@ -159,7 +159,7 @@ describe('cursor - cursor pagination', () => {
 		const forward = await ctx.better.users.cursor({
 			after: { id: 2 },
 			limit: 2,
-			orderBy: { id: 'asc' },
+			orderBy: { id: { direction: 'asc' } },
 		});
 		expect(forward.pagination.hasPrevious).toBe(true);
 		expect(Object.keys(forward.data[0] ?? {})).toEqual([

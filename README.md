@@ -106,6 +106,8 @@ const page = await client.users.paginate({
 
 `page.pagination` carries `total`, `pageCount`, `hasNext`, and `hasPrevious`. Use `cursor()` instead for feed-style navigation and you get `nextCursor` and `previousCursor` computed for you.
 
+`orderBy` accepts a field map or an array. Specify `{ direction, nulls }` when NULL placement matters: `orderBy: { lastSeenAt: { direction: 'desc', nulls: 'last' } }`.
+
 ## Not-found, handled honestly
 
 Operations that can legitimately match nothing say so in the type - and let you opt into throwing when it is genuinely exceptional.

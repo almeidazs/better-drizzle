@@ -39,6 +39,11 @@ export const benchWrites = sqliteTable('bench_writes', {
 	payload: text('payload').notNull(),
 });
 
+export const nullOrderRecords = sqliteTable('null_order_records', {
+	id: integer('id').primaryKey(),
+	lastSeenAt: integer('last_seen_at'),
+});
+
 export const usersRelations = relations(users, ({ many }) => ({
 	posts: many(posts),
 	comments: many(comments),
@@ -69,6 +74,7 @@ export const schema = {
 	commentsRelations,
 	posts,
 	postsRelations,
+	nullOrderRecords,
 	users,
 	usersRelations,
 };
@@ -104,6 +110,11 @@ CREATE TABLE bench_writes (
 	token TEXT NOT NULL UNIQUE,
 	value INTEGER NOT NULL,
 	payload TEXT NOT NULL
+);
+
+CREATE TABLE null_order_records (
+	id INTEGER PRIMARY KEY NOT NULL,
+	last_seen_at INTEGER
 );
 `;
 

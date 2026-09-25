@@ -140,9 +140,23 @@ export interface CursorPaginationOptions<
  *
  * @typeParam Columns - The shape of each row in the result set.
  */
-export type OrderBy<Columns extends Record<string, unknown>> = Partial<
-	Record<keyof Columns, OrderType>
->;
+export type OrderBy<Columns extends Record<string, unknown>> =
+	| Partial<
+			Record<
+				keyof Columns,
+				| import('./utils').SortOrder
+				| import('./utils').SortConfig
+				| OrderType
+			>
+	  >
+	| Partial<
+			Record<
+				keyof Columns,
+				| import('./utils').SortOrder
+				| import('./utils').SortConfig
+				| OrderType
+			>
+	  >[];
 
 /**
  * Sort direction values.

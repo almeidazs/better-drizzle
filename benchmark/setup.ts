@@ -63,6 +63,9 @@ ${createTablesSql}
 		const insertWrite = sqlite.prepare(
 			'INSERT INTO bench_writes (id, token, value, payload) VALUES (?, ?, ?, ?)',
 		);
+		const insertNullOrder = sqlite.prepare(
+			'INSERT INTO null_order_records (id, last_seen_at) VALUES (?, ?)',
+		);
 
 		let postId = 1;
 		let commentId = 1;
@@ -114,6 +117,8 @@ ${createTablesSql}
 
 		for (let id = 1; id <= BENCH_WRITE_COUNT; id += 1)
 			insertWrite.run(id, `seed-${id}`, id % 1000, `payload-${id}`);
+		for (let id = 1; id <= USER_COUNT; id += 1)
+			insertNullOrder.run(id, id % 5 === 0 ? null : id);
 	});
 
 	seed();

@@ -161,6 +161,7 @@ const page = await db
 ```
 
 - `orderBy` takes one field map or an array for multi-column ordering.
+- Use `{ direction, nulls }` when NULL placement matters: `orderBy: { lastSeenAt: { direction: 'desc', nulls: 'last' } }`.
 - `take` caps the number of rows. A **negative** `take` reverses the order and takes from the end.
 - `skip` offsets from the start.
 
