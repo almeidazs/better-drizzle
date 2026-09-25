@@ -149,7 +149,8 @@
 		"bench:arrays": "DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required} bun run benchmark/arrays.ts",
 		"test:jsonb": "bun test tests/core/jsonb.pg.test.ts",
 		"test:arrays": "bun test tests/core/arrays.pg.test.ts",
-		"bench:report": "bun run benchmark/report.ts"
+		"bench:report": "bun run benchmark/report.ts",
+		"bench:validation": "bun run benchmark/validation.ts"
 	},
 	"devDependencies": {
 		"@commitlint/config-conventional": "^21.1.0",
