@@ -62,6 +62,30 @@ const isGenerated = (column: AnyColumn): boolean =>
 		(column as { generatedIdentity?: unknown }).generatedIdentity,
 	);
 
+const atomicMutationSchema = (column: AnyColumn) => {
+	if (column.dataType === 'boolean')
+		return {
+			additionalProperties: false,
+			properties: { toggle: { const: true } },
+			required: ['toggle'],
+			type: 'object',
+		};
+	if (column.dataType !== 'number') return;
+
+	return {
+		additionalProperties: false,
+		minProperties: 1,
+		properties: {
+			decrement: { type: 'number' },
+			divide: { not: { const: 0 }, type: 'number' },
+			increment: { type: 'number' },
+			multiply: { type: 'number' },
+			set: { type: 'number' },
+		},
+		type: 'object',
+	};
+};
+
 /**
  * A validator for one table's rows.
  *
@@ -86,7 +110,9 @@ export const createRowValidator = (
 	for (const [name, column] of Object.entries(columns)) {
 		const { schema, residue, residueInArray, nullable } =
 			columnToSchema(column);
-		properties[name] = schema;
+		const mutation =
+			mode === 'update' ? atomicMutationSchema(column) : undefined;
+		properties[name] = mutation ? { anyOf: [schema, mutation] } : schema;
 		if (isRequired(column, nullable, mode)) required.push(name);
 		if (residue) residues[name] = residue;
 		if (residue && residueInArray) residueArrays[name] = true;

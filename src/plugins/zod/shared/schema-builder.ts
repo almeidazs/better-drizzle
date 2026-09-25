@@ -271,11 +271,14 @@ export const buildRowShape = <
 		const overridden = applyFieldOverride(override, baseSchema);
 
 		if (overridden === false) continue;
+		const mutation =
+			mode === 'update'
+				? (column as { columnType?: string }).columnType === 'PgArray'
+					? createArrayMutationSchema(overridden)
+					: createScalarMutationSchema(column)
+				: undefined;
 		shape[columnName] = applyColumnRules(
-			mode === 'update' &&
-				(column as { columnType?: string }).columnType === 'PgArray'
-				? z.union([overridden, createArrayMutationSchema(overridden)])
-				: overridden,
+			mutation ? z.union([overridden, mutation]) : overridden,
 			column,
 			mode,
 		);
@@ -410,6 +413,29 @@ const createArrayMutationSchema = (valueSchema: z.ZodTypeAny) => {
 			.strict(),
 		z.object({ addUnique: valuesSchema }).strict(),
 	]);
+};
+
+const createScalarMutationSchema = (column: AnyColumn) => {
+	if (column.dataType === 'boolean')
+		return z.object({ toggle: z.literal(true) }).strict();
+	if (column.dataType !== 'number') return;
+
+	const value = z.number().finite();
+	return z
+		.object({
+			decrement: value.optional(),
+			divide: value
+				.refine((entry) => entry !== 0, 'divide cannot be zero.')
+				.optional(),
+			increment: value.optional(),
+			multiply: value.optional(),
+			set: value.optional(),
+		})
+		.strict()
+		.refine(
+			(entry) => Object.keys(entry).length > 0,
+			'Mutation must not be empty.',
+		);
 };
 
 const createArrayFilterSchema = (valueSchema: z.ZodTypeAny) => {

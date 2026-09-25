@@ -161,6 +161,21 @@ describe('the registry', () => {
 		expect(update.validate({ age: 'three' }).valid).toBe(false);
 	});
 
+	test('the update schema accepts scalar atomic mutation envelopes', () => {
+		const update = registry.get('users')?.schemas.update;
+
+		expect(
+			update?.validate({
+				active: { toggle: true },
+				age: { increment: 2 },
+			}).valid,
+		).toBe(true);
+		expect(update?.validate({ age: { divide: 0 } }).valid).toBe(false);
+		expect(update?.validate({ active: { toggle: false } }).valid).toBe(
+			false,
+		);
+	});
+
 	test('the query arguments refuse a misspelled argument', () => {
 		const query = registry.getQueryArgs('users');
 		expect(query.validate({ where: { name: 'ada' }, take: 5 }).valid).toBe(
