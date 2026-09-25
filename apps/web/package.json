@@ -12,9 +12,9 @@
 	},
 	"dependencies": {
 		"cnfast": "^0.2.0",
-		"fumadocs-core": "16.11.5",
-		"fumadocs-mdx": "15.0.13",
-		"fumadocs-ui": "16.11.5",
+		"fumadocs-core": "16.15.13",
+		"fumadocs-mdx": "15.4.3",
+		"fumadocs-ui": "16.15.13",
 		"lucide-react": "^1.22.0",
 		"next": "^16.2.0",
 		"react": "^19.2.0",
@@ -30,6 +30,6 @@
 		"@types/react": "^19.0.0",
 		"@types/react-dom": "^19.0.0",
 		"tailwindcss": "^4.3.3",
-		"typescript": "^5.9.3"
+		"typescript": "^7.0.2"
 	}
 }
