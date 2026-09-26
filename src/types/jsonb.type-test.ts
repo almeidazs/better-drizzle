@@ -86,3 +86,37 @@ void db.events.findMany({
 		},
 	},
 });
+void db.events.update({
+	where: { id: 1 },
+	data: { metadata: { 'profile.name': 'Almeida', 'profile.age': 30 } },
+});
+void db.events.update({
+	where: { id: 1 },
+	data: { metadata: { json: { 'profile.name': 'Almeida' } } },
+});
+void db.events.update({
+	where: { id: 1 },
+	data: {
+		// @ts-expect-error number leaves do not accept strings
+		metadata: {
+			json: {
+				'profile.age': 'thirty',
+			},
+		},
+	},
+});
+void db.events.update({
+	where: { id: 1 },
+	data: {
+		metadata: {
+			json: {
+				// @ts-expect-error paths must exist in the declared JSON shape
+				'profile.missing': 1,
+			},
+		},
+	},
+});
+void db.events.updateMany({
+	where: { id: 1 },
+	data: { metadata: { 'profile.name': 'Almeida' } },
+});

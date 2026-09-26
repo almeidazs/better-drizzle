@@ -1,9 +1,9 @@
 ---
-title: JSONB filters
-description: PostgreSQL JSONB queries through concise dot-path predicates, generated from your column's TypeScript shape.
+title: JSONB filters and mutations
+description: PostgreSQL JSONB queries and partial updates through concise dot-path predicates, generated from your column's TypeScript shape.
 icon: Braces
-seoTitle: 'PostgreSQL JSONB Filters for Drizzle ORM'
-seoDescription: 'Query PostgreSQL JSONB columns in Drizzle ORM with concise dot-path predicates and index-friendly SQL, while preserving the typed legacy wrapper.'
+seoTitle: 'PostgreSQL JSONB Filters and Mutations'
+seoDescription: 'Query and update PostgreSQL JSONB columns in Drizzle ORM with concise dot-path predicates and jsonb_set updates, while preserving the typed legacy wrapper.'
 ---
 
 JSONB columns are where type safety usually goes to die. Settings, feature flags, billing metadata, event payloads - the data is structured, but every query against it turns into a hand-written `sql` string with operators, path arrays, and casts that TypeScript cannot check.
@@ -558,11 +558,35 @@ const plan = await client.accounts
 
 A GIN index on the whole column (`using gin (settings)`) speeds up containment operators such as `@>`, but does not help these path comparisons. Index the specific paths you filter on.
 
+## Partial updates with the same paths
+
+Update operations (`update`, `updateMany`, `updateEach`, `upsert`, `upsertMany`) accept the same dotted paths in `data` and compile them to chained `jsonb_set` calls, so only the listed paths change:
+
+```ts tab="better-drizzle" tab-group="orm"
+await client.accounts.update({
+	where: { id },
+	data: { settings: { 'plan.tier': 'pro', 'plan.seats': 25 } },
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq, sql } from 'drizzle-orm';
+
+await db
+	.update(accounts)
+	.set({
+		settings: sql`jsonb_set(jsonb_set(${accounts.settings}, ARRAY['plan', 'tier'], ${JSON.stringify('pro')}::jsonb, true), ARRAY['plan', 'seats'], ${JSON.stringify(25)}::jsonb, true)`,
+	})
+	.where(eq(accounts.id, id));
+```
+
+Rules: every key inside one JSONB value must contain a dot, otherwise the value is treated as a full-document replacement. Use the `{ json: { ... } }` wrapper for single-level keys (e.g. `{ json: { nickname: 'Ada' } }`), which is also where the strictly-typed paths live. Mixing dotted and plain keys in one value throws `OPERATION_ERROR` instead of guessing, as does a `{ json: ... }` wrapper mixed with other keys or an empty `{ json: {} }` wrapper. A top-level `json` key holding a plain object on a `PgJsonb` column is reserved for the wrapper (`sql` fragments, scalars, and non-record values fall through to normal handling), and literal dotted keys (e.g. a full document `{ 'a.b': 1 }`) cannot be written as full-document replacements: every dotted key is compiled to `jsonb_set`, including keys inside the wrapper (unlike filters, the wrapper does not preserve literal dots). An empty `{}` is a full-document replacement, not a path update. Path values accept any JSON-encodable value; `undefined` and unencodable values throw `OPERATION_ERROR`. PostgreSQL only for path shapes: dotted or wrapper path attempts on other dialects fail fast with `JSONB_MUTATION_UNSUPPORTED`, while full-document replacements work on any dialect.
+
 ## Limits and dialect support
 
-- **PostgreSQL only.** SQLite and MySQL reject `json` filters with `JSONB_QUERY_UNSUPPORTED` instead of silently changing semantics.
-- **Scalar object paths only.** Arrays, object containment (`@>`), PostgreSQL JSONPath strings (`@?`, `@@`), and keys that contain a dot are intentionally outside the structured API.
-- **Filtering only.** JSON paths are available in `where`; ordering by a JSON path is not part of the structured API.
+- **PostgreSQL only for path shapes.** SQLite and MySQL reject `json` filters with `JSONB_QUERY_UNSUPPORTED` (and dotted/wrapper path mutations with `JSONB_MUTATION_UNSUPPORTED`) instead of silently changing semantics. Full-document replacements are not gated.
+- **Scalar object paths only for filtering.** Arrays, object containment (`@>`), PostgreSQL JSONPath strings (`@?`, `@@`), and keys that contain a dot are intentionally outside the structured filter API. Mutations accept any JSON-encodable value at addressed paths, including objects and arrays.
+- **Filtering and partial updates.** JSON paths are available in `where` and in update `data`; ordering by a JSON path is not part of the structured API.
 
 For anything outside those limits, pass a Drizzle `sql` fragment as the `where`:
 

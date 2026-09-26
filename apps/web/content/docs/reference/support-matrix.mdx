@@ -78,13 +78,15 @@ SQLite uses `EXPLAIN QUERY PLAN`; MySQL uses the best available `EXPLAIN`
 form. Unsupported flags are reported back under `ignoredOptions` rather than
 silently dropped.
 
-## JSONB filters
+## JSONB filters and mutations
 
 | Capability | PostgreSQL | SQLite | MySQL |
 | --- | --- | --- | --- |
 | typed JSONB scalar paths | Yes | rejected | rejected |
+| JSONB path mutations (`jsonb_set`) | Yes | rejected | rejected |
+| JSONB full-document replacement | Yes | Yes | Yes |
 
-Typed JSONB filters require `jsonb(...).$type<T>()` and support scalar dot paths only.
+Typed JSONB filters require `jsonb(...).$type<T>()` and support scalar dot paths only. Path mutations accept dotted paths in update `data` with JSON-encodable values (objects and arrays allowed); untyped columns accept untyped dotted paths plus the `{ json: ... }` wrapper. Full-document replacements are not dialect-gated.
 
 ## Conflict-handling features
 

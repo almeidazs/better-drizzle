@@ -188,19 +188,58 @@ type ScalarUpdateValue<T> =
 			? T | BooleanMutationInput
 			: T;
 
+type IsPgJsonbColumn<Column> = Column extends { columnType: 'PgJsonb' }
+	? true
+	: false;
+
+/** Partial JSONB path update accepted by update operations (`jsonb_set`). */
+export type JsonbMutationField<Model> =
+	import('./utils').IsUnknown<Model> extends true
+		?
+				| import('./utils').JsonMutationValue
+				| import('./utils').JsonDottedMutationInput
+				| {
+						json: Record<
+							string,
+							import('./utils').JsonMutationValue
+						>;
+				  }
+				| SQL
+		:
+				| Model
+				| import('./utils').JsonDottedMutationInput
+				| {
+						json: import('./utils').JsonMutationInput<Model>;
+				  }
+				| SQL;
+
+type UpdateScalarField<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	K extends keyof InsertModelFor<Schema, Name>,
+> = K extends keyof TableFor<Schema, Name>
+	? IsPgJsonbColumn<TableFor<Schema, Name>[K]> extends true
+		? JsonbMutationField<
+				SelectModelFor<Schema, Name>[K &
+					keyof SelectModelFor<Schema, Name>]
+			>
+		: K extends PgArrayKeysFor<Schema, Name>
+			?
+					| InsertModelFor<Schema, Name>[K]
+					| PgArrayMutationInput<InsertModelFor<Schema, Name>[K]>
+			: ScalarUpdateValue<InsertModelFor<Schema, Name>[K]>
+	: ScalarUpdateValue<InsertModelFor<Schema, Name>[K]>;
+
 /** Partial scalar data accepted by update operations. */
 export type UpdateScalarDataInput<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 > = Partial<{
-	[K in keyof InsertModelFor<Schema, Name>]: K extends PgArrayKeysFor<
+	[K in keyof InsertModelFor<Schema, Name>]: UpdateScalarField<
 		Schema,
-		Name
-	>
-		?
-				| InsertModelFor<Schema, Name>[K]
-				| PgArrayMutationInput<InsertModelFor<Schema, Name>[K]>
-		: ScalarUpdateValue<InsertModelFor<Schema, Name>[K]>;
+		Name,
+		K
+	>;
 }>;
 
 /** Partial scalar update data plus nested relation mutation commands. */
@@ -481,11 +520,15 @@ export type UpdateEachUpdateMap<
 > = Partial<{
 	[K in ScalarKeysFor<Schema, Name>]: (
 		row: Row,
-	) => K extends PgArrayKeysFor<Schema, Name>
-		?
-				| SelectModelFor<Schema, Name>[K]
-				| PgArrayMutationInput<SelectModelFor<Schema, Name>[K]>
-				| SQL
+	) => K extends keyof TableFor<Schema, Name>
+		? IsPgJsonbColumn<TableFor<Schema, Name>[K]> extends true
+			? JsonbMutationField<SelectModelFor<Schema, Name>[K]>
+			: K extends PgArrayKeysFor<Schema, Name>
+				?
+						| SelectModelFor<Schema, Name>[K]
+						| PgArrayMutationInput<SelectModelFor<Schema, Name>[K]>
+						| SQL
+				: ScalarUpdateValue<SelectModelFor<Schema, Name>[K]> | SQL
 		: ScalarUpdateValue<SelectModelFor<Schema, Name>[K]> | SQL;
 }>;
 
@@ -663,14 +706,21 @@ export type UpsertManyUpdateValue<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 > = Partial<{
-	[K in UpsertManyTargetColumn<Schema, Name>]: K extends PgArrayKeysFor<
+	[K in UpsertManyTargetColumn<Schema, Name>]: K extends keyof TableFor<
 		Schema,
 		Name
 	>
-		?
-				| InsertModelFor<Schema, Name>[K]
-				| PgArrayMutationInput<InsertModelFor<Schema, Name>[K]>
-				| SQL
+		? IsPgJsonbColumn<TableFor<Schema, Name>[K]> extends true
+			? JsonbMutationField<
+					SelectModelFor<Schema, Name>[K &
+						keyof SelectModelFor<Schema, Name>]
+				>
+			: K extends PgArrayKeysFor<Schema, Name>
+				?
+						| InsertModelFor<Schema, Name>[K]
+						| PgArrayMutationInput<InsertModelFor<Schema, Name>[K]>
+						| SQL
+				: ScalarUpdateValue<InsertModelFor<Schema, Name>[K]> | SQL
 		: ScalarUpdateValue<InsertModelFor<Schema, Name>[K]> | SQL;
 }>;
 
