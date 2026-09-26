@@ -345,6 +345,7 @@ const compilePgArrayMutations = (
 	let result: Record<string, unknown> | undefined;
 
 	for (const key in data) {
+		if (!Object.prototype.hasOwnProperty.call(data, key)) continue;
 		const value = data[key];
 		if (!isSimpleRecord(value) || isSQLWrapper(value)) continue;
 
@@ -358,6 +359,187 @@ const compilePgArrayMutations = (
 			dialect,
 			operation,
 			value,
+		);
+		if (!result) result = { ...data };
+		result[key] = mutation;
+	}
+
+	return result ?? data;
+};
+
+const isPgJsonbColumn = (column: AnyColumn) =>
+	(column as { columnType?: string }).columnType === 'PgJsonb';
+
+const jsonbMutationError = (
+	runtime: TableRuntime,
+	column: string,
+	operation: string,
+	message: string,
+	details?: Record<string, unknown>,
+) =>
+	new BetterDrizzleError({
+		code: BetterDrizzleErrorCode.OperationError,
+		column,
+		details,
+		message,
+		operation,
+		table: runtime.dbName,
+	});
+
+const getJsonbMutationPaths = (
+	runtime: TableRuntime,
+	columnName: string,
+	operation: string,
+	value: Record<string, unknown>,
+) => {
+	const keys = Object.keys(value);
+	if (!keys.length) return;
+
+	if (keys.includes('json')) {
+		const paths = value.json;
+		if (isSimpleRecord(paths) && !isSQLWrapper(paths)) {
+			if (keys.length !== 1)
+				throw jsonbMutationError(
+					runtime,
+					columnName,
+					operation,
+					`Invalid JSONB mutation for column "${columnName}": the "json" wrapper must be the only key.`,
+				);
+			if (!Object.keys(paths).length)
+				throw jsonbMutationError(
+					runtime,
+					columnName,
+					operation,
+					`JSONB mutation for column "${columnName}" requires at least one path.`,
+				);
+			return paths as Record<string, unknown>;
+		}
+	}
+
+	const dotted = keys.filter((key) => key.includes('.'));
+	if (!dotted.length) return;
+	if (dotted.length !== keys.length)
+		throw jsonbMutationError(
+			runtime,
+			columnName,
+			operation,
+			`Invalid JSONB mutation for column "${columnName}": mix full-document keys with dotted paths via separate updates, or use the "json" wrapper for single-level paths.`,
+			{ keys },
+		);
+	return value;
+};
+
+const compileJsonbMutation = (
+	runtime: TableRuntime,
+	columnName: string,
+	column: AnyColumn,
+	dialect: string,
+	operation: string,
+	paths: Record<string, unknown>,
+) => {
+	if (dialect !== 'pg')
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.JsonbMutationUnsupported,
+			column: columnName,
+			dialect,
+			message: 'JSONB path mutations are only supported by PostgreSQL.',
+			operation,
+			table: runtime.dbName,
+		});
+
+	let expression: SQL = sql`${column}`;
+	for (const path of Object.keys(paths)) {
+		const entry = paths[path];
+		if (entry === undefined)
+			throw jsonbMutationError(
+				runtime,
+				columnName,
+				operation,
+				`JSONB mutation path "${path}" cannot be undefined.`,
+				{ path },
+			);
+		const parts = path.split('.');
+		if (!path.length || parts.some((part) => !part.length))
+			throw jsonbMutationError(
+				runtime,
+				columnName,
+				operation,
+				`Invalid JSONB mutation path "${path}".`,
+				{ path },
+			);
+		const pathSql = sql`ARRAY[${sql.join(
+			parts.map((part) => sql`${part}`),
+			sql`, `,
+		)}]::text[]`;
+		const valueSql = isSQLWrapper(entry)
+			? entry
+			: (() => {
+					let encoded: string;
+					try {
+						const json = JSON.stringify(entry);
+						if (json === undefined) throw new Error('unencodable');
+						encoded = json;
+					} catch {
+						throw jsonbMutationError(
+							runtime,
+							columnName,
+							operation,
+							`JSONB mutation path "${path}" holds a value that cannot be encoded as JSON.`,
+							{ path },
+						);
+					}
+					return sql`${sql.param(encoded)}::jsonb`;
+				})();
+		expression = sql`jsonb_set(${expression}, ${pathSql}, ${valueSql}, true)`;
+	}
+	return expression;
+};
+
+const compileJsonbMutations = (
+	runtime: TableRuntime,
+	dialect: string,
+	operation: string,
+	data: Record<string, unknown>,
+) => {
+	let result: Record<string, unknown> | undefined;
+
+	for (const key in data) {
+		if (!Object.prototype.hasOwnProperty.call(data, key)) continue;
+		const value = data[key];
+		if (!isSimpleRecord(value) || isSQLWrapper(value)) continue;
+
+		const column = runtime.columns[key];
+		if (!column || !isPgJsonbColumn(column)) continue;
+
+		if (dialect !== 'pg') {
+			const keys = Object.keys(value);
+			if (
+				(keys.includes('json') &&
+					isSimpleRecord(value.json) &&
+					!isSQLWrapper(value.json)) ||
+				keys.some((k) => k.includes('.'))
+			)
+				compileJsonbMutation(
+					runtime,
+					key,
+					column,
+					dialect,
+					operation,
+					Object.create(null),
+				);
+			continue;
+		}
+
+		const paths = getJsonbMutationPaths(runtime, key, operation, value);
+		if (!paths) continue;
+
+		const mutation = compileJsonbMutation(
+			runtime,
+			key,
+			column,
+			dialect,
+			operation,
+			paths,
 		);
 		if (!result) result = { ...data };
 		result[key] = mutation;
@@ -478,13 +660,21 @@ export const compileUpdateMutations = (
 		operation,
 		data,
 	);
-	let result = arrayMutations === data ? undefined : arrayMutations;
+	const jsonbMutations = compileJsonbMutations(
+		runtime,
+		dialect,
+		operation,
+		arrayMutations,
+	);
+	let result = jsonbMutations === data ? undefined : jsonbMutations;
 
 	for (const key in data) {
+		if (!Object.prototype.hasOwnProperty.call(data, key)) continue;
 		const value = data[key];
 		if (!isSimpleRecord(value) || isSQLWrapper(value)) continue;
 		const column = runtime.columns[key];
-		if (!column || isPgArrayColumn(column)) continue;
+		if (!column || isPgArrayColumn(column) || isPgJsonbColumn(column))
+			continue;
 		if (column.dataType !== 'number' && column.dataType !== 'boolean')
 			continue;
 
@@ -647,6 +837,7 @@ const validateUpsertManyUpdateObject = (
 	const result = Object.create(null) as Record<string, unknown>;
 
 	for (const key in source) {
+		if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
 		const column = runtime.columns[key];
 		if (!column)
 			throw new BetterDrizzleError({
@@ -837,6 +1028,7 @@ const buildUpdateEachSet = <Schema extends AnySchema, Meta>(
 	let hasMutations = false;
 
 	for (const key in updates) {
+		if (!Object.prototype.hasOwnProperty.call(updates, key)) continue;
 		const resolve = updates[key];
 		if (typeof resolve !== 'function') continue;
 
@@ -881,6 +1073,7 @@ const buildUpdateEachSet = <Schema extends AnySchema, Meta>(
 				isSimpleRecord(nextValue) &&
 				!isSQLWrapper(nextValue) &&
 				!isPgArrayColumn(column) &&
+				!isPgJsonbColumn(column) &&
 				(column.dataType === 'number' || column.dataType === 'boolean')
 					? compileScalarMutation(
 							runtime,
@@ -890,10 +1083,55 @@ const buildUpdateEachSet = <Schema extends AnySchema, Meta>(
 							nextValue,
 						)
 					: undefined;
-			if (arrayMutation || scalarMutation) hasMutations = true;
+			const jsonbPaths =
+				!arrayMutation &&
+				!scalarMutation &&
+				isPgJsonbColumn(column) &&
+				isSimpleRecord(nextValue) &&
+				!isSQLWrapper(nextValue)
+					? (() => {
+							if (context.dialect !== 'pg') {
+								const keys = Object.keys(nextValue);
+								if (
+									(keys.includes('json') &&
+										isSimpleRecord(nextValue.json) &&
+										!isSQLWrapper(nextValue.json)) ||
+									keys.some((k) => k.includes('.'))
+								)
+									compileJsonbMutation(
+										runtime,
+										key,
+										column,
+										context.dialect,
+										'updateEach',
+										Object.create(null),
+									);
+								return undefined;
+							}
+							return getJsonbMutationPaths(
+								runtime,
+								key,
+								'updateEach',
+								nextValue,
+							);
+						})()
+					: undefined;
+			const jsonbMutation = jsonbPaths
+				? compileJsonbMutation(
+						runtime,
+						key,
+						column,
+						context.dialect,
+						'updateEach',
+						jsonbPaths,
+					)
+				: undefined;
+			if (arrayMutation || scalarMutation || jsonbMutation)
+				hasMutations = true;
 			branches[index] = sql`when ${byColumn} = ${row[byKey]} then ${
 				arrayMutation ??
 				scalarMutation ??
+				jsonbMutation ??
 				(isSQLWrapper(nextValue)
 					? nextValue
 					: sql.param(nextValue, column))

@@ -12,15 +12,15 @@ const DEFAULT_UPDATED_AT = 'updatedAt';
  * Sets a timestamp field on a mutable payload when the corresponding column
  * exists on the current model.
  */
-const withTimestamp = (
-	data: MutableRecord,
+const withTimestamp = <T extends MutableRecord>(
+	data: T,
 	column: string,
 	value: Date,
 	enabled: boolean,
 ) => {
 	if (!enabled) return data;
 
-	data[column] = value;
+	(data as Record<string, unknown>)[column] = value;
 	return data;
 };
 

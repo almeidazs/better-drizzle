@@ -52,6 +52,8 @@ export enum BetterDrizzleErrorCode {
 	DialectInferenceFailed = 'DIALECT_INFERENCE_FAILED',
 	/** JSONB path filters are only supported by PostgreSQL. */
 	JsonbQueryUnsupported = 'JSONB_QUERY_UNSUPPORTED',
+	/** JSONB path mutations are only supported by PostgreSQL. */
+	JsonbMutationUnsupported = 'JSONB_MUTATION_UNSUPPORTED',
 	/** Native PostgreSQL array filters are only supported by PostgreSQL. */
 	ArrayQueryUnsupported = 'ARRAY_QUERY_UNSUPPORTED',
 	/** Native PostgreSQL array mutations are only supported by PostgreSQL. */
@@ -177,6 +179,7 @@ const getDefaultStatus = (code: BetterDrizzleErrorCode) => {
 		case BetterDrizzleErrorCode.LockNotSupported:
 		case BetterDrizzleErrorCode.LockRequiresTransaction:
 		case BetterDrizzleErrorCode.JsonbQueryUnsupported:
+		case BetterDrizzleErrorCode.JsonbMutationUnsupported:
 		case BetterDrizzleErrorCode.ArrayQueryUnsupported:
 		case BetterDrizzleErrorCode.ArrayMutationUnsupported:
 		case BetterDrizzleErrorCode.TransactionUnsupportedOption:

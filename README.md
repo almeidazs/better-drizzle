@@ -134,6 +134,15 @@ const referrals = await client.accounts.findMany({
 
 Paths and values are bound parameters, and the generated predicate is guarded by `jsonb_typeof`, so one row with the wrong type cannot break the cast.
 
+The same dot paths work for partial updates through `jsonb_set`, leaving the rest of the document untouched:
+
+```ts
+await client.accounts.update({
+	where: { id },
+	data: { settings: { 'plan.tier': 'pro' } },
+});
+```
+
 ## Row locks with guardrails
 
 ```ts
