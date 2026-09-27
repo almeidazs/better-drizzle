@@ -31,29 +31,31 @@ Per-operation latency at the **API-parity** level - raw Drizzle does the same wo
 
 | Operation | Drizzle | better-drizzle | Overhead |
 | --- | --- | --- | --- |
-| Point lookup | 74.94 µs | 74.46 µs | −0.6% |
-| Filtered list | 256.28 µs | 268.41 µs | +4.7% |
-| Relation graph | 10.24 ms | 1.12 ms | **9.1× faster** |
-| Relation counts | 33.62 ms | 34.17 ms | +1.6% |
-| Active count | 68.52 µs | 74.23 µs | +8.3% |
-| Exists | 62.90 µs | 65.39 µs | +4.0% |
-| Offset pagination | 121.23 µs | 131.15 µs | +8.2% |
-| Cursor pagination | 119.01 µs | 128.91 µs | +8.3% |
+| Point lookup | 25.21 µs | 26.96 µs | +6.9% |
+| Filtered list | 90.41 µs | 93.72 µs | +3.7% |
+| Simple primary-key order | 38.70 µs | 39.77 µs | +2.8% |
+| NULLS LAST order | 33.67 µs | 37.47 µs | +11.3% |
+| Relation graph | 3.94 ms | 414.30 µs | **9.5× faster** |
+| Relation counts | 14.33 ms | 14.39 ms | +0.5% |
+| Active count | 31.48 µs | 34.32 µs | +9.0% |
+| Exists | 23.31 µs | 25.03 µs | +7.4% |
+| Offset pagination | 56.29 µs | 58.03 µs | +3.1% |
+| Cursor pagination | 53.25 µs | 55.94 µs | +5.0% |
 
 ### Writes
 
 | Operation | Drizzle | better-drizzle | Overhead |
 | --- | --- | --- | --- |
-| Create + delete roundtrip | 119.92 µs | 125.25 µs | +4.4% |
-| Update + reload | 57.92 µs | 59.94 µs | +3.5% |
+| Create + delete roundtrip | 58.21 µs | 60.12 µs | +3.3% |
+| Update + reload | 27.96 µs | 29.09 µs | +4.0% |
 
 ### Transactions
 
 | Operation | Drizzle | better-drizzle | Overhead |
 | --- | --- | --- | --- |
-| Simple transaction | 138.22 µs | 147.90 µs | +7.0% |
-| Multi-op transaction | 383.83 µs | 359.67 µs | −6.3% |
-| Read-only transaction | 117.68 µs | 130.25 µs | +10.7% |
+| Simple transaction | 57.69 µs | 61.86 µs | +7.2% |
+| Multi-op transaction | 148.35 µs | 135.78 µs | −8.5% |
+| Read-only transaction | 55.63 µs | 60.62 µs | +9.0% |
 
 ## Memory
 
@@ -63,18 +65,18 @@ Heap deltas are noisier than latency ratios, so these are the ranges observed ac
 
 | Batch | Heap overhead |
 | --- | --- |
-| Single read | **−50%** |
-| Write | −18% to −25% |
+| Single read | −45% to −50% |
+| Write | −8% to −25% |
 | Mixed read | +165% to +210% |
-| Transaction | +91% to +106% |
+| Transaction | +91% to +107% |
 
 ## How to read this
 
-- **Reads land within ~9% of raw Drizzle**, and several are within noise. Point lookups, filtered lists, and existence checks are effectively free.
-- **Relation loading is the standout win.** The batched loader issues one query per relation node instead of the per-row work the equivalent raw code ends up doing, which is why the relation graph is ~9× faster rather than marginally slower. This gap grows with the number of parent rows.
+- **Reads land within ~12% of raw Drizzle**, and most are within 9%. Point lookups, filtered lists, and existence checks add little overhead; explicit `NULLS LAST` is the highest at +11.3%.
+- **Relation loading is the standout win.** The batched loader issues one query per relation node instead of the per-row work the equivalent raw code ends up doing, which is why the relation graph is ~9.5× faster rather than marginally slower. This gap grows with the number of parent rows.
 - **Cursor pagination is at parity.** A populated page ordered by one primary key computes exact navigation metadata with one indexed query; empty pages and more complex shapes keep a probe when they need one. Note that both sides resolve `hasPrevious` - the raw comparison does it with a correlated `exists` subquery rather than assuming it. An earlier revision of this suite let the raw side hardcode that value, which quietly compared one query against two. The manual data-only reference is still faster because it skips the navigation check entirely.
 - **Writes are within ~5%** at parity.
-- **Transactions are within ~11%.** Nested savepoints are a better-drizzle-only capability with no raw Drizzle equivalent, so they are not part of the parity table.
+- **Transactions are within ~9%.** Nested savepoints are a better-drizzle-only capability with no raw Drizzle equivalent, so they are not part of the parity table.
 - **Memory is mixed.** Single reads use materially less heap; mixed-read batches and transactions use more, because relation state, hooks, and savepoint tracking have to be held somewhere.
 
 ## Comparison groups

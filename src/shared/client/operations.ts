@@ -2481,12 +2481,25 @@ export const paginateRecords = async <Schema extends AnySchema, Meta>(
 	};
 };
 
-const getCursorField = <Schema extends AnySchema, Meta>(
+const getCursorFields = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
 	args: CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
+	const entries = args.orderBy
+		? Array.isArray(args.orderBy)
+			? args.orderBy
+			: [args.orderBy]
+		: undefined;
+	const fields: string[] = [];
+
+	if (entries)
+		for (const entry of entries)
+			for (const key in entry as Record<string, unknown>)
+				if (runtime.columns[key]) fields.push(key);
+	if (fields.length) return fields;
+
 	const cursorToken = (
 		args.after && typeof args.after === 'object'
 			? args.after
@@ -2494,41 +2507,35 @@ const getCursorField = <Schema extends AnySchema, Meta>(
 				? args.before
 				: undefined
 	) as Record<string, unknown> | undefined;
-
 	if (cursorToken)
-		for (const key in cursorToken) if (runtime.columns[key]) return key;
+		for (const key in cursorToken)
+			if (runtime.columns[key]) fields.push(key);
+	if (fields.length) return fields;
 
-	const entries = args.orderBy
-		? Array.isArray(args.orderBy)
-			? args.orderBy
-			: [args.orderBy]
-		: undefined;
-
-	if (entries)
-		for (const entry of entries)
-			for (const key in entry as Record<string, unknown>)
-				if (runtime.columns[key]) return key;
-
-	return runtime.primaryKeyFields[0];
+	const primaryKey = runtime.primaryKeyFields[0];
+	return primaryKey ? [primaryKey] : [];
 };
 
 const getCursorToken = (
 	row: Record<string, unknown> | undefined,
-	field: string | undefined,
+	fields: readonly string[],
 	tableName: string,
 	operation: 'cursor',
 ) => {
-	if (!row || !field) return null;
-	if (!(field in row))
-		throw new BetterDrizzleError({
-			code: BetterDrizzleErrorCode.OperationError,
-			details: { cursorField: field },
-			message: `Cursor field "${field}" must be selected when using cursor pagination on table "${tableName}"`,
-			operation,
-			table: tableName,
-		});
-
-	return { [field]: row[field] };
+	if (!row || !fields.length) return null;
+	const token: Record<string, unknown> = {};
+	for (const field of fields) {
+		if (!(field in row))
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.OperationError,
+				details: { cursorField: field },
+				message: `Cursor field "${field}" must be selected when using cursor pagination on table "${tableName}"`,
+				operation,
+				table: tableName,
+			});
+		token[field] = row[field];
+	}
+	return token;
 };
 
 const CURSOR_OPPOSITE_FLAG = '__betterDrizzleCursorOpposite';
@@ -2585,7 +2592,7 @@ export const buildFastCursorQuery = <Schema extends AnySchema, Meta>(
 			(orderValue.direction !== 'asc' && orderValue.direction !== 'desc'))
 	)
 		return;
-	if (orderNulls(orderValue)) return;
+	if (orderNulls(orderValue) && !runtime.columns[field]?.notNull) return;
 	const direction = orderDirection(orderValue);
 
 	const where = args.where
@@ -2701,14 +2708,14 @@ export const getCursorExplainProbes = async <Schema extends AnySchema, Meta>(
 	const slice = hasOverflow ? rows.slice(0, limit) : rows;
 	const data = built.direction === 'before' ? [...slice].reverse() : slice;
 	const runtime = getTableRuntime(context, tableName as string);
-	const cursorField = getCursorField(context, tableName, args);
+	const cursorFields = getCursorFields(context, tableName, args);
 	const firstRow = data[0] as Record<string, unknown> | undefined;
 	const lastRow = data[data.length - 1] as
 		| Record<string, unknown>
 		| undefined;
 	const previousToken = (getCursorToken(
 		firstRow,
-		cursorField,
+		cursorFields,
 		runtime.dbName,
 		'cursor',
 	) ?? undefined) as CursorArgs<
@@ -2718,7 +2725,7 @@ export const getCursorExplainProbes = async <Schema extends AnySchema, Meta>(
 	>['before'];
 	const nextToken = (getCursorToken(
 		lastRow,
-		cursorField,
+		cursorFields,
 		runtime.dbName,
 		'cursor',
 	) ?? undefined) as CursorArgs<
@@ -2837,14 +2844,14 @@ export const cursorRecords = async <Schema extends AnySchema, Meta>(
 	const hasOverflow = rows.length > limit;
 	const slice = hasOverflow ? rows.slice(0, limit) : rows;
 	const data = built.direction === 'before' ? [...slice].reverse() : slice;
-	const cursorField = getCursorField(context, tableName, args);
+	const cursorFields = getCursorFields(context, tableName, args);
 	const firstRow = data[0] as Record<string, unknown> | undefined;
 	const lastRow = data[data.length - 1] as
 		| Record<string, unknown>
 		| undefined;
 	const previousToken = (getCursorToken(
 		firstRow,
-		cursorField,
+		cursorFields,
 		runtime.dbName,
 		'cursor',
 	) ?? undefined) as CursorArgs<
@@ -2854,7 +2861,7 @@ export const cursorRecords = async <Schema extends AnySchema, Meta>(
 	>['before'];
 	const nextToken = (getCursorToken(
 		lastRow,
-		cursorField,
+		cursorFields,
 		runtime.dbName,
 		'cursor',
 	) ?? undefined) as CursorArgs<

@@ -54,9 +54,28 @@ describe('createOrderBySchema', () => {
 		expect(ok([])).toBe(true);
 	});
 
-	test('a direction that is not asc or desc is refused', () => {
+	test('a direction object can specify null placement', () => {
+		expect(ok({ created: { direction: 'asc' } })).toBe(true);
+		expect(ok({ created: { direction: 'desc', nulls: 'last' } })).toBe(
+			true,
+		);
+		expect(
+			ok([
+				{ active: { direction: 'asc', nulls: 'first' } },
+				{ name: 'desc' },
+			]),
+		).toBe(true);
+	});
+
+	test('invalid directions and null placement are refused', () => {
 		expect(ok({ name: 'sideways' })).toBe(false);
 		expect(ok([{ name: 'ASC' }])).toBe(false);
+		expect(ok({ name: { direction: 'sideways' } })).toBe(false);
+		expect(ok({ name: { direction: 'asc', nulls: 'middle' } })).toBe(false);
+		expect(ok({ name: { nulls: 'first' } })).toBe(false);
+		expect(
+			ok({ name: { direction: 'asc', nulls: 'last', extra: true } }),
+		).toBe(false);
 	});
 
 	test('a column that is not on the table is refused', () => {
@@ -120,7 +139,9 @@ describe('createQueryArgsSchema', () => {
 			ok({
 				where: { active: true },
 				select: { id: true },
-				orderBy: { name: 'asc' },
+				orderBy: {
+					name: { direction: 'asc', nulls: 'last' },
+				},
 				take: 10,
 				skip: 0,
 			}),

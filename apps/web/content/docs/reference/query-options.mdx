@@ -27,8 +27,8 @@ Accepted by `findMany`, `findFirst`, `findOne`, and `findUnique`:
 			type: 'IncludeInput',
 		},
 		orderBy: {
-			description: 'Sort order. One field map, or an array for multi-column ordering.',
-			type: '{ [column]: "asc" | "desc" } | [...]',
+			description: 'Sort scalar columns. Values can set direction and optional NULL placement; one field map or an array for multi-column ordering.',
+			type: '{ [column]: "asc" | "desc" | { direction: "asc" | "desc"; nulls?: "first" | "last" } } | [...]',
 		},
 		take: {
 			description: 'Max rows to return. A negative value reverses ordering and takes from the end.',
@@ -52,6 +52,8 @@ Accepted by `findMany`, `findFirst`, `findOne`, and `findUnique`:
 		},
 	}}
 />
+
+For example, `orderBy: { lastSeenAt: { direction: 'desc', nulls: 'last' } }` puts rows with a `NULL` value after non-`NULL` values. When `nulls` is omitted, the database default applies. PostgreSQL and SQLite use native `NULLS FIRST` / `NULLS LAST` ordering; MySQL gets equivalent behavior through an `IS NULL` ordering term. Better Drizzle rejects an unrecognized provider dialect during client initialization. Ordering remains limited to scalar columns of the current table; SQL expressions and root ordering by relation columns require Drizzle directly. See [limitations](/docs/guides/limitations).
 
 `count` and `exists` accept only `where`, `cursor`, and `meta`.
 

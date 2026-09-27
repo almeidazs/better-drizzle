@@ -350,28 +350,68 @@ describe('where with orderBy', () => {
 
 			const firstPage = await db.nullOrderRecords.cursor({
 				limit: 2,
-				orderBy: { lastSeenAt: { direction: 'asc', nulls: 'last' } },
+				orderBy: [
+					{ lastSeenAt: { direction: 'asc', nulls: 'last' } },
+					{ id: 'asc' },
+				],
 			});
 			expect(firstPage.data.map((row) => row.id)).toEqual([2, 5]);
 			expect(firstPage.pagination.nextCursor).toEqual({
 				lastSeenAt: 200,
+				id: 5,
 			});
+			await expect(
+				db.nullOrderRecords.cursor({
+					after: { lastSeenAt: 200 },
+					limit: 2,
+					orderBy: [
+						{ lastSeenAt: { direction: 'asc', nulls: 'last' } },
+						{ id: 'asc' },
+					],
+				}),
+			).rejects.toThrow('Cursor must include orderBy field "id"');
 
 			const afterNonNull = await db.nullOrderRecords.cursor({
 				after: firstPage.pagination.nextCursor as {
 					lastSeenAt: number;
+					id: number;
 				},
 				limit: 2,
-				orderBy: { lastSeenAt: { direction: 'asc', nulls: 'last' } },
+				orderBy: [
+					{ lastSeenAt: { direction: 'asc', nulls: 'last' } },
+					{ id: 'asc' },
+				],
 			});
 			expect(afterNonNull.data.map((row) => row.id)).toEqual([4, 1]);
+			expect(afterNonNull.pagination.hasNext).toBe(true);
+			expect(afterNonNull.pagination.nextCursor).toEqual({
+				lastSeenAt: null,
+				id: 1,
+			});
+
+			const afterNull = await db.nullOrderRecords.cursor({
+				after: afterNonNull.pagination.nextCursor as {
+					lastSeenAt: number | null;
+					id: number;
+				},
+				limit: 2,
+				orderBy: [
+					{ lastSeenAt: { direction: 'asc', nulls: 'last' } },
+					{ id: 'asc' },
+				],
+			});
+			expect(afterNull.data.map((row) => row.id)).toEqual([3]);
+			expect(afterNull.pagination.hasNext).toBe(false);
 
 			const beforeNull = await db.nullOrderRecords.cursor({
-				before: { lastSeenAt: null },
+				before: { lastSeenAt: null, id: 3 },
 				limit: 2,
-				orderBy: { lastSeenAt: { direction: 'asc', nulls: 'last' } },
+				orderBy: [
+					{ lastSeenAt: { direction: 'asc', nulls: 'last' } },
+					{ id: 'asc' },
+				],
 			});
-			expect(beforeNull.data.map((row) => row.id)).toEqual([5, 4]);
+			expect(beforeNull.data.map((row) => row.id)).toEqual([4, 1]);
 		} finally {
 			sqlite.close();
 		}
