@@ -506,7 +506,7 @@ export type PgArrayKeysFor<
 		: never;
 }[ScalarKeysFor<Schema, Name>];
 
-type IsUnknown<T> = unknown extends T
+export type IsUnknown<T> = unknown extends T
 	? [keyof T] extends [never]
 		? true
 		: false
@@ -545,7 +545,7 @@ type JsonPathValue<
 		? JsonPathValue<NonNullish<T>[Key], Rest>
 		: never
 	: Path extends keyof NonNullish<T>
-		? NonNullish<T>[Path]
+		? Exclude<NonNullish<T>[Path], undefined>
 		: never;
 
 export type JsonWhereInput<T> =
@@ -571,3 +571,60 @@ export type JsonDottedWhereInput = {
 	[path: `${string}.${string}`]: JsonDottedPathValue;
 	json?: never;
 };
+
+/**
+ * A JSON-compatible mutation value for a single JSONB path.
+ * Excludes `undefined`, functions, symbols, and bigint to match the
+ * runtime, which throws on values `JSON.stringify` cannot encode.
+ */
+export type JsonMutationValue =
+	| string
+	| number
+	| boolean
+	| null
+	| readonly JsonMutationValue[]
+	| { readonly [key: string]: JsonMutationValue };
+
+export type JsonMutationPath<T, Prefix extends string = ''> =
+	IsUnknown<T> extends true
+		? never
+		: NonNullish<T> extends readonly unknown[]
+			? never
+			: NonNullish<T> extends object
+				? {
+						[K in Extract<keyof NonNullish<T>, string>]:
+							| JsonPathPrefix<Prefix, K>
+							| JsonMutationPath<
+									NonNullish<T>[K],
+									JsonPathPrefix<Prefix, K>
+							  >;
+					}[Extract<keyof NonNullish<T>, string>]
+				: never;
+
+/**
+ * Typed JSONB path assignments for the `{ json: ... }` mutation wrapper.
+ * Maps every addressable path (including intermediate objects and
+ * single-level keys) to its declared value type. Dotted shorthand uses the
+ * same types but only permits multi-segment paths. Untyped (`$type`-less)
+ * columns fall back to an open record so the wrapper stays usable without
+ * declared paths.
+ */
+export type JsonMutationInput<T> =
+	IsUnknown<T> extends true
+		? Record<string, JsonMutationValue>
+		: {
+				[Path in JsonMutationPath<T>]?: JsonPathValue<T, Path>;
+			};
+
+/** Typed multi-segment JSONB path assignments for mutation. */
+export type JsonDottedMutationInput<T = unknown> =
+	IsUnknown<T> extends true
+		? {
+				[path: `${string}.${string}`]: JsonMutationValue;
+				json?: never;
+			}
+		: {
+				[
+					Path in Extract<JsonMutationPath<T>, `${string}.${string}`>
+				]?: JsonPathValue<T, Path>;
+			} & { json?: never };

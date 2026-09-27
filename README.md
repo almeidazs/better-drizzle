@@ -134,6 +134,17 @@ const referrals = await client.accounts.findMany({
 
 Paths and values are bound parameters, and the generated predicate is guarded by `jsonb_typeof`, so one row with the wrong type cannot break the cast.
 
+The same dot paths work for partial updates through `jsonb_set`, leaving the rest of the document untouched:
+
+```ts
+await client.accounts.update({
+	where: { id },
+	data: { settings: { 'plan.tier': 'pro' } },
+});
+```
+
+On typed JSONB columns, dotted paths and the `{ json: ... }` wrapper both check paths and values against `$type<T>()`; use the wrapper for single-level keys. Path updates create missing object ancestors, treat SQL `NULL` and non-object JSONB roots as `{}`, and preserve existing object ancestors and unrelated keys. A scalar, array, or JSON `null` at an intermediate path is replaced with `{}`. Duplicate or ancestor/descendant paths are rejected, as are values containing nested `undefined`. Untyped JSONB columns keep open path names and JSON-encodable values.
+
 ## Row locks with guardrails
 
 ```ts

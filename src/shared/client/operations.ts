@@ -336,34 +336,247 @@ const compileArrayMutation = (
 	return expression;
 };
 
-const compilePgArrayMutations = (
+const isPgJsonbColumn = (column: AnyColumn) =>
+	(column as { columnType?: string }).columnType === 'PgJsonb';
+
+const jsonbMutationError = (
 	runtime: TableRuntime,
-	dialect: string,
+	column: string,
 	operation: string,
-	data: Record<string, unknown>,
+	message: string,
+	details?: Record<string, unknown>,
+) =>
+	new BetterDrizzleError({
+		code: BetterDrizzleErrorCode.OperationError,
+		column,
+		details,
+		message,
+		operation,
+		table: runtime.dbName,
+	});
+
+type JsonbMutationNode = {
+	children?: Map<string, JsonbMutationNode>;
+	value?: SQL;
+};
+
+const compileJsonbPathNode = (base: SQL, node: JsonbMutationNode): SQL => {
+	if (!node.children) return node.value!;
+	const object = sql`case when jsonb_typeof(${base}) = 'object' then ${base} else '{}'::jsonb end`;
+	let expression = object;
+
+	for (const [key, child] of node.children) {
+		const value =
+			child.value ??
+			compileJsonbPathNode(sql`(${object} -> ${key})`, child);
+		expression = sql`jsonb_set(${expression}, ARRAY[${key}]::text[], ${value}, true)`;
+	}
+	return expression;
+};
+
+const getJsonbMutationPaths = (
+	runtime: TableRuntime,
+	columnName: string,
+	operation: string,
+	value: Record<string, unknown>,
 ) => {
-	let result: Record<string, unknown> | undefined;
+	let keyCount = 0;
+	let hasDottedKey = false;
+	let allKeysDotted = true;
+	let hasJsonKey = false;
+	for (const key in value) {
+		if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+		keyCount += 1;
+		if (key.includes('.')) hasDottedKey = true;
+		else allKeysDotted = false;
+		if (key === 'json') hasJsonKey = true;
+	}
+	if (!keyCount) return;
 
-	for (const key in data) {
-		const value = data[key];
-		if (!isSimpleRecord(value) || isSQLWrapper(value)) continue;
-
-		const column = runtime.columns[key];
-		if (!column || !isPgArrayColumn(column)) continue;
-
-		const mutation = compileArrayMutation(
-			runtime,
-			key,
-			column,
-			dialect,
-			operation,
-			value,
-		);
-		if (!result) result = { ...data };
-		result[key] = mutation;
+	if (hasJsonKey) {
+		const paths = value.json;
+		if (isSimpleRecord(paths) && !isSQLWrapper(paths)) {
+			if (keyCount !== 1)
+				throw jsonbMutationError(
+					runtime,
+					columnName,
+					operation,
+					`Invalid JSONB mutation for column "${columnName}": the "json" wrapper must be the only key.`,
+				);
+			let pathCount = 0;
+			for (const path in paths)
+				if (Object.prototype.hasOwnProperty.call(paths, path))
+					pathCount += 1;
+			if (!pathCount)
+				throw jsonbMutationError(
+					runtime,
+					columnName,
+					operation,
+					`JSONB mutation for column "${columnName}" requires at least one path.`,
+				);
+			return paths as Record<string, unknown>;
+		}
 	}
 
-	return result ?? data;
+	if (!hasDottedKey) return;
+	if (!allKeysDotted)
+		throw jsonbMutationError(
+			runtime,
+			columnName,
+			operation,
+			`Invalid JSONB mutation for column "${columnName}": mix full-document keys with dotted paths via separate updates, or use the "json" wrapper for single-level paths.`,
+			{ keys: Object.keys(value) },
+		);
+	return value;
+};
+
+const compileJsonbMutation = (
+	runtime: TableRuntime,
+	columnName: string,
+	column: AnyColumn,
+	dialect: string,
+	operation: string,
+	paths: Record<string, unknown>,
+) => {
+	if (dialect !== 'pg')
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.JsonbMutationUnsupported,
+			column: columnName,
+			dialect,
+			message: 'JSONB path mutations are only supported by PostgreSQL.',
+			operation,
+			table: runtime.dbName,
+		});
+
+	const root: JsonbMutationNode = { children: new Map() };
+	for (const path of Object.keys(paths)) {
+		const entry = paths[path];
+		if (entry === undefined)
+			throw jsonbMutationError(
+				runtime,
+				columnName,
+				operation,
+				`JSONB mutation path "${path}" cannot be undefined.`,
+				{ path },
+			);
+		const parts = path.split('.');
+		if (!path.length || parts.some((part) => !part.length))
+			throw jsonbMutationError(
+				runtime,
+				columnName,
+				operation,
+				`Invalid JSONB mutation path "${path}".`,
+				{ path },
+			);
+		let node = root;
+		for (let index = 0; index < parts.length; index += 1) {
+			if (node.value)
+				throw jsonbMutationError(
+					runtime,
+					columnName,
+					operation,
+					`JSONB mutation paths cannot overlap: "${path}" has an ancestor path.`,
+					{ path },
+				);
+			const part = parts[index]!;
+			let child = node.children?.get(part);
+			if (!child) {
+				child = {};
+				(node.children ??= new Map()).set(part, child);
+			}
+			node = child;
+		}
+		if (node.value || node.children?.size)
+			throw jsonbMutationError(
+				runtime,
+				columnName,
+				operation,
+				`JSONB mutation paths cannot overlap: "${path}" has a descendant path.`,
+				{ path },
+			);
+
+		let valueSql: SQL;
+		if (isSQLWrapper(entry)) valueSql = sql`${entry}`;
+		else {
+			let encoded: string;
+			let containsUndefined = false;
+			try {
+				const json = JSON.stringify(entry, (_key, value) => {
+					if (value === undefined) {
+						containsUndefined = true;
+						throw undefined;
+					}
+					return value;
+				});
+				if (json === undefined) throw new Error('unencodable');
+				encoded = json;
+			} catch {
+				if (containsUndefined)
+					throw jsonbMutationError(
+						runtime,
+						columnName,
+						operation,
+						`JSONB mutation path "${path}" cannot contain undefined.`,
+						{ path },
+					);
+				throw jsonbMutationError(
+					runtime,
+					columnName,
+					operation,
+					`JSONB mutation path "${path}" holds a value that cannot be encoded as JSON.`,
+					{ path },
+				);
+			}
+			valueSql = sql`${sql.param(encoded)}::jsonb`;
+		}
+		node.value = valueSql;
+	}
+	return compileJsonbPathNode(sql`${column}`, root);
+};
+
+const compileJsonbMutationValue = (
+	runtime: TableRuntime,
+	columnName: string,
+	column: AnyColumn,
+	dialect: string,
+	operation: string,
+	value: Record<string, unknown>,
+) => {
+	if (dialect !== 'pg') {
+		let hasPath = false;
+		for (const key in value) {
+			if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+			if (key.includes('.')) hasPath = true;
+			if (
+				key === 'json' &&
+				isSimpleRecord(value.json) &&
+				!isSQLWrapper(value.json)
+			)
+				hasPath = true;
+		}
+		if (hasPath)
+			compileJsonbMutation(
+				runtime,
+				columnName,
+				column,
+				dialect,
+				operation,
+				Object.create(null),
+			);
+		return;
+	}
+
+	const paths = getJsonbMutationPaths(runtime, columnName, operation, value);
+	return paths
+		? compileJsonbMutation(
+				runtime,
+				columnName,
+				column,
+				dialect,
+				operation,
+				paths,
+			)
+		: undefined;
 };
 
 const NUMERIC_MUTATION_NAMES = [
@@ -472,29 +685,42 @@ export const compileUpdateMutations = (
 	operation: string,
 	data: Record<string, unknown>,
 ) => {
-	const arrayMutations = compilePgArrayMutations(
-		runtime,
-		dialect,
-		operation,
-		data,
-	);
-	let result = arrayMutations === data ? undefined : arrayMutations;
+	let result: Record<string, unknown> | undefined;
 
 	for (const key in data) {
+		if (!Object.prototype.hasOwnProperty.call(data, key)) continue;
 		const value = data[key];
 		if (!isSimpleRecord(value) || isSQLWrapper(value)) continue;
 		const column = runtime.columns[key];
-		if (!column || isPgArrayColumn(column)) continue;
-		if (column.dataType !== 'number' && column.dataType !== 'boolean')
-			continue;
-
-		const mutation = compileScalarMutation(
-			runtime,
-			key,
-			column,
-			operation,
-			value,
-		);
+		if (!column) continue;
+		const mutation = isPgArrayColumn(column)
+			? compileArrayMutation(
+					runtime,
+					key,
+					column,
+					dialect,
+					operation,
+					value,
+				)
+			: isPgJsonbColumn(column)
+				? compileJsonbMutationValue(
+						runtime,
+						key,
+						column,
+						dialect,
+						operation,
+						value,
+					)
+				: column.dataType === 'number' || column.dataType === 'boolean'
+					? compileScalarMutation(
+							runtime,
+							key,
+							column,
+							operation,
+							value,
+						)
+					: undefined;
+		if (!mutation) continue;
 		if (!result) result = { ...data };
 		result[key] = mutation;
 	}
@@ -647,6 +873,7 @@ const validateUpsertManyUpdateObject = (
 	const result = Object.create(null) as Record<string, unknown>;
 
 	for (const key in source) {
+		if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
 		const column = runtime.columns[key];
 		if (!column)
 			throw new BetterDrizzleError({
@@ -837,6 +1064,7 @@ const buildUpdateEachSet = <Schema extends AnySchema, Meta>(
 	let hasMutations = false;
 
 	for (const key in updates) {
+		if (!Object.prototype.hasOwnProperty.call(updates, key)) continue;
 		const resolve = updates[key];
 		if (typeof resolve !== 'function') continue;
 
@@ -881,6 +1109,7 @@ const buildUpdateEachSet = <Schema extends AnySchema, Meta>(
 				isSimpleRecord(nextValue) &&
 				!isSQLWrapper(nextValue) &&
 				!isPgArrayColumn(column) &&
+				!isPgJsonbColumn(column) &&
 				(column.dataType === 'number' || column.dataType === 'boolean')
 					? compileScalarMutation(
 							runtime,
@@ -890,10 +1119,27 @@ const buildUpdateEachSet = <Schema extends AnySchema, Meta>(
 							nextValue,
 						)
 					: undefined;
-			if (arrayMutation || scalarMutation) hasMutations = true;
+			const jsonbMutation =
+				!arrayMutation &&
+				!scalarMutation &&
+				isPgJsonbColumn(column) &&
+				isSimpleRecord(nextValue) &&
+				!isSQLWrapper(nextValue)
+					? compileJsonbMutationValue(
+							runtime,
+							key,
+							column,
+							context.dialect,
+							'updateEach',
+							nextValue,
+						)
+					: undefined;
+			if (arrayMutation || scalarMutation || jsonbMutation)
+				hasMutations = true;
 			branches[index] = sql`when ${byColumn} = ${row[byKey]} then ${
 				arrayMutation ??
 				scalarMutation ??
+				jsonbMutation ??
 				(isSQLWrapper(nextValue)
 					? nextValue
 					: sql.param(nextValue, column))
