@@ -144,6 +144,33 @@ void db.events.updateMany({
 	where: { id: 1 },
 	data: { metadata: { 'profile.name': 'Almeida' } },
 });
+void db.events.upsertMany({
+	data: [
+		{
+			id: 1,
+			metadata: { profile: { age: 30, name: 'Almeida' }, tags: [] },
+			untyped: {},
+		},
+	],
+	target: 'id',
+	update: { metadata: { 'profile.age': 31 } },
+});
+void db.events.upsertMany({
+	data: [
+		{
+			id: 1,
+			metadata: { profile: { age: 30, name: 'Almeida' }, tags: [] },
+			untyped: {},
+		},
+	],
+	target: 'id',
+	update: {
+		metadata: {
+			// @ts-expect-error paths must exist in the declared JSON shape
+			'profile.missing': 1,
+		},
+	},
+});
 void db.events.update({
 	where: { id: 1 },
 	data: {

@@ -320,7 +320,7 @@ describe.skipIf(!DATABASE_URL)('JSONB where (PostgreSQL)', () => {
 					'profile.age': 70,
 				},
 			},
-		} as never);
+		});
 
 		expect(result.count).toBe(2);
 		const rows = await db.events.findMany({ where: { id: { in: ids } } });

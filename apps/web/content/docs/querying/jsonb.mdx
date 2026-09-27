@@ -558,9 +558,9 @@ const plan = await client.accounts
 
 A GIN index on the whole column (`using gin (settings)`) speeds up containment operators such as `@>`, but does not help these path comparisons. Index the specific paths you filter on.
 
-## Partial updates with the same paths
+## JSONB path mutations
 
-Update operations (`update`, `updateMany`, `updateEach`, `upsert`, `upsertMany`) accept typed object paths in `data` and compile them to chained `jsonb_set` calls. For a column declared with `$type<T>()`, both the dotted shorthand and `{ json: ... }` wrapper check every path against `T` and require a value matching that path's type:
+The structured mutation operator is **set a path to a JSON value**. Pass dotted object paths to update part of a document, or replace the whole document by passing a regular JSON value. There is no `set` envelope: the value assigned to each path is the value written there. For a column declared with `$type<T>()`, both the dotted shorthand and `{ json: ... }` wrapper check each path and value against `T` at compile time.
 
 ```ts tab="better-drizzle" tab-group="orm"
 await client.accounts.update({
@@ -575,16 +575,50 @@ import { eq, sql } from 'drizzle-orm';
 await db
 	.update(accounts)
 	.set({
-		settings: sql`jsonb_set(jsonb_set(${accounts.settings}, ARRAY['plan', 'tier'], ${JSON.stringify('pro')}::jsonb, true), ARRAY['plan', 'seats'], ${JSON.stringify(25)}::jsonb, true)`,
+		settings: sql`jsonb_set(
+			case when jsonb_typeof(${accounts.settings}) = 'object'
+				then ${accounts.settings} else '{}'::jsonb end,
+			ARRAY['plan']::text[],
+			jsonb_set(
+				jsonb_set(
+					case when jsonb_typeof(${accounts.settings} -> 'plan') = 'object'
+						then ${accounts.settings} -> 'plan' else '{}'::jsonb end,
+					ARRAY['tier']::text[], ${JSON.stringify('pro')}::jsonb, true
+				),
+				ARRAY['seats']::text[], ${JSON.stringify(25)}::jsonb, true
+			),
+			true
+		)`,
 	})
 	.where(eq(accounts.id, id));
 ```
 
-Use `{ json: ... }` when updating a single-level key, such as `nickname` (`settings: { json: { nickname: 'Ada' } }`). It has the same path and value checks for typed JSONB columns.
+| Mutation | `settings` value | Effect |
+| --- | --- | --- |
+| Set nested paths | `{ 'plan.tier': 'pro', 'plan.seats': 25 }` | Changes those keys and preserves the rest of the document. |
+| Set a top-level key | `{ json: { nickname: 'Ada' } }` | Changes `nickname` without replacing the document. |
+| Write JSON `null` | `{ json: { nickname: null } }` | Keeps the key with a JSON `null` value. |
+| Replace the document | A complete `AccountSettings` object | Replaces the entire JSONB value. An empty `{}` also replaces the document. |
 
-Rules: every key in the dotted shorthand must contain a dot; otherwise the value is treated as a full-document replacement. Use the `{ json: { ... } }` wrapper for single-level keys (e.g. `{ json: { nickname: 'Ada' } }`). For typed JSONB columns, both forms reject unknown paths and values that do not match the declared path type. Untyped columns keep open path names and JSON-encodable values. Mixing dotted and plain keys in one value throws `OPERATION_ERROR`, as does mixing a `{ json: ... }` wrapper with other keys or using an empty `{ json: {} }` wrapper. A top-level `json` key holding a plain object on a `PgJsonb` column is reserved for the wrapper (`sql` fragments, scalars, and non-record values fall through to normal handling), and literal dotted keys (e.g. a full document `{ 'a.b': 1 }`) cannot be written as full-document replacements: every dotted key is compiled to `jsonb_set`, including keys inside the wrapper (unlike filters, the wrapper does not preserve literal dots). An empty `{}` is a full-document replacement, not a path update. Path values may contain JSON objects and arrays; recursively nested `undefined` and other unencodable values throw `OPERATION_ERROR`.
+### Where path mutations work
 
-Each path must be a sequence of object keys. Missing object ancestors are created. A SQL `NULL` root, or a JSONB root containing a scalar, array, or JSON `null`, is treated as `{}` before updating. Existing object ancestors and unrelated keys are preserved. If an intermediate ancestor contains a scalar, array, or JSON `null`, that value is replaced with `{}` so the remaining path can be applied. Duplicate paths and ancestor/descendant overlaps in one update are rejected with `OPERATION_ERROR`. Path updates require PostgreSQL; dotted or wrapper path attempts on other dialects fail fast with `JSONB_MUTATION_UNSUPPORTED`, while full-document replacements work on any dialect.
+| Write API | Put the path assignment in |
+| --- | --- |
+| `update`, `updateMany` | `data: { settings: { 'plan.seats': 25 } }` |
+| `updateEach` | `update: { settings: (row) => ({ 'plan.seats': row.seats }) }` |
+| `upsert` | `update: { settings: { 'plan.seats': 25 } }` (conflict branch) |
+| `upsertMany` | `update: { settings: { 'plan.seats': 25 } }` or an update callback (conflict branch) |
+
+`upsertMany` with `update: 'all'` or `update: ['settings']` copies the proposed full document; use an object or callback for path mutation. `create` and `createMany` insert complete JSON documents.
+
+### Path behavior and limits
+
+- Every shorthand key must contain a dot. Use `{ json: { nickname: 'Ada' } }` for a top-level key. The wrapper must be the only key and contain at least one path. Untyped JSONB columns accept open path names and JSON-encodable values.
+- Paths address object keys, not array indexes. JSON objects and arrays are valid **values** at a path. A dot always separates path segments, including inside the `{ json: ... }` wrapper; literal keys containing a dot have no structured mutation syntax. A top-level `json` key holding a plain object is reserved for the wrapper.
+- Missing object ancestors are created. SQL `NULL` and non-object JSONB roots become `{}`; non-object intermediate values are replaced by `{}`. Existing object keys outside the assigned paths are preserved.
+- Mixing dotted and plain keys, overlapping ancestor and descendant paths, empty wrappers, nested `undefined`, and values that cannot be encoded as JSON throw `OPERATION_ERROR`. PostgreSQL alone supports path mutations; other dialects throw `JSONB_MUTATION_UNSUPPORTED`. Full-document replacement still works wherever the underlying column supports it.
+
+There are no structured path operators for deleting a key, merging an object, incrementing a number, or modifying array elements. `null` writes JSON `null` rather than deleting a key. For those operations, pass a Drizzle `sql` expression as the entire column update value.
 
 ## Limits and dialect support
 
