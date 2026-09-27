@@ -602,12 +602,12 @@ export type JsonMutationPath<T, Prefix extends string = ''> =
 				: never;
 
 /**
- * Typed JSONB path assignments for mutation. Maps every addressable path
- * (including intermediate objects and single-level keys) to its declared
- * value type. Used through the legacy `{ json: ... }` wrapper so
- * single-level keys stay unambiguous with full-document replacement.
- * Untyped (`$type`-less) columns fall back to an open record so the
- * wrapper stays usable without declared paths.
+ * Typed JSONB path assignments for the `{ json: ... }` mutation wrapper.
+ * Maps every addressable path (including intermediate objects and
+ * single-level keys) to its declared value type. Dotted shorthand uses the
+ * same types but only permits multi-segment paths. Untyped (`$type`-less)
+ * columns fall back to an open record so the wrapper stays usable without
+ * declared paths.
  */
 export type JsonMutationInput<T> =
 	IsUnknown<T> extends true
@@ -616,8 +616,15 @@ export type JsonMutationInput<T> =
 				[Path in JsonMutationPath<T>]?: JsonPathValue<T, Path>;
 			};
 
-/** Dotted JSONB path assignments for mutation (PostgreSQL `jsonb_set`). */
-export type JsonDottedMutationInput = {
-	[path: `${string}.${string}`]: JsonMutationValue;
-	json?: never;
-};
+/** Typed multi-segment JSONB path assignments for mutation. */
+export type JsonDottedMutationInput<T = unknown> =
+	IsUnknown<T> extends true
+		? {
+				[path: `${string}.${string}`]: JsonMutationValue;
+				json?: never;
+			}
+		: {
+				[
+					Path in Extract<JsonMutationPath<T>, `${string}.${string}`>
+				]?: JsonPathValue<T, Path>;
+			} & { json?: never };

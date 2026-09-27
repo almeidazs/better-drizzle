@@ -88,7 +88,31 @@ void db.events.findMany({
 });
 void db.events.update({
 	where: { id: 1 },
-	data: { metadata: { 'profile.name': 'Almeida', 'profile.age': 30 } },
+	data: {
+		metadata: {
+			'profile.name': 'Almeida',
+			'profile.age': 30,
+			'profile.active': false,
+		},
+	},
+});
+void db.events.update({
+	where: { id: 1 },
+	data: {
+		metadata: {
+			// @ts-expect-error dotted paths must exist in the declared JSON shape
+			'profile.missing': 1,
+		},
+	},
+});
+void db.events.update({
+	where: { id: 1 },
+	data: {
+		metadata: {
+			// @ts-expect-error dotted path values must match the declared leaf type
+			'profile.age': 'thirty',
+		},
+	},
 });
 void db.events.update({
 	where: { id: 1 },
@@ -119,4 +143,20 @@ void db.events.update({
 void db.events.updateMany({
 	where: { id: 1 },
 	data: { metadata: { 'profile.name': 'Almeida' } },
+});
+void db.events.update({
+	where: { id: 1 },
+	data: {
+		untyped: {
+			'custom.path': { enabled: true },
+		},
+	},
+});
+void db.events.update({
+	where: { id: 1 },
+	data: {
+		untyped: {
+			json: { nickname: 'Ada', preferences: { compact: true } },
+		},
+	},
 });

@@ -21,6 +21,7 @@ This directory contains the benchmark suite for `better-drizzle`. The benchmarks
 | `bun run bench:all` | Run the latency, comprehensive, and memory suites sequentially |
 | `bun run bench:report` | Emit the published overhead tables (interleaved, median of samples) |
 | `bun run bench:jsonb` | Validate and time PostgreSQL JSONB path filters (needs `DATABASE_URL`) |
+| `bun run bench:jsonb:mutations` | Validate and time PostgreSQL JSONB path mutations across write APIs (needs `DATABASE_URL`) |
 
 <div align="center">
 
@@ -57,6 +58,12 @@ It validates **two** kinds of parity before timing:
 2. **Plan parity** - both sides reach those rows the same way. The suite runs `EXPLAIN` on each side (using `.explain()` for the better-drizzle side) and asserts that either both use the expression index or neither does. Matching rows through an index scan on one side and a sequential scan on the other would not be a fair comparison.
 
 This suite is I/O bound: the cost is dominated by PostgreSQL planning, execution, and row transfer, so run-to-run variance is high and the two sides land within noise of each other. Use it to prove that the typed API compiles to the same query, **not** as a source of wrapper-overhead figures - those come from the in-memory SQLite suites.
+
+### JSONB path mutation benchmark
+
+`bench:jsonb:mutations` uses a separate PostgreSQL table and validates both returned results and stored rows before timing. It covers full-document replacement plus `update`, `updateMany`, row-specific `updateEach`, `upsert`, and `upsertMany` path mutations, with profile refreshes and deeper preference/audit patches over several rows. The fixture includes SQL `NULL`, JSON `null`, scalar, array, and ordinary object roots so the raw Drizzle expressions and Better Drizzle mutations exercise the same root and intermediate-object normalization semantics.
+
+The raw side builds path updates with the same shared-prefix trie as the runtime, so both sides emit one `jsonb_set` per path-tree edge and normalize the same roots and ancestors. It also matches the repository operation's query count and result shape, including the count query used by `updateMany` and `updateEach`. These are real PostgreSQL mutation timings, useful for checking SQL and work parity. They are database-bound and should not be reported as wrapper-overhead claims.
 
 ### Memory benchmark
 

@@ -86,7 +86,7 @@ silently dropped.
 | JSONB path mutations (`jsonb_set`) | Yes | rejected | rejected |
 | JSONB full-document replacement | Yes | Yes | Yes |
 
-Typed JSONB filters require `jsonb(...).$type<T>()` and support scalar dot paths only. Path mutations accept dotted paths in update `data` with JSON-encodable values (objects and arrays allowed); untyped columns accept untyped dotted paths plus the `{ json: ... }` wrapper. Full-document replacements are not dialect-gated.
+Typed JSONB filters require `jsonb(...).$type<T>()` and support scalar dot paths only. For typed path mutations, both dotted paths and the `{ json: ... }` wrapper check declared object paths and values. Untyped columns keep open path names and JSON-encodable values in both forms. Mutations can write object or array values, create absent ancestors, and preserve existing object ancestors and unrelated keys; overlapping paths are rejected. Full-document replacements are not dialect-gated.
 
 ## Conflict-handling features
 

@@ -197,7 +197,7 @@ export type JsonbMutationField<Model> =
 	import('./utils').IsUnknown<Model> extends true
 		?
 				| import('./utils').JsonMutationValue
-				| import('./utils').JsonDottedMutationInput
+				| import('./utils').JsonDottedMutationInput<Model>
 				| {
 						json: Record<
 							string,
@@ -207,7 +207,7 @@ export type JsonbMutationField<Model> =
 				| SQL
 		:
 				| Model
-				| import('./utils').JsonDottedMutationInput
+				| import('./utils').JsonDottedMutationInput<Model>
 				| {
 						json: import('./utils').JsonMutationInput<Model>;
 				  }

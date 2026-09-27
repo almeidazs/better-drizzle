@@ -3,7 +3,7 @@ title: JSONB filters and mutations
 description: PostgreSQL JSONB queries and partial updates through concise dot-path predicates, generated from your column's TypeScript shape.
 icon: Braces
 seoTitle: 'PostgreSQL JSONB Filters and Mutations'
-seoDescription: 'Query and update PostgreSQL JSONB columns in Drizzle ORM with concise dot-path predicates and jsonb_set updates, while preserving the typed legacy wrapper.'
+seoDescription: 'Query and update PostgreSQL JSONB columns in Drizzle ORM with typed object paths, concise dot predicates, and partial jsonb_set updates.'
 ---
 
 JSONB columns are where type safety usually goes to die. Settings, feature flags, billing metadata, event payloads - the data is structured, but every query against it turns into a hand-written `sql` string with operators, path arrays, and casts that TypeScript cannot check.
@@ -50,7 +50,7 @@ What you get:
 
 ## Define the JSON shape
 
-Add `.$type<T>()` to document the shape and keep the legacy wrapper's exact path and leaf validation:
+Add `.$type<T>()` to document the shape and enable exact path and leaf validation for filters and mutations:
 
 ```ts title="schema.ts"
 import { integer, jsonb, pgTable, text } from 'drizzle-orm/pg-core';
@@ -103,9 +103,9 @@ Nested objects are flattened into dot paths, optional keys and nullable leaves a
 
 Several paths inside one JSONB filter are combined with `AND`, and several operators on one path are combined with `AND` too.
 
-## Legacy `json` wrapper
+## Legacy JSON filter wrapper
 
-The former `{ json: { ... } }` wrapper remains supported but is deprecated. Use it only for a root path without a dot, for an object whose literal key contains a dot, or when its stricter path and leaf validation is useful during migration; dotted shorthand would otherwise be ambiguous with JSON document equality.
+The former `{ json: { ... } }` filter wrapper remains supported but is deprecated. Use it for a root path without a dot, for an object whose literal key contains a dot, or when its stricter path and leaf validation is useful during migration; dotted shorthand would otherwise be ambiguous with JSON document equality. Mutation path typing is described below; both mutation forms validate typed paths and values.
 
 ```ts
 await client.accounts.findMany({
@@ -560,7 +560,7 @@ A GIN index on the whole column (`using gin (settings)`) speeds up containment o
 
 ## Partial updates with the same paths
 
-Update operations (`update`, `updateMany`, `updateEach`, `upsert`, `upsertMany`) accept the same dotted paths in `data` and compile them to chained `jsonb_set` calls, so only the listed paths change:
+Update operations (`update`, `updateMany`, `updateEach`, `upsert`, `upsertMany`) accept typed object paths in `data` and compile them to chained `jsonb_set` calls. For a column declared with `$type<T>()`, both the dotted shorthand and `{ json: ... }` wrapper check every path against `T` and require a value matching that path's type:
 
 ```ts tab="better-drizzle" tab-group="orm"
 await client.accounts.update({
@@ -580,12 +580,16 @@ await db
 	.where(eq(accounts.id, id));
 ```
 
-Rules: every key inside one JSONB value must contain a dot, otherwise the value is treated as a full-document replacement. Use the `{ json: { ... } }` wrapper for single-level keys (e.g. `{ json: { nickname: 'Ada' } }`), which is also where the strictly-typed paths live. Mixing dotted and plain keys in one value throws `OPERATION_ERROR` instead of guessing, as does a `{ json: ... }` wrapper mixed with other keys or an empty `{ json: {} }` wrapper. A top-level `json` key holding a plain object on a `PgJsonb` column is reserved for the wrapper (`sql` fragments, scalars, and non-record values fall through to normal handling), and literal dotted keys (e.g. a full document `{ 'a.b': 1 }`) cannot be written as full-document replacements: every dotted key is compiled to `jsonb_set`, including keys inside the wrapper (unlike filters, the wrapper does not preserve literal dots). An empty `{}` is a full-document replacement, not a path update. Path values accept any JSON-encodable value; `undefined` and unencodable values throw `OPERATION_ERROR`. PostgreSQL only for path shapes: dotted or wrapper path attempts on other dialects fail fast with `JSONB_MUTATION_UNSUPPORTED`, while full-document replacements work on any dialect.
+Use `{ json: ... }` when updating a single-level key, such as `nickname` (`settings: { json: { nickname: 'Ada' } }`). It has the same path and value checks for typed JSONB columns.
+
+Rules: every key in the dotted shorthand must contain a dot; otherwise the value is treated as a full-document replacement. Use the `{ json: { ... } }` wrapper for single-level keys (e.g. `{ json: { nickname: 'Ada' } }`). For typed JSONB columns, both forms reject unknown paths and values that do not match the declared path type. Untyped columns keep open path names and JSON-encodable values. Mixing dotted and plain keys in one value throws `OPERATION_ERROR`, as does mixing a `{ json: ... }` wrapper with other keys or using an empty `{ json: {} }` wrapper. A top-level `json` key holding a plain object on a `PgJsonb` column is reserved for the wrapper (`sql` fragments, scalars, and non-record values fall through to normal handling), and literal dotted keys (e.g. a full document `{ 'a.b': 1 }`) cannot be written as full-document replacements: every dotted key is compiled to `jsonb_set`, including keys inside the wrapper (unlike filters, the wrapper does not preserve literal dots). An empty `{}` is a full-document replacement, not a path update. Path values may contain JSON objects and arrays; recursively nested `undefined` and other unencodable values throw `OPERATION_ERROR`.
+
+Each path must be a sequence of object keys. Missing object ancestors are created. A SQL `NULL` root, or a JSONB root containing a scalar, array, or JSON `null`, is treated as `{}` before updating. Existing object ancestors and unrelated keys are preserved. If an intermediate ancestor contains a scalar, array, or JSON `null`, that value is replaced with `{}` so the remaining path can be applied. Duplicate paths and ancestor/descendant overlaps in one update are rejected with `OPERATION_ERROR`. Path updates require PostgreSQL; dotted or wrapper path attempts on other dialects fail fast with `JSONB_MUTATION_UNSUPPORTED`, while full-document replacements work on any dialect.
 
 ## Limits and dialect support
 
 - **PostgreSQL only for path shapes.** SQLite and MySQL reject `json` filters with `JSONB_QUERY_UNSUPPORTED` (and dotted/wrapper path mutations with `JSONB_MUTATION_UNSUPPORTED`) instead of silently changing semantics. Full-document replacements are not gated.
-- **Scalar object paths only for filtering.** Arrays, object containment (`@>`), PostgreSQL JSONPath strings (`@?`, `@@`), and keys that contain a dot are intentionally outside the structured filter API. Mutations accept any JSON-encodable value at addressed paths, including objects and arrays.
+- **Scalar object paths only for filtering.** Arrays, object containment (`@>`), PostgreSQL JSONPath strings (`@?`, `@@`), and keys that contain a dot are intentionally outside the structured filter API. Mutations address object-key paths and accept JSON objects and arrays as values.
 - **Filtering and partial updates.** JSON paths are available in `where` and in update `data`; ordering by a JSON path is not part of the structured API.
 
 For anything outside those limits, pass a Drizzle `sql` fragment as the `where`:

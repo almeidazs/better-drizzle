@@ -143,6 +143,8 @@ await client.accounts.update({
 });
 ```
 
+On typed JSONB columns, dotted paths and the `{ json: ... }` wrapper both check paths and values against `$type<T>()`; use the wrapper for single-level keys. Path updates create missing object ancestors, treat SQL `NULL` and non-object JSONB roots as `{}`, and preserve existing object ancestors and unrelated keys. A scalar, array, or JSON `null` at an intermediate path is replaced with `{}`. Duplicate or ancestor/descendant paths are rejected, as are values containing nested `undefined`. Untyped JSONB columns keep open path names and JSON-encodable values.
+
 ## Row locks with guardrails
 
 ```ts
