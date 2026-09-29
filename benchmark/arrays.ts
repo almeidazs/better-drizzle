@@ -1,6 +1,6 @@
 import { deepStrictEqual, ok } from 'node:assert';
 
-import { eq, sql } from 'drizzle-orm';
+import { defineRelations, eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { integer, pgTable, text } from 'drizzle-orm/pg-core';
 import { bench, do_not_optimize, group, run } from 'mitata';
@@ -32,8 +32,8 @@ await client.query(
 );
 await client.query(`analyze ${TABLE}`);
 
-const raw = drizzle(client, { schema });
-const db = better(raw, { schema });
+const raw = drizzle({ client, relations: defineRelations(schema) });
+const db = better(raw);
 const rawQuery = () =>
 	raw
 		.select()
@@ -124,32 +124,6 @@ const betterMutation = () =>
 	db.entries.update({
 		data: { tags: { addUnique: mutationValues } },
 		where: { id: 1 },
-	});
-const rawAppend = () =>
-	raw
-		.update(entries)
-		.set({
-			tags: sql`array_append(${entries.tags}, ${'append-benchmark'})`,
-		})
-		.where(eq(entries.id, 2))
-		.returning();
-const betterAppend = () =>
-	db.entries.update({
-		data: { tags: { append: 'append-benchmark' } },
-		where: { id: 2 },
-	});
-const rawPrepend = () =>
-	raw
-		.update(entries)
-		.set({
-			tags: sql`array_prepend(${'prepend-benchmark'}, ${entries.tags})`,
-		})
-		.where(eq(entries.id, 3))
-		.returning();
-const betterPrepend = () =>
-	db.entries.update({
-		data: { tags: { prepend: 'prepend-benchmark' } },
-		where: { id: 3 },
 	});
 const rawRemove = () =>
 	raw
@@ -251,12 +225,6 @@ group('PostgreSQL array addUnique (row parity)', () => {
 });
 
 group('PostgreSQL array native mutations', () => {
-	bench('Drizzle append', async () => do_not_optimize(await rawAppend()));
-	bench('better-drizzle append', async () =>
-		do_not_optimize(await betterAppend()));
-	bench('Drizzle prepend', async () => do_not_optimize(await rawPrepend()));
-	bench('better-drizzle prepend', async () =>
-		do_not_optimize(await betterPrepend()));
 	bench('Drizzle remove', async () => do_not_optimize(await rawRemove()));
 	bench('better-drizzle remove', async () =>
 		do_not_optimize(await betterRemove()));

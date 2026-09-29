@@ -1,6 +1,15 @@
 import { deepStrictEqual, ok } from 'node:assert';
 
-import { type AnyColumn, and, eq, gte, like, type SQL, sql } from 'drizzle-orm';
+import {
+	and,
+	type AnyColumn,
+	defineRelations,
+	gte,
+	like,
+	eq,
+	type SQL,
+	sql,
+} from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { integer, jsonb, pgTable } from 'drizzle-orm/pg-core';
 import { bench, do_not_optimize, group, run, summary } from 'mitata';
@@ -48,9 +57,9 @@ await client.query(
 );
 await client.query(`analyze ${TABLE}`);
 
-const raw = drizzle(client, { schema });
+const raw = drizzle({ client, relations: defineRelations(schema) });
 // oxlint-disable-next-line typescript/no-explicit-any -- Benchmark type erasure.
-const db = better(raw, { schema }) as any;
+const db = better(raw) as any;
 
 /**
  * Rebuilds the exact path expression the query compiler emits, so the raw

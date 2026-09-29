@@ -1,6 +1,13 @@
 import { deepStrictEqual, ok } from 'node:assert';
 
-import { count, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import {
+	count,
+	defineRelations,
+	inArray,
+	eq,
+	type SQL,
+	sql,
+} from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { integer, jsonb, pgTable } from 'drizzle-orm/pg-core';
 import { bench, do_not_optimize, group, run, summary } from 'mitata';
@@ -57,9 +64,9 @@ await client.query(`
 	from generate_series(1, ${ROWS}) g
 `);
 
-const raw = drizzle(client, { schema });
+const raw = drizzle({ client, relations: defineRelations(schema) });
 // oxlint-disable-next-line typescript/no-explicit-any -- Benchmark type erasure.
-const db = better(raw, { schema }) as any;
+const db = better(raw) as any;
 
 type JsonbMutationNode = {
 	children?: Map<string, JsonbMutationNode>;

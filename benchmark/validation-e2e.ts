@@ -9,7 +9,7 @@ import { bench, do_not_optimize, group, run, summary } from 'mitata';
 import { better } from '../src';
 import { ata } from '../src/plugins/ata';
 import { zod } from '../src/plugins/zod';
-import { createTablesSql, schema } from './schema';
+import { createTablesSql, relations } from './schema';
 
 /**
  * What validation costs as a share of a real operation.
@@ -74,7 +74,7 @@ const seed = sqlite.transaction(() => {
 });
 seed();
 
-const raw = drizzle(sqlite, { schema });
+const raw = drizzle({ client: sqlite, relations });
 
 // Everything on, so the plugins are actually doing work on every operation.
 const ALL_ON = {
@@ -105,27 +105,23 @@ type BenchClient = {
 
 const asBench = (client: unknown) => client as BenchClient;
 
-const plain = asBench(better(raw, { schema }));
+const plain = asBench(better(raw));
 const withZod = asBench(
 	better(raw, {
 		plugins: [
 			zod({ behavior: { unknownKeys: 'strict' }, validate: ALL_ON }),
 		],
-		schema,
 	}),
 );
-const withAta = asBench(
-	better(raw, { plugins: [ata({ validate: ALL_ON })], schema }),
-);
+const withAta = asBench(better(raw, { plugins: [ata({ validate: ALL_ON })] }));
 
 // Defaults: reads unvalidated, writes validated. What a user actually gets.
 const zodDefaults = asBench(
 	better(raw, {
 		plugins: [zod({ behavior: { unknownKeys: 'strict' } })],
-		schema,
 	}),
 );
-const ataDefaults = asBench(better(raw, { plugins: [ata()], schema }));
+const ataDefaults = asBench(better(raw, { plugins: [ata()] }));
 
 // --- writes, where both plugins validate by default -------------------------
 

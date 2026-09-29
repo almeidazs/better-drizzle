@@ -203,20 +203,19 @@ const createExtendedOperations = (
 		async relationWrite() {
 			const postIds = [5, 6];
 			if (mode === 'raw')
-				return context.raw.transaction(async (tx) => {
-					await tx
-						.update(posts)
+				return context.raw.transaction((tx) => {
+					tx.update(posts)
 						.set({ userId: 1 })
-						.where(inArray(posts.id, postIds));
-					const root = (
-						await tx
-							.select()
-							.from(users)
-							.where(eq(users.id, 1))
-							.limit(1)
-					)[0];
+						.where(inArray(posts.id, postIds))
+						.run();
+					const root = tx
+						.select()
+						.from(users)
+						.where(eq(users.id, 1))
+						.limit(1)
+						.all()[0];
 					if (!root) return null;
-					const related = await tx
+					const related = tx
 						.select()
 						.from(posts)
 						.where(
@@ -225,7 +224,8 @@ const createExtendedOperations = (
 								inArray(posts.id, postIds),
 							),
 						)
-						.orderBy(asc(posts.id));
+						.orderBy(asc(posts.id))
+						.all();
 					return { ...root, posts: related };
 				});
 

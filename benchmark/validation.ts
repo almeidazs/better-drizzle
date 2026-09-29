@@ -1,4 +1,4 @@
-import { getTableColumns } from 'drizzle-orm';
+import { defineRelations, getColumns } from 'drizzle-orm';
 import {
 	boolean,
 	integer,
@@ -58,8 +58,8 @@ const users = pgTable('users', {
 	created: timestamp('created').notNull().defaultNow(),
 });
 
-const table = () => ({ users });
-const columns = getTableColumns(users);
+const table = () => defineRelations({ users });
+const columns = getColumns(users);
 const columnKeys = Object.keys(columns);
 
 const ZOD_BEHAVIOR = { behavior: { unknownKeys: 'strict' as const } };
