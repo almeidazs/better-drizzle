@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 
-import { relations } from 'drizzle-orm';
+import { defineRelations } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
@@ -15,10 +15,6 @@ const users = sqliteTable('hook_users', {
 	active: integer('active', { mode: 'boolean' }).notNull(),
 });
 
-const usersRelations = relations(users, ({ many }) => ({
-	posts: many(posts),
-}));
-
 const posts = sqliteTable('hook_posts', {
 	id: integer('id').primaryKey(),
 	userId: integer('user_id')
@@ -30,14 +26,14 @@ const posts = sqliteTable('hook_posts', {
 	published: integer('published', { mode: 'boolean' }).notNull(),
 });
 
-const postsRelations = relations(posts, ({ one }) => ({
-	author: one(users, {
-		fields: [posts.userId],
-		references: [users.id],
-	}),
-}));
+const schema = { posts, users };
 
-const schema = { posts, postsRelations, users, usersRelations };
+const relations = defineRelations(schema, (r) => ({
+	posts: {
+		author: r.one.users({ from: r.posts.userId, to: r.users.id }),
+	},
+	users: { posts: r.many.posts() },
+}));
 
 const createTablesSql = `
 CREATE TABLE IF NOT EXISTS hook_users (
@@ -66,13 +62,12 @@ const createHookContext = (events: HookEvent[]) => {
 	);
 	sqlite.exec("INSERT INTO hook_users VALUES (1, 'a@test.com', 'A', 20, 1)");
 
-	const raw = drizzle(sqlite, { schema });
+	const raw = drizzle({ client: sqlite, relations });
 
 	const track = (hook: string, action: string, table: string) =>
 		events.push({ hook, action, table });
 
 	const client = better(raw, {
-		schema,
 		hooks: {
 			afterCreate: (ctx) => track('afterCreate', ctx.action, ctx.table),
 			afterDelete: (ctx) => track('afterDelete', ctx.action, ctx.table),
@@ -96,16 +91,15 @@ describe('hooks - create', () => {
 			`PRAGMA journal_mode = MEMORY; PRAGMA foreign_keys = ON; ${createTablesSql}`,
 		);
 
-		const raw = drizzle(sqlite, { schema });
+		const raw = drizzle({ client: sqlite, relations });
 		const client = better<
-			typeof schema,
+			typeof relations,
 			{
 				organizationId?: string;
 				requestId?: string;
 				userId?: string;
 			}
 		>(raw, {
-			schema,
 			hooks: {
 				beforeCreate(ctx) {
 					seen.push(ctx.meta);
@@ -282,8 +276,7 @@ describe('hooks - update', () => {
 			"INSERT INTO hook_users VALUES (1, 'a@test.com', 'A', 20, 1)",
 		);
 		let compiled: Readonly<Record<string, unknown>> | undefined;
-		const client = better(drizzle(sqlite, { schema }), {
-			schema,
+		const client = better(drizzle({ client: sqlite, relations }), {
 			hooks: { afterUpdate: (context) => (compiled = context.compiled) },
 		});
 
@@ -306,8 +299,7 @@ describe('hooks - update', () => {
 		);
 		const compiled: Array<Readonly<Record<string, unknown>> | undefined> =
 			[];
-		const client = better(drizzle(sqlite, { schema }), {
-			schema,
+		const client = better(drizzle({ client: sqlite, relations }), {
 			hooks: {
 				afterCreate: (context) => compiled.push(context.compiled),
 			},
@@ -540,9 +532,8 @@ describe('hooks - context', () => {
 			"INSERT INTO hook_users VALUES (1, 'a@test.com', 'A', 20, 1)",
 		);
 
-		const raw = drizzle(sqlite, { schema });
+		const raw = drizzle({ client: sqlite, relations });
 		const client = better(raw, {
-			schema,
 			hooks: {
 				beforeCreate: (ctx) =>
 					contexts.push(ctx as unknown as Record<string, unknown>),
@@ -565,7 +556,7 @@ describe('hooks - context', () => {
 		expect(ctx?.table).toBe('users');
 		expect(ctx?.db).toBe(raw);
 		expect(ctx?.args).toBeDefined();
-		expect(ctx?.schema).toBe(schema);
+		expect(ctx?.schema).toBe(relations);
 		expect(ctx?.tableInstance).toBeDefined();
 		expect(ctx?.tableConfig).toBeDefined();
 		expect(ctx?.repository).toBeDefined();
@@ -581,9 +572,8 @@ describe('hooks - context', () => {
 			"INSERT INTO hook_users VALUES (1, 'a@test.com', 'A', 20, 1)",
 		);
 
-		const raw = drizzle(sqlite, { schema });
+		const raw = drizzle({ client: sqlite, relations });
 		const client = better(raw, {
-			schema,
 			hooks: {
 				beforeCreate: (ctx) =>
 					contexts.push(ctx as unknown as Record<string, unknown>),
@@ -612,9 +602,8 @@ describe('hooks - error handling', () => {
 		const sqlite = new Database(':memory:');
 		sqlite.exec(`PRAGMA journal_mode = MEMORY; ${createTablesSql}`);
 
-		const raw = drizzle(sqlite, { schema });
+		const raw = drizzle({ client: sqlite, relations });
 		const client = better(raw, {
-			schema,
 			hooks: {
 				onError: (ctx) =>
 					errors.push(ctx as unknown as Record<string, unknown>),
@@ -653,9 +642,8 @@ describe('hooks - error handling', () => {
 		const sqlite = new Database(':memory:');
 		sqlite.exec(`PRAGMA journal_mode = MEMORY; ${createTablesSql}`);
 
-		const raw = drizzle(sqlite, { schema });
+		const raw = drizzle({ client: sqlite, relations });
 		const client = better(raw, {
-			schema,
 			hooks: {
 				beforeCreate: () => {
 					throw new Error('Hook error');
@@ -693,8 +681,8 @@ describe('hooks - no hooks', () => {
 			"INSERT INTO hook_users VALUES (1, 'a@test.com', 'A', 20, 1)",
 		);
 
-		const raw = drizzle(sqlite, { schema });
-		const client = better(raw, { schema });
+		const raw = drizzle({ client: sqlite, relations });
+		const client = better(raw);
 
 		const user = await client.users.findFirst({ where: { id: 1 } });
 		expect(user).not.toBeNull();

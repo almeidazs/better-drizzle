@@ -525,6 +525,16 @@ export class BetterDrizzleError extends Error {
 const getErrorFields = (error: unknown): ErrorWithFields | null => {
 	if (typeof error !== 'object' || error === null) return null;
 
+	// Drizzle 1.x wraps driver errors in DrizzleQueryError ("Failed query: ...")
+	// and keeps the driver error, with its code and message, as `cause`.
+	const cause = (error as { cause?: unknown }).cause;
+	if (
+		(error as { name?: unknown }).name === 'DrizzleQueryError' &&
+		typeof cause === 'object' &&
+		cause !== null
+	)
+		return cause as ErrorWithFields;
+
 	return error as ErrorWithFields;
 };
 
@@ -608,8 +618,6 @@ const getDriver = (
 	errno: number | undefined,
 	message: string,
 ) => {
-	if (code && /^\d{5}$/.test(code)) return 'pg';
-
 	if (
 		code?.startsWith('SQLITE_') ||
 		message.includes('UNIQUE constraint failed') ||
@@ -627,6 +635,8 @@ const getDriver = (
 		message.includes('Cannot delete or update a parent row')
 	)
 		return 'mysql';
+
+	if (code && /^\d{5}$/.test(code)) return 'pg';
 
 	return 'unknown';
 };

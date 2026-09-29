@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { relations } from 'drizzle-orm';
+import { defineRelations } from 'drizzle-orm';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 import { BetterDrizzleErrorCode, better } from '../../src';
@@ -19,23 +19,12 @@ const posts = sqliteTable('lock_posts', {
 	title: text('title').notNull(),
 });
 
-const usersRelations = relations(users, ({ many }) => ({
-	posts: many(posts),
+const relations = defineRelations({ posts, users }, (r) => ({
+	posts: {
+		author: r.one.users({ from: r.posts.authorId, to: r.users.id }),
+	},
+	users: { posts: r.many.posts() },
 }));
-
-const postsRelations = relations(posts, ({ one }) => ({
-	author: one(users, {
-		fields: [posts.authorId],
-		references: [users.id],
-	}),
-}));
-
-const schema = {
-	posts,
-	postsRelations,
-	users,
-	usersRelations,
-};
 
 type FakeSelectState = {
 	forCalls: Array<{
@@ -103,6 +92,7 @@ const createFakeDb = (
 		forCalls: [],
 	};
 	const txDb = {
+		_: { relations },
 		dialect: {
 			constructor: {
 				name: dialectName,
@@ -152,9 +142,11 @@ describe('row locks', () => {
 		const ctx = createTestContext();
 
 		await expect(
-			ctx.better.users.findMany({
-				lock: 'update',
-			}),
+			Promise.resolve(
+				ctx.better.users.findMany({
+					lock: 'update',
+				}),
+			),
 		).rejects.toMatchObject({
 			code: BetterDrizzleErrorCode.LockNotSupported,
 		});
@@ -164,7 +156,7 @@ describe('row locks', () => {
 
 	test('applies FOR UPDATE on pg direct reads', async () => {
 		const fake = createFakeDb('PgDialect');
-		const client = better(fake.db as never, { schema });
+		const client = better(fake.db);
 
 		const rows = await client.users.findMany({
 			lock: 'update',
@@ -182,7 +174,7 @@ describe('row locks', () => {
 
 	test('supports direct locked reads across single-row helpers', async () => {
 		const fake = createFakeDb('PgDialect');
-		const client = better(fake.db as never, { schema });
+		const client = better(fake.db);
 
 		await client.users.findFirst({
 			lock: 'update',
@@ -217,7 +209,7 @@ describe('row locks', () => {
 
 	test('passes skipLocked and table targets on pg locks', async () => {
 		const fake = createFakeDb('PgDialect');
-		const client = better(fake.db as never, { schema });
+		const client = better(fake.db);
 
 		await client.users.findMany({
 			lock: {
@@ -240,7 +232,7 @@ describe('row locks', () => {
 
 	test('deduplicates repeated lock tables resolved by schema key and db name', async () => {
 		const fake = createFakeDb('PgDialect');
-		const client = better(fake.db as never, { schema });
+		const client = better(fake.db);
 
 		await client.users.findMany({
 			lock: {
@@ -256,7 +248,7 @@ describe('row locks', () => {
 
 	test('supports postgres-specific lock strengths', async () => {
 		const fake = createFakeDb('PgDialect');
-		const client = better(fake.db as never, { schema });
+		const client = better(fake.db);
 
 		await client.users.findMany({
 			lock: {
@@ -285,9 +277,8 @@ describe('row locks', () => {
 
 	test('supports locks inside transactions when transactionsOnly is enabled', async () => {
 		const fake = createFakeDb('PgDialect');
-		const client = better(fake.db as never, {
+		const client = better(fake.db, {
 			locks: { transactionsOnly: true },
-			schema,
 		});
 
 		await client.transaction(async (tx) => {
@@ -301,15 +292,16 @@ describe('row locks', () => {
 
 	test('rejects locks outside transactions when transactionsOnly is enabled', async () => {
 		const fake = createFakeDb('PgDialect');
-		const client = better(fake.db as never, {
+		const client = better(fake.db, {
 			locks: { transactionsOnly: true },
-			schema,
 		});
 
 		await expect(
-			client.users.findMany({
-				lock: 'update',
-			}),
+			Promise.resolve(
+				client.users.findMany({
+					lock: 'update',
+				}),
+			),
 		).rejects.toMatchObject({
 			code: BetterDrizzleErrorCode.LockRequiresTransaction,
 		});
@@ -317,15 +309,17 @@ describe('row locks', () => {
 
 	test('rejects invalid lock table names', async () => {
 		const fake = createFakeDb('PgDialect');
-		const client = better(fake.db as never, { schema });
+		const client = better(fake.db);
 
 		await expect(
-			client.users.findMany({
-				lock: {
-					mode: 'update',
-					tables: ['missing_table'],
-				},
-			}),
+			Promise.resolve(
+				client.users.findMany({
+					lock: {
+						mode: 'update',
+						tables: ['missing_table'],
+					},
+				}),
+			),
 		).rejects.toMatchObject({
 			code: BetterDrizzleErrorCode.OperationError,
 			details: {
@@ -338,7 +332,7 @@ describe('row locks', () => {
 		const fake = createFakeDb('PgDialect', [
 			{ author: { id: 1, name: 'Alice' }, id: 1 },
 		]);
-		const client = better(fake.db as never, { schema });
+		const client = better(fake.db);
 
 		const rows = await client.posts.findMany({
 			include: { author: true },
@@ -363,13 +357,15 @@ describe('row locks', () => {
 
 	test('rejects incompatible relation loading with locks', async () => {
 		const fake = createFakeDb('PgDialect');
-		const client = better(fake.db as never, { schema });
+		const client = better(fake.db);
 
 		await expect(
-			client.users.findMany({
-				include: { posts: true },
-				lock: 'update',
-			}),
+			Promise.resolve(
+				client.users.findMany({
+					include: { posts: true },
+					lock: 'update',
+				}),
+			),
 		).rejects.toMatchObject({
 			code: BetterDrizzleErrorCode.LockNotSupported,
 		});
@@ -377,20 +373,22 @@ describe('row locks', () => {
 
 	test('rejects nested relation selects with locks', async () => {
 		const fake = createFakeDb('PgDialect');
-		const client = better(fake.db as never, { schema });
+		const client = better(fake.db);
 
 		await expect(
-			client.posts.findMany({
-				lock: 'update',
-				select: {
-					author: {
-						select: {
-							id: true,
+			Promise.resolve(
+				client.posts.findMany({
+					lock: 'update',
+					select: {
+						author: {
+							select: {
+								id: true,
+							},
 						},
+						id: true,
 					},
-					id: true,
-				},
-			}),
+				}),
+			),
 		).rejects.toMatchObject({
 			code: BetterDrizzleErrorCode.LockNotSupported,
 		});
@@ -398,14 +396,16 @@ describe('row locks', () => {
 
 	test('rejects mysql-only unsupported lock modes', async () => {
 		const fake = createFakeDb('MySqlDialect');
-		const client = better(fake.db as never, { schema });
+		const client = better(fake.db);
 
 		await expect(
-			client.users.findMany({
-				lock: {
-					mode: 'noKeyUpdate',
-				},
-			}),
+			Promise.resolve(
+				client.users.findMany({
+					lock: {
+						mode: 'noKeyUpdate',
+					},
+				}),
+			),
 		).rejects.toMatchObject({
 			code: BetterDrizzleErrorCode.LockNotSupported,
 		});
@@ -413,7 +413,7 @@ describe('row locks', () => {
 
 	test('supports mysql lock modes and options that drizzle exposes', async () => {
 		const fake = createFakeDb('MySqlDialect');
-		const client = better(fake.db as never, { schema });
+		const client = better(fake.db);
 
 		await client.users.findMany({
 			lock: {
@@ -442,15 +442,17 @@ describe('row locks', () => {
 
 	test('rejects lock tables on mysql', async () => {
 		const fake = createFakeDb('MySqlDialect');
-		const client = better(fake.db as never, { schema });
+		const client = better(fake.db);
 
 		await expect(
-			client.users.findMany({
-				lock: {
-					mode: 'update',
-					tables: ['users'],
-				},
-			}),
+			Promise.resolve(
+				client.users.findMany({
+					lock: {
+						mode: 'update',
+						tables: ['users'],
+					},
+				}),
+			),
 		).rejects.toMatchObject({
 			code: BetterDrizzleErrorCode.LockNotSupported,
 		});
@@ -458,16 +460,18 @@ describe('row locks', () => {
 
 	test('rejects noWait together with skipLocked', async () => {
 		const fake = createFakeDb('PgDialect');
-		const client = better(fake.db as never, { schema });
+		const client = better(fake.db);
 
 		await expect(
-			client.users.findMany({
-				lock: {
-					mode: 'update',
-					noWait: true,
-					skipLocked: true,
-				},
-			}),
+			Promise.resolve(
+				client.users.findMany({
+					lock: {
+						mode: 'update',
+						noWait: true,
+						skipLocked: true,
+					},
+				}),
+			),
 		).rejects.toMatchObject({
 			code: BetterDrizzleErrorCode.OperationError,
 		});
@@ -478,12 +482,14 @@ describe('row locks', () => {
 			code: '55P03',
 			message: 'could not obtain lock on row in relation "lock_users"',
 		});
-		const client = better(fake.db as never, { schema });
+		const client = better(fake.db);
 
 		await expect(
-			client.users.findMany({
-				lock: 'update',
-			}),
+			Promise.resolve(
+				client.users.findMany({
+					lock: 'update',
+				}),
+			),
 		).rejects.toMatchObject({
 			code: BetterDrizzleErrorCode.LockTimeout,
 		});
@@ -495,15 +501,17 @@ describe('row locks', () => {
 			message:
 				'Statement aborted because lock(s) could not be acquired immediately and NOWAIT is set.',
 		});
-		const client = better(fake.db as never, { schema });
+		const client = better(fake.db);
 
 		await expect(
-			client.users.findMany({
-				lock: {
-					mode: 'share',
-					noWait: true,
-				},
-			}),
+			Promise.resolve(
+				client.users.findMany({
+					lock: {
+						mode: 'share',
+						noWait: true,
+					},
+				}),
+			),
 		).rejects.toMatchObject({
 			code: BetterDrizzleErrorCode.LockTimeout,
 		});
@@ -514,12 +522,14 @@ describe('row locks', () => {
 			code: '23505',
 			message: 'duplicate key value violates unique constraint',
 		});
-		const client = better(fake.db as never, { schema });
+		const client = better(fake.db);
 
 		await expect(
-			client.users.findMany({
-				lock: 'update',
-			}),
+			Promise.resolve(
+				client.users.findMany({
+					lock: 'update',
+				}),
+			),
 		).rejects.toEqual({
 			code: '23505',
 			message: 'duplicate key value violates unique constraint',
@@ -528,7 +538,7 @@ describe('row locks', () => {
 
 	test('paginate queries propagate lock handling', async () => {
 		const fake = createFakeDb('PgDialect', [{ id: 1, name: 'Alice' }]);
-		const client = better(fake.db as never, { schema });
+		const client = better(fake.db);
 
 		const result = await client.users.paginate({
 			limit: 1,
@@ -549,7 +559,7 @@ describe('row locks', () => {
 
 	test('cursor queries propagate lock handling', async () => {
 		const fake = createFakeDb('PgDialect', [{ id: 1, name: 'Alice' }]);
-		const client = better(fake.db as never, { schema });
+		const client = better(fake.db);
 
 		await client.users.cursor({
 			limit: 1,
@@ -570,7 +580,7 @@ describe('row locks', () => {
 
 	test('cursor navigation probes preserve locks on follow-up reads', async () => {
 		const fake = createFakeDb('PgDialect', [{ id: 1, name: 'Alice' }]);
-		const client = better(fake.db as never, { schema });
+		const client = better(fake.db);
 
 		await client.users.cursor({
 			after: { id: 1 },
@@ -588,7 +598,7 @@ describe('row locks', () => {
 	});
 });
 
-const typeClient = better(createFakeDb('PgDialect').db as never, { schema });
+const typeClient = better(createFakeDb('PgDialect').db);
 type CountArgs = Parameters<typeof typeClient.users.count>[0];
 type ExistsArgs = Parameters<typeof typeClient.users.exists>[0];
 

@@ -1,5 +1,6 @@
-import type { AnyColumn, SQL } from 'drizzle-orm';
+import type { AnyColumn, SQL, Table } from 'drizzle-orm';
 import {
+	aliasedTable,
 	aliasedTableColumn,
 	and,
 	asc,
@@ -7,7 +8,7 @@ import {
 	desc,
 	eq,
 	exists,
-	getTableColumns,
+	getColumns,
 	gt,
 	gte,
 	ilike,
@@ -25,7 +26,6 @@ import {
 	sql,
 } from 'drizzle-orm';
 import { mapColumnsInSQLToAlias } from 'drizzle-orm/alias';
-import { Many, One } from 'drizzle-orm/relations';
 
 import type {
 	AnySchema,
@@ -36,7 +36,6 @@ import type {
 	DrizzleLikeDatabase,
 	OrderByInput,
 	PaginationArgs,
-	QueryArgs,
 	RuntimeContext,
 	TableRuntime,
 	WhereArg,
@@ -189,8 +188,39 @@ const isJsonPathShorthand = (
 const isPgJsonbColumn = (column: AnyColumn) =>
 	(column as { columnType?: string }).columnType === 'PgJsonb';
 
-const isPgArrayColumn = (column: AnyColumn) =>
-	(column as { columnType?: string }).columnType === 'PgArray';
+/** Number of `.array()` dimensions declared on a PostgreSQL column. */
+export const getPgArrayDimensions = (column: AnyColumn) =>
+	(column as { dimensions?: number }).dimensions ?? 0;
+
+export const isPgArrayColumn = (column: AnyColumn) =>
+	getPgArrayDimensions(column) > 0;
+
+const pgArrayElementColumns = new WeakMap<AnyColumn, AnyColumn[]>();
+
+/**
+ * Returns a view of an array column with fewer dimensions. Drizzle 1.x keeps
+ * array columns as their element class, and codecs cast params from
+ * `dimensions`, so element params must be encoded through this view to keep
+ * the element's `toDriver()` without an array cast.
+ */
+export const getPgArrayElementColumn = (
+	column: AnyColumn,
+	dimensions = 0,
+): AnyColumn => {
+	let elements = pgArrayElementColumns.get(column);
+	if (!elements) {
+		elements = [];
+		pgArrayElementColumns.set(column, elements);
+	}
+	let element = elements[dimensions];
+	if (!element) {
+		element = Object.create(column, {
+			dimensions: { value: dimensions },
+		}) as AnyColumn;
+		elements[dimensions] = element;
+	}
+	return element;
+};
 
 const isArrayFilter = (value: unknown): value is Record<string, unknown> =>
 	isPlainObject(value) &&
@@ -349,11 +379,7 @@ const compileArrayElementPredicate = (
 	const predicateKeys = keys.filter((key) => key !== 'mode');
 	const only = predicateKeys.length === 1 ? predicateKeys[0] : undefined;
 	const notNull = sql`${column} is not null`;
-	let elementEncoder = encoder;
-	while ((elementEncoder as { columnType?: string }).columnType === 'PgArray')
-		elementEncoder = (
-			elementEncoder as unknown as { baseColumn: AnyColumn }
-		).baseColumn;
+	const elementEncoder = getPgArrayElementColumn(encoder);
 
 	if (
 		only === 'equals' &&
@@ -605,8 +631,8 @@ const makeJoinCondition = (
 	references: AnyColumn[],
 	referencedTable: Parameters<DrizzleLikeDatabase['insert']>[0],
 ) => {
-	const referencedColumns = getTableColumns(referencedTable);
-	// getTableColumns() keys columns by their JS property name, while
+	const referencedColumns = getColumns(referencedTable);
+	// getColumns() keys columns by their JS property name, while
 	// reference.name holds the database column name. Those differ for any mapped
 	// column (`authorId: integer('author_id')`), so resolve by database name too
 	// and fall back to the reference itself, which normalizeRelation() already
@@ -654,31 +680,51 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 				aliasedTableColumn(field, context.rootAlias as string),
 			)
 		: relationState.fields;
-	const joinCondition = makeJoinCondition(
-		fields,
-		relationState.references,
-		relationRuntime.table,
-	);
-	const subquery = context.db
-		.select({ one: sql`1` })
-		.from(relationRuntime.table);
+	// A self relation (categories.children, users.followers) queries the same
+	// table as the parent, so the subquery's table is aliased; otherwise the
+	// correlation would compare each row with itself. Nested levels get their
+	// own alias so deeper filters correlate against the right level.
+	const targetAlias =
+		relationRuntime.table === context.runtime.table
+			? `__better_self_${
+					context.rootAlias?.startsWith('__better_self_')
+						? Number(context.rootAlias.slice(14)) + 1
+						: 0
+				}`
+			: undefined;
+	const targetTable = targetAlias
+		? (aliasedTable(relationRuntime.table, targetAlias) as Table)
+		: relationRuntime.table;
+	const references = targetAlias
+		? relationState.references.map((reference) =>
+				aliasedTableColumn(reference, targetAlias),
+			)
+		: relationState.references;
+	const joinCondition = targetAlias
+		? and(
+				...references.map((reference, index) =>
+					eq(reference, fields[index] as AnyColumn),
+				),
+			)
+		: makeJoinCondition(fields, references, relationRuntime.table);
+	const subquery = context.db.select({ one: sql`1` }).from(targetTable);
 	const buildNestedWhere = (nestedWhere?: Record<string, unknown>) =>
 		compileWhereInput(
 			{
 				...context,
 				runtime: relationRuntime,
 				tableName: relationState.tableName,
-				// The subquery's own table is referenced by its real name, and a
-				// deeper filter correlates against it, not the aliased root.
-				rootAlias: undefined,
+				// The subquery's own table is referenced by its real name (or its
+				// self-relation alias), and a deeper filter correlates against it,
+				// not the aliased root.
+				rootAlias: targetAlias,
 			},
 			nestedWhere,
 		);
 	const canUseMembershipFilter =
-		relationState.fields.length === 1 &&
-		relationState.references.length === 1;
+		relationState.fields.length === 1 && references.length === 1;
 	const sourceField = fields[0];
-	const referenceField = relationState.references[0];
+	const referenceField = references[0];
 	const buildMembershipFilter = (
 		nestedWhere: Record<string, unknown>,
 		negated = false,
@@ -688,20 +734,69 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 		const predicate = buildNestedWhere(nestedWhere);
 		const subquery = context.db
 			.select({ value: referenceField })
-			.from(relationRuntime.table);
+			.from(targetTable);
 
-		return negated
-			? notInArray(
-					sourceField,
-					predicate ? subquery.where(predicate) : subquery,
-				)
-			: inArray(
-					sourceField,
-					predicate ? subquery.where(predicate) : subquery,
-				);
+		if (!negated)
+			return inArray(
+				sourceField,
+				predicate ? subquery.where(predicate) : subquery,
+			);
+
+		// isNot keeps rows without a related record, like the NOT EXISTS path:
+		// a NULL foreign key never satisfies NOT IN, and a NULL in the subquery
+		// would make NOT IN unknown for every row.
+		return or(
+			isNull(sourceField),
+			notInArray(
+				sourceField,
+				subquery.where(and(isNotNull(referenceField), predicate)),
+			),
+		);
 	};
 
-	if (relationState.relation instanceof Many) {
+	if (relationState.kind === 'manyToMany') {
+		const through = relationState.through;
+		if (!through) return;
+		const throughRuntime = getTableRuntime(context, through.tableName);
+		const correlate: SQL[] = [];
+		const link: SQL[] = [];
+		for (let index = 0; index < fields.length; index += 1) {
+			const field = fields[index];
+			const sourceField = through.sourceFields[index];
+			if (field && sourceField) correlate.push(eq(sourceField, field));
+		}
+		for (let index = 0; index < references.length; index += 1) {
+			const reference = references[index];
+			const targetField = through.targetFields[index];
+			if (reference && targetField) link.push(eq(targetField, reference));
+		}
+		const linked = (predicate?: SQL) =>
+			context.db
+				.select({ one: sql`1` })
+				.from(throughRuntime.table)
+				.innerJoin(targetTable, and(...link))
+				.where(and(...correlate, predicate));
+
+		if ('some' in value)
+			return exists(
+				linked(buildNestedWhere(value.some as Record<string, unknown>)),
+			);
+		if ('none' in value)
+			return notExists(
+				linked(buildNestedWhere(value.none as Record<string, unknown>)),
+			);
+		if ('every' in value) {
+			const nestedWhere = buildNestedWhere(
+				value.every as Record<string, unknown>,
+			);
+			return notExists(
+				linked(nestedWhere ? not(nestedWhere) : undefined),
+			);
+		}
+		return;
+	}
+
+	if (relationState.kind === 'many') {
 		if ('some' in value)
 			return exists(
 				subquery.where(
@@ -739,7 +834,7 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 		return;
 	}
 
-	if (relationState.relation instanceof One) {
+	if (relationState.kind === 'one') {
 		if ('is' in value) {
 			if (value.is === null)
 				return notExists(subquery.where(joinCondition));
@@ -875,11 +970,34 @@ export const compileWhereInput = <Schema extends AnySchema, Meta>(
 		}
 
 		const column = context.runtime.columns[key];
-		if (!column) continue;
+		if (!column) {
+			if (context.runtime.unsupportedRelations[key])
+				throw new BetterDrizzleError({
+					code: BetterDrizzleErrorCode.OperationError,
+					details: { relation: key },
+					message: `Relation "${key}" on "${context.runtime.dbName}" cannot be filtered: ${context.runtime.unsupportedRelations[key]}.`,
+					operation: 'where',
+					table: context.runtime.dbName,
+				});
+			continue;
+		}
 
 		const field = context.rootAlias
 			? aliasedTableColumn(column, context.rootAlias)
 			: column;
+
+		if (
+			(column as { columnType?: string }).columnType === 'PgJson' &&
+			isJsonPathShorthand(value)
+		)
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.JsonbQueryUnsupported,
+				column: key,
+				dialect: context.dialect,
+				message:
+					'JSON path filters require a jsonb column; json columns only support whole-document filters.',
+				table: context.tableName,
+			});
 
 		const jsonPaths = isJsonWhereFilter(value)
 			? value.json
@@ -1040,129 +1158,6 @@ export const compileCursorWhere = <Schema extends AnySchema, Meta>(
 	if (cursorValue === null)
 		return nulls === 'first' ? isNotNull(column) : sql`false`;
 	return nulls === 'last' ? or(comparison, isNull(column)) : comparison;
-};
-
-/**
- * Builds a Drizzle relational query config object from typed `QueryArgs`.
- * Compiles where-clauses, order-by, cursor, pagination, select/include
- * projections, and nested relation configs into the shape expected by
- * `db.query[tableName].findMany()` / `findFirst()`.
- *
- * @typeParam Schema - The Drizzle schema type.
- * @typeParam Meta   - Custom metadata type.
- * @param context   - The runtime context.
- * @param tableName - The table to build the config for.
- * @param args      - The query arguments.
- * @returns A Drizzle query config object, or `undefined` when no config is needed.
- */
-export const buildQueryConfig = <Schema extends AnySchema, Meta>(
-	context: RuntimeContext<Schema, Meta>,
-	tableName: BetterTableKey<Schema>,
-	args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
-) => {
-	const runtime = getTableRuntime(context, tableName as string);
-	const whereContext: WhereCompilerContext<Schema, Meta> = {
-		...context,
-		runtime,
-		tableName: tableName as string,
-		rootArgs: args,
-		// The relational query builder aliases this table to its schema key, which
-		// is the same key used for db.query[tableName]. A correlated relation
-		// filter reads this to reference the parent through that alias.
-		rootAlias: tableName as string,
-	};
-	const config = Object.create(null) as Record<string, unknown>;
-	const select = args?.select as Record<string, unknown> | undefined;
-	const include = args?.include as Record<string, unknown> | undefined;
-	let hasConfig = false;
-
-	if (select) {
-		const columns = Object.create(null) as Record<string, true>;
-		let hasColumns = false;
-
-		for (const key in select)
-			if (!runtime.relationNames.has(key) && select[key] === true) {
-				columns[key] = true;
-				hasColumns = true;
-			}
-
-		if (hasColumns) {
-			config.columns = columns;
-			hasConfig = true;
-		}
-	}
-
-	const sourceRelations = select ?? include;
-	if (sourceRelations) {
-		const withConfig = Object.create(null) as Record<string, unknown>;
-		let hasWith = false;
-
-		for (const key in sourceRelations) {
-			const value = sourceRelations[key];
-			if (!runtime.relationNames.has(key)) continue;
-
-			withConfig[key] =
-				value === true
-					? true
-					: buildQueryConfig(
-							context,
-							runtime.relations[key]
-								.tableName as BetterTableKey<Schema>,
-							value as QueryArgs<
-								Schema,
-								BetterTableKey<Schema>,
-								Meta
-							>,
-						);
-			hasWith = true;
-		}
-
-		if (hasWith) {
-			config.with = withConfig;
-			hasConfig = true;
-		}
-	}
-
-	const where = compileWhereInput(
-		whereContext,
-		args?.where as CompilableWhere | undefined,
-	);
-	const cursorWhere = compileCursorWhere(
-		whereContext,
-		args?.cursor as CursorInput<Schema, BetterTableKey<Schema>> | undefined,
-		args?.orderBy as
-			| OrderByInput<Schema, BetterTableKey<Schema>>
-			| undefined,
-		args?.take,
-	);
-	const mergedWhere = and(where, cursorWhere);
-
-	if (mergedWhere) {
-		config.where = () => mergedWhere;
-		hasConfig = true;
-	}
-
-	const orderBy = compileOrderBy(
-		whereContext,
-		args?.orderBy as
-			| OrderByInput<Schema, BetterTableKey<Schema>>
-			| undefined,
-	);
-	if (orderBy) {
-		config.orderBy = () => orderBy;
-		hasConfig = true;
-	}
-
-	if (args?.take !== undefined) {
-		config.limit = Math.abs(args.take);
-		hasConfig = true;
-	}
-	if (args?.skip !== undefined) {
-		config.offset = args.skip;
-		hasConfig = true;
-	}
-
-	return hasConfig ? config : undefined;
 };
 
 /**

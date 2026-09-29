@@ -1,10 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
+import { defineRelations } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import {
 	customType,
 	integer,
+	PgDialect,
 	pgEnum,
+	pgSchema,
 	pgTable,
 	text,
 	uuid,
@@ -12,6 +15,27 @@ import {
 import { Client } from 'pg';
 
 import { better } from '../../src';
+import { compileUpdateMutations } from '../../src/shared/client/operations';
+
+test('quotes schema-qualified enum types in array addUnique casts', () => {
+	const schema = pgSchema('ArrayMutationSchema');
+	const status = schema.enum('CamelStatus', ['active']);
+	const table = schema.table('items', {
+		status: status('status').array(),
+	});
+	const mutation = compileUpdateMutations(
+		{
+			columns: { status: table.status },
+			dbName: 'items',
+		} as never,
+		'pg',
+		'update',
+		{ status: { addUnique: 'active' } },
+	);
+	const statement = new PgDialect().sqlToQuery(mutation.status as never);
+
+	expect(statement.sql).toContain('::"ArrayMutationSchema"."CamelStatus"[]');
+});
 
 const role = pgEnum('better_drizzle_array_role', ['admin', 'member']);
 const encodedText = customType<{ data: { value: string }; driverData: string }>(
@@ -32,12 +56,12 @@ const tokens = pgTable('better_drizzle_array_tokens', {
 	id: integer('id').primaryKey(),
 	values: encodedText('values').array().notNull(),
 });
-const schema = { tokens, users };
+const relations = defineRelations({ tokens, users });
 const DATABASE_URL = process.env.DATABASE_URL;
 
 describe.skipIf(!DATABASE_URL)('PostgreSQL array filters', () => {
 	let client: Client;
-	let db: ReturnType<typeof better<typeof schema>>;
+	let db: ReturnType<typeof better<typeof relations>>;
 
 	beforeAll(async () => {
 		client = new Client({ connectionString: DATABASE_URL });
@@ -66,7 +90,7 @@ describe.skipIf(!DATABASE_URL)('PostgreSQL array filters', () => {
 		await client.query(`insert into better_drizzle_array_tokens values
 			(1, array['x']),
 			(2, array['y'])`);
-		db = better(drizzle(client, { schema }), { schema });
+		db = better(drizzle({ client, relations }));
 	});
 
 	afterAll(async () => {
@@ -383,16 +407,20 @@ describe.skipIf(!DATABASE_URL)('PostgreSQL array filters', () => {
 
 	test('rejects empty array element predicates', async () => {
 		await expect(
-			db.users.findMany({ where: { scores: { some: {} } } } as never),
+			Promise.resolve(
+				db.users.findMany({ where: { scores: { some: {} } } } as never),
+			),
 		).rejects.toMatchObject({
 			code: 'OPERATION_ERROR',
 			message:
 				'Array some predicate must be a non-empty scalar filter object.',
 		});
 		await expect(
-			db.users.findMany({
-				where: { scores: { some: { equals: null } } },
-			} as never),
+			Promise.resolve(
+				db.users.findMany({
+					where: { scores: { some: { equals: null } } },
+				} as never),
+			),
 		).rejects.toMatchObject({
 			code: 'OPERATION_ERROR',
 			message:

@@ -150,11 +150,11 @@ describe('paginate - offset', () => {
 describe('cursor - cursor pagination', () => {
 	test('uses one statement for populated primary-key pages', async () => {
 		const statements: string[] = [];
-		const prepare = ctx.sqlite.prepare.bind(ctx.sqlite);
-		ctx.sqlite.prepare = ((query: string) => {
-			statements.push(query);
-			return prepare(query);
-		}) as typeof ctx.sqlite.prepare;
+		const query = ctx.sqlite.query.bind(ctx.sqlite);
+		ctx.sqlite.query = ((sql: string) => {
+			statements.push(sql);
+			return query(sql);
+		}) as typeof ctx.sqlite.query;
 
 		const forward = await ctx.better.users.cursor({
 			after: { id: 2 },
@@ -201,11 +201,11 @@ describe('cursor - cursor pagination', () => {
 		expect(descending.pagination.hasPrevious).toBe(true);
 
 		const statements: string[] = [];
-		const prepare = ctx.sqlite.prepare.bind(ctx.sqlite);
-		ctx.sqlite.prepare = ((query: string) => {
-			statements.push(query);
-			return prepare(query);
-		}) as typeof ctx.sqlite.prepare;
+		const query = ctx.sqlite.query.bind(ctx.sqlite);
+		ctx.sqlite.query = ((sql: string) => {
+			statements.push(sql);
+			return query(sql);
+		}) as typeof ctx.sqlite.query;
 		const empty = await ctx.better.users.cursor({
 			after: { id: 999 },
 			limit: 2,
@@ -344,12 +344,14 @@ describe('cursor - cursor pagination', () => {
 
 	test('cursor rejects before and after together', async () => {
 		await expect(
-			ctx.better.users.cursor({
-				before: { id: 4 },
-				after: { id: 2 },
-				limit: 2,
-				orderBy: [{ id: 'asc' }],
-			}),
+			Promise.resolve(
+				ctx.better.users.cursor({
+					before: { id: 4 },
+					after: { id: 2 },
+					limit: 2,
+					orderBy: [{ id: 'asc' }],
+				}),
+			),
 		).rejects.toBeInstanceOf(BetterDrizzleError);
 	});
 });

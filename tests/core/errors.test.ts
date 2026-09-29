@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import { DrizzleQueryError } from 'drizzle-orm';
+
 import {
 	BetterDrizzleError,
 	BetterDrizzleErrorCode,
@@ -207,6 +209,16 @@ describe('getDatabaseErrorInfo', () => {
 		expect(info.driver).toBe('mysql');
 	});
 
+	test('detects MySQL when its SQLSTATE is numeric', () => {
+		const info = getDatabaseErrorInfo({
+			errno: 1062,
+			sqlState: '23000',
+			message: 'Duplicate entry',
+		});
+		expect(info.driver).toBe('mysql');
+		expect(info.code).toBe('23000');
+	});
+
 	test('detects unknown driver', () => {
 		const info = getDatabaseErrorInfo({
 			message: 'Something went wrong',
@@ -262,6 +274,29 @@ describe('getDatabaseErrorInfo', () => {
 			sqlMessage: 'MySQL specific message',
 		});
 		expect(info.message).toBe('MySQL specific message');
+	});
+});
+
+describe('DrizzleQueryError', () => {
+	test('reads the driver error kept as cause', () => {
+		const error = new DrizzleQueryError(
+			'insert into "users" ("email") values ($1)',
+			['a@example.com'],
+			Object.assign(
+				new Error(
+					'duplicate key value violates unique constraint "users_email_key"',
+				),
+				{ code: '23505', constraint: 'users_email_key' },
+			),
+		);
+
+		expect(getDatabaseErrorInfo(error)).toMatchObject({
+			code: '23505',
+			constraint: 'users_email_key',
+			driver: 'pg',
+		});
+		expect(isUniqueViolation(error, 'users_email_key')).toBe(true);
+		expect(BetterDrizzleError.from(error).sqlState).toBe('23505');
 	});
 });
 

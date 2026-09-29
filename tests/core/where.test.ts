@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
+import { defineRelations } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { integer, sqliteTable } from 'drizzle-orm/sqlite-core';
 
@@ -11,7 +12,7 @@ const nullOrderRecords = sqliteTable('null_order_records', {
 	id: integer('id').primaryKey(),
 	lastSeenAt: integer('last_seen_at'),
 });
-const nullOrderSchema = { nullOrderRecords };
+const nullOrderRelations = defineRelations({ nullOrderRecords });
 
 let ctx: TestContext;
 
@@ -328,9 +329,9 @@ describe('where with orderBy', () => {
 			sqlite.run(
 				'insert into null_order_records (id, last_seen_at) values (1, null), (2, 100), (3, null), (4, 300), (5, 200)',
 			);
-			const db = better(drizzle(sqlite, { schema: nullOrderSchema }), {
-				schema: nullOrderSchema,
-			});
+			const db = better(
+				drizzle({ client: sqlite, relations: nullOrderRelations }),
+			);
 
 			const nullsLast = await db.nullOrderRecords.findMany({
 				orderBy: { lastSeenAt: { direction: 'asc', nulls: 'last' } },
@@ -381,9 +382,11 @@ describe('where with orderBy', () => {
 describe('JSONB where', () => {
 	test('rejects JSONB path filters outside PostgreSQL', async () => {
 		await expect(
-			ctx.better.users.findMany({
-				where: { name: { json: { 'profile.age': { gte: 18 } } } },
-			} as never),
+			Promise.resolve(
+				ctx.better.users.findMany({
+					where: { name: { json: { 'profile.age': { gte: 18 } } } },
+				} as never),
+			),
 		).rejects.toMatchObject({
 			code: 'JSONB_QUERY_UNSUPPORTED',
 			dialect: 'sqlite',

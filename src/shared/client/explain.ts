@@ -31,8 +31,10 @@ import {
 import { getDeferredRelationPlans } from './relations';
 
 type ExplainableQuery = {
+	condition?: string;
 	key: string;
-	query: SQL;
+	query?: SQL;
+	reason?: string;
 };
 
 type ExplainDriver = ExplainResult['driver'];
@@ -260,7 +262,7 @@ const explainStatement = async <
 	Plugins extends readonly AnyPlugin[],
 >(
 	context: RuntimeContext<Schema, Meta, Plugins>,
-	statement: ExplainableQuery,
+	statement: ExplainableQuery & { query: SQL },
 	options: ExplainOptions,
 ): Promise<ExplainStatement> => {
 	const query = withExplainComment(context, statement.query, options.comment);
@@ -273,6 +275,7 @@ const explainStatement = async <
 
 	return {
 		appliedOptions: getAppliedExplainOptions(context.dialect, options),
+		...(statement.condition ? { condition: statement.condition } : {}),
 		ignoredOptions: getUnsupportedExplainOptionKeys(
 			context.dialect,
 			options,
@@ -293,7 +296,7 @@ const buildQueryList = async <
 	tableName: BetterTableKey<Schema>,
 	operation: ExplainOperation,
 	args: unknown,
-) => {
+): Promise<ExplainableQuery[]> => {
 	switch (operation) {
 		case 'findMany':
 			return [
@@ -455,26 +458,27 @@ const buildQueryList = async <
 					>,
 					'cursor',
 				);
-			const statements = [
+			const statements: ExplainableQuery[] = [
 				{
 					key: 'data',
 					query: asExplainableSql(dataQuery),
 				},
-			] satisfies ExplainableQuery[];
-			const probes = await getCursorExplainProbes(
+			];
+			const probes = getCursorExplainProbes(
 				context,
 				tableName,
 				cursorArgs,
 				built,
-				dataQuery,
-				limit,
 				Boolean(fastQuery),
 			);
 
 			for (const probe of probes)
 				statements.push({
+					...(probe.condition ? { condition: probe.condition } : {}),
 					key: probe.key,
-					query: asExplainableSql(probe.query),
+					...(probe.query
+						? { query: asExplainableSql(probe.query) }
+						: { reason: probe.reason }),
 				});
 
 			return statements;
@@ -552,13 +556,30 @@ export const explainOperation = async <
 	const queries = await buildQueryList(context, tableName, operation, args);
 
 	return {
+		...(queries.some((query) => query.reason)
+			? {
+					deferredProbes: queries
+						.filter((query) => query.reason)
+						.map((query) => ({
+							key: query.key,
+							reason: query.reason!,
+						})),
+				}
+			: {}),
 		deferredRelations: getDeferredRelationPlans(context, tableName, args),
 		driver: context.dialect,
 		operation,
 		statements: await Promise.all(
-			queries.map((statement) =>
-				explainStatement(context, statement, options),
-			),
+			queries
+				.filter(
+					(
+						statement,
+					): statement is ExplainableQuery & { query: SQL } =>
+						Boolean(statement.query),
+				)
+				.map((statement) =>
+					explainStatement(context, statement, options),
+				),
 		),
 	};
 };

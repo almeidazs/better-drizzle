@@ -12,7 +12,7 @@ import {
 	type SQL,
 	sql,
 } from 'drizzle-orm';
-import { One } from 'drizzle-orm/relations';
+import { getTableConfig as getMysqlTableConfig } from 'drizzle-orm/mysql-core';
 import { isSQLWrapper } from 'drizzle-orm/sql';
 
 import type {
@@ -40,15 +40,20 @@ import type {
 	WhereArg,
 	WhereCompilerContext,
 } from '../../types';
-import { BetterDrizzleError, BetterDrizzleErrorCode } from '../errors';
+import {
+	BetterDrizzleError,
+	BetterDrizzleErrorCode,
+	getDatabaseErrorInfo,
+} from '../errors';
 import {
 	buildCursorPaginationQuery,
 	buildOffsetPaginationQuery,
-	buildQueryConfig,
 	compileCursorWhere,
 	compileOrderBy,
 	compileWhereInput,
 	countRows,
+	getPgArrayDimensions,
+	getPgArrayElementColumn,
 	orderDirection,
 	orderNulls,
 } from '../query';
@@ -85,8 +90,7 @@ const LOCK_STRENGTH_MAP = {
 } as const satisfies Record<string, LockStrength>;
 
 type PgArrayColumn = AnyColumn & {
-	baseColumn: AnyColumn;
-	columnType?: string;
+	dimensions: number;
 	getSQLType(): string;
 };
 
@@ -125,7 +129,7 @@ export const getCompiledUpdateSet = (input: unknown) =>
 		: undefined;
 
 const isPgArrayColumn = (column: AnyColumn): column is PgArrayColumn =>
-	(column as { columnType?: string }).columnType === 'PgArray';
+	getPgArrayDimensions(column) > 0;
 
 const arrayMutationError = (
 	runtime: TableRuntime,
@@ -142,18 +146,6 @@ const arrayMutationError = (
 		operation,
 		table: runtime.dbName,
 	});
-
-const getPgArrayDepth = (column: PgArrayColumn) => {
-	let depth = 1;
-	let current = column.baseColumn;
-
-	while (isPgArrayColumn(current)) {
-		depth += 1;
-		current = current.baseColumn;
-	}
-
-	return depth;
-};
 
 const hasNullArrayElement = (value: unknown): boolean => {
 	if (value === null || value === undefined) return true;
@@ -172,7 +164,7 @@ const getArrayMutationValues = (
 	name: ArrayMutationName,
 	value: unknown,
 ) => {
-	const elementDepth = getPgArrayDepth(column) - 1;
+	const elementDepth = column.dimensions - 1;
 	let current = value;
 
 	for (let index = 0; index < elementDepth; index += 1) {
@@ -280,7 +272,7 @@ const compileArrayMutation = (
 		});
 
 	const input = value[name];
-	const baseColumn = column.baseColumn;
+	const baseColumn = getPgArrayElementColumn(column, column.dimensions - 1);
 	if (name === 'replace') {
 		let expression = sql`${column}`;
 		for (const pair of getArrayMutationPairs(
@@ -319,7 +311,17 @@ const compileArrayMutation = (
 		const input = sql.raw('array_mutation_input');
 		const missing = sql.raw('array_mutation_missing');
 		const empty = sql`${column}[0:0]`;
-		const parameter = sql`${sql.param(values, column)}::${sql.raw(column.getSQLType())}`;
+		const enumType = (
+			column as PgArrayColumn & {
+				enum?: { enumName: string; schema?: string };
+			}
+		).enum;
+		const arrayType = enumType
+			? sql`${enumType.schema ? sql`${sql.identifier(enumType.schema)}.` : sql.empty()}${sql.identifier(enumType.enumName)}${sql.raw('[]'.repeat(column.dimensions))}`
+			: sql.raw(
+					`${column.getSQLType()}${'[]'.repeat(column.dimensions)}`,
+				);
+		const parameter = sql`${sql.param(values, column)}::${arrayType}`;
 		const additions = sql`(select array_agg(${items} order by ${positions}) from (select ${items}, min(${positions}) as ${positions} from unnest(${parameter}) with ordinality as ${input}(${items}, ${positions}) where not (${column} @> array[${items}]) group by ${items}) as ${missing})`;
 
 		return sql`case when ${column} is null then ${column} else array_cat(${column}, coalesce(${additions}, ${empty})) end`;
@@ -711,7 +713,8 @@ export const compileUpdateMutations = (
 						operation,
 						value,
 					)
-				: column.dataType === 'number' || column.dataType === 'boolean'
+				: column.dataType.startsWith('number') ||
+					  column.dataType === 'boolean'
 					? compileScalarMutation(
 							runtime,
 							key,
@@ -1110,7 +1113,8 @@ const buildUpdateEachSet = <Schema extends AnySchema, Meta>(
 				!isSQLWrapper(nextValue) &&
 				!isPgArrayColumn(column) &&
 				!isPgJsonbColumn(column) &&
-				(column.dataType === 'number' || column.dataType === 'boolean')
+				(column.dataType.startsWith('number') ||
+					column.dataType === 'boolean')
 					? compileScalarMutation(
 							runtime,
 							key,
@@ -1171,14 +1175,15 @@ const buildUpdateEachSet = <Schema extends AnySchema, Meta>(
 };
 
 const getAffectedCount = (result: unknown) => {
-	if (typeof result !== 'object' || result === null) return;
+	const value = Array.isArray(result) ? result[0] : result;
+	if (typeof value !== 'object' || value === null) return;
 
 	for (const key of ['affectedRows', 'changes', 'rowCount']) {
-		const value = (result as Record<string, unknown>)[key];
-		if (typeof value === 'number' && Number.isFinite(value)) return value;
+		const count = (value as Record<string, unknown>)[key];
+		if (typeof count === 'number' && Number.isFinite(count)) return count;
 	}
 
-	const rowsAffected = (result as Record<string, unknown>).rowsAffected;
+	const rowsAffected = (value as Record<string, unknown>).rowsAffected;
 	if (typeof rowsAffected === 'number' && Number.isFinite(rowsAffected))
 		return rowsAffected;
 	if (Array.isArray(rowsAffected)) {
@@ -1273,6 +1278,17 @@ const canUsePrimaryKeyConflict = (
 		if (where[field] !== create[field]) return false;
 
 	return true;
+};
+
+const hasOtherMysqlUniqueKey = (runtime: TableRuntime) => {
+	const config = getMysqlTableConfig(runtime.table as never);
+	for (const column of config.columns)
+		if (column.isUnique && !runtime.primaryKey.includes(column))
+			return true;
+	return (
+		config.uniqueConstraints.length > 0 ||
+		config.indexes.some((index) => index.config.unique)
+	);
 };
 
 const getPrimaryKeyTarget = (runtime: TableRuntime) =>
@@ -1573,18 +1589,10 @@ const normalizeLockError = (
 ) => {
 	if (error instanceof BetterDrizzleError) return error;
 
-	const fields =
-		typeof error === 'object' && error !== null
-			? (error as {
-					code?: string | number;
-					errno?: string | number;
-					message?: string;
-					sqlState?: string;
-				})
-			: undefined;
-	const code = `${fields?.code ?? fields?.sqlState ?? ''}`.toLowerCase();
-	const errno = Number(fields?.errno);
-	const message = `${fields?.message ?? ''}`.toLowerCase();
+	const info = getDatabaseErrorInfo(error);
+	const code = `${info.code ?? ''}`.toLowerCase();
+	const errno = Number(info.errno);
+	const message = info.message.toLowerCase();
 
 	if (
 		code === '55p03' ||
@@ -1653,7 +1661,7 @@ const getJoinedRelation = <Schema extends AnySchema, Meta>(
 	if (!relationName || include[relationName] !== true) return;
 
 	const relationState = runtime.relations[relationName];
-	if (!relationState || !(relationState.relation instanceof One)) return;
+	if (!relationState || relationState.kind !== 'one') return;
 
 	return {
 		relationName,
@@ -1783,7 +1791,8 @@ const buildJoinedOneRelationQuery = <Schema extends AnySchema, Meta>(
 /**
  * Finds multiple records matching the given query arguments. Uses a fast
  * direct-read path when no relation loading is needed, a joined single-relation
- * path for single `One` includes, and falls back to the relational query API.
+ * path for single one-relation includes, and the batched relation loader
+ * otherwise.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Meta   - Custom metadata type.
@@ -1863,9 +1872,7 @@ export const buildFindManyQuery = <Schema extends AnySchema, Meta>(
 			table: runtime.dbName,
 		});
 
-	return context.db.query[tableName].findMany(
-		buildQueryConfig(context, tableName, args),
-	);
+	return buildDirectReadQuery(context, tableName, args);
 };
 
 /**
@@ -1955,18 +1962,10 @@ export const buildFindFirstQuery = <Schema extends AnySchema, Meta>(
 			table: runtime.dbName,
 		});
 
-	if (context.db.query[tableName].findFirst) {
-		return context.db.query[tableName].findFirst(
-			buildQueryConfig(context, tableName, args),
-		);
-	}
-
-	return context.db.query[tableName].findMany(
-		buildQueryConfig(context, tableName, {
-			...args,
-			take: args?.take ?? 1,
-		}),
-	);
+	return buildDirectReadQuery(context, tableName, {
+		...args,
+		take: args?.take ?? 1,
+	});
 };
 
 /**
@@ -2623,7 +2622,8 @@ export const upsertRecord = async <Schema extends AnySchema, Meta>(
 	if (
 		(typeof insertBuilder.onConflictDoUpdate === 'function' ||
 			typeof duplicateKeyUpdate === 'function') &&
-		canUsePrimaryKeyConflict(runtime, args.where, createData)
+		canUsePrimaryKeyConflict(runtime, args.where, createData) &&
+		(context.dialect !== 'mysql' || !hasOtherMysqlUniqueKey(runtime))
 	) {
 		const target = getPrimaryKeyTarget(runtime);
 		const conflictTarget = target.length === 1 ? target[0] : target;
@@ -2652,7 +2652,7 @@ export const upsertRecord = async <Schema extends AnySchema, Meta>(
 						duplicateKeyUpdate as (config: {
 							set: Record<string, unknown>;
 						}) => typeof insertBuilder
-					)({ set });
+					).call(insertBuilder, { set });
 
 		if (typeof builder.returning === 'function') {
 			const rows = await builder.returning();
@@ -2930,64 +2930,41 @@ const projectCursorProbe = <Schema extends AnySchema, Meta>(
 	} as QueryArgs<Schema, BetterTableKey<Schema>, Meta>;
 };
 
-export const getCursorExplainProbes = async <Schema extends AnySchema, Meta>(
+export const getCursorExplainProbes = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
 	args: CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
 	built: {
 		direction: 'before' | 'forward';
 	},
-	dataQuery: Promise<unknown[]>,
-	limit: number,
 	fast: boolean,
 ) => {
-	const rows = (await dataQuery) as Record<string, unknown>[];
-	if (fast && rows.length) return [];
-	const hasOverflow = rows.length > limit;
-	const slice = hasOverflow ? rows.slice(0, limit) : rows;
-	const data = built.direction === 'before' ? [...slice].reverse() : slice;
-	const runtime = getTableRuntime(context, tableName as string);
-	const cursorField = getCursorField(context, tableName, args);
-	const firstRow = data[0] as Record<string, unknown> | undefined;
-	const lastRow = data[data.length - 1] as
-		| Record<string, unknown>
-		| undefined;
-	const previousToken = (getCursorToken(
-		firstRow,
-		cursorField,
-		runtime.dbName,
-		'cursor',
-	) ?? undefined) as CursorArgs<
-		Schema,
-		BetterTableKey<Schema>,
-		Meta
-	>['before'];
-	const nextToken = (getCursorToken(
-		lastRow,
-		cursorField,
-		runtime.dbName,
-		'cursor',
-	) ?? undefined) as CursorArgs<
-		Schema,
-		BetterTableKey<Schema>,
-		Meta
-	>['after'];
 	const probes: Array<{
+		condition?: string;
 		key: string;
-		query: Promise<Record<string, unknown>[]>;
+		query?: Promise<Record<string, unknown>[]>;
+		reason?: string;
 	}> = [];
 
 	if (built.direction !== 'before' && args.after) {
+		if (!fast) {
+			probes.push({
+				key: 'probe:hasPrevious',
+				reason: 'The probe cursor comes from the first returned row.',
+			});
+			return probes;
+		}
 		const query = buildCursorPaginationQuery(
 			{
 				...args,
 				after: undefined,
-				before: previousToken,
+				before: undefined,
 				limit: 1,
 			},
 			1,
 		).query as QueryArgs<Schema, BetterTableKey<Schema>, Meta>;
 		probes.push({
+			condition: 'when the data page is empty',
 			key: 'probe:hasPrevious',
 			query: buildFindManyQuery(
 				context,
@@ -2999,16 +2976,24 @@ export const getCursorExplainProbes = async <Schema extends AnySchema, Meta>(
 	}
 
 	if (built.direction === 'before' && args.before) {
+		if (!fast) {
+			probes.push({
+				key: 'probe:hasNext',
+				reason: 'The probe cursor comes from the last returned row.',
+			});
+			return probes;
+		}
 		const query = buildCursorPaginationQuery(
 			{
 				...args,
 				before: undefined,
-				after: nextToken,
+				after: undefined,
 				limit: 1,
 			},
 			1,
 		).query as QueryArgs<Schema, BetterTableKey<Schema>, Meta>;
 		probes.push({
+			condition: 'when the data page is empty',
 			key: 'probe:hasNext',
 			query: buildFindManyQuery(
 				context,

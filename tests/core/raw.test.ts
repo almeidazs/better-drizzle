@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 
-import { sql } from 'drizzle-orm';
+import { defineRelations, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
@@ -21,9 +21,10 @@ const users = sqliteTable('raw_users', {
 });
 
 const schema = { users };
+const relations = defineRelations(schema);
 
 const createContext = (
-	options?: Parameters<typeof better<typeof schema>>[1],
+	options?: Parameters<typeof better<typeof relations>>[1],
 ) => {
 	const sqlite = new Database(':memory:');
 	sqlite.exec(`
@@ -37,9 +38,8 @@ const createContext = (
 			(2, 'bob@example.com', 'inactive');
 	`);
 
-	const raw = drizzle(sqlite, { schema });
+	const raw = drizzle({ client: sqlite, relations });
 	const client = better(raw, {
-		schema,
 		...options,
 	});
 
@@ -61,7 +61,6 @@ describe('raw sql', () => {
 					seen.push(raw.meta as Record<string, unknown> | undefined);
 				},
 			},
-			schema,
 		});
 
 		const scoped = ctx.client.$withContext({
@@ -138,7 +137,6 @@ describe('raw sql', () => {
 			raw: {
 				allowUnsafe: true,
 			},
-			schema,
 		});
 
 		const rows = await ctx.client.$rawUnsafe<{ id: number }>(
@@ -155,7 +153,6 @@ describe('raw sql', () => {
 			raw: {
 				enabled: false,
 			},
-			schema,
 		});
 
 		await expect(
@@ -172,7 +169,6 @@ describe('raw sql', () => {
 			raw: {
 				requireComment: true,
 			},
-			schema,
 		});
 
 		await expect(
@@ -217,7 +213,6 @@ describe('raw sql', () => {
 			raw: {
 				allowUnsafe: true,
 			},
-			schema,
 		});
 
 		await expect(
@@ -245,7 +240,6 @@ describe('raw sql', () => {
 					});
 				},
 			},
-			schema,
 		});
 
 		await ctx.client.$raw(sql`select id from raw_users`, {
@@ -344,7 +338,6 @@ describe('raw sql', () => {
 			raw: {
 				unsupportedOptions: 'throw',
 			},
-			schema,
 		});
 
 		await expect(
@@ -409,7 +402,6 @@ describe('raw sql', () => {
 				},
 			},
 			plugins: [plugin],
-			schema,
 		});
 
 		const rawRows = await ctx.client.$raw<{ id: number }>`

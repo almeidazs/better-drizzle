@@ -76,7 +76,7 @@ describe.skipIf(!MYSQL_URL)('relation where - Many (mysql)', () => {
 		expect(names(result)).toEqual(['Alice', 'Bob', 'Diana']);
 	});
 
-	test('upsert applies an atomic conflict update natively', async () => {
+	test('upsert applies an atomic conflict update', async () => {
 		const result = await ctx.better.users.upsert({
 			create: {
 				active: true,
@@ -90,5 +90,108 @@ describe.skipIf(!MYSQL_URL)('relation where - Many (mysql)', () => {
 		});
 
 		expect(result).toMatchObject({ age: 28, id: 1 });
+	});
+
+	test('upsert inserts when there is no conflict', async () => {
+		const result = await ctx.better.users.upsert({
+			create: {
+				active: true,
+				age: 40,
+				email: 'new-user@example.com',
+				id: 10,
+				name: 'New user',
+			},
+			update: { age: { increment: 1 } },
+			where: { id: 10 },
+		});
+
+		expect(result).toMatchObject({ age: 40, id: 10 });
+	});
+
+	test('upsert uses the native MySQL builder on a primary-key-only table', async () => {
+		const result = await ctx.better.comments.upsert({
+			create: {
+				authorId: 2,
+				body: 'Ignored',
+				id: 1,
+				likes: 5,
+				postId: 1,
+			},
+			update: { likes: { increment: 1 } },
+			where: { id: 1 },
+		});
+
+		expect(result).toMatchObject({ id: 1, likes: 6 });
+	});
+
+	test('createMany counts only MySQL rows inserted with skipDuplicates', async () => {
+		const result = await ctx.better.users.createMany({
+			data: [
+				{
+					active: true,
+					age: 20,
+					email: 'batch-20@example.com',
+					id: 20,
+					name: 'Batch 20',
+				},
+				{
+					active: true,
+					age: 21,
+					email: 'alice@example.com',
+					id: 21,
+					name: 'Duplicate email',
+				},
+			],
+			skipDuplicates: true,
+		});
+
+		expect(result.count).toBe(1);
+		expect(
+			await ctx.better.users.findUnique({ where: { id: 20 } }),
+		).toMatchObject({ id: 20 });
+		expect(
+			await ctx.better.users.findUnique({ where: { id: 21 } }),
+		).toBeNull();
+	});
+
+	test('upsert by primary key cannot update a row with a different unique key', async () => {
+		const alice = await ctx.better.users.findUnique({ where: { id: 1 } });
+		await expect(
+			ctx.better.users.upsert({
+				create: {
+					active: true,
+					age: 30,
+					email: 'alice@example.com',
+					id: 30,
+					name: 'Wrong conflict',
+				},
+				update: { age: { increment: 1 } },
+				where: { id: 30 },
+			}),
+		).rejects.toThrow();
+		expect(await ctx.better.users.findUnique({ where: { id: 1 } })).toEqual(
+			alice,
+		);
+	});
+
+	test('upsert respects a composite unique constraint', async () => {
+		const owner = await ctx.better.memberships.findUnique({
+			where: { id: 1 },
+		});
+		await expect(
+			ctx.better.memberships.upsert({
+				create: {
+					id: 30,
+					label: 'owner',
+					note: 'Wrong conflict',
+					userId: 1,
+				},
+				update: { note: 'Wrong update' },
+				where: { id: 30 },
+			}),
+		).rejects.toThrow();
+		expect(
+			await ctx.better.memberships.findUnique({ where: { id: 1 } }),
+		).toEqual(owner);
 	});
 });

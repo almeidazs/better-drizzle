@@ -367,19 +367,66 @@ export const attachThrow = <
 };
 
 /**
- * Wraps an operation result with an independent `.explain()` method.
- *
- * The returned value remains a native `Promise`, so existing await / test
- * helper behavior (`expect(...).resolves`, `expect(...).rejects`) keeps
- * working without special casing.
+ * Lazy read result, modeled on Drizzle's own `QueryPromise`: the operation
+ * starts on the first `then` / `catch` / `finally` (i.e. when awaited), never
+ * on creation, so `.explain()` alone does not execute the read or its hooks.
+ * `Promise.prototype` is in the prototype chain, so `instanceof Promise`
+ * holds; it is not a native promise, because a pending native promise that
+ * starts lazily would hang consumers that read promise state directly.
+ */
+class ExplainableQuery<T> {
+	#operation: () => Promise<T>;
+	#promise: Promise<T> | undefined;
+	explain: (options?: ExplainOptions) => Promise<ExplainResult>;
+
+	constructor(
+		operation: () => Promise<T>,
+		explain: (options?: ExplainOptions) => Promise<ExplainResult>,
+	) {
+		this.#operation = operation;
+		this.explain = explain;
+	}
+
+	#run() {
+		if (!this.#promise)
+			this.#promise = Promise.resolve().then(this.#operation);
+		return this.#promise;
+	}
+
+	then<Resolved = T, Rejected = never>(
+		onFulfilled?: ((value: T) => Resolved | PromiseLike<Resolved>) | null,
+		onRejected?:
+			| ((reason: unknown) => Rejected | PromiseLike<Rejected>)
+			| null,
+	) {
+		return this.#run().then(onFulfilled, onRejected);
+	}
+
+	catch<Rejected = never>(
+		onRejected?:
+			| ((reason: unknown) => Rejected | PromiseLike<Rejected>)
+			| null,
+	) {
+		return this.#run().catch(onRejected);
+	}
+
+	finally(onFinally?: (() => void) | null) {
+		return this.#run().finally(onFinally);
+	}
+
+	get [Symbol.toStringTag]() {
+		return 'Promise';
+	}
+}
+
+Object.setPrototypeOf(ExplainableQuery.prototype, Promise.prototype);
+
+/**
+ * Wraps a read operation in a lazy thenable with an independent `.explain()`
+ * method. The read runs only when the result is awaited.
  */
 export const attachExplain = <T>(
 	operation: () => Promise<T>,
 	explain: (options?: ExplainOptions) => Promise<ExplainResult>,
-) => {
-	const promise = Promise.resolve().then(operation) as ExplainableResult<T>;
-
-	promise.explain = explain;
-
-	return promise;
-};
+) =>
+	new ExplainableQuery(operation, explain) as unknown as ExplainableResult<T>;

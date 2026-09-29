@@ -1,11 +1,11 @@
 import { Database } from 'bun:sqlite';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
-import { sql } from 'drizzle-orm';
+import { defineRelations, sql } from 'drizzle-orm';
 import { drizzle as drizzleSqlite } from 'drizzle-orm/bun-sqlite';
 import { drizzle as drizzleMysql } from 'drizzle-orm/mysql2';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { integer, jsonb, pgTable } from 'drizzle-orm/pg-core';
+import { integer, json, jsonb, pgTable } from 'drizzle-orm/pg-core';
 import { Client } from 'pg';
 
 import { BetterDrizzleErrorCode, better } from '../../src';
@@ -26,12 +26,12 @@ const events = pgTable('better_drizzle_jsonb_test_events', {
 	metadata: jsonb('metadata').$type<Metadata>().notNull(),
 	nullableMetadata: jsonb('nullable_metadata').$type<Metadata | null>(),
 });
-const schema = { events };
+const relations = defineRelations({ events });
 const DATABASE_URL = process.env.DATABASE_URL;
 
 describe.skipIf(!DATABASE_URL)('JSONB where (PostgreSQL)', () => {
 	let client: Client;
-	let db: ReturnType<typeof better<typeof schema>>;
+	let db: ReturnType<typeof better<typeof relations>>;
 
 	beforeAll(async () => {
 		client = new Client({ connectionString: DATABASE_URL });
@@ -71,7 +71,7 @@ describe.skipIf(!DATABASE_URL)('JSONB where (PostgreSQL)', () => {
 				placeholders.join(', '),
 			values,
 		);
-		db = better(drizzle(client, { schema }), { schema });
+		db = better(drizzle({ client, relations }));
 	});
 
 	afterAll(async () => {
@@ -169,7 +169,7 @@ describe.skipIf(!DATABASE_URL)('JSONB where (PostgreSQL)', () => {
 		const legacyRows = await db.events.findMany({
 			where: { metadata: { json: { 'profile.age': { gte: 60 } } } },
 		});
-		const rawRows = await drizzle(client, { schema })
+		const rawRows = await drizzle({ client, relations })
 			.select()
 			.from(events)
 			.where(
@@ -445,7 +445,6 @@ describe.skipIf(!DATABASE_URL)('JSONB where (PostgreSQL)', () => {
 });
 
 describe('JSONB path mutation dialect checks', () => {
-	const unsupportedSchema = { events };
 	const unsupportedMutation = {
 		where: { id: 1 },
 		data: { metadata: { 'profile.age': 33 } },
@@ -453,9 +452,7 @@ describe('JSONB path mutation dialect checks', () => {
 
 	test('rejects JSONB path mutations on SQLite with the explicit feature error', async () => {
 		const sqlite = new Database(':memory:');
-		const client = better(drizzleSqlite(sqlite), {
-			schema: unsupportedSchema,
-		});
+		const client = better(drizzleSqlite({ client: sqlite, relations }));
 
 		await expect(
 			(
@@ -471,11 +468,7 @@ describe('JSONB path mutation dialect checks', () => {
 	});
 
 	test('rejects JSONB path mutations on MySQL with the explicit feature error', async () => {
-		const raw = drizzleMysql({} as never, {
-			mode: 'default',
-			schema: unsupportedSchema,
-		});
-		const client = better(raw, { schema: unsupportedSchema });
+		const client = better(drizzleMysql.mock({ relations }));
 
 		await expect(
 			(
@@ -486,6 +479,30 @@ describe('JSONB path mutation dialect checks', () => {
 		).rejects.toMatchObject({
 			code: BetterDrizzleErrorCode.JsonbMutationUnsupported,
 			message: 'JSONB path mutations are only supported by PostgreSQL.',
+		});
+	});
+});
+
+describe('JSON path filters on json columns', () => {
+	test('rejects dotted paths on a json column instead of comparing documents', async () => {
+		const documents = pgTable('better_drizzle_json_test_documents', {
+			id: integer('id').primaryKey(),
+			payload: json('payload').$type<Metadata>().notNull(),
+		});
+		const client = better(
+			drizzle.mock({ relations: defineRelations({ documents }) }),
+		);
+
+		await expect(
+			Promise.resolve(
+				client.documents.findMany({
+					where: { payload: { 'profile.age': { gte: 18 } } },
+				}),
+			),
+		).rejects.toMatchObject({
+			code: BetterDrizzleErrorCode.JsonbQueryUnsupported,
+			message:
+				'JSON path filters require a jsonb column; json columns only support whole-document filters.',
 		});
 	});
 });

@@ -1,5 +1,11 @@
-import { relations } from 'drizzle-orm';
-import { boolean, int, mysqlTable, varchar } from 'drizzle-orm/mysql-core';
+import { defineRelations } from 'drizzle-orm';
+import {
+	boolean,
+	int,
+	mysqlTable,
+	unique,
+	varchar,
+} from 'drizzle-orm/mysql-core';
 import { drizzle } from 'drizzle-orm/mysql2';
 import mysql from 'mysql2/promise';
 
@@ -43,48 +49,40 @@ const comments = mysqlTable('test_comments', {
 	likes: int('likes').notNull(),
 });
 
-const memberships = mysqlTable('test_memberships', {
-	id: int('id').primaryKey(),
-	userId: int('user_id')
-		.notNull()
-		.references(() => users.id),
-	label: varchar('label', { length: 255 }).notNull(),
-	note: varchar('note', { length: 255 }).notNull(),
-});
-
-const usersRelations = relations(users, ({ many }) => ({
-	posts: many(posts),
-	comments: many(comments),
-}));
-
-const postsRelations = relations(posts, ({ many, one }) => ({
-	author: one(users, {
-		fields: [posts.userId],
-		references: [users.id],
-	}),
-	comments: many(comments),
-}));
-
-const commentsRelations = relations(comments, ({ one }) => ({
-	author: one(users, {
-		fields: [comments.authorId],
-		references: [users.id],
-	}),
-	post: one(posts, {
-		fields: [comments.postId],
-		references: [posts.id],
-	}),
-}));
+const memberships = mysqlTable(
+	'test_memberships',
+	{
+		id: int('id').primaryKey(),
+		userId: int('user_id')
+			.notNull()
+			.references(() => users.id),
+		label: varchar('label', { length: 255 }).notNull(),
+		note: varchar('note', { length: 255 }).notNull(),
+	},
+	(t) => [unique().on(t.userId, t.label)],
+);
 
 const schema = {
 	comments,
-	commentsRelations,
 	memberships,
 	posts,
-	postsRelations,
 	users,
-	usersRelations,
 };
+
+const relations = defineRelations(schema, (r) => ({
+	comments: {
+		author: r.one.users({ from: r.comments.authorId, to: r.users.id }),
+		post: r.one.posts({ from: r.comments.postId, to: r.posts.id }),
+	},
+	posts: {
+		author: r.one.users({ from: r.posts.userId, to: r.users.id }),
+		comments: r.many.comments(),
+	},
+	users: {
+		comments: r.many.comments(),
+		posts: r.many.posts(),
+	},
+}));
 
 // InnoDB rejects DROP/CREATE against a foreign key, so both lists run with
 // FK checks off, in no particular order.
@@ -205,7 +203,7 @@ const SEED_MEMBERSHIPS = [
 	{ id: 2, userId: 2, label: 'editor', note: 'Initial editor' },
 ];
 
-export type TestSchema = typeof schema;
+export type TestSchema = typeof relations;
 
 const seedSql = async (conn: mysql.Connection) => {
 	for (const u of SEED_USERS)
@@ -239,12 +237,13 @@ export const createMysqlTestContext = async (url: string) => {
 	await conn.query('SET FOREIGN_KEY_CHECKS = 1');
 	await seedSql(conn);
 
-	const raw = drizzle(conn, { schema, mode: 'default' });
-	const client = better(raw, { schema });
+	const raw = drizzle({ client: conn, relations });
+	const client = better(raw);
 
 	return {
 		better: client,
 		raw,
+		relations,
 		schema,
 		seed: {
 			comments: SEED_COMMENTS,
