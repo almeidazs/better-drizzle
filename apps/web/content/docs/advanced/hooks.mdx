@@ -17,7 +17,6 @@ You register hooks when creating the client:
 
 ```ts
 const client = better(db, {
-	schema,
 	hooks: {
 		beforeCreate(ctx) {
 			console.log('beforeCreate', ctx.action, ctx.table);
@@ -79,7 +78,7 @@ Hook return values are ignored. A hook that throws fails the call (a throwing be
 		repository: { type: 'Delegate', description: 'The delegate for this table.' },
 		tableInstance: { type: 'Table', description: 'The Drizzle table object.' },
 		tableConfig: { type: 'object', description: 'Relational config for the table.' },
-		schema: { type: 'Schema', description: 'The full Drizzle schema.' },
+		schema: { type: 'Schema', description: 'The relations config from defineRelations(...) that the Drizzle instance was created with.' },
 		db: { type: 'unknown', description: 'The bound Drizzle instance (the transaction inside `transaction(...)`).' },
 		options: { type: 'BetterClientOptions', description: 'Options passed to `better(...)`.' },
 		isInTransaction: { type: 'boolean', description: 'Whether the call runs inside a transaction.' },
@@ -134,7 +133,6 @@ await client.users.findMany({
 
 ```ts
 const client = better(db, {
-	schema,
 	hooks: {
 		beforeQuery(ctx) {
 			console.log(ctx.meta?.requestId);
@@ -147,7 +145,6 @@ const client = better(db, {
 
 ```ts
 const client = better(db, {
-	schema,
 	hooks: {
 		beforeTransaction(ctx) {
 			console.log('tx start', ctx.name, ctx.depth);
@@ -169,7 +166,6 @@ const client = better(db, {
 
 ```ts
 const client = better(db, {
-	schema,
 	hooks: {
 		beforeRaw(ctx) {
 			console.log(ctx.action, ctx.comment, ctx.name);

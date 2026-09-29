@@ -13,7 +13,7 @@ seoDescription: 'Add app-specific helpers and shared values to a Drizzle ORM cli
 The object form is for static values:
 
 ```ts
-const client = better(db, { schema }).extends({
+const client = better(db).extends({
 	limits: { maxPageSize: 100 },
 });
 
@@ -23,7 +23,7 @@ client.limits.maxPageSize; // 100
 The callback form receives the client it is being applied to and returns the extension:
 
 ```ts
-const client = better(db, { schema }).extends((client) => ({
+const client = better(db).extends((client) => ({
 	findUserByEmail(email: string) {
 		return client.users.findUnique({ where: { email } });
 	},
@@ -37,7 +37,7 @@ The callback runs immediately for the current client, then **again for each deri
 The object form does not get this. The same object is copied onto each derived client, so a method that closes over an outer variable keeps using that variable:
 
 ```ts
-const base = better(db, { schema });
+const base = better(db);
 
 const client = base.extends({
 	countUsers: () => base.users.count(), // always the root client
@@ -57,7 +57,7 @@ Returning `undefined` from the callback adds nothing. `extends()` modifies the c
 `extends()` returns the client type intersected with the extension type:
 
 ```ts
-const base = better(db, { schema });
+const base = better(db);
 
 const helpers = (client: typeof base) => ({
 	findUserByEmail(email: string) {
@@ -116,7 +116,7 @@ Plugin extensions are applied first, so a plugin key always wins the conflict an
 Helpers that compose several operations can call `client.transaction(...)`. Because the callback form rebinds `client`, the same helper opens a transaction when called on the root client and a nested savepoint when called on a transaction client:
 
 ```ts title="lib/db.ts"
-const base = better(drizzle(pool, { schema }), { schema });
+const base = better(drizzle({ client: pool, relations }));
 
 const helpers = (client: typeof base) => ({
 	async transferPost(postId: number, toUserId: number) {
@@ -151,7 +151,7 @@ await client.transaction(async (tx) => {
 An extension can carry values that helpers and callers both need, such as configuration, next to the helpers that use them:
 
 ```ts title="lib/db.ts"
-const base = better(drizzle(pool, { schema }), { schema });
+const base = better(drizzle({ client: pool, relations }));
 const config = { maxPageSize: 100 };
 
 const helpers = (client: typeof base) => ({

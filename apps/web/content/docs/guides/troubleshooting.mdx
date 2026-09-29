@@ -24,63 +24,55 @@ The full list of codes lives in the [errors reference](/docs/reference/errors). 
 
 ## Setup and schema
 
+### `No tables found on the Drizzle instance`
+
+**Message:** `No tables found on the Drizzle instance. Pass your relations to drizzle(), e.g. drizzle({ client, relations: defineRelations(schema) }).`
+
+**Why:** `better()` reads tables and relations from the Drizzle instance (`db._.relations`). A Drizzle instance created without `relations` exposes no tables.
+
+**Fix:** pass the `defineRelations(...)` result to `drizzle()`. Use `defineRelations(schema)` without a callback when there are no relations:
+
+```ts
+import { defineRelations } from 'drizzle-orm';
+import * as schema from './schema';
+
+const db = drizzle({ client: pool, relations: defineRelations(schema) });
+const client = better(db);
+```
+
 ### A relation does not appear in `include` or `select`
 
 **Message:** `Unknown relation or column "posts" on "users".` (code `OPERATION_ERROR`), or the key is simply missing from the TypeScript autocomplete.
 
-**Why:** better-drizzle reads relations from the Drizzle `relations(...)` definitions in the `schema` you pass to `better()`. A foreign key alone (`.references(...)`) is not a relation, and a `relations(...)` export that is not in the `schema` object is invisible.
+**Why:** better-drizzle reads relations from the `defineRelations(...)` config passed to `drizzle()`. A foreign key alone (`.references(...)`) is not a relation, and a relation that is not declared in that config is invisible.
 
-**Fix:** define both sides with `relations(...)` and include the relation exports in `schema`:
+**Fix:** declare both sides in `defineRelations` and pass the result to `drizzle()`:
 
 ```ts
-export const usersRelations = relations(users, ({ many }) => ({
-	posts: many(posts),
+export const relations = defineRelations(schema, (r) => ({
+	users: {
+		posts: r.many.posts(),
+	},
+	posts: {
+		author: r.one.users({
+			from: r.posts.authorId,
+			to: r.users.id,
+		}),
+	},
 }));
 
-export const postsRelations = relations(posts, ({ one }) => ({
-	author: one(users, {
-		fields: [posts.authorId],
-		references: [users.id],
-	}),
-}));
-
-export const schema = {
-	users,
-	usersRelations,
-	posts,
-	postsRelations,
-};
-
-const client = better(db, { schema });
+const client = better(drizzle({ client: pool, relations }));
 ```
 
 Also check that `select` and `include` are not used at the same level: that throws `select and include cannot be used at the same query level.` See [relations](/docs/querying/relations).
 
-### A many-to-many relation is ambiguous
+### A relation cannot be loaded
 
-**Message:** `Relation "groups" on "users" is ambiguous. Configure its junction explicitly.` (code `OPERATION_ERROR`, with the candidate paths in `details.paths`).
+**Message:** `Relation "x" on "t" cannot be loaded: ...` or `... cannot be filtered: ...` (code `OPERATION_ERROR`, with the relation name in `details.relation`).
 
-**Why:** junction tables with two foreign-key `one` relations are inferred as many-to-many. When more than one junction could produce the same relation name, better-drizzle refuses to pick one silently. The error is thrown when you use the relation, not at startup.
+**Why:** the better-drizzle loader does not support relations declared with a relation-level `where` (filtered relations) or `one` relations through a junction table.
 
-**Fix:** declare the junction explicitly, and optionally turn inference off:
-
-```ts
-const client = better(db, {
-	schema,
-	relations: {
-		inferManyToMany: false,
-		manyToMany: [
-			{
-				through: 'userGroups',
-				left: { relation: 'user' },
-				right: { relation: 'group' },
-			},
-		],
-	},
-});
-```
-
-If an entry does not match a valid junction, bootstrap fails with `Invalid many-to-many relation through "userGroups".` Check that `through` is the schema key of the junction table and that `left.relation` / `right.relation` are its `one` relation names.
+**Fix:** use Drizzle's own relational queries on the underlying Drizzle instance for those relations, or declare an unfiltered relation and pass the condition as a nested `where` in `include`. Many-to-many relations declared with `r.many.<table>({ from: ...through(...), to: ...through(...) })` are supported. See [relations](/docs/querying/relations#relations-better-drizzle-cannot-load).
 
 ### `REPOSITORY_NOT_FOUND`
 
@@ -110,7 +102,7 @@ If an entry does not match a valid junction, bootstrap fails with `Invalid many-
 
 ### Transactions on SQLite behave differently
 
-**Why:** Bun SQLite's native Drizzle transaction callback is synchronous, so for SQLite better-drizzle does not call `db.transaction`. It runs explicit `begin` / `commit` / `rollback`, and `savepoint` / `release savepoint` / `rollback to savepoint` for nested transactions, on the same Drizzle client. That is also why SQLite never throws `TRANSACTIONS_UNSUPPORTED`.
+**Why:** Bun SQLite's native Drizzle transaction callback is synchronous (in Drizzle 1.x its types reject async callbacks), so for SQLite better-drizzle does not call `db.transaction`. `client.transaction(async (tx) => ...)` still accepts async callbacks. It runs explicit `begin` / `commit` / `rollback`, and `savepoint` / `release savepoint` / `rollback to savepoint` for nested transactions, on the same Drizzle client. That is also why SQLite never throws `TRANSACTIONS_UNSUPPORTED`.
 
 **What to expect:**
 
@@ -233,6 +225,8 @@ await client.$raw`select * from users where id = ${id}`;
 
 **Why:** a `where` used the `{ json: { ... } }` path filter on SQLite or MySQL. **Fix:** use PostgreSQL for JSONB path filters, or write the condition with Drizzle `sql` for your dialect. See [JSONB](/docs/querying/jsonb).
 
+On PostgreSQL, path filters also require a `jsonb` column. On a `json` column they throw `JSON path filters require a jsonb column; json columns only support whole-document filters.`
+
 ### `ARRAY_QUERY_UNSUPPORTED`
 
 **Message:** `Native PostgreSQL array filters are only supported by PostgreSQL.`
@@ -266,7 +260,6 @@ Remember that a requirement is checked against **every** model in the schema. Se
 import { recommended, rules } from 'better-drizzle/rules';
 
 const client = better(db, {
-	schema,
 	plugins: [rules(recommended({ requireTenantContext: false }))],
 });
 
@@ -334,9 +327,9 @@ If a specific schema reproduces the error, open an issue with a minimal reproduc
 
 ### Unsupported Drizzle versions
 
-**Why:** the `drizzle-orm` peer floor is `^0.30.0`. `0.29.5` fails the typecheck.
+**Why:** the current release targets Drizzle ORM 1.x, with a `drizzle-orm` peer range of `^1.0.0-rc.4`, and is tested against `1.0.0-rc.4`. It reads the `defineRelations(...)` metadata that `drizzle-orm` 0.x does not have.
 
-The Drizzle ORM `1.0.0` release candidates are **not supported yet**. They remove the legacy relational metadata APIs better-drizzle reads, so the package fails at module load under the RC. Stay on the stable `0.x` line until support is announced.
+Projects on `drizzle-orm` 0.x stay on better-drizzle 0.2.x (peer `^0.30.0`). To move to 1.x, follow [upgrading](/docs/guides/upgrading#moving-to-drizzle-orm-1x).
 
 See the [support matrix](/docs/reference/support-matrix).
 

@@ -1,12 +1,12 @@
 ---
 title: Stability & semver
-description: What better-drizzle considers stable in the 0.2.x line, how the unified package is versioned, and what counts as a breaking change.
+description: What better-drizzle considers stable in the 0.3.x line, how the unified package is versioned, and what counts as a breaking change.
 icon: ShieldCheck
 seoTitle: 'Stability & Semver Policy'
-seoDescription: 'What better-drizzle considers stable in the 0.2.x line, how the unified package is versioned, and what counts as a breaking change.'
+seoDescription: 'What better-drizzle considers stable in the 0.3.x line, how the unified package is versioned, and what counts as a breaking change.'
 ---
 
-`0.2.x` is the current release line of better-drizzle.
+`0.3.x` is the Drizzle ORM 1.x release line of better-drizzle.
 
 <Callout type="warn" title="0.2.0 changed how plugins are distributed">
 	The official plugins are no longer published as separate
@@ -30,9 +30,9 @@ version === zodVersion; // always true
 Each entrypoint still re-exports `version` so a plugin can report itself in
 logs, but the value is always the package version.
 
-## What is considered stable in `0.2.x`
+## What is considered stable in `0.3.x`
 
-- the package entrypoints listed in `exports` (`.`, `/plugins`, `/eslint`, `/rules`, `/soft-delete`, `/timestamps`, `/zod`)
+- the package entrypoints listed in `exports` (`.`, `/ata`, `/plugins`, `/eslint`, `/rules`, `/soft-delete`, `/timestamps`, `/zod`)
 - documented delegate methods and their result shapes
 - documented client methods
 - documented option names on `better()`, on each operation, and on official plugins

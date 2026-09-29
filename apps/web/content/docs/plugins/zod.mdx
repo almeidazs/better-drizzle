@@ -54,7 +54,6 @@ import { z } from 'zod';
 import { zod } from 'better-drizzle/zod';
 
 const client = better(db, {
-	schema,
 	plugins: [
 		zod({
 			validate: {
@@ -114,6 +113,10 @@ Use them directly when you want shared validation at the edges of your app:
 ```ts
 const input = client.users.$zod.create.parse(req.body);
 ```
+
+The schema types come from the client, so `zod()` needs no type argument; options passed inline are reflected in the types (an omitted column disappears from `z.output<typeof client.users.$zod.create>`). Pass `zod<typeof relations>(options)` when you want the `schemas` table keys and column names checked while writing the options.
+
+Fields added with `extend` (such as `password` above) may be passed in `data` alongside columns; the plugin validates them and strips them before Drizzle writes.
 
 ## Validation behavior
 

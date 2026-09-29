@@ -10,15 +10,16 @@ The easiest migration is incremental.
 
 ## 1. Keep your existing schema
 
-Do not rewrite tables or relations. better-drizzle reads the Drizzle schema you already have.
+Do not rewrite tables. better-drizzle reads tables and relations from the Drizzle instance, so declare relations with Drizzle ORM 1.x `defineRelations(schema, ...)` and pass them to `drizzle()`. With no relations, use `defineRelations(schema)`.
 
 ## 2. Wrap the existing Drizzle client once
 
 ```ts
 import { better } from 'better-drizzle';
+import { relations } from './relations';
 
-const db = drizzle(connection, { schema });
-export const client = better(db, { schema });
+const db = drizzle({ client: connection, relations });
+export const client = better(db);
 ```
 
 ## 3. Move repetitive read paths first

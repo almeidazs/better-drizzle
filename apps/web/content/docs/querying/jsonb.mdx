@@ -623,6 +623,7 @@ There are no structured path operators for deleting a key, merging an object, in
 ## Limits and dialect support
 
 - **PostgreSQL only for path shapes.** SQLite and MySQL reject `json` filters with `JSONB_QUERY_UNSUPPORTED` (and dotted/wrapper path mutations with `JSONB_MUTATION_UNSUPPORTED`) instead of silently changing semantics. Full-document replacements are not gated.
+- **`jsonb` columns only for path filters.** On a PostgreSQL `json` column, dotted and wrapper path filters throw `JSON path filters require a jsonb column; json columns only support whole-document filters.`
 - **Scalar object paths only for filtering.** Arrays, object containment (`@>`), PostgreSQL JSONPath strings (`@?`, `@@`), and keys that contain a dot are intentionally outside the structured filter API. Mutations address object-key paths and accept JSON objects and arrays as values.
 - **Filtering and partial updates.** JSON paths are available in `where` and in update `data`; ordering by a JSON path is not part of the structured API.
 

@@ -305,7 +305,6 @@ You can enforce that all locked reads happen inside transactions at the client l
 
 ```ts
 const client = better(db, {
-	schema,
 	locks: {
 		transactionsOnly: true,
 	},

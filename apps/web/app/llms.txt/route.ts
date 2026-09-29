@@ -34,7 +34,7 @@ Key characteristics:
 - Transaction support with savepoints, retries, and lifecycle callbacks.
 - Raw SQL passthrough with safety gates and dialect awareness.
 - Scoped metadata via \`$withContext()\` for multi-tenancy and request tracing.
-- Peer dependencies: \`drizzle-orm\` (>=0.30.0) and \`typescript\` (^5).
+- Peer dependencies: \`drizzle-orm\` (^1.0.0-rc.4) and \`typescript\` (^5).
 
 ## Documentation
 
@@ -84,7 +84,7 @@ Key characteristics:
 - [Client Extensions](${BASE}/docs/guides/client-extensions): Attach app-specific helpers to the client with \`extends()\`, preserved across \`$withContext()\` clones and transactions.
 - [Dynamic Repositories](${BASE}/docs/guides/dynamic-repositories): Resolve delegates at runtime by schema key or database table name.
 - [Migrating from Drizzle](${BASE}/docs/guides/migrating-from-drizzle): Step-by-step guide for adding better-drizzle to an existing Drizzle project.
-- [Upgrading to 0.2](${BASE}/docs/guides/upgrading): Migrate from the scoped \`@better-drizzle/*\` plugin packages to the unified package subpaths.
+- [Upgrading](${BASE}/docs/guides/upgrading): Move to Drizzle ORM 1.x relations, or from the scoped \`@better-drizzle/*\` plugin packages to the unified package subpaths.
 - [Limitations](${BASE}/docs/guides/limitations): Known boundaries, unsupported patterns, and where raw Drizzle is the better choice.
 
 ## Performance

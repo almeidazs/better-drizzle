@@ -6,11 +6,54 @@ seoTitle: 'Drizzle ORM Relations - include & select'
 seoDescription: 'Load Drizzle ORM relations with nested include and select, and filter by related rows with some, every, none, is, and isNot. Batched, no N+1 queries.'
 ---
 
-Relations are where better-drizzle saves the most repetition. Once your Drizzle relations are defined, you can load and filter by related rows with full type inference.
+Relations are where better-drizzle saves the most repetition. Once your relations are declared with Drizzle's `defineRelations`, you can load and filter by related rows with full type inference.
 
 Relation reads use a batch loader owned by better-drizzle: one root query plus one query per requested relation node. They do not issue one query per parent row.
 
 The examples below assume a `users → posts` schema with relations defined (see [getting started](/docs/getting-started)).
+
+## Defining relations
+
+better-drizzle reads relations from the Drizzle instance, so declare them with `defineRelations` and pass the result to `drizzle()`:
+
+```ts title="relations.ts"
+import { defineRelations } from 'drizzle-orm';
+import * as schema from './schema';
+
+export const relations = defineRelations(schema, (r) => ({
+	users: {
+		posts: r.many.posts(),
+		profile: r.one.profiles({ from: r.users.id, to: r.profiles.userId }),
+	},
+	posts: {
+		author: r.one.users({ from: r.posts.authorId, to: r.users.id }),
+		comments: r.many.comments(),
+	},
+	comments: {
+		post: r.one.posts({ from: r.comments.postId, to: r.posts.id }),
+	},
+}));
+```
+
+```ts title="db.ts"
+const db = drizzle({ client, relations });
+export const betterDb = better(db);
+```
+
+A foreign key (`.references(...)`) alone is not a relation. Only relations declared in `defineRelations` are available to `include`, `select`, `_count`, relation filters, and relation writes.
+
+When two relations connect the same pair of tables, give both sides the same `alias`, as Drizzle requires:
+
+```ts
+posts: {
+	author: r.one.users({ from: r.posts.authorId, to: r.users.id, alias: 'author' }),
+	reviewer: r.one.users({ from: r.posts.reviewerId, to: r.users.id, alias: 'reviewer' }),
+},
+users: {
+	authoredPosts: r.many.posts({ alias: 'author' }),
+	reviewedPosts: r.many.posts({ alias: 'reviewer' }),
+},
+```
 
 ## Loading relations
 
@@ -138,7 +181,26 @@ Counts are projected as correlated subqueries in the SQL that materializes that 
 
 ## Many-to-many relations
 
-A junction table with exactly two required foreign-key relations and no additional required columns is inferred automatically. The virtual relation uses the target schema key:
+Declare many-to-many relations natively with `.through()` on both ends, naming the junction columns:
+
+```ts title="relations.ts"
+export const relations = defineRelations(schema, (r) => ({
+	users: {
+		groups: r.many.groups({
+			from: r.users.id.through(r.userGroups.userId),
+			to: r.groups.id.through(r.userGroups.groupId),
+		}),
+	},
+	groups: {
+		users: r.many.users({
+			from: r.groups.id.through(r.userGroups.groupId),
+			to: r.users.id.through(r.userGroups.userId),
+		}),
+	},
+}));
+```
+
+The relation then behaves like any other to-many relation - `include`, `select`, `_count`, `some` / `every` / `none`, and `connect` / `disconnect` / `set` all work through it, and you never name the junction table in a query:
 
 ```ts tab="better-drizzle" tab-group="orm"
 const users = await client.users.findMany({
@@ -166,24 +228,14 @@ const usersWithGroups = userRows.map((user) => ({
 }));
 ```
 
-Disable inference or identify an explicit junction in `better()` when your schema has multiple possible paths:
+## Relations better-drizzle cannot load
 
-```ts
-const client = better(db, {
-	schema,
-	relations: {
-		manyToMany: [
-			{
-				through: 'userGroups',
-				left: { relation: 'user' },
-				right: { relation: 'group' },
-			},
-		],
-	},
-});
-```
+Two kinds of Drizzle relations are not supported by the better-drizzle loader:
 
-Ambiguous paths fail during use instead of choosing a junction silently. Set `relations.inferManyToMany` to `false` to require explicit configuration.
+- relations declared with a relation-level `where` (filtered relations)
+- `one` relations declared through a junction table
+
+They are not part of the better-drizzle relation API: loading one with `include` or `select` throws `Relation "x" on "t" cannot be loaded: ...`, and filtering through one in `where` throws `Relation "x" on "t" cannot be filtered: ...`. They still work with Drizzle's own relational queries on the underlying Drizzle instance.
 
 ## Explain plans
 

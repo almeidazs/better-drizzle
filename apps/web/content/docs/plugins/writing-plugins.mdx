@@ -39,7 +39,7 @@ export const myPlugin = definePlugin({
 <Step>
 ### Bootstrap
 
-`better(db, { schema, plugins })` initializes the runtime once.
+`better(db, { plugins })` initializes the runtime once.
 </Step>
 <Step>
 ### Initialize in order
@@ -135,7 +135,7 @@ export const tenantScope = ({ column = 'tenantId' } = {}) =>
 The tenant comes from `meta`, so set it once per request with `$withContext(...)`:
 
 ```ts
-const db = better(drizzleDb, { schema, plugins: [tenantScope()] });
+const db = better(drizzleDb, { plugins: [tenantScope()] });
 
 // once per request, e.g. in middleware
 const tenantDb = db.$withContext({ tenantId: session.tenantId });
@@ -259,7 +259,7 @@ CRUD and query hooks (and transforms) receive:
 		data: { type: 'object | object[] | undefined', description: 'Write payload. For `upsert` it is `{ create, update }`.' },
 		meta: { type: 'Meta | undefined', description: 'Merged `$withContext(...)` and per-call `meta`.' },
 		state: { type: 'PluginState', description: 'State set with `$withState(...)`.' },
-		schema: { type: 'Schema', description: 'The full Drizzle schema.' },
+		schema: { type: 'Schema', description: 'The relations config from defineRelations(...) that the Drizzle instance was created with.' },
 		dialect: { type: "'pg' | 'mysql' | 'sqlite'", description: 'Detected dialect.' },
 		db: { type: 'unknown', description: 'The bound Drizzle instance (the transaction inside `transaction(...)`).' },
 		options: { type: 'BetterClientOptions', description: 'Options passed to `better(...)`.' },
@@ -307,7 +307,7 @@ definePlugin({
 });
 ```
 
-Each `requires.columns` entry takes `column` (required), `optional`, and `type`. The check runs against every model in the schema. With `optional: true`, models without the column pass; use `model.hasColumn(...)` in hooks and transforms to skip them. `type` is matched against the column's Drizzle `columnType` (such as `'PgTimestamp'`) or `dataType` (such as `'date'` or `'string'`) whenever the column exists.
+Each `requires.columns` entry takes `column` (required), `optional`, and `type`. The check runs against every model in the schema. With `optional: true`, models without the column pass; use `model.hasColumn(...)` in hooks and transforms to skip them. `type` is matched against the column's Drizzle `columnType` (such as `'PgTimestamp'`), its full `dataType`, or one part of it whenever the column exists. In Drizzle 1.x `dataType` is `"<type> <constraint>"` (such as `'object date'`, `'number int32'`, or `'string uuid'`), so `'date'`, `'object date'`, and `'string'` all match the corresponding columns.
 
 `better(...)` throws a `BetterDrizzleError` with one of these codes when a plugin is invalid:
 
@@ -342,7 +342,35 @@ definePlugin<Options, ClientExtension, ModelExtension, State, OperationArgs, Mod
 | `ModelExtension` | what `extendModel` returns |
 | `State` | `state` in hooks and transforms |
 | `OperationArgs` | the `operationArgs` map |
-| `ModelExtensionResolver` | a generic function type for model extensions that depend on the current table (the Zod plugin uses it for `$zod`) |
+| `ModelExtensionResolver` | a type-level resolver for model extensions that depend on the current table (the Zod plugin uses it for `$zod`) |
+
+A resolver is an interface extending `ModelExtensionTypeResolver`. better-drizzle fills in `this['schema']` (the relations config) and `this['name']` (the table key) for every delegate, and reads the result from `extension`:
+
+```ts
+import {
+	definePlugin,
+	type ModelExtensionTypeResolver,
+	type PluginState,
+} from 'better-drizzle';
+
+interface TableNameExtension extends ModelExtensionTypeResolver {
+	readonly extension: { readonly tableName: this['name'] };
+}
+
+export const tableName = definePlugin<
+	unknown,
+	Record<never, never>,
+	Record<never, never>,
+	PluginState,
+	Record<never, never>,
+	TableNameExtension
+>({
+	id: 'table-name',
+	extendModel: ({ model }) => ({ tableName: model.name }) as never,
+});
+
+// client.users.tableName is typed as 'users'
+```
 
 ## Bypassing plugins
 

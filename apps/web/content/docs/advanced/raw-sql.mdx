@@ -132,7 +132,6 @@ Supported per-call options on raw methods:
 
 ```ts
 const client = better(db, {
-	schema,
 	raw: { allowUnsafe: true },
 });
 
@@ -154,7 +153,6 @@ For teams that want every raw call tagged for observability, require a `comment`
 
 ```ts
 const client = better(db, {
-	schema,
 	raw: {
 		requireComment: true,
 		timeoutMs: 3000,

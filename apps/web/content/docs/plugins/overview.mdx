@@ -16,7 +16,6 @@ import { timestamps } from 'better-drizzle/timestamps';
 import { softDelete } from 'better-drizzle/soft-delete';
 
 const client = better(db, {
-	schema,
 	plugins: [
 		rules(recommended({ noRawUnsafe: true })),
 		betterZod({ validate: { create: true, update: true } }),
@@ -83,7 +82,6 @@ Plugins run in array order. If two plugins transform the same operation, the ear
 
 ```ts
 const client = better(db, {
-	schema,
 	plugins: [firstPlugin, secondPlugin],
 });
 ```

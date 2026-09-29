@@ -53,7 +53,6 @@ import { better } from 'better-drizzle';
 import { timestamps } from 'better-drizzle/timestamps';
 
 const client = better(db, {
-	schema,
 	plugins: [
 		timestamps({
 			createdAt: 'createdAt',

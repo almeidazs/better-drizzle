@@ -461,11 +461,7 @@ PostgreSQL's default GIN operator class for arrays (`array_ops`) supports exactl
 
 ### Create it with Drizzle
 
-Declare the index next to the table and generate the migration with drizzle-kit as usual. The API changed in drizzle-orm 0.31:
-
-<Tabs items={['drizzle-orm 0.31+', 'drizzle-orm 0.30']}>
-
-<Tab value="drizzle-orm 0.31+">
+Declare the index next to the table and generate the migration with drizzle-kit as usual:
 
 ```ts title="schema.ts"
 import { index, integer, pgTable, text } from 'drizzle-orm/pg-core';
@@ -484,33 +480,7 @@ export const posts = pgTable(
 );
 ```
 
-</Tab>
-
-<Tab value="drizzle-orm 0.30">
-
-```ts title="schema.ts"
-import { sql } from 'drizzle-orm';
-import { index, integer, pgTable, text } from 'drizzle-orm/pg-core';
-
-export const posts = pgTable(
-	'posts',
-	{
-		id: integer('id').primaryKey(),
-		tags: text('tags').array().notNull(),
-		roles: text('roles').array().notNull(),
-	},
-	(table) => ({
-		tagsGin: index('posts_tags_gin').on(table.tags).using(sql`gin`),
-		rolesGin: index('posts_roles_gin').on(table.roles).using(sql`gin`),
-	}),
-);
-```
-
-</Tab>
-
-</Tabs>
-
-Both produce the same SQL:
+It produces:
 
 ```sql
 create index "posts_tags_gin" on "posts" using gin ("tags");
@@ -564,11 +534,11 @@ the SQL primitive itself is slower.
 
 ### Length and emptiness
 
-`length` and `isEmpty` compile to `cardinality(column)`, which the GIN index cannot serve. If you filter on them often, add an expression index. drizzle-orm 0.31+ accepts an `sql` expression in `on()`; on 0.30, add it in a SQL migration:
+`length` and `isEmpty` compile to `cardinality(column)`, which the GIN index cannot serve. If you filter on them often, add an expression index, either with an `sql` expression in `on()` or in a SQL migration:
 
-<Tabs items={['drizzle-orm 0.31+', 'SQL migration']}>
+<Tabs items={['Drizzle', 'SQL migration']}>
 
-<Tab value="drizzle-orm 0.31+">
+<Tab value="Drizzle">
 
 ```ts title="schema.ts"
 (table) => [

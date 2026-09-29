@@ -8,7 +8,7 @@ seoDescription: 'Infer and reuse better-drizzle result types in Drizzle ORM: Pay
 
 better-drizzle has no code generation step. Every result type is computed by TypeScript from your Drizzle schema and the arguments of the call. This page shows how that inference works and how to name, reuse, and pass those types around.
 
-All examples use the schema from [Getting started](/docs/getting-started) (`users` and `posts`, related by `users.posts` and `posts.author`) and a client created with `better(db, { schema })`.
+All examples use the schema from [Getting started](/docs/getting-started) (`users` and `posts`, related by `users.posts` and `posts.author`) and a client created with `better(db)`. The first type argument of every exported type is the relations config returned by `defineRelations(...)` - `typeof relations` - written `Schema` in the signatures below.
 
 ## Results follow the arguments
 
@@ -34,11 +34,18 @@ const authors = await client.users.findMany({
 });
 // { id; email; name; active; posts: { id: number; title: string }[]; _count: { posts: number } }[]
 
-// A to-one relation is always typed as nullable
+// A to-one relation is nullable unless Drizzle declares it with optional: false
 const drafts = await client.posts.findMany({
+	include: { editor: true },
+});
+// { ...post; editor: { id; email; name; active } | null }[]
+
+// r.one.users({ from, to, optional: false }) makes it non-null, unless a
+// nested `where` can filter the row out
+const posts = await client.posts.findMany({
 	include: { author: true },
 });
-// { ...post; author: { id; email; name; active } | null }[]
+// { ...post; author: { id; email; name; active } }[]
 ```
 
 The rules:
@@ -46,8 +53,19 @@ The rules:
 - no `select` or `include`: the table's select model (the same type as Drizzle's `$inferSelect`)
 - `select`: only keys whose value is the literal `true`; `false` and `boolean` keys are left out
 - `include`: every scalar column, plus the listed relations, plus `_count` when requested
-- to-many relations are arrays; to-one relations are `T | null`
+- to-many relations are arrays; to-one relations are `T | null`, or `T` when declared with `optional: false` and not filtered by a nested `where`
 - nested `select` and `include` are resolved the same way at each level
+
+Arguments are checked strictly: an unknown key at the top level or inside `where`, `data`, `create`, `update`, `select`, `include`, or `orderBy` is a type error, and so is combining `select` and `include` at the same relation level:
+
+```ts
+// @ts-expect-error `wher` is not an argument
+await client.users.findMany({ wher: { id: 1 } });
+// @ts-expect-error `emial` is not a column
+await client.users.create({ data: { email: 'a@b.c', emial: 'x' } });
+// @ts-expect-error select and include cannot be combined
+await client.users.findMany({ select: { id: true }, include: { posts: true } });
+```
 
 The method also shapes the result:
 
@@ -109,9 +127,9 @@ export type AuthorCard = Awaited<ReturnType<typeof listAuthorCards>>[number];
 
 ```ts
 import type { PayloadForArgs, QueryArgs } from 'better-drizzle';
-import type { schema } from './schema';
+import type { relations } from './relations';
 
-type Schema = typeof schema;
+type Schema = typeof relations;
 
 export const userWithPosts = {
 	include: {
@@ -138,7 +156,7 @@ const users = await client.users.findMany(userWithPosts);
 ```ts tab="better-drizzle" tab-group="orm"
 import type { BetterRecord } from 'better-drizzle';
 
-type User = BetterRecord<typeof schema, 'users'>;
+type User = BetterRecord<typeof relations, 'users'>;
 ```
 
 ```ts tab="Drizzle" tab-group="orm"
@@ -168,7 +186,7 @@ import type {
 	WhereInput,
 } from 'better-drizzle';
 
-type Schema = typeof schema;
+type Schema = typeof relations;
 
 const publishedOnly = {
 	published: true,
@@ -227,7 +245,7 @@ The operation argument types (`QueryArgs`, `CreateArgs`, and so on) take an opti
 Export the client type once and use it for every function that queries:
 
 ```ts title="db.ts"
-export const client = better(db, { schema });
+export const client = better(db);
 export type Db = typeof client;
 ```
 
@@ -273,8 +291,8 @@ import type {
 	BetterDrizzleTransactionClient,
 } from 'better-drizzle';
 
-type Db = BetterDrizzleClient<typeof schema>;
-type Tx = BetterDrizzleTransactionClient<typeof schema>;
+type Db = BetterDrizzleClient<typeof relations>;
+type Tx = BetterDrizzleTransactionClient<typeof relations>;
 ```
 
 To accept a single table's delegate, index the client type:
@@ -307,7 +325,6 @@ import { better } from 'better-drizzle';
 import { softDelete } from 'better-drizzle/soft-delete';
 
 export const client = better(db, {
-	schema,
 	plugins: [softDelete()],
 });
 export type Db = typeof client;
@@ -317,7 +334,7 @@ export function listUsers(db: Db) {
 }
 ```
 
-`BetterDrizzleClient<typeof schema>` does not know about plugins, so `deleted` is a type error there. Use `typeof client`, or pass the plugin tuple as the third type argument.
+`BetterDrizzleClient<typeof relations>` does not know about plugins, so `deleted` is a type error there. Use `typeof client`, or pass the plugin tuple as the third type argument.
 
 ## Typed meta
 
@@ -330,8 +347,7 @@ type AppMeta = {
 	userId?: number;
 };
 
-export const client = better<typeof schema, AppMeta>(db, {
-	schema,
+export const client = better<typeof relations, AppMeta>(db, {
 	hooks: {
 		afterCreate(ctx) {
 			log(ctx.table, ctx.meta?.requestId); // ctx.meta: AppMeta | undefined
@@ -362,8 +378,7 @@ TypeScript does not infer the remaining type arguments once you pass some. With 
 ```ts
 const plugins = [softDelete()] as const;
 
-export const client = better<typeof schema, AppMeta, typeof plugins>(db, {
-	schema,
+export const client = better<typeof relations, AppMeta, typeof plugins>(db, {
 	plugins,
 });
 ```

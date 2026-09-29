@@ -68,7 +68,6 @@ After an atomic write, post-write hooks receive a readonly `compiled` object con
 
 ```ts
 const client = better(db, {
-	schema,
 	hooks: {
 		afterUpdate({ compiled }) {
 			console.log(compiled);

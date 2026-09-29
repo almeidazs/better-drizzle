@@ -31,7 +31,7 @@ import {
 
 const HERO_CODE = `import { better } from 'better-drizzle';
 
-const client = better(db, { schema });
+const client = better(db); // db = drizzle({ connection, relations })
 
 const authors = await client.users.findMany({
   where: {
@@ -88,7 +88,6 @@ import { timestamps } from 'better-drizzle/timestamps';
 import { zod } from 'better-drizzle/zod';
 
 const client = better(db, {
-  schema,
   plugins: [
     rules(recommended({ noRawUnsafe: true })),
     zod({ validate: { create: true, update: true } }),
@@ -113,7 +112,7 @@ const FEATURES = [
 	{
 		icon: Filter,
 		title: 'Typed nested filters',
-		body: 'Query across relations with some / every / none / is - inferred from your Drizzle schema, no subqueries by hand. Typed JSONB path filters on PostgreSQL.',
+		body: 'Query across relations with some / every / none / is - inferred from your Drizzle relations, no subqueries by hand. Typed JSONB path filters on PostgreSQL.',
 	},
 	{
 		icon: Layers,

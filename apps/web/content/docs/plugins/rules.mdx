@@ -55,7 +55,6 @@ import { better } from 'better-drizzle';
 import { rules, safe } from 'better-drizzle/rules';
 
 const client = better(db, {
-	schema,
 	plugins: [
 		rules(
 			safe({

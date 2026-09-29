@@ -6,7 +6,7 @@ seoTitle: 'Testing Drizzle ORM Apps'
 seoDescription: 'Test Drizzle ORM code with better-drizzle: in-memory SQLite, a fresh client per test, rolled-back transactions, hook assertions, and PostgreSQL suites.'
 ---
 
-better-drizzle has no test mode and no mock client. You test it the way it runs: `better(db, { schema })` on top of a real Drizzle database. For most suites that database is SQLite in memory, which is fast enough to build from scratch for every test.
+better-drizzle has no test mode and no mock client. You test it the way it runs: `better(db)` on top of a real Drizzle database. For most suites that database is SQLite in memory, which is fast enough to build from scratch for every test.
 
 The examples use `bun:test`. Vitest has the same `describe`, `test`, `expect`, `beforeEach`, and `describe.skipIf`, so the code carries over as is. Under Vitest on Node, use better-sqlite3 instead of `bun:sqlite`.
 
@@ -22,7 +22,7 @@ Put the database setup in one helper that every test file imports. It opens a ne
 import { Database } from 'bun:sqlite';
 import { better } from 'better-drizzle';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
-import { schema } from '../src/db/schema';
+import { relations } from '../src/db/relations';
 
 const ddl = `
 CREATE TABLE users (
@@ -38,8 +38,8 @@ export const createTestDb = () => {
 	sqlite.exec('PRAGMA foreign_keys = ON;');
 	sqlite.exec(ddl);
 
-	const db = drizzle(sqlite, { schema });
-	const client = better(db, { schema });
+	const db = drizzle({ client: sqlite, relations });
+	const client = better(db);
 
 	return { client, db, close: () => sqlite.close() };
 };
@@ -53,7 +53,7 @@ export const createTestDb = () => {
 import Database from 'better-sqlite3';
 import { better } from 'better-drizzle';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { schema } from '../src/db/schema';
+import { relations } from '../src/db/relations';
 
 const ddl = `
 CREATE TABLE users (
@@ -69,8 +69,8 @@ export const createTestDb = () => {
 	sqlite.exec('PRAGMA foreign_keys = ON;');
 	sqlite.exec(ddl);
 
-	const db = drizzle(sqlite, { schema });
-	const client = better(db, { schema });
+	const db = drizzle({ client: sqlite, relations });
+	const client = better(db);
 
 	return { client, db, close: () => sqlite.close() };
 };
@@ -204,12 +204,10 @@ Build a second client on the test database with the hooks you want to check, cap
 
 ```ts
 import { better } from 'better-drizzle';
-import { schema } from '../src/db/schema';
 
 test('create fires before and after hooks', async () => {
 	const events: string[] = [];
 	const client = better(ctx.db, {
-		schema,
 		hooks: {
 			beforeCreate(hook) {
 				events.push(`before:${hook.action}:${hook.table}`);
@@ -233,7 +231,6 @@ The same approach checks request metadata. Scoped `meta` from `$withContext(...)
 ```ts
 const seen: unknown[] = [];
 const client = better(ctx.db, {
-	schema,
 	hooks: {
 		beforeCreate(hook) {
 			seen.push(hook.meta);
@@ -267,7 +264,7 @@ test('audit plugin records creates', async () => {
 		},
 	});
 
-	const client = better(ctx.db, { schema, plugins: [audit] });
+	const client = better(ctx.db, { plugins: [audit] });
 
 	await client.users.create({
 		data: { id: 3, email: 'carol@example.com', name: 'Carol', active: true },
@@ -281,6 +278,19 @@ test('audit plugin records creates', async () => {
 ```
 
 For plugins that rewrite queries, such as soft delete or tenant scoping, read the stored rows back through `$withoutPlugins()` or the raw Drizzle `db` to check what the plugin actually wrote.
+
+## Awaiting reads
+
+Read methods (`findMany`, `findFirst`, `findOne`, `findUnique`, `count`, `exists`, `paginate`, `cursor`) return lazy thenables, like Drizzle's query builders: the query runs when you `await` it. Bun's `expect(...).resolves` / `.rejects` only accept native promises, so await the read first, or wrap it with `Promise.resolve(...)`. Helpers that already return promises, such as `.throw()` and `.explain()`, work with them directly:
+
+```ts
+expect(await ctx.client.users.findMany({ take: 2 })).toHaveLength(2);
+
+// row locks are rejected on SQLite
+await expect(
+	Promise.resolve(ctx.client.users.findMany({ lock: { strength: 'update' } })),
+).rejects.toMatchObject({ code: BetterDrizzleErrorCode.LockNotSupported });
+```
 
 ## Asserting errors
 
@@ -345,19 +355,19 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { better } from 'better-drizzle';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Client } from 'pg';
-import { schema } from '../src/db/schema';
+import { relations } from '../src/db/relations';
 import { rollbackAfter } from './rollback';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
 describe.skipIf(!DATABASE_URL)('posts (PostgreSQL)', () => {
 	let pg: Client;
-	let client: ReturnType<typeof better<typeof schema>>;
+	let client: ReturnType<typeof better<typeof relations>>;
 
 	beforeAll(async () => {
 		pg = new Client({ connectionString: DATABASE_URL });
 		await pg.connect();
-		client = better(drizzle(pg, { schema }), { schema });
+		client = better(drizzle({ client: pg, relations }));
 	});
 
 	afterAll(async () => {

@@ -39,7 +39,7 @@ Keep Drizzle's type-safety. Drop the query glue you rewrite in every service.
 ## The whole idea
 
 ```ts
-const client = better(db, { schema });
+const client = better(drizzle({ client: pool, relations }));
 
 const users = await client.users.findMany({
 	where: { posts: { some: { published: true } } },
@@ -50,13 +50,54 @@ const users = await client.users.findMany({
 });
 ```
 
-A nested relation filter, three posts **per user**, and a relation count - typed end to end from your Drizzle schema. One query per relation node, never one per row.
+A nested relation filter, three posts **per user**, and a relation count - typed end to end from your Drizzle schema and `defineRelations(...)` config. One query per relation node, never one per row.
 
 No codegen. No client process. No new schema language. It is still your Drizzle client underneath, and you can drop back to it at any line.
 
 ```bash
-npm install better-drizzle drizzle-orm
+npm install better-drizzle drizzle-orm@^1.0.0-rc.4
 ```
+
+> [!IMPORTANT]
+> better-drizzle supports **only Drizzle ORM 1.x** (`drizzle-orm@^1.0.0-rc.4`, including the 1.0 release candidates) and its `defineRelations(...)` API. **`drizzle-orm` 0.x is not supported** - projects on 0.x must stay on better-drizzle `0.2.x`. Install `drizzle-orm` with the explicit range: until Drizzle 1.0 is tagged `latest`, a plain install resolves to 0.x. See [upgrading](https://better-drizzle.com/docs/guides/upgrading#moving-to-drizzle-orm-1x).
+
+## Setup
+
+Tables live in your schema, relations are declared with Drizzle's `defineRelations`, and the Drizzle instance receives them. `better()` reads tables and relations from that instance.
+
+```ts
+// schema.ts
+import { integer, pgTable, text } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+	id: integer().primaryKey(),
+	email: text().notNull(),
+});
+
+export const posts = pgTable('posts', {
+	id: integer().primaryKey(),
+	userId: integer('user_id').notNull().references(() => users.id),
+	title: text().notNull(),
+});
+
+// relations.ts
+import { defineRelations } from 'drizzle-orm';
+import * as schema from './schema';
+
+export const relations = defineRelations(schema, (r) => ({
+	users: { posts: r.many.posts() },
+	posts: { author: r.one.users({ from: r.posts.userId, to: r.users.id }) },
+}));
+
+// db.ts
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { better } from 'better-drizzle';
+import { relations } from './relations';
+
+export const client = better(drizzle({ connection: process.env.DATABASE_URL!, relations }));
+```
+
+With no relations, pass `defineRelations(schema)` without a callback.
 
 ## What you stop writing
 
@@ -85,7 +126,17 @@ await client.posts.create({
 
 `connect`, `disconnect`, and `set` work on create, update, and both branches of `upsert`.
 
-Many-to-many through a simple junction table is inferred, so you never name the junction:
+Many-to-many is declared once in `defineRelations` with `.through()`, and after that you never name the junction in a query:
+
+```ts
+// relations.ts
+users: {
+	groups: r.many.groups({
+		from: r.users.id.through(r.memberships.userId),
+		to: r.groups.id.through(r.memberships.groupId),
+	}),
+},
+```
 
 ```ts
 const users = await client.users.findMany({
@@ -186,7 +237,6 @@ import { timestamps } from 'better-drizzle/timestamps';
 import { zod } from 'better-drizzle/zod';
 
 const client = better(db, {
-	schema,
 	plugins: [rules(recommended()), timestamps(), softDelete(), zod()],
 });
 ```

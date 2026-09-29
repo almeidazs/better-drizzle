@@ -195,7 +195,6 @@ You can enforce that locks only run inside explicit transactions:
 
 ```ts
 const client = better(db, {
-	schema,
 	locks: {
 		transactionsOnly: true,
 	},

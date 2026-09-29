@@ -23,12 +23,12 @@ client.repository('users') === client.users; // true, schema key
 client.repository('app_users') === client.users; // true, database table name
 ```
 
-The accepted names are typed. `BetterRepositoryKey<typeof schema>` is the union of every schema key and database table name, and it is what `repository()` accepts:
+The accepted names are typed. `BetterRepositoryKey<typeof relations>` is the union of every schema key and database table name, and it is what `repository()` accepts:
 
 ```ts
 import type { BetterRepositoryKey } from 'better-drizzle';
 
-type RepositoryName = BetterRepositoryKey<typeof schema>;
+type RepositoryName = BetterRepositoryKey<typeof relations>;
 // 'users' | 'app_users' | 'posts' | 'app_posts' | ...
 ```
 
@@ -53,7 +53,7 @@ import type { BetterRepositoryKey } from 'better-drizzle';
 export const resources = [
 	'users',
 	'posts',
-] as const satisfies readonly BetterRepositoryKey<typeof schema>[];
+] as const satisfies readonly BetterRepositoryKey<typeof relations>[];
 
 export type Resource = (typeof resources)[number];
 
