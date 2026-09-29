@@ -155,6 +155,10 @@ by primary key ascending.
 	rows.
 </Callout>
 
+Cursor tokens include every column in `orderBy`. Pass the returned token unchanged
+and repeat the same `orderBy` for each page. Include a unique, non-null key such
+as the primary key to distinguish rows that share a sort value, including `NULL`.
+
 ## Pagination with projection
 
 Both helpers accept the same `select` / `include` as a normal read:

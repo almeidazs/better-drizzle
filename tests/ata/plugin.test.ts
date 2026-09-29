@@ -183,11 +183,21 @@ describe('the registry', () => {
 		);
 	});
 
-	test('the query arguments refuse a misspelled argument', () => {
+	test('the query arguments validate orderBy and refuse misspelled arguments', () => {
 		const query = registry.getQueryArgs('users');
 		expect(query.validate({ where: { name: 'ada' }, take: 5 }).valid).toBe(
 			true,
 		);
+		expect(
+			query.validate({
+				orderBy: { created: { direction: 'desc', nulls: 'last' } },
+			}).valid,
+		).toBe(true);
+		expect(
+			query.validate({
+				orderBy: { created: { direction: 'desc', nulls: 'sideways' } },
+			}).valid,
+		).toBe(false);
 		expect(query.validate({ wher: {} }).valid).toBe(false);
 		expect(query.validate({ orderBy: { name: 'up' } }).valid).toBe(false);
 	});

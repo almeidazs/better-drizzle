@@ -7,6 +7,7 @@ import {
 	getTableColumns,
 	gt,
 	gte,
+	lte,
 	like,
 	sql,
 } from 'drizzle-orm';
@@ -95,17 +96,34 @@ export const betterFilteredList = async (context: BenchmarkContext) =>
 		},
 	});
 
+export const rawSimpleOrder = async (context: BenchmarkContext) =>
+	context.raw.select().from(users).orderBy(asc(users.id)).limit(25);
+
+export const betterSimpleOrder = async (context: BenchmarkContext) =>
+	betterClient(context).users.findMany({
+		orderBy: { id: 'asc' },
+		take: 25,
+	});
+
 export const rawNullsLastOrder = async (context: BenchmarkContext) =>
 	context.raw
 		.select()
 		.from(nullOrderRecords)
-		.orderBy(sql`${nullOrderRecords.lastSeenAt} asc nulls last`)
+		.where(lte(nullOrderRecords.id, 25))
+		.orderBy(
+			sql`${nullOrderRecords.lastSeenAt} asc nulls last`,
+			asc(nullOrderRecords.id),
+		)
 		.limit(25);
 
 export const betterNullsLastOrder = async (context: BenchmarkContext) =>
 	betterClient(context).nullOrderRecords.findMany({
-		orderBy: { lastSeenAt: { direction: 'asc', nulls: 'last' } },
+		orderBy: [
+			{ lastSeenAt: { direction: 'asc', nulls: 'last' } },
+			{ id: 'asc' },
+		],
 		take: 25,
+		where: { id: { lte: 25 } },
 	});
 
 export const rawRelationGraph = async (context: BenchmarkContext) =>

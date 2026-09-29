@@ -101,6 +101,9 @@
     - `paginate()` is offset-only and returns `{ data, pagination: { type: "offset", page, perPage, total, pageCount, hasNext, hasPrevious } }`
     - `cursor()` is the cursor-based API and returns `{ data, pagination: { type: "cursor", hasNext, hasPrevious, nextCursor, previousCursor } }`
     - cursor pagination accepts `before` or `after`, never both, and returns raw cursor objects by default
+    - `orderBy` accepts direction strings or `{ direction, nulls: "first" | "last" }`; PostgreSQL/SQLite use native NULL ordering and MySQL emulates non-default placement with `IS NULL`
+    - cursor tokens include every `orderBy` field; repeat the same order and include a unique, non-null tie-breaker to traverse rows sharing a nullable key
+    - unsupported SQL dialects fail during client initialization instead of silently ignoring NULL placement
     - `count()` and `exists()` also honor `cursor` filters when provided, so helper queries stay aligned with cursor pagination semantics
 - **Read query plans**:
     - read helpers (`findMany`, `findFirst`, `findOne`, `findUnique`, `count`, `exists`, `paginate`, `cursor`) now return explainable thenables with `.explain(options?)`

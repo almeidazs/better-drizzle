@@ -26,14 +26,19 @@ const stats = await db
 	.groupBy(posts.authorId);
 ```
 
-## `orderBy` is column-based
+## `orderBy` is column based
 
-`orderBy` accepts scalar columns of the queried table, each with `'asc'` / `'desc'` or `{ direction, nulls }` (`nulls: 'first' | 'last'`), as one object or an array for multi-column ordering. It does not support:
+`orderBy` accepts scalar columns of the queried table as one field map or an array for multi-column ordering. A value can be `'asc'` / `'desc'`, or an object with `direction` and optional `nulls`:
 
-- SQL expressions
-- ordering the root rows by a relation's columns
+```ts
+orderBy: {
+	lastSeenAt: { direction: 'desc', nulls: 'last' },
+}
+```
 
-For those, use Drizzle directly:
+When `nulls` is omitted, the database default applies. Explicit null placement is supported by PostgreSQL and SQLite using their `NULLS FIRST` / `NULLS LAST` syntax; MySQL uses an equivalent `IS NULL` ordering term. Better Drizzle fails during client initialization if it cannot identify the provider's dialect.
+
+`orderBy` does not support SQL expressions or ordering root rows by a relation's columns. Use Drizzle directly for those cases:
 
 ```ts
 import { sql } from 'drizzle-orm';

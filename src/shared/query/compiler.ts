@@ -1128,36 +1128,100 @@ export const compileCursorWhere = <Schema extends AnySchema, Meta>(
 ) => {
 	if (!cursor) return;
 
-	const cursorEntries = Object.entries(cursor as Record<string, unknown>);
-	const [cursorField, cursorValue] = cursorEntries[0] ?? [];
-
-	if (!cursorField) return;
-
-	const column = context.runtime.columns[cursorField];
-
-	if (!column) return;
-
-	let direction: 'asc' | 'desc' =
-		take !== undefined && take < 0 ? 'desc' : 'asc';
-
-	const orderEntry = Array.isArray(orderBy) ? orderBy[0] : orderBy;
-
-	if (orderEntry && cursorField in orderEntry)
-		direction = orderDirection(
-			(orderEntry as Record<string, unknown>)[cursorField],
-		);
-
-	const nulls = orderEntry
-		? orderNulls((orderEntry as Record<string, unknown>)[cursorField])
+	const values = cursor as Record<string, unknown>;
+	const orderedFields: Array<{
+		column: (typeof context.runtime.columns)[string];
+		value: unknown;
+		direction: 'asc' | 'desc';
+		nulls: 'first' | 'last' | undefined;
+	}> = [];
+	const entries = orderBy
+		? Array.isArray(orderBy)
+			? orderBy
+			: [orderBy]
 		: undefined;
-	const comparison =
-		direction === 'desc'
-			? lt(column, cursorValue)
-			: gt(column, cursorValue);
-	if (!nulls) return comparison;
-	if (cursorValue === null)
-		return nulls === 'first' ? isNotNull(column) : sql`false`;
-	return nulls === 'last' ? or(comparison, isNull(column)) : comparison;
+
+	if (entries)
+		for (const entry of entries)
+			for (const key in entry as Record<string, unknown>) {
+				const column = context.runtime.columns[key];
+				if (!column) continue;
+				if (!(key in values) || values[key] === undefined)
+					throw new BetterDrizzleError({
+						code: BetterDrizzleErrorCode.OperationError,
+						details: { cursorField: key },
+						message: `Cursor must include orderBy field "${key}" for table "${context.runtime.dbName}".`,
+						operation: 'cursor',
+						table: context.runtime.dbName,
+					});
+
+				const value = (entry as Record<string, unknown>)[key];
+				const direction = orderDirection(value);
+				orderedFields.push({
+					column,
+					direction,
+					nulls:
+						orderNulls(value) ??
+						(context.dialect === 'pg'
+							? direction === 'asc'
+								? 'last'
+								: 'first'
+							: direction === 'asc'
+								? 'first'
+								: 'last'),
+					value: values[key],
+				});
+			}
+
+	if (orderedFields.length === 0) {
+		const [cursorField, value] =
+			Object.entries(values).find(
+				([key]) => context.runtime.columns[key],
+			) ?? [];
+		if (!cursorField) return;
+
+		const column = context.runtime.columns[cursorField];
+		if (!column) return;
+
+		orderedFields.push({
+			column,
+			direction: take !== undefined && take < 0 ? 'desc' : 'asc',
+			nulls: undefined,
+			value,
+		});
+	}
+
+	const equalPrefix: SQL[] = [];
+	const after: SQL[] = [];
+	for (const field of orderedFields) {
+		const comparison =
+			field.direction === 'desc'
+				? lt(field.column, field.value)
+				: gt(field.column, field.value);
+		let afterValue: SQL | undefined;
+		if (field.value === null)
+			afterValue =
+				field.nulls === 'first' ? isNotNull(field.column) : undefined;
+		else
+			afterValue =
+				field.nulls === 'last'
+					? or(comparison, isNull(field.column))
+					: comparison;
+
+		if (afterValue)
+			after.push(
+				equalPrefix.length
+					? and(...equalPrefix, afterValue)!
+					: afterValue,
+			);
+		equalPrefix.push(
+			field.value === null
+				? isNull(field.column)
+				: eq(field.column, field.value),
+		);
+	}
+
+	return after.length ? or(...after) : sql`false`;
 };
 
 /**

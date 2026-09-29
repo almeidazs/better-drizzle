@@ -180,6 +180,14 @@ describe('cursor - cursor pagination', () => {
 		});
 		expect(backward.pagination.hasNext).toBe(true);
 		expect(statements).toHaveLength(1);
+
+		statements.length = 0;
+		await ctx.better.users.cursor({
+			after: { id: 2 },
+			limit: 2,
+			orderBy: { id: { direction: 'asc', nulls: 'last' } },
+		});
+		expect(statements).toHaveLength(1);
 	});
 
 	test('keeps exact flags with filters, descending order, and empty pages', async () => {
