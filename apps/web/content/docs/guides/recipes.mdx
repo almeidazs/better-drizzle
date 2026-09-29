@@ -54,7 +54,25 @@ export const listPosts = ({ search, authorId, published }: Filters) =>
 
 ## Increment or decrement a counter
 
-Atomic updates need a SQL expression, not a value read from the row. `updateEach` accepts one per column, and each row can carry the amount:
+Number columns accept an [atomic envelope](/docs/writing/atomic-updates) that compiles to a SQL expression, so the new value is computed by the database:
+
+```ts tab="better-drizzle" tab-group="orm"
+await client.posts.update({
+	where: { id: 1 },
+	data: { score: { increment: 5 } },
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq, sql } from 'drizzle-orm';
+
+await db
+	.update(posts)
+	.set({ score: sql`${posts.score} + ${5}` })
+	.where(eq(posts.id, 1));
+```
+
+When each row needs its own amount, `updateEach` accepts one expression per column:
 
 ```ts tab="better-drizzle" tab-group="orm"
 import { sql } from 'drizzle-orm';
@@ -84,15 +102,12 @@ The expression runs in the database, so concurrent requests never overwrite each
 
 ## Toggle a boolean
 
-The same pattern flips a flag without reading it first:
+Boolean columns accept `toggle`, which flips the flag without reading it first:
 
 ```ts
-import { sql } from 'drizzle-orm';
-
-await client.posts.updateEach({
-	by: posts.id,
-	data: [{ id: 10 }],
-	update: { published: () => sql`not ${posts.published}` },
+await client.posts.update({
+	where: { id: 10 },
+	data: { published: { toggle: true } },
 });
 ```
 

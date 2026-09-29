@@ -28,7 +28,7 @@ Accepted by `findMany`, `findFirst`, `findOne`, and `findUnique`:
 		},
 		orderBy: {
 			description: 'Sort order. One field map, or an array for multi-column ordering.',
-			type: '{ [column]: "asc" | "desc" } | [...]',
+			type: '{ [column]: "asc" | "desc" | { direction, nulls } } | [...]',
 		},
 		take: {
 			description: 'Max rows to return. A negative value reverses ordering and takes from the end.',

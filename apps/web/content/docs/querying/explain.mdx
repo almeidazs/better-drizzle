@@ -6,7 +6,7 @@ seoTitle: 'Explain - Drizzle ORM Query Plans'
 seoDescription: 'Inspect SQL query plans for any Drizzle ORM read with .explain(): EXPLAIN ANALYZE on PostgreSQL, EXPLAIN QUERY PLAN on SQLite, and MySQL EXPLAIN.'
 ---
 
-Every read operation in Better Drizzle returns an **explainable result**: a normal promise with an extra `.explain()` method. Calling `.explain()` sends an `EXPLAIN` for the compiled SQL and returns the plan.
+Every read operation in Better Drizzle returns an **explainable result**: a lazy thenable, awaited like a promise, with an extra `.explain()` method. Calling `.explain()` sends an `EXPLAIN` for the compiled SQL and returns the plan.
 
 ## Basic usage
 

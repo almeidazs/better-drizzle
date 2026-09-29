@@ -170,12 +170,11 @@ await db.transaction(async (tx) => {
 		.returning({ id: posts.id });
 	if (connected.length !== 2) throw new Error('Post not found');
 
-	const disconnected = await tx
+	// a post linked to another user is left alone
+	await tx
 		.update(posts)
 		.set({ authorId: null })
-		.where(and(eq(posts.id, 1), eq(posts.authorId, 1)))
-		.returning({ id: posts.id });
-	if (!disconnected.length) throw new Error('Post not connected');
+		.where(and(eq(posts.id, 1), eq(posts.authorId, 1)));
 });
 ```
 

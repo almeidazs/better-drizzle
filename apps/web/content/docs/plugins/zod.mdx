@@ -220,7 +220,8 @@ zod({
 | `ZodPluginTableSchemasConfig` | one entry of `schemas` |
 | `BetterDrizzleZodModelSchemas` | the `$zod` object of a table |
 | `BetterDrizzleZodModelExtension` | `{ $zod }` added to each delegate |
-| `BetterDrizzleZodModelExtensionResolver` | the per-table model extension resolver |
+| `ZodModelExtensionResolver` | the per-table model extension resolver (a `ModelExtensionTypeResolver` interface) |
+| `BetterDrizzleZodModelExtensionResolver` | legacy generic-function form of the resolver |
 | `ZodPluginQueryInput` | `findMany` / `findFirst` / `findOne` / `findUnique` args without `meta` |
 | `ZodPluginPaginationInput` | `paginate` args without `meta` |
 | `ZodPluginCursorInput` | `cursor` args without `meta` |

@@ -26,11 +26,10 @@ const stats = await db
 	.groupBy(posts.authorId);
 ```
 
-## `orderBy` is column and direction only
+## `orderBy` is column-based
 
-`orderBy` accepts scalar columns of the queried table, each with `'asc'` or `'desc'`, as one object or an array for multi-column ordering. It does not support:
+`orderBy` accepts scalar columns of the queried table, each with `'asc'` / `'desc'` or `{ direction, nulls }` (`nulls: 'first' | 'last'`), as one object or an array for multi-column ordering. It does not support:
 
-- `NULLS FIRST` / `NULLS LAST`, so null placement is the database default (for example, PostgreSQL puts nulls last in ascending order, SQLite and MySQL put them first)
 - SQL expressions
 - ordering the root rows by a relation's columns
 
@@ -79,6 +78,20 @@ const users = await client.users.findMany({
 | `update`, `updateMany`, `updateEach`, `upsert`, `upsertMany` | **not filtered**, can modify deleted rows |
 
 Add `deletedAt: null` to the `where` of these calls when they must ignore deleted rows. The [rules plugin](/docs/plugins/rules) rule `noHardDeleteOnSoftDeleteModel` only checks `delete({ mode: 'hard' })`; it does not flag `deleteMany`.
+
+## Relations the loader cannot use
+
+better-drizzle reads relations from Drizzle 1.x `defineRelations(...)`, but its loader does not support every relation shape:
+
+- relations with a relation-level `where` (filtered relations)
+- `one` relations declared through a junction table
+- `.through()` relations whose junction table is not part of the relations config
+
+Loading one with `include` or `select` throws `Relation "x" on "t" cannot be loaded: ...`, and filtering through one in `where` throws `Relation "x" on "t" cannot be filtered: ...`. They still work with Drizzle's own relational queries on the underlying `db`. See [troubleshooting](/docs/guides/troubleshooting#a-relation-cannot-be-loaded).
+
+## PostgreSQL-only filters and mutations
+
+JSONB path filters and mutations, and native array filters and mutations, compile to PostgreSQL operators and fail fast on SQLite and MySQL. JSONB path filters also require a `jsonb` column: Drizzle 1.x types `json` and `jsonb` alike, so a path filter on `json` type-checks and throws at runtime.
 
 ## Row locks reject relation loading
 

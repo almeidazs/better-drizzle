@@ -180,11 +180,11 @@ const {
 ```
 
 ```ts tab="Drizzle" tab-group="orm"
-import { count, desc, eq, getTableColumns } from 'drizzle-orm';
+import { count, desc, eq, getColumns } from 'drizzle-orm';
 
 const postsWithAuthor = () =>
 	db
-		.select({ ...getTableColumns(posts), author: getTableColumns(users) })
+		.select({ ...getColumns(posts), author: getColumns(users) })
 		.from(posts)
 		.leftJoin(users, eq(posts.authorId, users.id))
 		.orderBy(desc(posts.id));

@@ -181,15 +181,11 @@ import { and, eq, inArray } from 'drizzle-orm';
 // to-one: null the foreign key
 await db.update(posts).set({ authorId: null }).where(eq(posts.id, 10));
 
-// to-many: the rows to detach
-await db.transaction(async (tx) => {
-	const detached = await tx
-		.update(posts)
-		.set({ authorId: null })
-		.where(and(eq(posts.authorId, 1), inArray(posts.id, [2, 3])))
-		.returning({ id: posts.id });
-	if (detached.length !== 2) throw new Error('Post not linked');
-});
+// to-many: the rows to detach; rows linked to another user are left alone
+await db
+	.update(posts)
+	.set({ authorId: null })
+	.where(and(eq(posts.authorId, 1), inArray(posts.id, [2, 3])));
 ```
 
 <Callout type="warn">
@@ -198,6 +194,9 @@ await db.transaction(async (tx) => {
 	fails and the whole write rolls back - use `set` to point it somewhere
 	else instead.
 </Callout>
+
+A to-many `disconnect` selector must match an existing row, but a row that is
+linked to a different parent is skipped rather than rejected.
 
 ## `set` - replace the whole relation
 

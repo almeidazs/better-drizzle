@@ -293,7 +293,7 @@ const posts = await client.posts.findMany({
 		scores: { some: { gt: 100 } },
 		ages: { every: { gte: 0 } },
 		emails: {
-			some: { endsWith: '@rockfeller.com.br', mode: 'insensitive' },
+			some: { endsWith: '@example.com', mode: 'insensitive' },
 		},
 		flags: { none: { equals: 'archived' } },
 	},
@@ -571,5 +571,5 @@ The [Zod plugin](/docs/plugins/zod) understands array columns: create and update
 
 - **PostgreSQL only.** An array filter object on SQLite or MySQL throws `ARRAY_QUERY_UNSUPPORTED` (status 400). Plain equality with an array value still goes through the regular filter path.
 - **Native array columns only.** JSON columns typed as arrays use the [JSONB filters](/docs/querying/jsonb) instead.
-- **Whole-element comparisons.** Operators compare array elements for equality. Predicates on individual elements, such as "any score above 10", need raw SQL with `ANY` / `unnest`, which you can pass as a Drizzle `sql` fragment in `where`.
+- **Element predicates.** Containment operators compare whole elements for equality. Predicates on individual elements, such as "any score above 10", use `some` / `every` / `none` (see above).
 - **No ordering by array contents.** `orderBy` takes scalar columns.

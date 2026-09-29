@@ -77,7 +77,7 @@ Every option is optional.
 
 ### `mode: 'app'`
 
-The plugin fills timestamp columns before the database call. Values are JavaScript `Date` objects, one `now` per call.
+The plugin fills timestamp columns before the database call. Values are `Date` objects, or ISO 8601 strings when the column's Drizzle data type is a string (such as a SQLite `text` column). One `now` is used per call.
 
 | Operation | Behavior |
 | --- | --- |

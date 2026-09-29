@@ -310,10 +310,9 @@ await findByEmail(client.users, 'ada@example.com');
 `BetterDrizzleModelDelegate<Schema, Table, Meta, Plugins>` is the same type written out.
 
 <Callout type="info" title="Clients built with extends()">
-	`typeof client` includes keys added with `client.extends(...)`, but the
-	`tx` passed to `transaction()` does not, so `tx` is not assignable to
-	that type. See [Client extensions](/docs/guides/client-extensions#typing)
-	for the gaps and the type assertion that covers them.
+	`typeof client` includes keys added with `client.extends(...)`, and so do
+	`$withContext()` clones and the `tx` passed to `transaction()`. See
+	[Client extensions](/docs/guides/client-extensions#typing).
 </Callout>
 
 ## Clients with plugins

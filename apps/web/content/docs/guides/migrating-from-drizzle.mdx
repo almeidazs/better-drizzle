@@ -16,6 +16,7 @@ Do not rewrite tables. better-drizzle reads tables and relations from the Drizzl
 
 ```ts
 import { better } from 'better-drizzle';
+import { drizzle } from 'drizzle-orm/node-postgres'; // Or your driver
 import { relations } from './relations';
 
 const db = drizzle({ client: connection, relations });

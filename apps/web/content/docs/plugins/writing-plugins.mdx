@@ -290,7 +290,7 @@ Client hooks run before plugin hooks for transaction and raw events.
 | `models` | model registry keyed by schema key: `name`, `dbName`, `columns`, `hasColumn()` |
 | `isColumnExists(model, column)` | `true` when the model exists and has the column |
 | `dialect` | `'pg'`, `'mysql'`, or `'sqlite'` |
-| `schema` | the full Drizzle schema |
+| `schema` | the relations config from `defineRelations(...)`, keyed by table key: `{ table, name, relations }` per entry. Iterate `models` for column metadata |
 | `plugin` | this plugin's `id`, `name`, `version`, `description`, and `options` |
 
 `config` declares requirements that are checked at bootstrap, before `setup()` runs:

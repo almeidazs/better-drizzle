@@ -122,7 +122,7 @@ const FEATURES = [
 	{
 		icon: GitBranch,
 		title: 'Relational writes',
-		body: 'connect, disconnect, and exclusive set on create and update. Junction tables are inferred, and the whole write runs in one implicit transaction.',
+		body: 'connect, disconnect, and exclusive set on create and update. Many-to-many works through `.through()` relations, and the whole write runs in one implicit transaction.',
 	},
 	{
 		icon: BookOpenText,
@@ -142,7 +142,7 @@ const FEATURES = [
 	{
 		icon: Blocks,
 		title: 'First-class plugins',
-		body: 'Rules, Zod, timestamps, and soft delete ship in the box - with transforms, lifecycle hooks, and typed operation args you can add yourself.',
+		body: 'Rules, Zod, ATA, timestamps, and soft delete ship in the box - with transforms, lifecycle hooks, and typed operation args you can add yourself.',
 	},
 	{
 		icon: ShieldCheck,

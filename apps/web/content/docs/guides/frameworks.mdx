@@ -75,7 +75,7 @@ Library errors are `BetterDrizzleError` instances with a `code` and an HTTP-like
 
 Database failures reach you in one of two shapes:
 
-- **the raw driver error**, for example from a plain `create()` on a client without hooks
+- **Drizzle's `DrizzleQueryError`**, with the driver error on `cause`, for example from a plain `create()` on a client without hooks
 - **a wrapped `BetterDrizzleError`** with code `OPERATION_ERROR`, status 500, and the driver error in `cause`, when the failure happens inside `transaction()`, inside a raw query, or while an `onError` hook or a hook for that operation is configured
 
 Check both the error and its `cause` so a unique violation maps to 409 whichever shape arrives:

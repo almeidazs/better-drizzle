@@ -288,7 +288,7 @@ expect(await ctx.client.users.findMany({ take: 2 })).toHaveLength(2);
 
 // row locks are rejected on SQLite
 await expect(
-	Promise.resolve(ctx.client.users.findMany({ lock: { strength: 'update' } })),
+	Promise.resolve(ctx.client.users.findMany({ lock: 'update' })),
 ).rejects.toMatchObject({ code: BetterDrizzleErrorCode.LockNotSupported });
 ```
 

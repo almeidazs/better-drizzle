@@ -207,6 +207,9 @@ try {
 | Database | `DATABASE_ERROR` | 500 | The database rejected the statement (unique, foreign key, not null, and so on). |
 | Database | `DIALECT_INFERENCE_FAILED` | 500 | The SQL dialect could not be inferred from the Drizzle client. |
 | Database | `JSONB_QUERY_UNSUPPORTED` | 400 | A JSONB path filter was used on a dialect other than PostgreSQL. |
+| Database | `JSONB_MUTATION_UNSUPPORTED` | 400 | A JSONB path mutation (dotted path or `{ json }` wrapper) was used on a dialect other than PostgreSQL. |
+| Database | `ARRAY_QUERY_UNSUPPORTED` | 400 | A native array filter was used on a dialect other than PostgreSQL. |
+| Database | `ARRAY_MUTATION_UNSUPPORTED` | 400 | A native array mutation (`append`, `prepend`, `remove`, `replace`, `addUnique`) was used on a dialect other than PostgreSQL. |
 | Operations | `OPERATION_ERROR` | 500 | An operation received invalid input or failed, for example an invalid `batchSize` or a bad cursor. |
 | Operations | `UNKNOWN` | 500 | An uncategorized error. |
 | Hooks | `HOOK_ERROR` | 500 | A lifecycle hook threw. |

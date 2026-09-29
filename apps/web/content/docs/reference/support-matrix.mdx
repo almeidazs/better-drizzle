@@ -42,6 +42,7 @@ Projects on `drizzle-orm` 0.x stay on better-drizzle `0.2.x`, whose `drizzle-orm
 | `better-drizzle/soft-delete` | soft delete plugin | Yes | Yes | Yes |
 | `better-drizzle/timestamps` | timestamps plugin | Yes | Yes | Yes |
 | `better-drizzle/zod` | Zod schema + validation plugin | Yes | Yes | Yes |
+| `better-drizzle/ata` | JSON Schema + ata validation plugin | Yes | Yes | Yes |
 
 Upgrading from the scoped `@better-drizzle/*` packages? See the
 [0.2 upgrade guide](/docs/guides/upgrading#upgrading-to-02).
@@ -73,9 +74,9 @@ Upgrading from the scoped `@better-drizzle/*` packages? See the
 | relation writes: `disconnect`, `set` | Yes | Yes | Yes |
 | relation loading combined with `lock` | Rejected | N/A | Rejected |
 
-Relation loading and row locks are mutually exclusive by design - Drizzle's
-relational path does not expose lock configuration, so the combination fails
-fast instead of silently dropping the lock.
+Relation loading and row locks are mutually exclusive by design - nested
+relation stages run as separate queries, so a root lock would not cover them.
+The combination fails fast instead of silently dropping the lock.
 
 ## Query plans
 
@@ -97,7 +98,16 @@ silently dropped.
 | JSONB path mutations (`jsonb_set`) | Yes | rejected | rejected |
 | JSONB full-document replacement | Yes | Yes | Yes |
 
-Typed JSONB filters require `jsonb(...).$type<T>()` and support scalar dot paths only. For typed path mutations, both dotted paths and the `{ json: ... }` wrapper check declared object paths and values. Untyped columns keep open path names and JSON-encodable values in both forms. Mutations can write object or array values, create absent ancestors, and preserve existing object ancestors and unrelated keys; overlapping paths are rejected. Full-document replacements are not dialect-gated.
+Typed JSONB filters require `jsonb(...).$type<T>()` and support scalar dot paths only. For typed path mutations, both dotted paths and the `{ json: ... }` wrapper check declared object paths and values. Untyped columns keep open path names and JSON-encodable values in both forms. Mutations can write object or array values, create absent ancestors, and preserve existing object ancestors and unrelated keys; overlapping paths are rejected. Full-document replacements are not dialect-gated. Path filters require a `jsonb` column; `json` columns support whole-document filters only.
+
+## Native arrays
+
+| Capability | PostgreSQL | SQLite | MySQL |
+| --- | --- | --- | --- |
+| array filters (`has`, `hasEvery`, `hasSome`, `hasNone`, `containedBy`, `isEmpty`, `length`, `some` / `every` / `none`) | Yes | rejected | rejected |
+| array mutations (`append`, `prepend`, `remove`, `replace`, `addUnique`) | Yes | rejected | rejected |
+
+Rejected calls throw `ARRAY_QUERY_UNSUPPORTED` or `ARRAY_MUTATION_UNSUPPORTED`. See [arrays](/docs/querying/arrays).
 
 ## Conflict-handling features
 
@@ -160,6 +170,7 @@ Typed JSONB filters require `jsonb(...).$type<T>()` and support scalar dot paths
 | `better-drizzle/timestamps` | Yes | Yes | Yes |
 | `better-drizzle/soft-delete` | Yes | Yes | Yes |
 | `better-drizzle/zod` | Yes | Yes | Yes |
+| `better-drizzle/ata` | Yes | Yes | Yes |
 
 `better-drizzle/eslint` is dialect-independent - it is a static linter, not a
 runtime plugin.

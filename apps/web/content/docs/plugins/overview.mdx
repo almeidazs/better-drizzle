@@ -48,6 +48,10 @@ await client.users.restore({ where: { id: 1 } }); // plugin-added method
 		Generate per-table Zod schemas, expose them on `$zod`, and validate
 		payloads, query args, and results through plugin hooks.
 	</Card>
+	<Card title="ATA" href="/docs/plugins/ata">
+		Describe tables as JSON Schema, expose them on `$ata`, and validate
+		operations with compiled ata validators.
+	</Card>
 	<Card title="Soft delete" href="/docs/plugins/soft-delete">
 		Turn `delete()` into a recoverable state change, filter deleted rows by
 		default, and add `restore()` helpers.
@@ -59,6 +63,7 @@ await client.users.restore({ where: { id: 1 } }); // plugin-added method
 | ESLint | you want IDE and CI feedback before code runs | flags the statically-checkable subset of Better Drizzle guardrails |
 | Rules | you want runtime guardrails around repository usage | validates raw SQL, destructive writes, limits, lock usage, and context requirements |
 | Zod | you want generated runtime schemas for inputs and results | builds per-table Zod schemas and validates Better Drizzle operations |
+| ATA | you want JSON Schema for inputs and results | builds per-table JSON Schemas and validates operations with compiled validators |
 | Timestamps | you want managed `createdAt` / `updatedAt` | fills timestamp columns on writes |
 | Soft delete | rows should stay recoverable and hidden by default | rewrites deletes, filters reads, adds restore helpers |
 

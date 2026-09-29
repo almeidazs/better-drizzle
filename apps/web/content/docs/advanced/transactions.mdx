@@ -187,7 +187,8 @@ for (let attempt = 1; ; attempt += 1) {
 		});
 		break;
 	} catch (error) {
-		const code = (error as { code?: string }).code;
+		// Drizzle 1.x wraps driver errors; the driver code is on `cause`
+		const code = (error as { cause?: { code?: string } }).cause?.code;
 		if (attempt >= 3 || (code !== '40P01' && code !== '40001')) throw error;
 		await new Promise((resolve) => setTimeout(resolve, attempt * 25));
 	}
@@ -206,7 +207,6 @@ await client.transaction(
 		readOnly: true,
 		timeoutMs: 1000,
 		name: 'users-list',
-		comment: 'users.list.transaction',
 		meta: { requestId: 'req_123' },
 		context: { source: 'admin' },
 	},
@@ -214,7 +214,7 @@ await client.transaction(
 ```
 
 ```ts tab="Drizzle" tab-group="orm"
-// PostgreSQL; no timeout, name, comment, meta, or context equivalents
+// PostgreSQL; no timeout, name, meta, or context equivalents
 await db.transaction(
 	async (tx) => tx.select().from(users).limit(10),
 	{
@@ -233,11 +233,12 @@ await db.transaction(
 | `signal` | an `AbortSignal` that rolls back on abort |
 | `meta` | metadata merged over the client's `$withContext()` defaults for every operation, raw call, and lifecycle hook inside the transaction |
 | `context` | custom context merged into the transaction scope |
-| `name` | name for the transaction / savepoint |
-| `comment` | comment attached to the transaction |
+| `name` | label passed to transaction hooks; savepoints keep generated names |
+| `comment` | metadata passed to transaction hooks; not sent to the database, so it is reported as an unsupported option on every dialect |
 
 <Callout type="warn" title="SQLite ignores some options">
-	`isolationLevel` and `readOnly` are no-ops on SQLite. You can configure how
+	`isolationLevel` and `readOnly` are no-ops on SQLite, and `comment` is
+	reported as unsupported on every dialect. You can configure how
 	unsupported options behave (`'warn'` by default, or `'throw'` / `'ignore'`)
 	via the [client's `transaction` config](/docs/reference/client).
 </Callout>

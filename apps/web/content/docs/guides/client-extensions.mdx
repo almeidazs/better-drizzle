@@ -72,25 +72,22 @@ export const client = base.extends(helpers);
 export type AppHelpers = ReturnType<typeof helpers>;
 ```
 
-The static types have three gaps:
+The extension keys stay typed on every client derived from the extended one:
 
-- **Chained calls keep only the last extension.** The type of `client.extends(a).extends(b)` includes `b` but not `a`, even though both exist at runtime. Put every helper in one `extends()` call, as above.
-- **`$withContext()` returns the base client type**, without extension keys.
-- **The `tx` parameter of `transaction()` is the base transaction client type**, without extension keys.
-
-The helpers are present at runtime in all three cases. Where you need them typed, assert the extension type:
+- **Chained calls keep every extension.** `client.extends(a).extends(b)` has the keys of both `a` and `b`.
+- **`$withContext()` clones** keep the extension keys.
+- **The `tx` parameter of `transaction()`** keeps the extension keys.
 
 ```ts
-const scoped = client.$withContext({ requestId }) as typeof client;
+const scoped = client.$withContext({ requestId });
 await scoped.findUserByEmail('alice@example.com');
 
 await client.transaction(async (tx) => {
-	const txClient = tx as typeof tx & AppHelpers;
-	await txClient.publishPost(1);
+	await tx.publishPost(1);
 });
 ```
 
-Keys added by a plugin's `extendClient()` do not have these gaps: they are part of the client type, including on scoped and transaction clients. See [extends vs plugins](#extends-vs-plugins).
+Keys added by a plugin's `extendClient()` are typed the same way. See [extends vs plugins](#extends-vs-plugins).
 
 ## Conflicts fail fast
 
@@ -101,7 +98,7 @@ An extension cannot replace an existing key. The call throws `BetterDrizzleError
 - keys added by plugins through `extendClient()`
 - keys added by an earlier `extends()` call
 
-Plugin extensions are applied first, so a plugin key always wins the conflict and the `extends()` call is the one that fails.
+Plugin extensions are applied first, so a plugin key always wins the conflict and the `extends()` call is the one that fails. A key that conflicts with the client type is also a compile-time error.
 
 <Callout type="warn" title="Call extends() once, at startup">
 	Extensions are registered on state shared by the root client and everything
@@ -141,7 +138,7 @@ await client.transferPost(10, 2);
 
 // Savepoint inside a larger transaction, rolled back with it
 await client.transaction(async (tx) => {
-	await (tx as typeof tx & AppHelpers).transferPost(10, 2);
+	await tx.transferPost(10, 2);
 	await tx.users.update({ where: { id: 1 }, data: { active: false } });
 });
 ```

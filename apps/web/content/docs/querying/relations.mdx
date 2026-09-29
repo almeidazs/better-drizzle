@@ -10,7 +10,7 @@ Relations are where better-drizzle saves the most repetition. Once your relation
 
 Relation reads use a batch loader owned by better-drizzle: one root query plus one query per requested relation node. They do not issue one query per parent row.
 
-The examples below assume a `users → posts` schema with relations defined (see [getting started](/docs/getting-started)).
+The examples below extend the [getting started](/docs/getting-started) `users → posts` schema with `comments`, `profiles`, a `posts.reviewerId` column, and a `userGroups` junction between `users` and `groups`.
 
 ## Defining relations
 
@@ -68,14 +68,39 @@ const posts = await client.posts.findMany({
 ```
 
 ```ts tab="Drizzle" tab-group="orm"
-import { desc, eq, getTableColumns } from 'drizzle-orm';
+import { desc, eq, getColumns } from 'drizzle-orm';
 
 const latestPosts = await db
-	.select({ ...getTableColumns(posts), author: getTableColumns(users) })
+	.select({ ...getColumns(posts), author: getColumns(users) })
 	.from(posts)
 	.leftJoin(users, eq(posts.authorId, users.id))
 	.orderBy(desc(posts.id))
 	.limit(10);
+```
+
+Or `select` to also narrow the related fields:
+
+```ts tab="better-drizzle" tab-group="orm"
+const posts = await client.posts.findMany({
+	select: {
+		id: true,
+		title: true,
+		author: { select: { id: true, name: true } },
+	},
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq } from 'drizzle-orm';
+
+const rows = await db
+	.select({
+		id: posts.id,
+		title: posts.title,
+		author: { id: users.id, name: users.name },
+	})
+	.from(posts)
+	.leftJoin(users, eq(posts.authorId, users.id));
 ```
 
 Every nested relation accepts its own `where`, `orderBy`, `take`, `skip`, `cursor`, `select`, and `include`. Pagination is applied per parent in SQL:
@@ -163,11 +188,11 @@ const users = await client.users.findMany({
 ```
 
 ```ts tab="Drizzle" tab-group="orm"
-import { and, eq, getTableColumns, sql } from 'drizzle-orm';
+import { and, eq, getColumns, sql } from 'drizzle-orm';
 
 const rows = await db
 	.select({
-		...getTableColumns(users),
+		...getColumns(users),
 		_count: {
 			posts: sql<number>`(select count(*) from ${posts} where ${and(eq(posts.authorId, users.id), eq(posts.published, true))})`.mapWith(Number),
 			profile: sql<number>`(select count(*) from ${profiles} where ${eq(profiles.userId, users.id)})`.mapWith(Number),
@@ -209,13 +234,13 @@ const users = await client.users.findMany({
 ```
 
 ```ts tab="Drizzle" tab-group="orm"
-import { eq, getTableColumns, inArray } from 'drizzle-orm';
+import { eq, getColumns, inArray } from 'drizzle-orm';
 
 const userRows = await db.select().from(users);
 
 // walk the junction table by hand
 const links = await db
-	.select({ userId: userGroups.userId, group: getTableColumns(groups) })
+	.select({ userId: userGroups.userId, group: getColumns(groups) })
 	.from(userGroups)
 	.innerJoin(groups, eq(userGroups.groupId, groups.id))
 	.where(inArray(userGroups.userId, userRows.map((user) => user.id)));
@@ -237,35 +262,6 @@ Two kinds of Drizzle relations are not supported by the better-drizzle loader:
 
 They are not part of the better-drizzle relation API: loading one with `include` or `select` throws `Relation "x" on "t" cannot be loaded: ...`, and filtering through one in `where` throws `Relation "x" on "t" cannot be filtered: ...`. They still work with Drizzle's own relational queries on the underlying Drizzle instance.
 
-## Explain plans
-
-`.explain()` executes the root dialect-specific explain and reports relation queries under `deferredRelations`, including each path, cardinality, target table, junction table, filtering, sorting, and pagination flags.
-
-Or `select` to also narrow the related fields:
-
-```ts tab="better-drizzle" tab-group="orm"
-const posts = await client.posts.findMany({
-	select: {
-		id: true,
-		title: true,
-		author: { select: { id: true, name: true } },
-	},
-});
-```
-
-```ts tab="Drizzle" tab-group="orm"
-import { eq } from 'drizzle-orm';
-
-const rows = await db
-	.select({
-		id: posts.id,
-		title: posts.title,
-		author: { id: users.id, name: users.name },
-	})
-	.from(posts)
-	.leftJoin(users, eq(posts.authorId, users.id));
-```
-
 ## Filtering by related rows
 
 `where` can constrain a row by its relations. The operators depend on the relation's cardinality.
@@ -286,10 +282,10 @@ const posts = await client.posts.findMany({
 ```
 
 ```ts tab="Drizzle" tab-group="orm"
-import { eq, getTableColumns } from 'drizzle-orm';
+import { eq, getColumns } from 'drizzle-orm';
 
 const activeAuthorPosts = await db
-	.select({ ...getTableColumns(posts), author: getTableColumns(users) })
+	.select({ ...getColumns(posts), author: getColumns(users) })
 	.from(posts)
 	.innerJoin(users, eq(posts.authorId, users.id))
 	.where(eq(users.active, true));
@@ -390,6 +386,10 @@ const companyPosts = await db
 	.innerJoin(users, eq(posts.authorId, users.id))
 	.where(and(eq(posts.published, true), like(users.email, '%@company.com')));
 ```
+
+## Explain plans
+
+`.explain()` executes the root dialect-specific explain and reports relation queries under `deferredRelations`, including each path, cardinality, target table, junction table, filtering, sorting, and pagination flags.
 
 ## Rule of thumb
 
