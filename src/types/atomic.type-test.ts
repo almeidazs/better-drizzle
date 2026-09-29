@@ -1,3 +1,4 @@
+import { defineRelations } from 'drizzle-orm';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 import type { BetterDrizzleClient } from './delegate';
@@ -9,7 +10,8 @@ const accounts = sqliteTable('atomic_type_accounts', {
 	name: text('name').notNull(),
 });
 
-declare const db: BetterDrizzleClient<{ accounts: typeof accounts }>;
+const relations = defineRelations({ accounts });
+declare const db: BetterDrizzleClient<typeof relations>;
 
 db.accounts.update({
 	data: {

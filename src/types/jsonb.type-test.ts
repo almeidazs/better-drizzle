@@ -1,3 +1,4 @@
+import { defineRelations } from 'drizzle-orm';
 import { integer, jsonb, pgTable } from 'drizzle-orm/pg-core';
 
 import type { BetterDrizzleClient } from './delegate';
@@ -11,7 +12,8 @@ const events = pgTable('typed_jsonb_events', {
 	metadata: jsonb('metadata').$type<Metadata>().notNull(),
 	untyped: jsonb('untyped').notNull(),
 });
-declare const db: BetterDrizzleClient<{ events: typeof events }>;
+const relations = defineRelations({ events });
+declare const db: BetterDrizzleClient<typeof relations>;
 void db.events.findMany({
 	where: {
 		metadata: {

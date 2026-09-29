@@ -1,3 +1,4 @@
+import { defineRelations } from 'drizzle-orm';
 import { integer, pgEnum, pgTable, text } from 'drizzle-orm/pg-core';
 
 import { better } from '../index';
@@ -8,7 +9,9 @@ const users = pgTable('array_type_test_users', {
 	scores: integer('scores').array().notNull(),
 	name: text('name').notNull(),
 });
-const db = better(null as never, { schema: { users } });
+const relations = defineRelations({ users });
+declare const raw: { readonly _: { readonly relations: typeof relations } };
+const db = better(raw);
 
 db.users.findMany({
 	where: { roles: { has: 'admin' }, scores: { hasEvery: [10, 20] } },

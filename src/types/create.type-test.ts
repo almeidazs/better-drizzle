@@ -1,3 +1,4 @@
+import { defineRelations } from 'drizzle-orm';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 import type { BetterDrizzleClient } from './delegate';
@@ -6,7 +7,8 @@ const users = sqliteTable('typed_create_users', {
 	id: integer('id').primaryKey(),
 	email: text('email').notNull(),
 });
-declare const db: BetterDrizzleClient<{ users: typeof users }>;
+const relations = defineRelations({ users });
+declare const db: BetterDrizzleClient<typeof relations>;
 
 type Row = { id: number; email: string };
 type IsNullable<T> = null extends T ? true : false;

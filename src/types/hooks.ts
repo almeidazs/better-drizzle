@@ -908,8 +908,9 @@ export type RawErrorHookContext<
 };
 
 /**
- * Configuration object passed to {@link better}. Includes the Drizzle schema,
- * optional plugins, and lifecycle hooks.
+ * Configuration object passed to {@link better}. Tables and relations are
+ * read from the Drizzle instance (`drizzle({ client, relations })`); the
+ * options hold plugins, lifecycle hooks, and runtime settings.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.
@@ -918,12 +919,11 @@ export type RawErrorHookContext<
  * ```ts
  * import { better } from 'better-drizzle';
  * import { drizzle } from 'drizzle-orm/better-sqlite3';
- * import * as schema from './schema';
+ * import { relations } from './relations';
  *
- * const raw = drizzle('file:local.db');
+ * const raw = drizzle('file:local.db', { relations });
  *
  * const db = better(raw, {
- *   schema,
  *   plugins: [myPlugin],
  *   hooks: {
  *     beforeCreate(ctx) {
@@ -948,22 +948,6 @@ export interface BetterClientOptions<
 	Meta = BetterMeta,
 	Plugins extends readonly AnyPlugin[] = readonly AnyPlugin[],
 > {
-	/** The Drizzle schema object containing all table definitions. */
-	schema: Schema;
-	/** Optional many-to-many inference and ambiguity overrides. */
-	relations?: {
-		/** Infer simple junction-table relations. Defaults to `true`. */
-		inferManyToMany?: boolean;
-		/** Explicit junction relations used to resolve aliases or ambiguity. */
-		manyToMany?: readonly {
-			/** Schema key of the junction table. */
-			through: string;
-			/** First endpoint relation as declared on the junction table. */
-			left: { relation: string; name?: string };
-			/** Second endpoint relation as declared on the junction table. */
-			right: { relation: string; name?: string };
-		}[];
-	};
 	/** Optional plugins to extend the client. */
 	plugins?: Plugins;
 	/** Optional transaction configuration. */
@@ -991,7 +975,6 @@ export interface BetterClientOptions<
  * @example
  * ```ts
  * const db = better(drizzle, {
- *   schema,
  *   hooks: {
  *     beforeCreate(ctx) {
  *       console.log('Creating on:', ctx.table, ctx.args.data);

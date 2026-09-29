@@ -73,7 +73,8 @@ export type PluginColumnRequirement = {
 	optional?: boolean;
 	/**
 	 * Expected Drizzle column type, matched against the column's `columnType`
-	 * (e.g. `'PgTimestamp'`) or `dataType` (e.g. `'date'`, `'string'`).
+	 * (e.g. `'PgTimestamp'`), its full `dataType` (e.g. `'object date'`), or
+	 * one part of it (e.g. `'date'`, `'string'`).
 	 */
 	type?: string;
 };
@@ -1032,27 +1033,62 @@ type PluginDefinition<
 	>;
 };
 
+/**
+ * Type-level resolver for per-table model extensions. A plugin declares an
+ * interface extending this one and computes `extension` from `this['schema']`
+ * and `this['name']`; Better Drizzle fills both in for every table. Unlike a
+ * generic function resolver, it is evaluated without inferring against the
+ * delegate type, so it cannot recurse through the model extensions it
+ * produces.
+ *
+ * @example
+ * ```ts
+ * interface AuditExtension extends ModelExtensionTypeResolver {
+ *   readonly extension: { table: this['name'] };
+ * }
+ * const audit = definePlugin<unknown, {}, {}, PluginState, {}, AuditExtension>({
+ *   id: 'audit',
+ *   extendModel: ({ model }) => ({ table: model.name }) as never,
+ * });
+ * ```
+ */
+export interface ModelExtensionTypeResolver {
+	readonly schema: unknown;
+	readonly name: unknown;
+	readonly extension: unknown;
+}
+
 type ModelExtensionOfResolver<
 	Resolver,
 	Schema extends AnySchema,
 	Name extends BetterTableKey<Schema>,
 	Meta,
 	Plugins extends readonly AnyPlugin[],
-> =
-	Resolver extends <
-		TContext extends PluginModelExtensionContext<
-			Schema,
-			Meta,
-			Name,
-			Plugins
-		>,
-	>(
-		context: TContext,
-	) => infer Extension
-		? Extension extends Record<string, unknown>
-			? Extension
+> = [Resolver] extends [never]
+	? Record<never, never>
+	: Resolver extends ModelExtensionTypeResolver
+		? (Resolver & {
+				readonly schema: Schema;
+				readonly name: Name;
+			})['extension'] extends infer Extension
+			? Extension extends Record<string, unknown>
+				? Extension
+				: Record<never, never>
 			: Record<never, never>
-		: Record<never, never>;
+		: Resolver extends <
+					TContext extends PluginModelExtensionContext<
+						Schema,
+						Meta,
+						Name,
+						Plugins
+					>,
+			  >(
+					context: TContext,
+			  ) => infer Extension
+			? Extension extends Record<string, unknown>
+				? Extension
+				: Record<never, never>
+			: Record<never, never>;
 
 /**
  * Extracts the client-level extension type from a plugin definition.

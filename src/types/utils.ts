@@ -1,37 +1,38 @@
 import type {
-	ExtractTablesWithRelations,
-	FindTableByDBName,
 	InferInsertModel,
 	InferSelectModel,
+	Many,
 	Table,
+	TableRelationalConfig,
 } from 'drizzle-orm';
-import type { Many } from 'drizzle-orm/relations';
+import type { PgColumn } from 'drizzle-orm/pg-core';
 
 /**
- * Represents any Drizzle schema object – a record mapping table names to their
- * Drizzle `Table` definitions (or arbitrary values for non-table entries).
+ * Represents any Better Drizzle schema: the relational config produced by
+ * Drizzle's `defineRelations(...)` and exposed as `db._.relations`.
  */
 export type AnySchema = Record<string, unknown>;
 
 /**
- * Extracts the relational table configuration map from a Drizzle schema.
- * This is the shape returned by Drizzle's `extractTablesRelationalConfig`.
+ * The relational table configuration map of a schema.
  *
- * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Schema - The relational config (`typeof relations`).
  */
-export type TablesConfig<Schema extends AnySchema> =
-	ExtractTablesWithRelations<Schema>;
+export type TablesConfig<Schema extends AnySchema> = Extract<
+	Schema,
+	Record<string, TableRelationalConfig>
+>;
 
 /**
- * Union of all valid TypeScript table keys in a Drizzle schema. Only keys
- * that exist both as direct properties of the schema and in the relational
- * config are included.
+ * Union of all valid TypeScript table keys in a schema. Views are excluded.
  *
- * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Schema - The relational config.
  */
 export type TableKey<Schema extends AnySchema> = Extract<
-	keyof TablesConfig<Schema>,
-	keyof Schema
+	{
+		[K in keyof Schema]: Schema[K] extends { table: Table } ? K : never;
+	}[keyof Schema],
+	string
 >;
 
 /**
@@ -50,21 +51,20 @@ export type Singularize<Key extends string> = Key extends `${infer Stem}ies`
  * Singularised alias of each table key in the schema. For example,
  * `"users"` becomes `"user"`.
  *
- * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Schema - The relational config.
  */
 export type AliasKey<Schema extends AnySchema> = Singularize<
 	Extract<TableKey<Schema>, string>
 >;
 
 /**
- * Union of all database table names in the schema (the `dbName` property
- * of each table's relational config).
+ * Union of all database table names in the schema.
  *
- * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Schema - The relational config.
  */
 export type DbNameKey<Schema extends AnySchema> = Extract<
 	{
-		[K in TableKey<Schema>]: TableConfigFor<Schema, K>['dbName'];
+		[K in TableKey<Schema>]: TableFor<Schema, K>['_']['name'];
 	}[TableKey<Schema>],
 	string
 >;
@@ -72,7 +72,7 @@ export type DbNameKey<Schema extends AnySchema> = Extract<
  * Given a database table name, extracts the corresponding TypeScript
  * table key from the schema.
  *
- * @typeParam Schema  - The Drizzle schema type.
+ * @typeParam Schema  - The relational config.
  * @typeParam DbName - The database table name to resolve.
  */
 export type SourceKeyFromDbName<
@@ -81,10 +81,7 @@ export type SourceKeyFromDbName<
 > = Extract<
 	TableKey<Schema>,
 	{
-		[K in TableKey<Schema>]: TableConfigFor<
-			Schema,
-			K
-		>['dbName'] extends DbName
+		[K in TableKey<Schema>]: TableFor<Schema, K>['_']['name'] extends DbName
 			? K
 			: never;
 	}[TableKey<Schema>]
@@ -92,13 +89,13 @@ export type SourceKeyFromDbName<
 /**
  * Extracts the relational configuration for a specific table from the schema.
  *
- * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Schema - The relational config.
  * @typeParam Name   - The table key within the schema.
  */
 export type TableConfigFor<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
-> = TablesConfig<Schema>[Name];
+> = Extract<Schema[Name], TableRelationalConfig>;
 /**
  * Extracts string keys from `T`, but returns `never` when `T` is `never`.
  * Prevents `keyof never` from widening to `string | number | symbol`.
@@ -111,18 +108,18 @@ export type SafeKeys<T> = [T] extends [never]
 /**
  * Extracts the Drizzle `Table` instance for a specific table from the schema.
  *
- * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Schema - The relational config.
  * @typeParam Name   - The table key within the schema.
  */
 export type TableFor<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
-> = Extract<Schema[Name], Table>;
+> = Extract<TableConfigFor<Schema, Name>['table'], Table>;
 /**
  * Infers the select (read) model for a specific table. This is the shape
  * of a row returned from queries.
  *
- * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Schema - The relational config.
  * @typeParam Name   - The table key within the schema.
  */
 export type SelectModelFor<
@@ -135,7 +132,7 @@ export type SelectModelFor<
  * Infers the insert model for a specific table. This is the shape
  * accepted by create operations. Optional columns become optional here.
  *
- * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Schema - The relational config.
  * @typeParam Name   - The table key within the schema.
  */
 export type InsertModelFor<
@@ -147,72 +144,18 @@ export type InsertModelFor<
 /**
  * Union of all relation names defined on a specific table.
  *
- * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Schema - The relational config.
  * @typeParam Name   - The table key within the schema.
  */
-export type PhysicalRelationKeysFor<
-	Schema extends AnySchema,
-	Name extends TableKey<Schema>,
-> = SafeKeys<TableConfigFor<Schema, Name>['relations']>;
-
-type PhysicalRelatedNameFor<
-	Schema extends AnySchema,
-	Name extends TableKey<Schema>,
-	RelationName extends PhysicalRelationKeysFor<Schema, Name>,
-> = Extract<
-	FindTableByDBName<
-		TablesConfig<Schema>,
-		TableConfigFor<
-			Schema,
-			Name
-		>['relations'][RelationName]['referencedTableName']
-	>['tsName'],
-	TableKey<Schema>
->;
-
-type VirtualRelationKeysFor<
-	Schema extends AnySchema,
-	Name extends TableKey<Schema>,
-> = {
-	[K in PhysicalRelationKeysFor<Schema, Name>]: TableConfigFor<
-		Schema,
-		Name
-	>['relations'][K] extends Many<string>
-		? {
-				[
-					P in PhysicalRelationKeysFor<
-						Schema,
-						PhysicalRelatedNameFor<Schema, Name, K>
-					>
-				]: PhysicalRelatedNameFor<
-					Schema,
-					PhysicalRelatedNameFor<Schema, Name, K>,
-					P
-				> extends Name
-					? never
-					: PhysicalRelatedNameFor<
-							Schema,
-							PhysicalRelatedNameFor<Schema, Name, K>,
-							P
-						>;
-			}[PhysicalRelationKeysFor<
-				Schema,
-				PhysicalRelatedNameFor<Schema, Name, K>
-			>]
-		: never;
-}[PhysicalRelationKeysFor<Schema, Name>];
-
 export type RelationKeysFor<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
-> =
-	| PhysicalRelationKeysFor<Schema, Name>
-	| Extract<VirtualRelationKeysFor<Schema, Name>, string>;
+> = SafeKeys<TableConfigFor<Schema, Name>['relations']>;
 /**
  * Union of all scalar (non-relation) column keys for a specific table.
  * This is the set of keys available for filtering and ordering.
  *
- * @typeParam Schema - The Drizzle schema type.
+ * @typeParam Schema - The relational config.
  * @typeParam Name   - The table key within the schema.
  */
 export type ScalarKeysFor<
@@ -220,34 +163,22 @@ export type ScalarKeysFor<
 	Name extends TableKey<Schema>,
 > = Exclude<keyof SelectModelFor<Schema, Name>, RelationKeysFor<Schema, Name>>;
 /**
- * Extracts the relational configuration for a specific relation on a table,
- * resolved by the referenced table's database name.
+ * Extracts the Drizzle relation definition for a specific relation on a table.
  *
- * @typeParam Schema       - The Drizzle schema type.
+ * @typeParam Schema       - The relational config.
  * @typeParam Name         - The table key within the schema.
  * @typeParam RelationName - The relation name on the table.
  */
-export type RelatedConfigFor<
+export type RelationFor<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 	RelationName extends RelationKeysFor<Schema, Name>,
-> =
-	RelationName extends PhysicalRelationKeysFor<Schema, Name>
-		? FindTableByDBName<
-				TablesConfig<Schema>,
-				TableConfigFor<
-					Schema,
-					Name
-				>['relations'][RelationName]['referencedTableName']
-			>
-		: RelationName extends TableKey<Schema>
-			? TableConfigFor<Schema, RelationName>
-			: never;
+> = TableConfigFor<Schema, Name>['relations'][RelationName];
 /**
  * Resolves the TypeScript table key of the table referenced by a specific
  * relation on a table.
  *
- * @typeParam Schema       - The Drizzle schema type.
+ * @typeParam Schema       - The relational config.
  * @typeParam Name         - The table key within the schema.
  * @typeParam RelationName - The relation name on the table.
  */
@@ -256,24 +187,34 @@ export type RelatedNameFor<
 	Name extends TableKey<Schema>,
 	RelationName extends RelationKeysFor<Schema, Name>,
 > = Extract<
-	RelatedConfigFor<Schema, Name, RelationName>['tsName'],
+	RelationFor<Schema, Name, RelationName>['targetTableName'],
 	TableKey<Schema>
 >;
 /**
- * Extracts the Drizzle relation definition for a specific relation on a table.
+ * Extracts the relational configuration of the table referenced by a
+ * specific relation on a table.
  *
- * @typeParam Schema       - The Drizzle schema type.
+ * @typeParam Schema       - The relational config.
  * @typeParam Name         - The table key within the schema.
  * @typeParam RelationName - The relation name on the table.
  */
-export type RelationFor<
+export type RelatedConfigFor<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 	RelationName extends RelationKeysFor<Schema, Name>,
-> =
-	RelationName extends PhysicalRelationKeysFor<Schema, Name>
-		? TableConfigFor<Schema, Name>['relations'][RelationName]
-		: Many<Extract<RelationName, string>>;
+> = TableConfigFor<Schema, RelatedNameFor<Schema, Name, RelationName>>;
+/**
+ * `true` when a relation resolves to many rows.
+ *
+ * @typeParam Schema       - The relational config.
+ * @typeParam Name         - The table key within the schema.
+ * @typeParam RelationName - The relation name on the table.
+ */
+export type IsManyRelation<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	RelationName extends RelationKeysFor<Schema, Name>,
+> = RelationFor<Schema, Name, RelationName> extends Many<string> ? true : false;
 
 /**
  * Removes `null` and `undefined` from `T`.
@@ -491,8 +432,32 @@ export type ArrayFilter<T> = {
 /** Accepted where value for a native PostgreSQL array column. */
 export type ArrayWhereField<T> =
 	| NonNullish<T>
-	| ArrayFilter<T>
+	// `length` would let a bare string match the all-optional filter shape.
+	| (ArrayFilter<T> & { charAt?: never })
 	| (null extends T ? null : never);
+
+/**
+ * `true` for PostgreSQL columns declared with `.array()`. Drizzle 1.x keeps
+ * the element's `dataType`, so JSON columns (`object json`) and vector-like
+ * types (`array ...`) are excluded even when their data is an array.
+ */
+export type IsPgArrayColumn<Column> = Column extends PgColumn
+	? Column['_']['dataType'] extends
+			| 'object json'
+			| 'array'
+			| `array ${string}`
+		? false
+		: NonNullable<Column['_']['data']> extends readonly unknown[]
+			? true
+			: false
+	: false;
+
+/** `true` for PostgreSQL JSON/JSONB columns. */
+export type IsPgJsonColumn<Column> = Column extends PgColumn
+	? Column['_']['dataType'] extends 'object json'
+		? true
+		: false
+	: false;
 
 /** Keys backed by Drizzle's native PostgreSQL array column. */
 export type PgArrayKeysFor<
@@ -500,7 +465,7 @@ export type PgArrayKeysFor<
 	Name extends TableKey<Schema>,
 > = {
 	[K in ScalarKeysFor<Schema, Name>]: K extends keyof TableFor<Schema, Name>
-		? TableFor<Schema, Name>[K] extends { columnType: 'PgArray' }
+		? IsPgArrayColumn<TableFor<Schema, Name>[K]> extends true
 			? K
 			: never
 		: never;
@@ -567,10 +532,27 @@ type JsonDottedPathValue =
 	| ComparableFilter<number | bigint>
 	| BooleanFilter<boolean>;
 
-export type JsonDottedWhereInput = {
-	[path: `${string}.${string}`]: JsonDottedPathValue;
-	json?: never;
-};
+/**
+ * Dotted JSONB path filters. Paths and value types follow `$type<T>()`;
+ * untyped columns accept any dotted path with JSON scalar filters.
+ */
+export type JsonDottedWhereInput<T = unknown> =
+	IsUnknown<T> extends true
+		? {
+				[path: `${string}.${string}`]: JsonDottedPathValue;
+				json?: never;
+			}
+		: [Extract<JsonScalarPath<T>, `${string}.${string}`>] extends [never]
+			? never
+			: {
+					[
+						Path in
+							| Extract<JsonScalarPath<T>, `${string}.${string}`>
+							| 'json'
+					]?: Path extends 'json'
+						? never
+						: ScalarWhereField<JsonPathValue<T, Path>>;
+				};
 
 /**
  * A JSON-compatible mutation value for a single JSONB path.

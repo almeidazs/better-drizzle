@@ -229,23 +229,18 @@ export type BetterDrizzleTransactionClient<
 	Schema extends AnySchema,
 	Meta = import('./query').BetterMeta,
 	Plugins extends readonly AnyPlugin[] = [],
-> = import('./delegate').BetterDrizzleClient<Schema, Meta, Plugins> & {
+> = Omit<
+	import('./delegate').BetterDrizzleClient<Schema, Meta, Plugins>,
+	'$withContext' | 'afterCommit' | 'afterRollback' | 'extends' | 'transaction'
+> & {
 	/**
 	 * Extends the current transaction client with custom properties and helper
 	 * methods. The extension is reapplied to nested transactions and scoped
 	 * clones derived from this transaction client.
 	 */
-	extends<Extension extends Record<string, unknown>>(
-		extension:
-			| Extension
-			| ((
-					client: BetterDrizzleTransactionClient<
-						Schema,
-						Meta,
-						Plugins
-					>,
-			  ) => Extension | undefined),
-	): BetterDrizzleTransactionClient<Schema, Meta, Plugins> & Extension;
+	extends: import('./delegate').BetterDrizzleExtendsMethod<
+		BetterDrizzleTransactionClient<Schema, Meta, Plugins>
+	>;
 	/**
 	 * Returns a cloned transaction client with default metadata merged into
 	 * every subsequent operation, raw query, and nested transaction.
