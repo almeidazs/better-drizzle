@@ -70,7 +70,7 @@ Also check that `select` and `include` are not used at the same level: that thro
 
 **Message:** `Relation "x" on "t" cannot be loaded: ...` or `... cannot be filtered: ...` (code `OPERATION_ERROR`, with the relation name in `details.relation`).
 
-**Why:** the better-drizzle loader does not support relations declared with a relation-level `where` (filtered relations), `one` relations through a junction table, or `.through()` relations whose junction table is not part of the relations config. The message names the reason.
+**Why:** the better-drizzle loader does not support relations declared with a relation-level `where` (filtered relations) or `one` relations through a junction table. The message names the reason.
 
 **Fix:** use Drizzle's own relational queries on the underlying Drizzle instance for those relations, or declare an unfiltered relation and pass the condition as a nested `where` in `include`. Many-to-many relations declared with `r.many.<table>({ from: ...through(...), to: ...through(...) })` are supported. See [relations](/docs/querying/relations#relations-better-drizzle-cannot-load).
 
@@ -223,7 +223,7 @@ await client.$raw`select * from users where id = ${id}`;
 
 **Message:** `JSONB path filters are only supported by PostgreSQL.`
 
-**Why:** a `where` used a JSONB path filter (the dotted shorthand `{ metadata: { 'a.b': ... } }` or the `{ json: { ... } }` wrapper) on SQLite or MySQL. **Fix:** use PostgreSQL for JSONB path filters, or write the condition with Drizzle `sql` for your dialect. See [JSONB](/docs/querying/jsonb).
+**Why:** a `where` used the `{ json: { ... } }` path filter wrapper on SQLite or MySQL. The dotted shorthand (`{ metadata: { 'a.b': ... } }`) only applies to PostgreSQL `jsonb` columns; on other JSON columns dotted keys are compared as part of a whole-document equality, so they match nothing instead of throwing. **Fix:** use PostgreSQL for JSONB path filters, or write the condition with Drizzle `sql` for your dialect. See [JSONB](/docs/querying/jsonb).
 
 On PostgreSQL, path filters also require a `jsonb` column. On a `json` column they throw `JSON path filters require a jsonb column; json columns only support whole-document filters.`
 

@@ -85,7 +85,6 @@ better-drizzle reads relations from Drizzle 1.x `defineRelations(...)`, but its 
 
 - relations with a relation-level `where` (filtered relations)
 - `one` relations declared through a junction table
-- `.through()` relations whose junction table is not part of the relations config
 
 Loading one with `include` or `select` throws `Relation "x" on "t" cannot be loaded: ...`, and filtering through one in `where` throws `Relation "x" on "t" cannot be filtered: ...`. They still work with Drizzle's own relational queries on the underlying `db`. See [troubleshooting](/docs/guides/troubleshooting#a-relation-cannot-be-loaded).
 
