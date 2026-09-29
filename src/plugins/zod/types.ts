@@ -175,18 +175,21 @@ type TableSchemaConfigFor<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 	Options extends ZodPluginOptions<Schema>,
-> = Name extends keyof NonNullable<Options['schemas']>
-	? NonNullable<Options['schemas']>[Name]
+> = Options extends { schemas?: infer Schemas }
+	? Name extends keyof NonNullable<Schemas>
+		? NonNullable<NonNullable<Schemas>[Name]>
+		: never
 	: never;
 
 type FieldsConfigFor<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 	Options extends ZodPluginOptions<Schema>,
-> =
-	TableSchemaConfigFor<Schema, Name, Options> extends {
-		fields?: infer Fields;
-	}
+> = [TableSchemaConfigFor<Schema, Name, Options>] extends [never]
+	? never
+	: TableSchemaConfigFor<Schema, Name, Options> extends {
+				fields?: infer Fields;
+		  }
 		? NonNullable<Fields>
 		: never;
 
@@ -195,8 +198,12 @@ type BlockConfigFor<
 	Name extends TableKey<Schema>,
 	Options extends ZodPluginOptions<Schema>,
 	Key extends keyof ZodPluginTableSchemasConfig<Schema, Name>,
-> =
-	TableSchemaConfigFor<Schema, Name, Options> extends Record<Key, infer Block>
+> = [TableSchemaConfigFor<Schema, Name, Options>] extends [never]
+	? never
+	: TableSchemaConfigFor<Schema, Name, Options> extends Record<
+				Key,
+				infer Block
+		  >
 		? NonNullable<Block>
 		: TableSchemaConfigFor<Schema, Name, Options> extends {
 					[K in Key]?: infer Block;
@@ -204,25 +211,29 @@ type BlockConfigFor<
 			? NonNullable<Block>
 			: never;
 
-type ResolveOverrideOutput<Override, Base> = Override extends false
-	? never
-	: Override extends z.ZodTypeAny
-		? z.output<Override>
-		: Override extends (schema: Any) => infer Result
-			? Result extends z.ZodTypeAny
-				? z.output<Result>
-				: Base
-			: Base;
+type ResolveOverrideOutput<Override, Base> = [Override] extends [never]
+	? Base
+	: Override extends false
+		? never
+		: Override extends z.ZodTypeAny
+			? z.output<Override>
+			: Override extends (schema: Any) => infer Result
+				? Result extends z.ZodTypeAny
+					? z.output<Result>
+					: Base
+				: Base;
 
-type ResolveOverrideInput<Override, Base> = Override extends false
-	? never
-	: Override extends z.ZodTypeAny
-		? z.input<Override>
-		: Override extends (schema: Any) => infer Result
-			? Result extends z.ZodTypeAny
-				? z.input<Result>
-				: Base
-			: Base;
+type ResolveOverrideInput<Override, Base> = [Override] extends [never]
+	? Base
+	: Override extends false
+		? never
+		: Override extends z.ZodTypeAny
+			? z.input<Override>
+			: Override extends (schema: Any) => infer Result
+				? Result extends z.ZodTypeAny
+					? z.input<Result>
+					: Base
+				: Base;
 
 type ApplyFieldOverridesOutput<
 	Shape extends Record<string, unknown>,
@@ -266,34 +277,41 @@ type ApplyFieldOverridesInput<
 	>;
 }>;
 
-type ApplyOmit<Shape extends Record<string, unknown>, Block> = Block extends {
-	omit?: readonly PropertyKey[];
-}
-	? Omit<Shape, Extract<NonNullable<Block['omit']>[number], keyof Shape>>
-	: Shape;
+type ApplyOmit<Shape extends Record<string, unknown>, Block> = [Block] extends [
+	never,
+]
+	? Shape
+	: Block extends { omit?: readonly PropertyKey[] }
+		? Omit<Shape, Extract<NonNullable<Block['omit']>[number], keyof Shape>>
+		: Shape;
 
-type ApplyExtendOutput<
-	Shape extends Record<string, unknown>,
+type ApplyExtendOutput<Shape extends Record<string, unknown>, Block> = [
 	Block,
-> = Block extends { extend?: infer Extends }
-	? Extends extends Record<string, z.ZodTypeAny>
-		? Simplify<Shape & { [K in keyof Extends]: z.output<Extends[K]> }>
-		: Shape
-	: Shape;
+] extends [never]
+	? Shape
+	: Block extends { extend?: infer Extends }
+		? Extends extends Record<string, z.ZodTypeAny>
+			? Simplify<Shape & { [K in keyof Extends]: z.output<Extends[K]> }>
+			: Shape
+		: Shape;
 
-type ApplyExtendInput<
-	Shape extends Record<string, unknown>,
+type ApplyExtendInput<Shape extends Record<string, unknown>, Block> = [
 	Block,
-> = Block extends { extend?: infer Extends }
-	? Extends extends Record<string, z.ZodTypeAny>
-		? Simplify<Shape & { [K in keyof Extends]: z.input<Extends[K]> }>
-		: Shape
-	: Shape;
+] extends [never]
+	? Shape
+	: Block extends { extend?: infer Extends }
+		? Extends extends Record<string, z.ZodTypeAny>
+			? Simplify<Shape & { [K in keyof Extends]: z.input<Extends[K]> }>
+			: Shape
+		: Shape;
 
-type ApplyPartialFlag<
-	Shape extends Record<string, unknown>,
+type ApplyPartialFlag<Shape extends Record<string, unknown>, Block> = [
 	Block,
-> = Block extends { partial?: true } ? Partial<Shape> : Shape;
+] extends [never]
+	? Shape
+	: Block extends { partial?: true }
+		? Partial<Shape>
+		: Shape;
 
 type ApplyBlockOutput<
 	Shape extends Record<string, unknown>,

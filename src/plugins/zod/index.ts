@@ -3,6 +3,7 @@ import {
 	BetterDrizzleError,
 	BetterDrizzleErrorCode,
 	definePlugin,
+	type ModelExtensionTypeResolver,
 	type TableKey,
 } from 'better-drizzle';
 import { z } from 'zod';
@@ -17,25 +18,24 @@ import {
 import type { BetterDrizzleZodModelExtension, ZodPluginOptions } from './types';
 import { version } from './version';
 
+type ExtensibleData = Record<string, unknown>;
+
+export interface ZodModelExtensionResolver<
+	Options,
+> extends ModelExtensionTypeResolver {
+	readonly extension: BetterDrizzleZodModelExtension<
+		Extract<this['schema'], AnySchema>,
+		Extract<this['name'], TableKey<Extract<this['schema'], AnySchema>>>,
+		Extract<Options, ZodPluginOptions<Extract<this['schema'], AnySchema>>>
+	>;
+}
+
 export const zod = <
 	Schema extends AnySchema,
-	const Options extends ZodPluginOptions<Schema> = ZodPluginOptions<Schema>,
+	const Options extends ZodPluginOptions<Schema> = Record<never, never>,
 >(
-	options: Options = {} as Options,
+	options: Options & ZodPluginOptions<Schema> = {} as Options,
 ) => {
-	type ModelExtensionResolver = <
-		Name extends TableKey<Schema>,
-		Meta,
-		Plugins extends readonly import('better-drizzle').AnyPlugin[],
-	>(
-		context: import('better-drizzle').PluginModelExtensionContext<
-			Schema,
-			Meta,
-			Name,
-			Plugins
-		>,
-	) => BetterDrizzleZodModelExtension<Schema, Name, Options>;
-
 	let registry: ReturnType<typeof createZodSchemasRegistry<Schema>> | null =
 		null;
 
@@ -51,8 +51,13 @@ export const zod = <
 		Record<never, never>,
 		{
 			count: { validate?: boolean };
-			create: { validate?: boolean };
-			createMany: { validate?: boolean };
+			// `extend` fields may travel alongside columns; the plugin strips
+			// them before Drizzle, so extra data keys are allowed here.
+			create: { validate?: boolean; data?: ExtensibleData };
+			createMany: {
+				validate?: boolean;
+				data?: readonly ExtensibleData[];
+			};
 			cursor: { validate?: boolean };
 			delete: { validate?: boolean };
 			deleteMany: { validate?: boolean };
@@ -62,13 +67,20 @@ export const zod = <
 			findOne: { validate?: boolean };
 			findUnique: { validate?: boolean };
 			paginate: { validate?: boolean };
-			update: { validate?: boolean };
+			update: { validate?: boolean; data?: ExtensibleData };
 			updateEach: { validate?: boolean };
 			updateMany: { validate?: boolean };
-			upsert: { validate?: boolean };
-			upsertMany: { validate?: boolean };
+			upsert: {
+				validate?: boolean;
+				create?: ExtensibleData;
+				update?: ExtensibleData;
+			};
+			upsertMany: {
+				validate?: boolean;
+				data?: readonly ExtensibleData[];
+			};
 		},
-		ModelExtensionResolver
+		ZodModelExtensionResolver<Options>
 	>({
 		description:
 			'Generates Zod schemas from Drizzle models and validates Better Drizzle operations.',
@@ -441,13 +453,7 @@ export const zod = <
 					table: String(tableName),
 				});
 
-			return {
-				$zod: entry.schemas as unknown as BetterDrizzleZodModelExtension<
-					Schema,
-					typeof tableName & TableKey<Schema>,
-					Options
-				>['$zod'],
-			};
+			return { $zod: entry.schemas } as never;
 		},
 		options,
 		setup(context) {
