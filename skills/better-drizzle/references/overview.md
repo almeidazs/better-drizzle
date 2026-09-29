@@ -56,9 +56,9 @@ Client-level capabilities include:
 
 Think of `better-drizzle` as:
 
-1. normal Drizzle schema definitions
-2. normal Drizzle client creation
-3. one wrapper call: `better(db, { schema })`
+1. normal Drizzle table definitions plus `defineRelations(schema, ...)` (Drizzle ORM 1.x)
+2. normal Drizzle client creation with `relations`: `drizzle({ client, relations })`
+3. one wrapper call: `better(db)` - tables and relations are read from `db`, there is no `schema` option
 4. typed delegates for the repetitive repository-shaped work
 
 Use this framing in explanations. Do not present it as a new ORM or a schema layer that replaces Drizzle.

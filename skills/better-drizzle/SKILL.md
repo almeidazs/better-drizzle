@@ -77,13 +77,31 @@ When you review code:
 
 **Bootstrap a client**
 
+better-drizzle supports only Drizzle ORM 1.x (`drizzle-orm@^1.0.0-rc.4`). `drizzle-orm` 0.x is not supported by the current release; projects on 0.x stay on better-drizzle 0.2.x, which uses the older `better(db, { schema })` API. Never suggest legacy `relations(table, ...)` or `better(db, { schema })` for the current release.
+
 ```ts
+// relations.ts
+import { defineRelations } from 'drizzle-orm';
+import * as schema from './schema';
+
+export const relations = defineRelations(schema, (r) => ({
+	users: { posts: r.many.posts() },
+	posts: { author: r.one.users({ from: r.posts.authorId, to: r.users.id }) },
+}));
+
+// db.ts
 import { better } from 'better-drizzle';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { relations } from './relations';
 
-const db = drizzle(sqlite, { schema });
-const client = better(db, { schema });
+const db = drizzle({ client: sqlite, relations });
+const client = better(db); // options are optional: better(db, { plugins, hooks })
 ```
+
+- `better()` takes no `schema` option; it reads tables and relations from the Drizzle instance, so `drizzle()` must receive `relations` (`defineRelations(schema)` with no callback when there are none).
+- Type generics take the relations config: `BetterDrizzleClient<typeof relations>`, `WhereArg<typeof relations, 'users'>`.
+- Many-to-many is declared with `.through()`; there is no junction-table inference and no `relations: { manyToMany }` option.
+- Filtered relations (relation-level `where`) and `one` relations through a junction cannot be loaded by better-drizzle.
 
 **Nested read with typed relation selection**
 
@@ -131,7 +149,6 @@ const user = await client.transaction(async (tx) => {
 
 ```ts
 const client = better(db, {
-	schema,
 	plugins: [
 		rules(recommended({ noRawUnsafe: true })),
 		zod({

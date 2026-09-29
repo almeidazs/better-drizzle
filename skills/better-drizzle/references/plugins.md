@@ -46,7 +46,6 @@ Public docs:
 import { zod } from 'better-drizzle/zod';
 
 const client = better(db, {
-	schema,
 	plugins: [
 		rules(
 			recommended({

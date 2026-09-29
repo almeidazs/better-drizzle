@@ -27,6 +27,14 @@ The main read entry points are:
 
 These read helpers return explainable thenables with `.explain(options?)`.
 
+## Relations
+
+- Relations come from Drizzle 1.x `defineRelations(...)` passed to `drizzle()`; a `.references(...)` foreign key alone is not a relation.
+- Many-to-many is declared natively: `groups: r.many.groups({ from: r.users.id.through(r.memberships.userId), to: r.groups.id.through(r.memberships.groupId) })`. Relation filters, `include` / `select`, `_count`, and `connect` / `disconnect` / `set` work through it. Junction tables are not inferred.
+- Relations with a relation-level `where` and `one` relations through a junction throw `Relation "x" on "t" cannot be loaded: ...`; point users to Drizzle's own relational queries for those.
+- Two relations between the same pair of tables need `alias` on both sides.
+- JSON path filters require `jsonb`; on a `json` column they throw.
+
 ## Query behavior
 
 - `paginate()` is offset-based only.
