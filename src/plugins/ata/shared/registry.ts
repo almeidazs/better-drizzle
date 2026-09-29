@@ -1,11 +1,10 @@
 import { Validator } from 'ata-validator';
 import {
-	createTableRelationsHelpers,
-	extractTablesRelationalConfig,
 	type AnyColumn,
-	getTableColumns,
+	getColumns,
 	is,
 	Table,
+	type TablesRelationalConfig,
 } from 'drizzle-orm';
 
 import type {
@@ -14,7 +13,7 @@ import type {
 	BetterDrizzleAtaModelSchemas,
 	JsonSchema,
 } from '../types';
-import { checkResidue, type ResidueKind } from './column';
+import { invalidResiduePath, type ResidueKind } from './column';
 import {
 	createCountArgsSchema,
 	createCursorArgsSchema,
@@ -39,7 +38,7 @@ import { createWhereSchema } from './where';
 
 export type TableEntry = {
 	columns: Record<string, AnyColumn>;
-	residueArrays: Record<string, true>;
+	residueArrays: Record<string, number>;
 	relations: readonly string[];
 	schemas: BetterDrizzleAtaModelSchemas;
 	tableName: string;
@@ -68,7 +67,7 @@ type CompiledSchema = AtaCompiledSchema & { warm(): void };
 const compiled = (
 	schema: JsonSchema,
 	residues?: Record<string, ResidueKind>,
-	residueArrays?: Record<string, true>,
+	residueArrays?: Record<string, number>,
 ): CompiledSchema => {
 	let validator: Validator | null = null;
 	const residueEntries = residues ? Object.entries(residues) : [];
@@ -91,33 +90,16 @@ const compiled = (
 				for (const [name, kind] of residueEntries) {
 					const entry = (row as Record<string, unknown>)[name];
 					if (entry === null || entry === undefined) continue;
-					if (residueArrays?.[name]) {
-						if (!Array.isArray(entry))
-							return {
-								errors: [
-									{
-										instancePath: `/${name}`,
-										message: `must be a ${kind === 'date' ? 'valid Date' : kind === 'buffer' ? 'Buffer' : 'BigInt'}`,
-									},
-								],
-								valid: false,
-							};
-						for (const item of entry)
-							if (!checkResidue(kind, item))
-								return {
-									errors: [
-										{
-											instancePath: `/${name}`,
-											message: `must be a ${kind === 'date' ? 'valid Date' : kind === 'buffer' ? 'Buffer' : 'BigInt'}`,
-										},
-									],
-									valid: false,
-								};
-					} else if (!checkResidue(kind, entry))
+					const invalid = invalidResiduePath(
+						kind,
+						entry,
+						residueArrays?.[name] ?? 0,
+					);
+					if (invalid !== null)
 						return {
 							errors: [
 								{
-									instancePath: `/${name}`,
+									instancePath: `/${name}${invalid}`,
 									message: `must be a ${kind === 'date' ? 'valid Date' : kind === 'buffer' ? 'Buffer' : 'BigInt'}`,
 								},
 							],
@@ -167,7 +149,7 @@ const rowSchema = (
 	mode: 'create' | 'select' | 'update',
 	overrides: Record<string, false | JsonSchema> | undefined,
 ): {
-	residueArrays: Record<string, true>;
+	residueArrays: Record<string, number>;
 	residues: Record<string, ResidueKind>;
 	schema: JsonSchema;
 } => {
@@ -179,8 +161,20 @@ const rowSchema = (
 	);
 
 	return {
-		residueArrays: built.residueArrays,
-		residues: built.residues,
+		residueArrays: Object.fromEntries(
+			Object.entries(built.residueArrays).filter(
+				([name]) =>
+					Object.hasOwn(properties, name) &&
+					overrides?.[name] === undefined,
+			),
+		),
+		residues: Object.fromEntries(
+			Object.entries(built.residues).filter(
+				([name]) =>
+					Object.hasOwn(properties, name) &&
+					overrides?.[name] === undefined,
+			),
+		),
 		schema: {
 			additionalProperties: false,
 			properties,
@@ -193,7 +187,7 @@ const rowSchema = (
 /**
  * Relation names for a table.
  *
- * Read from the schema's relation config when one is present. A table with no
+ * Read from the Drizzle relations config (`db._.relations`). A table with no
  * declared relations contributes none, and a projection then accepts only its
  * own columns, which is the honest answer rather than accepting any key.
  */
@@ -205,24 +199,17 @@ export const createAtaSchemasRegistry = <
 ): AtaSchemasRegistry => {
 	const entries = new Map<string, TableEntry>();
 	const tableNames: string[] = [];
-	const relational = extractTablesRelationalConfig(
-		schema as never,
-		createTableRelationsHelpers,
-	) as { tables: Record<string, { relations: Record<string, unknown> }> };
+	const relational = schema as unknown as TablesRelationalConfig;
 
-	for (const [key, value] of Object.entries(schema)) {
-		if (!is(value, Table)) continue;
-		tableNames.push(key);
-	}
+	for (const key in relational)
+		if (is(relational[key]?.table, Table)) tableNames.push(key);
 
 	const build = (tableName: string): TableEntry | undefined => {
-		const table = (schema as Record<string, unknown>)[tableName];
+		const table = relational[tableName]?.table;
 		if (!is(table, Table)) return undefined;
 
-		const columns = getTableColumns(table) as Record<string, AnyColumn>;
-		const relations = Object.keys(
-			relational.tables[tableName]?.relations ?? {},
-		);
+		const columns = getColumns(table) as Record<string, AnyColumn>;
+		const relations = Object.keys(relational[tableName]?.relations ?? {});
 		const overrides = (
 			options.tables as
 				| Record<

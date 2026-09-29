@@ -42,8 +42,24 @@ describe('columnToSchema on array columns', () => {
 	test('an array whose element ata cannot describe is a residue', () => {
 		const { schema, residue } = columnToSchema(columns.seen);
 		expect(residue).toBe('date');
-		// nothing is claimed about the values, but it is still an array
-		expect(schema).toEqual({ type: ['array', 'null'], items: {} });
+		// The array may be null, but its elements cannot be null.
+		expect(schema).toEqual({
+			type: ['array', 'null'],
+			items: { not: { type: 'null' } },
+		});
+	});
+
+	test('a multidimensional residue is checked at its leaf values', () => {
+		const matrix = pgTable('matrix', {
+			seen: timestamp('seen').array('[][]'),
+		});
+		const validator = createRowValidator(getTableColumns(matrix), 'update');
+		expect(
+			validator.validate({ seen: [[new Date(), new Date()]] }).valid,
+		).toBe(true);
+		expect(validator.validate({ seen: [[new Date(), 'bad']] }).valid).toBe(
+			false,
+		);
 	});
 });
 
@@ -146,7 +162,7 @@ describe('the row validator on array columns', () => {
 
 	test('it names the array columns whose residue is per element', () => {
 		expect(validator.residues).toEqual({ seen: 'date' });
-		expect(validator.residueArrays).toEqual({ seen: true });
+		expect(validator.residueArrays).toEqual({ seen: 1 });
 	});
 
 	test('an array of Dates passes', () => {

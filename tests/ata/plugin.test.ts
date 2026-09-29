@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { relations } from 'drizzle-orm';
+import { defineRelations } from 'drizzle-orm';
 import {
 	boolean,
 	integer,
@@ -28,7 +28,7 @@ const users = pgTable('users', {
 	created: timestamp('created').notNull().defaultNow(),
 });
 
-const schema = { users };
+const schema = defineRelations({ users });
 
 describe('the plugin definition', () => {
 	const plugin = ata();
@@ -83,20 +83,23 @@ describe('runtime integration', () => {
 		const base = createTestContext();
 		const client = better(base.raw, {
 			plugins: [ata()],
-			schema: base.schema,
 		});
 
 		await expect(
-			client.users.findFirst({
-				include: { posts: true },
-				where: { id: 1 },
-			}),
+			Promise.resolve(
+				client.users.findFirst({
+					include: { posts: true },
+					where: { id: 1 },
+				}),
+			),
 		).resolves.toMatchObject({ id: 1, posts: expect.any(Array) });
 		await expect(
-			client.users.findMany({
-				validate: true,
-				where: { posts: { some: { published: true } } },
-			}),
+			Promise.resolve(
+				client.users.findMany({
+					validate: true,
+					where: { posts: { some: { published: true } } },
+				}),
+			),
 		).resolves.not.toHaveLength(0);
 
 		await expect(
@@ -138,6 +141,10 @@ describe('the registry', () => {
 				created: 'not a Date',
 				name: 'ada',
 			}).valid,
+		).toBe(false);
+		expect(
+			registry.getCreate('users').validate({ created: null, name: 'ada' })
+				.valid,
 		).toBe(false);
 	});
 
@@ -221,6 +228,20 @@ describe('the registry', () => {
 		// age was dropped, so it is no longer a known column
 		expect(create.validate({ name: 'ada', age: 3 }).valid).toBe(false);
 	});
+
+	test('a column override replaces its residue check as well', () => {
+		const custom = createAtaSchemasRegistry(schema, {
+			tables: { users: { columns: { created: { type: 'string' } } } },
+		});
+		expect(
+			custom.getCreate('users').validate({ name: 'ada', created: 'now' })
+				.valid,
+		).toBe(true);
+		expect(
+			custom.getCreate('users').validate({ name: 'ada', created: 1 })
+				.valid,
+		).toBe(false);
+	});
 });
 
 describe('relations', () => {
@@ -232,14 +253,16 @@ describe('relations', () => {
 		id: serial('id').primaryKey(),
 		userId: integer('user_id').notNull(),
 	});
-	const relationUsersRelations = relations(relationUsers, ({ many }) => ({
-		posts: many(relationPosts),
-	}));
-	const registry = createAtaSchemasRegistry({
-		relationPosts,
-		relationUsers,
-		relationUsersRelations,
-	});
+	const registry = createAtaSchemasRegistry(
+		defineRelations({ relationPosts, relationUsers }, (r) => ({
+			relationUsers: {
+				posts: r.many.relationPosts({
+					from: r.relationUsers.id,
+					to: r.relationPosts.userId,
+				}),
+			},
+		})),
+	);
 
 	test('discovers Drizzle relations and accepts their projections', () => {
 		expect(registry.get('relationUsers')?.relations).toEqual(['posts']);

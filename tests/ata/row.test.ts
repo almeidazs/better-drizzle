@@ -52,8 +52,12 @@ describe('createRowValidator', () => {
 		expect(validator.schema.properties.age).toEqual({
 			type: ['integer', 'null'],
 		});
-		expect(validator.schema.properties.created).toEqual({});
-		expect(validator.schema.properties.views).toEqual({});
+		expect(validator.schema.properties.created).toEqual({
+			not: { type: 'null' },
+		});
+		expect(validator.schema.properties.views).toEqual({
+			not: { type: 'null' },
+		});
 		expect(validator.residues).toEqual({
 			created: 'date',
 			views: 'bigint',
@@ -76,6 +80,9 @@ describe('createRowValidator', () => {
 	test('null is accepted where the column allows it and refused where it does not', () => {
 		expect(validator.validate({ ...row(), age: null }).valid).toBe(true);
 		expect(validator.validate({ ...row(), name: null }).valid).toBe(false);
+		expect(validator.validate({ ...row(), created: null }).valid).toBe(
+			false,
+		);
 	});
 
 	// The residue: ata has nothing to say about these, so the predicate does.
