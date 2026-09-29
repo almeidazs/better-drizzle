@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 
+import { defineRelations } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
@@ -19,7 +20,14 @@ const basicRecords = sqliteTable('timestamp_basic_records', {
 	name: text('name').notNull(),
 });
 
-const schema = { basicRecords, records };
+const textRecords = sqliteTable('timestamp_text_records', {
+	createdAt: text('created_at'),
+	id: integer('id').primaryKey(),
+	name: text('name').notNull(),
+	updatedAt: text('updated_at'),
+});
+
+const schema = { basicRecords, records, textRecords };
 
 const createContext = () => {
 	const sqlite = new Database(':memory:');
@@ -35,12 +43,21 @@ const createContext = () => {
 			id INTEGER PRIMARY KEY NOT NULL,
 			name TEXT NOT NULL
 		);
+		CREATE TABLE timestamp_text_records (
+			id INTEGER PRIMARY KEY NOT NULL,
+			name TEXT NOT NULL,
+			created_at TEXT,
+			updated_at TEXT
+		);
 		INSERT INTO timestamp_records (id, name, created_at, updated_at)
 		VALUES (1, 'Alice', NULL, NULL);
 	`);
 
 	return {
-		db: drizzle(sqlite, { schema }),
+		db: drizzle({
+			client: sqlite,
+			relations: defineRelations(schema),
+		}),
 		close() {
 			sqlite.close();
 		},
@@ -48,11 +65,30 @@ const createContext = () => {
 };
 
 describe('better-drizzle/timestamps', () => {
+	test('serializes timestamps for text columns on create and update', async () => {
+		const ctx = createContext();
+		try {
+			const client = better(ctx.db, { plugins: [timestamps()] });
+			const created = await client.textRecords.create({
+				data: { id: 1, name: 'Text timestamp' },
+			});
+			expect(created?.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+			expect(created?.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+
+			const updated = await client.textRecords.update({
+				data: { name: 'Updated' },
+				where: { id: 1 },
+			});
+			expect(updated?.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+		} finally {
+			ctx.close();
+		}
+	});
+
 	test('sets createdAt and updatedAt on create in app mode', async () => {
 		const ctx = createContext();
 		const client = better(ctx.db, {
 			plugins: [timestamps()],
-			schema,
 		});
 
 		const created = await client.records.create({
@@ -68,7 +104,6 @@ describe('better-drizzle/timestamps', () => {
 		const ctx = createContext();
 		const client = better(ctx.db, {
 			plugins: [timestamps()],
-			schema,
 		});
 
 		const updated = await client.records.update({
@@ -84,7 +119,6 @@ describe('better-drizzle/timestamps', () => {
 		const ctx = createContext();
 		const client = better(ctx.db, {
 			plugins: [timestamps()],
-			schema,
 		});
 
 		const result = await client.records.updateEach({
@@ -105,7 +139,6 @@ describe('better-drizzle/timestamps', () => {
 		const ctx = createContext();
 		const client = better(ctx.db, {
 			plugins: [timestamps()],
-			schema,
 		});
 
 		const result = await client.records.createMany({
@@ -124,7 +157,6 @@ describe('better-drizzle/timestamps', () => {
 		const ctx = createContext();
 		const client = better(ctx.db, {
 			plugins: [timestamps()],
-			schema,
 		});
 
 		const created = await client.records.upsert({
@@ -149,7 +181,6 @@ describe('better-drizzle/timestamps', () => {
 		const ctx = createContext();
 		const client = better(ctx.db, {
 			plugins: [timestamps()],
-			schema,
 		});
 
 		const result = await client.records.upsertMany({
@@ -176,7 +207,6 @@ describe('better-drizzle/timestamps', () => {
 		const ctx = createContext();
 		const client = better(ctx.db, {
 			plugins: [timestamps({ mode: 'database' })],
-			schema,
 		});
 
 		const created = await client.records.create({
@@ -192,7 +222,6 @@ describe('better-drizzle/timestamps', () => {
 		const ctx = createContext();
 		const client = better(ctx.db, {
 			plugins: [timestamps()],
-			schema,
 		});
 
 		const created = await client.basicRecords.create({
@@ -223,7 +252,10 @@ describe('better-drizzle/timestamps', () => {
 			);
 		`);
 
-		const db = drizzle(sqlite, { schema: customSchema });
+		const db = drizzle({
+			client: sqlite,
+			relations: defineRelations(customSchema),
+		});
 		const client = better(db, {
 			plugins: [
 				timestamps({
@@ -231,7 +263,6 @@ describe('better-drizzle/timestamps', () => {
 					updatedAt: 'updated_on',
 				}),
 			],
-			schema: customSchema,
 		});
 
 		const created = await client.customRecords.create({

@@ -60,14 +60,14 @@ const createRestoreExtension = <
 			return client.$withoutPlugins().update({
 				...args,
 				data,
-			} as UpdateArgs<Schema, Name, Meta>);
+			} as UpdateArgs<Schema, Name, Meta> as never);
 		},
 		restoreById(id, args) {
 			return client.$withoutPlugins().update({
 				...args,
 				data,
 				where: { id } as unknown as WhereArg<Schema, Name>,
-			} as UpdateArgs<Schema, Name, Meta>);
+			} as UpdateArgs<Schema, Name, Meta> as never);
 		},
 	};
 };
@@ -138,10 +138,11 @@ export const softDelete = (options: SoftDeleteOptions = {}) => {
 
 				if (mode === 'hard') return;
 
-				const timestamp =
-					context.model.columns[column]?.dataType === 'string'
-						? new Date().toISOString()
-						: new Date();
+				const timestamp = context.model.columns[
+					column
+				]?.dataType.startsWith('string')
+					? new Date().toISOString()
+					: new Date();
 				const data = {
 					[column]: timestamp,
 				} as UpdateArgs<
@@ -166,7 +167,7 @@ export const softDelete = (options: SoftDeleteOptions = {}) => {
 						typeof context.schema,
 						typeof context.table
 					>,
-				});
+				} as never);
 			},
 		},
 		extendModel({ client, model }) {

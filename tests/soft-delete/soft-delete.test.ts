@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 
+import { defineRelations } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
@@ -55,7 +56,10 @@ const createContext = () => {
 	`);
 
 	return {
-		db: drizzle(sqlite, { schema }),
+		db: drizzle({
+			client: sqlite,
+			relations: defineRelations(schema),
+		}),
 		close() {
 			sqlite.close();
 		},
@@ -67,7 +71,6 @@ describe('better-drizzle/soft-delete', () => {
 		const ctx = createContext();
 		const client = better(ctx.db, {
 			plugins: [softDelete()],
-			schema,
 		});
 
 		const visible = await client.records.findMany({
@@ -93,7 +96,6 @@ describe('better-drizzle/soft-delete', () => {
 		const ctx = createContext();
 		const client = better(ctx.db, {
 			plugins: [softDelete()],
-			schema,
 		});
 
 		const visibleCount = await client.records.count();
@@ -113,7 +115,6 @@ describe('better-drizzle/soft-delete', () => {
 		const ctx = createContext();
 		const client = better(ctx.db, {
 			plugins: [softDelete()],
-			schema,
 		});
 
 		const deleted = await client.records.delete({
@@ -136,7 +137,6 @@ describe('better-drizzle/soft-delete', () => {
 		const ctx = createContext();
 		const client = better(ctx.db, {
 			plugins: [softDelete()],
-			schema,
 		});
 
 		const deleted = await client.textRecords.delete({
@@ -153,7 +153,6 @@ describe('better-drizzle/soft-delete', () => {
 		const ctx = createContext();
 		const client = better(ctx.db, {
 			plugins: [softDelete()],
-			schema,
 		});
 
 		await client.records.delete({
@@ -175,7 +174,6 @@ describe('better-drizzle/soft-delete', () => {
 		const ctx = createContext();
 		const client = better(ctx.db, {
 			plugins: [softDelete()],
-			schema,
 		});
 
 		const restored = await client.records.restore({
@@ -200,7 +198,6 @@ describe('better-drizzle/soft-delete', () => {
 		const ctx = createContext();
 		const client = better(ctx.db, {
 			plugins: [softDelete()],
-			schema,
 		});
 
 		const created = await client.basicRecords.create({
@@ -234,7 +231,10 @@ describe('better-drizzle/soft-delete', () => {
 				(2, 'Archived', 1710000000, 'seed-user');
 		`);
 
-		const db = drizzle(sqlite, { schema: customSchema });
+		const db = drizzle({
+			client: sqlite,
+			relations: defineRelations(customSchema),
+		});
 		const client = better(db, {
 			plugins: [
 				softDelete({
@@ -246,7 +246,6 @@ describe('better-drizzle/soft-delete', () => {
 					},
 				}),
 			],
-			schema: customSchema,
 		});
 
 		const allRows = await client.customRecords.findMany({
