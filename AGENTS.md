@@ -258,7 +258,6 @@
 - **Files**:
     - `docker-compose.yml`: postgres service with healthcheck and persistent volume
     - `.env` / `.env.example`: connection config (port, credentials, db name)
-    - `docker/postgres/init/01-schema.sql`: optional init SQL mirroring benchmark schema
 - **Commands**:
     - `docker compose up -d`: start the database
     - `docker compose down`: stop the database
