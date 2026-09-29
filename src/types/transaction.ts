@@ -137,7 +137,6 @@ export type TransactionOptions = {
  * @example
  * ```ts
  * const db = better(drizzle, {
- *   schema,
  *   transaction: { unsupportedOptions: 'throw' },
  * });
  * ```

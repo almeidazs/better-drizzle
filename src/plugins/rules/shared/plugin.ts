@@ -1115,7 +1115,7 @@ const runRules = async (
 };
 
 /**
- * Creates the `@betterbetter-drizzle/rules` plugin.
+ * Creates the `better-drizzle/rules` plugin.
  *
  * The plugin hooks into every read, write, raw, and transaction operation
  * and evaluates the configured rules before execution. Violations are
@@ -1126,27 +1126,24 @@ const runRules = async (
  * @typeParam TContextKey - Union of context key names for type-safe
  *   tenant and audit rules.
  * @param options - Rule configuration. Defaults to `{}` (all rules off).
- *   Use a preset (`safe`, `recommended`, `strict`, `tenant`, `production`)
+ *   Use a preset (`safe`, `recommended`, `strict`)
  *   as a starting point and merge your overrides.
  * @returns A Better Drizzle plugin to pass in the `plugins` array.
  *
  * @example
  * ```ts
  * import { better } from 'better-drizzle';
- * import { rules, safe } from '@betterbetter-drizzle/rules';
+ * import { rules, safe } from 'better-drizzle/rules';
  *
  * const db = better(drizzleDb, {
- *   schema,
- *   plugins: [
- * 	 	rules(safe())
- * 	 ],
+ *   plugins: [rules(safe())],
  * });
  * ```
  *
  * @example
  * ```ts
  * // With overrides
- * import { rules, recommended } from '@betterbetter-drizzle/rules';
+ * import { rules, recommended } from 'better-drizzle/rules';
  *
  * const plugin = rules(recommended({
  *   maxLimit: { level: 'error', value: 200 },
@@ -1215,7 +1212,7 @@ export const rules = (options: RulesPluginOptions<string, string> = {}) =>
 				return undefined;
 			},
 		},
-		id: '@betterbetter-drizzle/rules',
+		id: 'better-drizzle/rules',
 		name: 'Rules',
 		options,
 		version,

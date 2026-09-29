@@ -362,7 +362,7 @@ export type SkipDuplicatesOption<
  *
  * @example
  * ```ts
- * const args: CreateArgs<typeof schema, 'user'> = {
+ * const args: CreateArgs<typeof relations, 'user'> = {
  *   data: { name: 'Alice', email: 'alice@example.com' },
  *   skipDuplicates: true,
  *   select: { id: true, name: true },
@@ -396,7 +396,7 @@ export interface CreateArgs<
  *
  * @example
  * ```ts
- * const args: UpdateArgs<typeof schema, 'user'> = {
+ * const args: UpdateArgs<typeof relations, 'user'> = {
  *   where: { id: 1 },
  *   data: { name: 'Bob' },
  *   select: { id: true, name: true },
@@ -1015,10 +1015,10 @@ export type ExtendedClient<Client, Extension> = Omit<
  * ```ts
  * import { better } from 'better-drizzle';
  * import { drizzle } from 'drizzle-orm/better-sqlite3';
- * import * as schema from './schema';
+ * import { relations } from './relations';
  *
- * const raw = drizzle('file:local.db');
- * const db = better(raw, { schema });
+ * const raw = drizzle('file:local.db', { relations });
+ * const db = better(raw);
  *
  * // Direct table access
  * const users = await db.user.findMany({ where: { active: true } });
@@ -2156,7 +2156,7 @@ export type BetterTableConfig<
  *
  * @example
  * ```ts
- * type TableName = BetterTableKey<typeof schema>; // 'user' | 'post' | ...
+ * type TableName = BetterTableKey<typeof relations>; // 'user' | 'post' | ...
  * ```
  */
 export type BetterTableKey<Schema extends AnySchema> = TableKey<Schema>;
@@ -2177,7 +2177,7 @@ export type BetterAliasKey<Schema extends AnySchema> =
  *
  * @example
  * ```ts
- * type Keys = BetterRepositoryKey<typeof schema>; // 'user' | 'users' | ...
+ * type Keys = BetterRepositoryKey<typeof relations>; // 'user' | 'users' | ...
  * ```
  */
 export type BetterRepositoryKey<Schema extends AnySchema> =
@@ -2208,7 +2208,7 @@ export type BetterRelationalConfig = TableRelationalConfig;
  *
  * @example
  * ```ts
- * type UserRow = BetterRecord<typeof schema, 'user'>;
+ * type UserRow = BetterRecord<typeof relations, 'user'>;
  * // { id: number; name: string; email: string; ... }
  * ```
  */

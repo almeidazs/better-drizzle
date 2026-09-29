@@ -314,7 +314,6 @@ export type OrderByInput<
  *
  * // Access in hooks
  * const db = better(drizzle, {
- *   schema,
  *   hooks: {
  *     beforeCreate(ctx) {
  *       console.log(ctx.meta); // { userId: 1, requestId: 'abc-123' }
@@ -411,7 +410,6 @@ export type LockOption<Schema extends AnySchema = AnySchema> =
  * @example
  * ```ts
  * const db = better(drizzle, {
- *   schema,
  *   locks: { transactionsOnly: true },
  * });
  * ```
