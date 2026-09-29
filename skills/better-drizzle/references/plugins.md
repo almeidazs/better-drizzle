@@ -1,96 +1,88 @@
-# Plugins
+# Plugins, hooks, and extensions
 
-Read this file for official plugins, custom plugin authoring, and plugin-aware review.
+Docs: `/docs/plugins/overview`, `/writing-plugins`, `/rules`, `/eslint`, `/zod`, `/ata`, `/soft-delete`, `/timestamps`, `/docs/advanced/hooks`, `/docs/guides/client-extensions` (all under `https://better-drizzle.com`).
 
-Public docs:
+## Official plugins
 
-- `https://better-drizzle.com/docs/plugins/overview`
-- `https://better-drizzle.com/docs/plugins/writing-plugins`
-- `https://better-drizzle.com/docs/plugins/rules`
-- `https://better-drizzle.com/docs/plugins/zod`
-- `https://better-drizzle.com/docs/plugins/soft-delete`
-- `https://better-drizzle.com/docs/plugins/timestamps`
-
-## Plugin model
-
-- Plugins are registered through `options.plugins` in array order.
-- Plugin ids must be unique.
-- `setup()` runs exactly once during client initialization.
-- Plugin hooks and transforms are the mutation layer.
-- Client hooks remain side-effect-only.
-
-## Official packages
-
-- `better-drizzle/eslint`
-- `better-drizzle/rules`
-- `better-drizzle/soft-delete`
-- `better-drizzle/timestamps`
-- `better-drizzle/zod`
-
-`better-drizzle/eslint` is the static/IDE surface. `better-drizzle/rules` is the runtime surface. Do not describe them as equivalent; many rules depend on runtime state and only exist in the runtime plugin.
-
-`better-drizzle/zod` is the runtime schema-generation and validation surface. It exposes generated schemas on `db.<table>.$zod` and can validate payloads, query args, and results through plugin hooks.
-
-## Typed extension points
-
-- Plugins can extend built-in operation args through `operationArgs`.
-- These fields flow through delegates, plugin transforms, and client hooks.
-- `upsertMany` is create-oriented for plugin hook classification.
-- `updateEach` has its own plugin kind but still flows through update hooks.
-
-## Example patterns
-
-**Official plugin stack**
+All ship in the one `better-drizzle` package as subpaths (the old `@better-drizzle/*` packages are discontinued).
 
 ```ts
+import { rules, recommended } from 'better-drizzle/rules';
+import { timestamps } from 'better-drizzle/timestamps';
+import { softDelete } from 'better-drizzle/soft-delete';
 import { zod } from 'better-drizzle/zod';
 
 const client = better(db, {
 	plugins: [
-		rules(
-			recommended({
-				noRawUnsafe: true,
-			}),
-		),
-		timestamps({
-			createdAt: 'created_at',
-			updatedAt: 'updated_at',
-		}),
-		zod({
-			validate: {
-				create: true,
-				update: true,
-				result: true,
-			},
-		}),
-		softDelete({
-			column: 'deletedAt',
-			defaults: {
-				mode: 'soft',
-				visibility: 'without',
-			},
-		}),
+		rules(recommended({ maxLimit: { level: 'error', value: 200 } })),
+		timestamps(), // createdAt / updatedAt are table keys, not SQL names
+		softDelete(), // column: 'deletedAt'
+		zod({ schemas: { users: { fields: { email: (s) => s.email() } } } }),
 	],
 });
 ```
 
-**Plugin-aware delegate call**
+| Plugin | What it does | Key API |
+| --- | --- | --- |
+| `rules` | Runtime guardrails from hook payloads: no `deleteMany`/`updateMany` without `where`, `maxLimit`, orderBy for pagination, lock policy, `noRawUnsafe`, tenant/audit context, sensitive fields | presets `safe()`, `recommended()`, `strict()`; each rule takes `true`/`false`, `'off'\|'warn'\|'error'`, or `{ level, ...options }` |
+| `eslint` | Static subset of `rules` for direct call sites | `betterDrizzle.configs.{safe,recommended,strict}` flat configs |
+| `timestamps` | Fills `createdAt`/`updatedAt` on writes | `{ createdAt?, updatedAt?, mode?: 'app' \| 'database' }`; writes `Date`, or ISO strings for text columns |
+| `softDelete` | `delete` becomes an update; reads hide deleted rows | read arg `deleted: 'without' \| 'with' \| 'only'`; delete args `mode: 'hard'`, `deletedBy`; `restore({ where })`, `restoreById(id)` |
+| `zod` | Per-table Zod schemas on `client.users.$zod.{create,update,upsert,select,where,orderBy,pagination,query}` plus validation | `validate` defaults: writes and `result` on, read args off; per call `validate: false` |
+| `ata` | The same idea with JSON Schema and compiled ata validators on `$ata` | `{ validate, tables: { users: { columns } }, precompile }` |
+
+- Plugins run in array order. Ids must be unique. `setup()` runs once per `better()` call, not per transaction.
+- Transforms affect only the root query. Relations loaded through `include` are not rewritten, so soft-deleted or other-tenant children can still appear.
+- `$withoutPlugins()` bypasses every plugin (for example a real hard delete). Raw SQL also bypasses plugins.
+- Known issue: Zod and ATA type `numeric({ mode: 'number' })` as a string.
+
+## Writing a plugin
 
 ```ts
-await client.users.findMany({
-	deleted: 'only',
-});
+import { definePlugin } from 'better-drizzle/plugins';
+
+export const tenantScope = () =>
+	definePlugin({
+		id: '@acme/tenant-scope',
+		config: { requires: { columns: [{ column: 'tenantId', optional: true }] } },
+		operationArgs: { findMany: { includeArchived: undefined as boolean | undefined } },
+		transform(operation) {
+			if (!operation.model.hasColumn('tenantId')) return operation;
+			const tenantId = (operation.meta as { tenantId?: string } | undefined)?.tenantId;
+			if (operation.kind === 'findMany')
+				operation.where = { AND: [operation.where ?? {}, { tenantId }] } as typeof operation.where;
+			return operation;
+		},
+		hooks: { afterCreate(ctx) { /* side effects */ } },
+		extendModel: ({ model }) => ({ tableName: model.name }),
+		extendClient: ({ client }) => ({ health: () => client.$raw`select 1` }),
+	});
 ```
 
-## Agent checks
+- `transform` is the mutation layer. It returns the operation, and its `kind` is one of the delegate names. `upsertMany` is create-like. `updateEach` flows through update hooks.
+- `setup(ctx)` receives `ctx.schema` (the relations config: `{ [key]: { table, name, relations } }`), `ctx.models` (per table: `columns`, `hasColumn`), `ctx.dialect`, `addHook`, and `addTransform`.
+- `config.requires.columns[].type` matches `columnType` (`'PgTimestamp'`), the full `dataType` (`'object date'`), or one part of it (`'date'`). Compare `dataType` with `startsWith('string')`, not `===`.
+- Table-dependent model extension types: declare an interface extending `ModelExtensionTypeResolver` that reads `this['schema']` and `this['name']`, and pass it as `definePlugin`'s 6th type argument. Generic function resolvers can hit TS2589.
+- Validation errors fail at `better()` time with `PLUGIN_*` codes (duplicate id, missing column, extension conflict).
 
-- confirm the plugin kind matches the operation being changed
-- do not describe `src/plugins/rules` as compile-time or schema-migration based; it is runtime and hook-driven
-- when `better-drizzle/zod` is involved, verify both runtime validation behavior and the exposed `$zod` typing surface
-- if plugin behavior changes user-facing docs, update docs and examples accordingly
+## Client hooks
 
-## Anti-patterns
+Side effects only: logging, metrics, auditing. Use plugins to change queries.
 
-- treating client hooks as the main mutation mechanism instead of plugin transforms
-- describing plugin order as irrelevant
-- implying `setup()` runs on every transaction bind
+`beforeQuery`, `afterQuery`, `beforeCreate`, `afterCreate`, `beforeUpdate`, `afterUpdate`, `beforeDelete`, `afterDelete`, `onError`, `beforeRaw`, `afterRaw`, `onRawError`, `beforeTransaction`, `afterTransactionCommit`, `afterTransactionRollback`, `onTransactionError`.
+
+```ts
+better(db, { hooks: { afterQuery: ({ table, action, meta }) => log(table, action, meta?.requestId) } });
+```
+
+Known issue: while any hook is configured, operation errors are rethrown as `OPERATION_ERROR` wrappers. PostgreSQL constraint helpers may then return `false`, so check `error.cause` too.
+
+## `extends()` for app helpers
+
+```ts
+export const client = better(db).extends((c) => ({
+	findUserByEmail: (email: string) => c.users.findUnique({ where: { email } }),
+}));
+```
+
+Extensions stay typed on `$withContext()` clones and `tx`. Overriding an existing key throws `PLUGIN_EXTENSION_CONFLICT`. Call `extends()` once at startup, never per request.
