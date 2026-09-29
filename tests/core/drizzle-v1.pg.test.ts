@@ -223,58 +223,52 @@ describe.skipIf(!DATABASE_URL)('Drizzle 1.x migration (PostgreSQL)', () => {
 			});
 		});
 
-		// The transaction wrapper keeps sqlState 23505 but replaces `code` with
-		// OPERATION_ERROR, and the helpers do not read BetterDrizzleError.cause.
-		test.failing(
-			'a failed statement inside a transaction still classifies',
-			async () => {
-				const error = await captureError(() =>
-					client.transaction(async (tx) => {
-						await tx.accounts.create({
-							data: {
-								email: 'c@example.com',
-								id: 3,
-								name: 'Carol',
-							},
-						});
-						await tx.accounts.create({
-							data: {
-								email: 'alice@example.com',
-								id: 4,
-								name: 'Dup',
-							},
-						});
-					}),
-				);
-
-				expect(isUniqueViolation(error)).toBe(true);
-				expect(await client.accounts.count()).toBe(2);
-			},
-		);
-
-		test.failing(
-			'helpers classify pg errors when an operation hook is configured',
-			async () => {
-				const hooked = better(db, { hooks: { beforeCreate() {} } });
-
-				const error = await captureError(() =>
-					hooked.accounts.create({
+		// The transaction wraps the DrizzleQueryError in an OPERATION_ERROR;
+		// the helpers must still reach the driver error underneath.
+		test('a failed statement inside a transaction still classifies', async () => {
+			const error = await captureError(() =>
+				client.transaction(async (tx) => {
+					await tx.accounts.create({
+						data: {
+							email: 'c@example.com',
+							id: 3,
+							name: 'Carol',
+						},
+					});
+					await tx.accounts.create({
 						data: {
 							email: 'alice@example.com',
-							id: 3,
+							id: 4,
 							name: 'Dup',
 						},
-					}),
-				);
-				expect(error).toBeInstanceOf(BetterDrizzleError);
-				expect(
-					isUniqueViolation(
-						error,
-						'better_drizzle_v1_accounts_email_key',
-					),
-				).toBe(true);
-			},
-		);
+					});
+				}),
+			);
+
+			expect(isUniqueViolation(error)).toBe(true);
+			expect(await client.accounts.count()).toBe(2);
+		});
+
+		test('helpers classify pg errors when an operation hook is configured', async () => {
+			const hooked = better(db, { hooks: { beforeCreate() {} } });
+
+			const error = await captureError(() =>
+				hooked.accounts.create({
+					data: {
+						email: 'alice@example.com',
+						id: 3,
+						name: 'Dup',
+					},
+				}),
+			);
+			expect(error).toBeInstanceOf(BetterDrizzleError);
+			expect(
+				isUniqueViolation(
+					error,
+					'better_drizzle_v1_accounts_email_key',
+				),
+			).toBe(true);
+		});
 	});
 
 	describe('column metadata', () => {

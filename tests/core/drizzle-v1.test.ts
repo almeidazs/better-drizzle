@@ -662,7 +662,7 @@ describe('driver errors wrapped in DrizzleQueryError', () => {
 		ctx.close();
 	});
 
-	test.failing('library error codes survive operation hooks', async () => {
+	test('library error codes survive operation hooks', async () => {
 		const sqlite = createDatabase();
 		const client = better(drizzle({ client: sqlite, relations }), {
 			hooks: { beforeQuery() {} },
@@ -677,29 +677,25 @@ describe('driver errors wrapped in DrizzleQueryError', () => {
 		sqlite.close();
 	});
 
-	test.failing(
-		'helpers classify PostgreSQL errors wrapped by operation hooks',
-		() => {
-			// A PostgreSQL driver error only carries its SQLSTATE as `code`; the
-			// hook wrapper replaces `code` with OPERATION_ERROR and keeps the
-			// DrizzleQueryError as `cause`.
-			const driverError = Object.assign(
-				new Error(
-					'duplicate key value violates unique constraint "users_email_key"',
-				),
-				{ code: '23505', constraint: 'users_email_key' },
-			);
-			const wrapped = BetterDrizzleError.from(
-				new DrizzleQueryError('insert into "users"', [], driverError),
-				{
-					code: BetterDrizzleErrorCode.OperationError,
-					operation: 'create',
-				},
-			);
+	test('helpers classify PostgreSQL errors wrapped by operation hooks', () => {
+		// A PostgreSQL driver error only carries its SQLSTATE as `code`, under
+		// both the hook wrapper and the DrizzleQueryError.
+		const driverError = Object.assign(
+			new Error(
+				'duplicate key value violates unique constraint "users_email_key"',
+			),
+			{ code: '23505', constraint: 'users_email_key' },
+		);
+		const wrapped = BetterDrizzleError.from(
+			new DrizzleQueryError('insert into "users"', [], driverError),
+			{
+				code: BetterDrizzleErrorCode.OperationError,
+				operation: 'create',
+			},
+		);
 
-			expect(isUniqueViolation(wrapped, 'users_email_key')).toBe(true);
-		},
-	);
+		expect(isUniqueViolation(wrapped, 'users_email_key')).toBe(true);
+	});
 });
 
 describe('transactions on Bun SQLite', () => {
@@ -777,31 +773,28 @@ describe('transactions on Bun SQLite', () => {
 		ctx.close();
 	});
 
-	test.failing(
-		'retries a deadlock reported through DrizzleQueryError',
-		async () => {
-			const ctx = createContext();
-			let attempts = 0;
+	test('retries a deadlock reported through DrizzleQueryError', async () => {
+		const ctx = createContext();
+		let attempts = 0;
 
-			await ctx.client.transaction(
-				async () => {
-					attempts += 1;
-					if (attempts === 1)
-						throw new DrizzleQueryError(
-							'update "accounts" set ...',
-							[],
-							Object.assign(new Error('deadlock detected'), {
-								code: '40P01',
-							}),
-						);
-				},
-				{ retries: { attempts: 2, on: ['deadlock'] } },
-			);
+		await ctx.client.transaction(
+			async () => {
+				attempts += 1;
+				if (attempts === 1)
+					throw new DrizzleQueryError(
+						'update "accounts" set ...',
+						[],
+						Object.assign(new Error('deadlock detected'), {
+							code: '40P01',
+						}),
+					);
+			},
+			{ retries: { attempts: 2, on: ['deadlock'] } },
+		);
 
-			expect(attempts).toBe(2);
-			ctx.close();
-		},
-	);
+		expect(attempts).toBe(2);
+		ctx.close();
+	});
 });
 
 describe('lazy reads', () => {

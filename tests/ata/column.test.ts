@@ -75,8 +75,8 @@ describe('columnToSchema', () => {
 	});
 
 	// drizzle-orm 1.x: numeric({ mode: 'number' }) has dataType 'number' and
-	// returns a JS number, so a string schema rejects valid rows.
-	test.failing('numeric in number mode is a number', () => {
+	// returns a JS number.
+	test('numeric in number mode is a number', () => {
 		const table = pgTable('n', {
 			amount: numeric('amount', { mode: 'number' }).notNull(),
 		});

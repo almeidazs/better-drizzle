@@ -525,17 +525,22 @@ export class BetterDrizzleError extends Error {
 const getErrorFields = (error: unknown): ErrorWithFields | null => {
 	if (typeof error !== 'object' || error === null) return null;
 
-	// Drizzle 1.x wraps driver errors in DrizzleQueryError ("Failed query: ...")
-	// and keeps the driver error, with its code and message, as `cause`.
-	const cause = (error as { cause?: unknown }).cause;
-	if (
-		(error as { name?: unknown }).name === 'DrizzleQueryError' &&
-		typeof cause === 'object' &&
-		cause !== null
+	// Drizzle 1.x wraps driver errors in DrizzleQueryError ("Failed query: ..."),
+	// and transactions or hooks wrap those again in BetterDrizzleError. The
+	// driver error, with its code and message, is the innermost `cause`.
+	let current = error as ErrorWithFields & {
+		cause?: unknown;
+		name?: unknown;
+	};
+	while (
+		(current.name === 'DrizzleQueryError' ||
+			current instanceof BetterDrizzleError) &&
+		typeof current.cause === 'object' &&
+		current.cause !== null
 	)
-		return cause as ErrorWithFields;
+		current = current.cause as typeof current;
 
-	return error as ErrorWithFields;
+	return current;
 };
 
 const getMessage = (error: unknown, fields: ErrorWithFields | null) => {

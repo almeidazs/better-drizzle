@@ -24,6 +24,7 @@ import {
 	BetterDrizzleError,
 	BetterDrizzleErrorCode,
 	type DatabaseDriver,
+	getDatabaseErrorInfo,
 } from '../errors';
 import {
 	createDerivedRuntimeContext,
@@ -222,16 +223,10 @@ const runCallbacks = async (
 };
 
 const getRetryReason = (error: unknown): TransactionRetryReason | null => {
-	const details =
-		typeof error === 'object' && error !== null
-			? (error as {
-					code?: string;
-					errno?: string | number;
-					message?: string;
-				})
-			: undefined;
-	const code = `${details?.code ?? details?.errno ?? ''}`.toLowerCase();
-	const message = `${details?.message ?? ''}`.toLowerCase();
+	// Reads the driver error behind DrizzleQueryError / BetterDrizzleError.
+	const info = getDatabaseErrorInfo(error);
+	const code = `${info.code ?? info.errno ?? ''}`.toLowerCase();
+	const message = info.message.toLowerCase();
 
 	if (code === '40p01' || code === '1213' || message.includes('deadlock'))
 		return 'deadlock';
@@ -672,7 +667,9 @@ const executeRawQuery = async <
 		return result;
 	} catch (error) {
 		const normalized = BetterDrizzleError.from(error, {
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleError.is(error)
+				? error.code
+				: BetterDrizzleErrorCode.OperationError,
 			operation: action,
 		});
 		await runRawHooks(
@@ -839,7 +836,9 @@ const runBetterTransaction = async <
 				const normalizedError = isRollbackSignal(error)
 					? null
 					: BetterDrizzleError.from(error, {
-							code: BetterDrizzleErrorCode.OperationError,
+							code: BetterDrizzleError.is(error)
+								? error.code
+								: BetterDrizzleErrorCode.OperationError,
 							operation: 'transaction',
 						});
 
@@ -966,7 +965,9 @@ const runBetterTransaction = async <
 			if (committed) throw error;
 			if (!attemptState || !attemptContext || !attemptClient)
 				throw BetterDrizzleError.from(error, {
-					code: BetterDrizzleErrorCode.OperationError,
+					code: BetterDrizzleError.is(error)
+						? error.code
+						: BetterDrizzleErrorCode.OperationError,
 					operation: 'transaction',
 				});
 			const state = attemptState as TransactionRuntime;
@@ -983,7 +984,9 @@ const runBetterTransaction = async <
 			const normalizedError = isRollbackSignal(error)
 				? null
 				: BetterDrizzleError.from(error, {
-						code: BetterDrizzleErrorCode.OperationError,
+						code: BetterDrizzleError.is(error)
+							? error.code
+							: BetterDrizzleErrorCode.OperationError,
 						operation: 'transaction',
 					});
 

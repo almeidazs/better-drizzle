@@ -272,7 +272,9 @@ export const executeOperation = async <
 		return result;
 	} catch (error) {
 		const normalized = BetterDrizzleError.from(error, {
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleError.is(error)
+				? error.code
+				: BetterDrizzleErrorCode.OperationError,
 			operation: action,
 			table: tableName,
 		});
