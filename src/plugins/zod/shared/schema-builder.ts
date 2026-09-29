@@ -94,12 +94,6 @@ const baseNumberSchema = (
 	column: AnyColumn,
 	behavior: ZodPluginBehavior | undefined,
 ) => {
-	if (
-		sqlTypeIncludes(column, 'numeric') ||
-		sqlTypeIncludes(column, 'decimal')
-	)
-		return hasCoerce(behavior, 'number') ? z.coerce.number() : z.string();
-
 	const schema = hasCoerce(behavior, 'number')
 		? z.coerce.number()
 		: z.number();

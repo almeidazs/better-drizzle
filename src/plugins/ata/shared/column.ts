@@ -123,13 +123,8 @@ const stringSchema = (column: AnyColumn): Record<string, unknown> => {
 };
 
 const numberSchema = (column: AnyColumn): Record<string, unknown> => {
-	// numeric and decimal arrive as strings from every driver drizzle supports,
-	// which is what the zod plugin encodes too.
-	if (
-		sqlTypeIncludes(column, 'numeric') ||
-		sqlTypeIncludes(column, 'decimal')
-	)
-		return { type: 'string' };
+	// Only number-mode columns reach here: numeric/decimal in the default string
+	// mode have a `string` dataType and take the string branch.
 	return sqlTypeIncludes(column, 'int')
 		? { type: 'integer' }
 		: { type: 'number' };
