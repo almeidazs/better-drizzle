@@ -824,7 +824,7 @@ describe('lazy reads', () => {
 
 		client.users.findMany();
 		client.users.count();
-		client.posts.paginate({ page: 1, perPage: 2 });
+		client.posts.paginate({ limit: 2 });
 		await new Promise((resolve) => setTimeout(resolve, 5));
 
 		expect(calls).toEqual([]);
