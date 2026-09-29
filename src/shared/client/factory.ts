@@ -1,4 +1,4 @@
-import { isTable, SQL, type SQLWrapper, sql } from 'drizzle-orm';
+import { SQL, type SQLWrapper, sql } from 'drizzle-orm';
 
 import type {
 	AnyPlugin,
@@ -798,6 +798,7 @@ const runBetterTransaction = async <
 			const rollbackSql = savepointName
 				? sql.raw(`rollback to savepoint ${savepointName}`)
 				: sql.raw('rollback');
+			let committed = false;
 
 			context.db.run?.(beginSql);
 
@@ -815,6 +816,7 @@ const runBetterTransaction = async <
 				if (attemptState.abortError) throw attemptState.abortError;
 
 				context.db.run?.(commitSql);
+				committed = true;
 
 				await runTransactionHooks(
 					attemptContext,
@@ -829,6 +831,10 @@ const runBetterTransaction = async <
 				cleanupAbort();
 				return result;
 			} catch (error) {
+				if (committed) {
+					cleanupAbort();
+					throw error;
+				}
 				context.db.run?.(rollbackSql);
 				const normalizedError = isRollbackSignal(error)
 					? null
@@ -872,6 +878,7 @@ const runBetterTransaction = async <
 			}
 		}
 
+		let committed = false;
 		try {
 			const envelope = await transactionRunner?.call(
 				context.db,
@@ -920,6 +927,7 @@ const runBetterTransaction = async <
 				},
 				getDrizzleTransactionConfig(context, options),
 			);
+			committed = true;
 
 			if (!attemptState || !attemptContext || !attemptClient)
 				throw new BetterDrizzleError({
@@ -955,6 +963,7 @@ const runBetterTransaction = async <
 
 			return envelope as T;
 		} catch (error) {
+			if (committed) throw error;
 			if (!attemptState || !attemptContext || !attemptClient)
 				throw BetterDrizzleError.from(error, {
 					code: BetterDrizzleErrorCode.OperationError,
@@ -1031,9 +1040,7 @@ export const createBoundClient = <
 ): BoundClient<Schema, Meta, Plugins> => {
 	const client = Object.create(null) as Record<string, unknown>;
 
-	for (const [tableName, table] of Object.entries(context.fullSchema)) {
-		if (!isTable(table)) continue;
-
+	for (const tableName in context.tables) {
 		const delegate = applyModelExtensions(
 			context,
 			tableName as BetterTableKey<Schema>,
@@ -1306,23 +1313,24 @@ export const createBoundClient = <
  * initializes plugins, and returns a fully-typed client with CRUD delegates
  * for every table, a `repository()` accessor, and transaction support.
  *
- * @typeParam Schema - The Drizzle schema type inferred from the schema object.
+ * @typeParam Schema - The relational config inferred from `drizzle({ relations })`.
  * @typeParam Meta   - Custom metadata type carried through hooks. Defaults to
  *   {@link BetterMeta}.
  * @typeParam Plugins - The plugin tuple provided via `options.plugins`.
- * @param drizzle - The raw Drizzle database instance (`db` from `drizzle()`).
- * @param options - Client configuration including the schema, plugins, hooks,
- *   and transaction settings.
+ * @param drizzle - The raw Drizzle database instance created with `relations`.
+ * @param options - Optional plugins, hooks, and runtime settings.
  * @returns A fully-typed {@link BetterDrizzleClient}.
  *
  * @example
  * ```ts
  * import { better } from 'better-drizzle';
+ * import { defineRelations } from 'drizzle-orm';
  * import { drizzle } from 'drizzle-orm/better-sqlite3';
  * import * as schema from './schema';
  *
- * const raw = drizzle('file:local.db');
- * const db = better(raw, { schema });
+ * const relations = defineRelations(schema);
+ * const raw = drizzle('file:local.db', { relations });
+ * const db = better(raw);
  *
  * const users = await db.user.findMany();
  * ```
@@ -1332,8 +1340,8 @@ export const better = <
 	Meta = BetterMeta,
 	const Plugins extends readonly AnyPlugin[] = [],
 >(
-	drizzle: unknown,
-	options: BetterClientOptions<Schema, Meta, Plugins>,
+	drizzle: { readonly _: { readonly relations: Schema } },
+	options: BetterClientOptions<Schema, Meta, Plugins> = {},
 ) => {
 	const context = createRuntimeContext(drizzle, options);
 	initializePlugins(context);

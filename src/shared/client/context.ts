@@ -1,11 +1,14 @@
 import {
-	createTableRelationsHelpers,
-	extractTablesRelationalConfig,
-	getTableColumns,
+	type AnyColumn,
+	entityKind,
+	getColumns,
+	getTableName,
+	is,
 	isTable,
-	normalizeRelation,
+	Relation,
+	type Table,
+	type TablesRelationalConfig,
 } from 'drizzle-orm';
-import { Many, One } from 'drizzle-orm/relations';
 
 import type {
 	AnyPlugin,
@@ -83,18 +86,47 @@ const createRawPluginBucket = (): PluginRuntimeRawBucket => ({
 	errorHooks: [],
 });
 
-const isSimpleJunction = (
-	runtime: TableRuntime,
-	leftFields: readonly { name: string }[],
-	rightFields: readonly { name: string }[],
-) => {
-	const foreignKeys = new Set([...leftFields, ...rightFields]);
+const ExtraConfigBuilder = Symbol.for('drizzle:ExtraConfigBuilder');
+const ExtraConfigColumns = Symbol.for('drizzle:ExtraConfigColumns');
 
-	for (const column of Object.values(runtime.columns))
-		if (!foreignKeys.has(column) && column.notNull && !column.hasDefault)
-			return false;
+const sameColumns = (left: readonly AnyColumn[], right: readonly AnyColumn[]) =>
+	left.length === right.length &&
+	left.every((column) => right.includes(column));
 
-	return true;
+const getPrimaryKey = (table: Table, columns: Record<string, AnyColumn>) => {
+	const primaryKey: AnyColumn[] = [];
+	for (const key in columns) {
+		const column = columns[key];
+		if (column?.primary) primaryKey.push(column);
+	}
+
+	const tableSymbols = table as unknown as Record<symbol, unknown>;
+	const extraConfig = (
+		tableSymbols[ExtraConfigBuilder] as
+			| ((columns: unknown) => Record<string, unknown> | unknown[])
+			| undefined
+	)?.(tableSymbols[ExtraConfigColumns]);
+	if (!extraConfig) return primaryKey;
+
+	for (const entry of Object.values(extraConfig)) {
+		const kind = (entry as { constructor?: Record<symbol, unknown> })
+			?.constructor?.[entityKind];
+		if (typeof kind !== 'string' || !kind.endsWith('PrimaryKeyBuilder'))
+			continue;
+		for (const column of (entry as { columns: { name: string }[] })
+			.columns) {
+			for (const key in columns) {
+				const candidate = columns[key];
+				if (candidate?.name === column.name) {
+					if (!primaryKey.includes(candidate))
+						primaryKey.push(candidate);
+					break;
+				}
+			}
+		}
+	}
+
+	return primaryKey;
 };
 
 const findRuntime = (tables: Record<string, TableRuntime>, name: string) => {
@@ -103,141 +135,89 @@ const findRuntime = (tables: Record<string, TableRuntime>, name: string) => {
 
 	for (const key in tables) {
 		const candidate = tables[key];
-		if (
-			candidate?.dbName === name ||
-			candidate?.tableConfig.tsName === name
-		)
+		if (candidate?.dbName === name || candidate?.tableConfig.name === name)
 			return candidate;
 	}
 };
 
-const addManyToManyRelation = (
-	tables: Record<string, TableRuntime>,
-	throughName: string,
-	leftRelationName: string,
-	rightRelationName: string,
-	leftName?: string,
-	rightName?: string,
-) => {
-	const through = findRuntime(tables, throughName);
-	const left = through?.relations[leftRelationName];
-	const right = through?.relations[rightRelationName];
-
-	if (
-		!through ||
-		!left ||
-		!right ||
-		left.kind !== 'one' ||
-		right.kind !== 'one' ||
-		!left.sourceOwnsForeignKey ||
-		!right.sourceOwnsForeignKey ||
-		left.tableName === right.tableName ||
-		!isSimpleJunction(through, left.fields, right.fields)
-	)
-		return false;
-
-	const leftRuntime = findRuntime(tables, left.tableName);
-	const rightRuntime = findRuntime(tables, right.tableName);
-	if (!leftRuntime || !rightRuntime) return false;
-
-	const register = (
-		source: TableRuntime,
-		target: TableRuntime,
-		name: string,
-		sourceRelation: typeof left,
-		targetRelation: typeof right,
-	) => {
-		const current = source.relations[name];
-		if (current && current.kind !== 'manyToMany') return;
-		if (current?.through && current.through.tableName !== throughName) {
-			const paths = source.ambiguousRelations[name] ?? [
-				current.through.tableName,
-			];
-			if (!paths.includes(throughName)) paths.push(throughName);
-			source.ambiguousRelations[name] = paths;
-			delete source.relations[name];
-			source.relationNames.delete(name);
-			return;
-		}
-
-		source.relations[name] = {
-			fields: sourceRelation.references,
-			kind: 'manyToMany',
-			references: targetRelation.references,
-			sourceOwnsForeignKey: false,
-			tableName: target.tableConfig.tsName,
-			through: {
-				sourceFields: sourceRelation.fields,
-				tableName: throughName,
-				targetFields: targetRelation.fields,
-			},
-		};
-		source.relationNames.add(name);
-		delete source.ambiguousRelations[name];
-	};
-
-	register(
-		leftRuntime,
-		rightRuntime,
-		leftName ?? rightRuntime.tableConfig.tsName,
-		left,
-		right,
-	);
-	register(
-		rightRuntime,
-		leftRuntime,
-		rightName ?? leftRuntime.tableConfig.tsName,
-		right,
-		left,
-	);
-	return true;
+const getUnsupportedRelationReason = (relation: Relation) => {
+	if (relation.where)
+		return 'filtered relations (relation-level where) are not supported';
+	if (relation.through && relation.relationType === 'one')
+		return 'one relations through a junction table are not supported';
 };
 
-const buildManyToManyRelations = (
+const buildRelations = (
 	tables: Record<string, TableRuntime>,
-	options: {
-		relations?: {
-			inferManyToMany?: boolean;
-			manyToMany?: readonly {
-				through: string;
-				left: { relation: string; name?: string };
-				right: { relation: string; name?: string };
-			}[];
-		};
-	},
+	relational: TablesRelationalConfig,
 ) => {
-	if (options.relations?.inferManyToMany !== false)
-		for (const throughName in tables) {
-			const through = tables[throughName];
-			if (!through) continue;
-			const endpoints = Object.entries(through.relations).filter(
-				([, relation]) =>
-					relation.kind === 'one' && relation.sourceOwnsForeignKey,
-			);
-			if (endpoints.length !== 2) continue;
+	for (const tableName in tables) {
+		const runtime = tables[tableName];
+		const tableConfig = relational[tableName];
+		if (!runtime || !tableConfig) continue;
 
-			const left = endpoints[0];
-			const right = endpoints[1];
-			if (left && right)
-				addManyToManyRelation(tables, throughName, left[0], right[0]);
+		for (const relationName in tableConfig.relations) {
+			const relation = tableConfig.relations[relationName];
+			if (!is(relation, Relation)) continue;
+			const target = findRuntime(tables, relation.targetTableName);
+			const unsupported = target
+				? getUnsupportedRelationReason(relation)
+				: 'the target is not a table';
+			if (unsupported) {
+				runtime.unsupportedRelations[relationName] = unsupported;
+				continue;
+			}
+			if (!target) continue;
+
+			const fields = relation.sourceColumns as AnyColumn[];
+			const references = relation.targetColumns as AnyColumn[];
+			const through = relation.through;
+			const throughTable = relation.throughTable;
+
+			if (through && throughTable) {
+				const throughRuntime = Object.values(tables).find(
+					(candidate) => candidate.table === throughTable,
+				);
+				if (!throughRuntime) {
+					runtime.unsupportedRelations[relationName] =
+						'the junction table is not part of the relations config';
+					continue;
+				}
+				runtime.relations[relationName] = {
+					fields,
+					kind: 'manyToMany',
+					references,
+					relation,
+					sourceOwnsForeignKey: false,
+					tableName: target.tableConfig.name,
+					through: {
+						sourceFields: through.source.map(
+							(column) => column._.column as AnyColumn,
+						),
+						tableName: throughRuntime.tableConfig.name,
+						targetFields: through.target.map(
+							(column) => column._.column as AnyColumn,
+						),
+					},
+				};
+				runtime.relationNames.add(relationName);
+				continue;
+			}
+
+			const one = relation.relationType === 'one';
+			runtime.relations[relationName] = {
+				fields,
+				kind: one ? 'one' : 'many',
+				references,
+				relation,
+				sourceOwnsForeignKey:
+					one &&
+					(!sameColumns(fields, runtime.primaryKey) ||
+						sameColumns(references, target.primaryKey)),
+				tableName: target.tableConfig.name,
+			};
+			runtime.relationNames.add(relationName);
 		}
-
-	for (const relation of options.relations?.manyToMany ?? []) {
-		const added = addManyToManyRelation(
-			tables,
-			relation.through,
-			relation.left.relation,
-			relation.right.relation,
-			relation.left.name,
-			relation.right.name,
-		);
-		if (!added)
-			throw new BetterDrizzleError({
-				code: BetterDrizzleErrorCode.OperationError,
-				details: relation,
-				message: `Invalid many-to-many relation through "${relation.through}".`,
-				operation: 'bootstrap',
-			});
 	}
 };
 
@@ -261,10 +241,8 @@ export const createRuntimeContext = <
 	db: unknown,
 	options: BetterClientOptions<Schema, Meta, Plugins>,
 ): RuntimeContext<Schema, Meta, Plugins> => {
-	const relational = extractTablesRelationalConfig(
-		options.schema,
-		createTableRelationsHelpers,
-	);
+	const relational = (db as { _?: { relations?: TablesRelationalConfig } })._
+		?.relations;
 	const tables = Object.create(null) as Record<string, TableRuntime>;
 	const models = Object.create(null) as RuntimeContext<
 		Schema,
@@ -272,71 +250,55 @@ export const createRuntimeContext = <
 		Plugins
 	>['models'];
 
-	for (const [tableName, table] of Object.entries(options.schema)) {
-		if (!isTable(table)) continue;
+	for (const tableName in relational) {
+		const tableConfig = relational[tableName];
+		const table = tableConfig?.table;
+		if (!tableConfig || !isTable(table)) continue;
 
-		const tableConfig = relational.tables[tableName];
-
-		if (!tableConfig) continue;
-		const columns = getTableColumns(table);
-
-		const relations = Object.create(null) as TableRuntime['relations'];
-
-		for (const relationName in tableConfig.relations) {
-			const relation = tableConfig.relations[relationName];
-			const normalized = normalizeRelation(
-				relational.tables,
-				relational.tableNamesMap,
-				relation,
-			);
-
-			relations[relationName] = {
-				fields: normalized.fields,
-				kind: relation instanceof Many ? 'many' : 'one',
-				references: normalized.references,
-				relation,
-				sourceOwnsForeignKey:
-					relation instanceof One &&
-					Boolean(
-						(relation as { config?: { fields?: unknown } }).config
-							?.fields,
-					),
-				tableName:
-					relational.tableNamesMap[
-						`public.${relation.referencedTableName}`
-					] ?? relation.referencedTableName,
-			};
-		}
+		const columns = getColumns(table) as Record<string, AnyColumn>;
+		const primaryKey = getPrimaryKey(table, columns);
+		const dbName = getTableName(table);
+		const model = {
+			columns,
+			dbName,
+			hasColumn(column: string) {
+				return column in columns;
+			},
+			name: tableName as never,
+		} as TableRuntime['model'];
 
 		tables[tableName] = {
-			ambiguousRelations: Object.create(null),
 			columns,
-			dbName: tableConfig.dbName,
+			dbName,
 			hasColumn(column: string) {
 				return column in this.columns;
 			},
-			model: {
-				columns,
-				dbName: tableConfig.dbName,
-				hasColumn(column: string) {
-					return column in columns;
-				},
-				name: tableName as never,
-			} as TableRuntime['model'],
-			primaryKeyFields: tableConfig.primaryKey.map(
-				(column) => column.name,
+			model,
+			primaryKey,
+			primaryKeyFields: primaryKey.map(
+				(column) =>
+					Object.keys(columns).find(
+						(key) => columns[key] === column,
+					) ?? column.name,
 			),
-			relations,
-			relationNames: new Set(Object.keys(tableConfig.relations)),
+			relations: Object.create(null) as TableRuntime['relations'],
+			relationNames: new Set(),
 			table,
 			tableConfig,
+			unsupportedRelations: Object.create(null),
 		};
-		const tableRuntime = tables[tableName];
-		if (!tableRuntime) continue;
-		models[tableName] = tableRuntime.model;
+		models[tableName] = model;
 	}
 
-	buildManyToManyRelations(tables, options);
+	if (!relational || !Object.keys(tables).length)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			message:
+				'No tables found on the Drizzle instance. Pass your relations to drizzle(), e.g. drizzle({ client, relations: defineRelations(schema) }).',
+			operation: 'bootstrap',
+		});
+
+	buildRelations(tables, relational);
 
 	const hooks = options.hooks;
 	const plugins = options.plugins ?? [];
@@ -367,7 +329,7 @@ export const createRuntimeContext = <
 			raw: createRawPluginBucket(),
 			transaction: createTransactionPluginBucket(),
 		},
-		fullSchema: options.schema,
+		fullSchema: relational as unknown as Schema,
 		relational,
 		repositories: Object.create(null) as Record<string, unknown>,
 		tables,
@@ -423,7 +385,7 @@ export const getTableRuntime = <Schema extends AnySchema, Meta>(
 			const candidate = context.tables[key];
 			if (
 				candidate?.dbName !== tableName &&
-				candidate?.tableConfig.tsName !== tableName
+				candidate?.tableConfig.name !== tableName
 			)
 				continue;
 			runtime = candidate;

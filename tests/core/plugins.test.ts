@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 
 import { definePlugin } from 'better-drizzle/plugins';
+import { defineRelations } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
@@ -21,6 +22,7 @@ const users = sqliteTable('plugin_users', {
 });
 
 const schema = { users };
+const relations = defineRelations(schema);
 
 const createContext = () => {
 	const sqlite = new Database(':memory:');
@@ -35,7 +37,7 @@ const createContext = () => {
 			(2, 'Bob', 1710000000);
 	`);
 
-	const raw = drizzle(sqlite, { schema });
+	const raw = drizzle({ client: sqlite, relations });
 
 	return {
 		raw,
@@ -65,7 +67,6 @@ describe('plugins', () => {
 		expect(() =>
 			better(raw, {
 				plugins: [plugin, plugin],
-				schema,
 			}),
 		).toThrow('Duplicate Better Drizzle plugin id "dup".');
 		close();
@@ -82,7 +83,6 @@ describe('plugins', () => {
 						id: 'pg-only',
 					}),
 				],
-				schema,
 			}),
 		).toThrow('Plugin "pg-only" does not support dialect "sqlite".');
 		close();
@@ -103,7 +103,6 @@ describe('plugins', () => {
 						id: 'requires-column',
 					}),
 				],
-				schema,
 			}),
 		).toThrow(
 			'Plugin "requires-column" requires column "missingColumn" on model "users".',
@@ -128,7 +127,6 @@ describe('plugins', () => {
 						id: 'optional-column',
 					}),
 				],
-				schema,
 			}),
 		).not.toThrow();
 
@@ -144,7 +142,6 @@ describe('plugins', () => {
 						id: 'typed-column',
 					}),
 				],
-				schema,
 			}),
 		).toThrow('to be "number"');
 
@@ -160,7 +157,6 @@ describe('plugins', () => {
 						id: 'typed-column-ok',
 					}),
 				],
-				schema,
 			}),
 		).not.toThrow();
 		close();
@@ -187,7 +183,6 @@ describe('plugins', () => {
 					},
 				}),
 			],
-			schema,
 		});
 
 		const created = await client.users.create({
@@ -240,7 +235,6 @@ describe('plugins', () => {
 
 		const client = better(raw, {
 			plugins: [softDelete],
-			schema,
 		});
 
 		const visible = await client.users.findMany({
@@ -380,7 +374,6 @@ describe('plugins', () => {
 				},
 			},
 			plugins: [softDelete],
-			schema,
 		});
 
 		const onlyDeleted = await client.users.findMany({
@@ -434,7 +427,6 @@ describe('plugins', () => {
 						},
 					}),
 				],
-				schema,
 			}),
 		).toThrow(
 			'Plugin "soft-b" cannot override operation arg "mode" on "delete" because it is already declared by plugin "soft-a".',
@@ -465,7 +457,6 @@ describe('plugins', () => {
 					id: 'stats',
 				}),
 			],
-			schema,
 		});
 
 		const count = await (
@@ -497,7 +488,6 @@ describe('plugins', () => {
 					id: 'soft-delete-short-circuit',
 				}),
 			],
-			schema,
 		});
 
 		const deleted = await client.users.delete({
@@ -541,7 +531,6 @@ describe('plugins', () => {
 					id: 'b',
 				}),
 			],
-			schema,
 		});
 
 		const created = await client.users.create({
@@ -634,7 +623,6 @@ describe('plugins', () => {
 				},
 			},
 			plugins: [softDelete],
-			schema,
 		});
 
 		type _FindManyDeleted = Expect<

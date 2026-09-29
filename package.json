@@ -1,6 +1,6 @@
 {
 	"name": "better-drizzle",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Minimal, type-safe repository helpers for Drizzle ORM.",
 	"keywords": [
 		"bun",
@@ -162,6 +162,7 @@
 		"@typescript-eslint/parser": "^8.38.0",
 		"ata-validator": "^1.30.1",
 		"commitlint": "^21.1.0",
+		"drizzle-orm": "1.0.0-rc.4",
 		"eslint": "^9.31.0",
 		"lefthook": "^2.0.0",
 		"mitata": "^1.0.34",
@@ -179,7 +180,7 @@
 	"peerDependencies": {
 		"@typescript-eslint/parser": "^8",
 		"ata-validator": "^1.30.1",
-		"drizzle-orm": "^0.30.0",
+		"drizzle-orm": "^1.0.0-rc.4",
 		"eslint": "^9",
 		"typescript": "^5",
 		"zod": "^3.25.0 || ^4.0.0"

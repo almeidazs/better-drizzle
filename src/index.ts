@@ -7,10 +7,10 @@
  * ```ts
  * import { better } from 'better-drizzle';
  * import { drizzle } from 'drizzle-orm/better-sqlite3';
- * import * as schema from './schema';
+ * import { relations } from './schema';
  *
- * const raw = drizzle('file:local.db');
- * const db = better(raw, { schema });
+ * const raw = drizzle({ client: 'file:local.db', relations });
+ * const db = better(raw);
  *
  * // Create a record
  * await db.user.create({ data: { name: 'Alice', email: 'alice@example.com' } });
