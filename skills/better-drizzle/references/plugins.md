@@ -34,7 +34,6 @@ const client = better(db, {
 - Plugins run in array order. Ids must be unique. `setup()` runs once per `better()` call, not per transaction.
 - Transforms affect only the root query. Relations loaded through `include` are not rewritten, so soft-deleted or other-tenant children can still appear.
 - `$withoutPlugins()` bypasses every plugin (for example a real hard delete). Raw SQL also bypasses plugins.
-- Known issue: Zod and ATA type `numeric({ mode: 'number' })` as a string.
 
 ## Writing a plugin
 
@@ -74,8 +73,6 @@ Side effects only: logging, metrics, auditing. Use plugins to change queries.
 ```ts
 better(db, { hooks: { afterQuery: ({ table, action, meta }) => log(table, action, meta?.requestId) } });
 ```
-
-Known issue: while any hook is configured, operation errors are rethrown as `OPERATION_ERROR` wrappers. PostgreSQL constraint helpers may then return `false`, so check `error.cause` too.
 
 ## `extends()` for app helpers
 

@@ -18,8 +18,7 @@ try {
 }
 ```
 
-- Driver errors arrive as Drizzle 1.x `DrizzleQueryError` ("Failed query: ...") with the driver error on `cause`. `isUniqueViolation`, `isForeignKeyViolation`, `isNotNullViolation`, `isCheckViolation`, and `getDatabaseErrorInfo` unwrap it. Do not read `error.code` directly.
-- Known issue: inside `transaction()` or while hooks are configured, PostgreSQL violations come back as `OPERATION_ERROR` wrappers and the helpers can return `false`. Check `error.sqlState === '23505'` or call the helper on `error.cause` as a fallback.
+- Driver errors arrive as Drizzle 1.x `DrizzleQueryError` ("Failed query: ...") with the driver error on `cause`. `isUniqueViolation`, `isForeignKeyViolation`, `isNotNullViolation`, `isCheckViolation`, and `getDatabaseErrorInfo` unwrap it, including when a transaction or hook wraps it again in `BetterDrizzleError`. Do not read `error.code` directly.
 
 | Code | Meaning / fix |
 | --- | --- |

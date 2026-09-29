@@ -109,7 +109,6 @@ const order = await client.transaction(
 - `tx` is a full client: delegates, `$raw`, nested `tx.transaction(...)` (savepoints), `afterCommit`/`afterRollback`.
 - Async callbacks work on every driver, including Bun SQLite.
 - Options: `isolationLevel`, `readOnly`, `timeoutMs`, `signal`, `retries` (`on: ['deadlock', 'serializationFailure', 'connectionError']`), `meta`. SQLite ignores `isolationLevel`/`readOnly` with a warning (`better(db, { transaction: { unsupportedOptions: 'throw' } })`).
-- Known issue: with Drizzle 1.x, retries do not detect deadlocks wrapped in `DrizzleQueryError`.
 
 ## Request metadata
 
