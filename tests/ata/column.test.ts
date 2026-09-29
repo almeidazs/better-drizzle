@@ -74,6 +74,15 @@ describe('columnToSchema', () => {
 		expect(columnToSchema(pgCols.price).schema).toEqual({ type: 'string' });
 	});
 
+	// drizzle-orm 1.x: numeric({ mode: 'number' }) has dataType 'number' and
+	// returns a JS number, so a string schema rejects valid rows.
+	test.failing('numeric in number mode is a number', () => {
+		const table = pgTable('n', {
+			amount: numeric('amount', { mode: 'number' }).notNull(),
+		});
+		expect(columnToSchema(table.amount).schema).toEqual({ type: 'number' });
+	});
+
 	test('boolean', () => {
 		expect(columnToSchema(pgCols.flag).schema).toEqual({ type: 'boolean' });
 		expect(columnToSchema(liteCols.active).schema).toEqual({

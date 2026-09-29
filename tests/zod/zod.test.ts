@@ -2,7 +2,14 @@ import { describe, expect, test } from 'bun:test';
 
 import { better } from 'better-drizzle';
 import { defineRelations, sql } from 'drizzle-orm';
-import { bigint, boolean, integer, pgTable, text } from 'drizzle-orm/pg-core';
+import {
+	bigint,
+	boolean,
+	integer,
+	numeric,
+	pgTable,
+	text,
+} from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 
 import { zod as betterZod } from '../../src/plugins/zod';
@@ -1044,5 +1051,37 @@ describe('better-drizzle/zod - result validation', () => {
 
 		expect(Array.isArray(result)).toBe(true);
 		ctx.close();
+	});
+});
+
+describe('drizzle-orm 1.x numeric modes', () => {
+	const prices = pgTable('prices', {
+		amount: numeric('amount', { mode: 'number' }).notNull(),
+		id: integer('id').primaryKey(),
+		precise: numeric('precise').notNull(),
+	});
+	const schemas = () =>
+		createZodSchemasRegistry(defineRelations({ prices }), {}).get('prices')
+			?.schemas;
+
+	test('default numeric mode stays a string', () => {
+		const select = schemas()?.select;
+		const issues = (value: unknown) =>
+			select
+				?.safeParse(value)
+				.error?.issues.map((issue) => issue.path[0]) ?? [];
+		expect(issues({ amount: '1', id: 1, precise: '1.50' })).toEqual([]);
+		expect(issues({ amount: '1', id: 1, precise: 1.5 })).toEqual([
+			'precise',
+		]);
+	});
+
+	// numeric({ mode: 'number' }) has dataType 'number' in drizzle-orm 1.x and
+	// returns a JS number, but the builder matches the SQL type first.
+	test.failing('numeric in number mode accepts numbers', () => {
+		const create = schemas()?.create;
+		expect(
+			create?.safeParse({ amount: 1.5, id: 1, precise: '1' }).success,
+		).toBe(true);
 	});
 });
