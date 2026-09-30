@@ -2291,7 +2291,10 @@ const upsertManyChunk = async <Schema extends AnySchema, Meta>(
 		});
 
 	const builder = context.db.insert(runtime.table).values(args.data);
-	if (context.dialect === 'mysql') {
+	if (
+		context.dialect === 'mysql' &&
+		typeof builder.onDuplicateKeyUpdate === 'function'
+	) {
 		if (args.where)
 			throw new BetterDrizzleError({
 				code: BetterDrizzleErrorCode.OperationError,
