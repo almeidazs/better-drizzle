@@ -3,11 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { sql, type SQL } from 'drizzle-orm';
 import { MySqlDialect } from 'drizzle-orm/mysql-core';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import {
-	integer,
-	SQLiteDialect,
-	sqliteTable,
-} from 'drizzle-orm/sqlite-core';
+import { integer, SQLiteDialect, sqliteTable } from 'drizzle-orm/sqlite-core';
 
 import {
 	compileCursorWhere,

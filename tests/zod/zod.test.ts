@@ -1071,9 +1071,7 @@ describe('drizzle-orm 1.x numeric modes', () => {
 				?.safeParse(value)
 				.error?.issues.map((issue) => issue.path[0]) ?? [];
 		expect(issues({ amount: 1, id: 1, precise: '1.50' })).toEqual([]);
-		expect(issues({ amount: 1, id: 1, precise: 1.5 })).toEqual([
-			'precise',
-		]);
+		expect(issues({ amount: 1, id: 1, precise: 1.5 })).toEqual(['precise']);
 	});
 
 	// numeric({ mode: 'number' }) has dataType 'number' in drizzle-orm 1.x and
