@@ -57,10 +57,12 @@ import {
 	getCompiledUpdateSet,
 } from './operations';
 import {
+	type InterceptState,
 	createPluginState,
 	hasPluginWork,
 	mergePluginState,
 	runPluginAfterHooks,
+	runPluginIntercepts,
 	runPluginPipeline,
 	shouldRunPlugins,
 	skipPluginsState,
@@ -249,6 +251,14 @@ export const createModelDelegate = <
 				delegate,
 			);
 			const operationArgs = pipeline.args as Args;
+			const interception: InterceptState | undefined = context.plugins
+				.byKind[kind].hasIntercepts
+				? { annotations: undefined, skipAfterHooks: false }
+				: undefined;
+			const execute = () =>
+				pipeline.hasOverride
+					? Promise.resolve(pipeline.overrideResult as Result)
+					: operation(operationArgs);
 			const result = await executeOperation({
 				action,
 				args: operationArgs,
@@ -261,25 +271,38 @@ export const createModelDelegate = <
 					? () => beforePayload(operationArgs)
 					: undefined,
 				context,
-				operation: () =>
-					pipeline.hasOverride
-						? Promise.resolve(pipeline.overrideResult as Result)
-						: operation(operationArgs),
+				interception,
+				operation: interception
+					? () =>
+							runPluginIntercepts(
+								context,
+								runtime,
+								tableName,
+								kind,
+								operationArgs as never,
+								state,
+								delegate,
+								execute,
+								interception,
+							)
+					: execute,
 				runtime,
 				tableName: name,
 			});
 
-			await runPluginAfterHooks(
-				context,
-				runtime,
-				tableName,
-				kind,
-				operationArgs as never,
-				state,
-				delegate,
-				result,
-				compiled?.(operationArgs),
-			);
+			if (!interception?.skipAfterHooks)
+				await runPluginAfterHooks(
+					context,
+					runtime,
+					tableName,
+					kind,
+					operationArgs as never,
+					state,
+					delegate,
+					result,
+					compiled?.(operationArgs),
+					interception?.annotations,
+				);
 
 			assertTransactionNotAborted();
 

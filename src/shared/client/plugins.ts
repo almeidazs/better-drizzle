@@ -22,6 +22,7 @@ import type {
 	PluginRuntimeAfterHook,
 	PluginRuntimeBeforeHook,
 	PluginRuntimeBucket,
+	PluginRuntimeIntercept,
 	PluginRuntimeTransactionHook,
 	PluginRuntimeTransform,
 	PluginState,
@@ -266,6 +267,23 @@ const registerTransform = <
 		const bucket = context.plugins.byKind[kind];
 		bucket.transforms.push(transform);
 		bucket.hasTransforms = true;
+	}
+};
+
+const registerIntercept = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
+	intercept: PluginRuntimeIntercept,
+) => {
+	for (const kind of Object.keys(
+		context.plugins.byKind,
+	) as PluginHookKind[]) {
+		const bucket = context.plugins.byKind[kind];
+		bucket.intercepts.push(intercept);
+		bucket.hasIntercepts = true;
 	}
 };
 
@@ -525,7 +543,7 @@ export const shouldRunPlugins = (
  * @typeParam Plugins - The plugin tuple.
  * @param context - The runtime context.
  * @param kind    - The operation kind to check.
- * @returns `true` when at least one before-hook, after-hook, or transform is registered.
+ * @returns `true` when at least one before-hook, after-hook, transform, or intercept is registered.
  */
 export const hasPluginWork = <
 	Schema extends AnySchema,
@@ -537,7 +555,10 @@ export const hasPluginWork = <
 ) => {
 	const bucket = getBucket(context, kind);
 	return (
-		bucket.hasBeforeHooks || bucket.hasAfterHooks || bucket.hasTransforms
+		bucket.hasBeforeHooks ||
+		bucket.hasAfterHooks ||
+		bucket.hasTransforms ||
+		bucket.hasIntercepts
 	);
 };
 
@@ -694,6 +715,11 @@ export const initializePlugins = <
 			registerTransform(
 				context,
 				plugin.transform as unknown as PluginRuntimeTransform,
+			);
+		if (plugin.intercept)
+			registerIntercept(
+				context,
+				plugin.intercept as unknown as PluginRuntimeIntercept,
 			);
 
 		plugin.setup?.({
@@ -1004,6 +1030,7 @@ export const runPluginAfterHooks = async <
 	>,
 	result: Result,
 	compiled?: Readonly<Record<string, unknown>>,
+	annotations?: Readonly<Record<string, unknown>>,
 ) => {
 	const bucket = getBucket(context, kind);
 	if (!bucket.hasAfterHooks) return;
@@ -1018,8 +1045,79 @@ export const runPluginAfterHooks = async <
 	);
 
 	for (const hook of bucket.afterHooks) {
-		await hook({ ...input, client: delegate, compiled, result });
+		await hook({
+			...input,
+			annotations,
+			client: delegate,
+			compiled,
+			result,
+		});
 	}
+};
+
+/**
+ * Tracks what intercepts asked for during one operation.
+ */
+export type InterceptState = {
+	annotations: Record<string, unknown> | undefined;
+	skipAfterHooks: boolean;
+};
+
+/**
+ * Runs the registered intercepts around `operation`, outermost first.
+ * Each intercept receives the final operation input and a `next()` that
+ * calls the following intercept or, for the last one, the operation.
+ *
+ * @param operation - Executes the SQL for the final args.
+ * @param interception - Collects annotations and after-hook skipping.
+ * @returns The result produced by the outermost intercept.
+ */
+export const runPluginIntercepts = <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+	Result,
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
+	runtime: TableRuntime,
+	tableName: BetterTableKey<Schema>,
+	kind: PluginHookKind,
+	args: AnyArgs<Schema, Meta, Plugins>,
+	state: PluginState,
+	delegate: BetterDrizzleModelDelegate<
+		Schema,
+		BetterTableKey<Schema>,
+		Meta,
+		Plugins
+	>,
+	operation: () => Promise<Result>,
+	interception: InterceptState,
+): Promise<Result> => {
+	const { intercepts } = getBucket(context, kind);
+	const input = {
+		...createOperationInput(context, runtime, tableName, kind, args, state),
+		annotate(key: string, value: unknown) {
+			interception.annotations ??= Object.create(null) as Record<
+				string,
+				unknown
+			>;
+			interception.annotations[key] = value;
+		},
+		client: delegate,
+		skipAfterHooks() {
+			interception.skipAfterHooks = true;
+		},
+	};
+	const run = (index: number): Promise<Result> => {
+		const intercept = intercepts[index];
+		if (!intercept) return operation();
+		return intercept({
+			...input,
+			next: () => run(index + 1),
+		}) as Promise<Result>;
+	};
+
+	return run(0);
 };
 
 export const runPluginTransactionHooks = async <

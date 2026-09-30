@@ -46,6 +46,14 @@ export enum BetterDrizzleErrorCode {
 	AfterCommitOutsideTransaction = 'AFTER_COMMIT_OUTSIDE_TRANSACTION',
 	/** `afterRollback()` was called outside a transaction. */
 	AfterRollbackOutsideTransaction = 'AFTER_ROLLBACK_OUTSIDE_TRANSACTION',
+	/** The cache plugin received invalid options. */
+	CacheInvalidOptions = 'CACHE_INVALID_OPTIONS',
+	/** A cached value could not be serialized or deserialized. */
+	CacheSerializationError = 'CACHE_SERIALIZATION_ERROR',
+	/** The cache store failed to read, write, or delete keys. */
+	CacheStoreError = 'CACHE_STORE_ERROR',
+	/** A serialized value exceeded the cache plugin's `maxSize`. */
+	CacheValueTooLarge = 'CACHE_VALUE_TOO_LARGE',
 	/** A database-level error occurred (unique violation, NOT NULL, etc.). */
 	DatabaseError = 'DATABASE_ERROR',
 	/** The SQL dialect could not be inferred from the Drizzle client. */

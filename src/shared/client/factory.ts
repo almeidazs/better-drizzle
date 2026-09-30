@@ -596,11 +596,7 @@ const executeRawQuery = async <
 	executor: (query: SQL) => Promise<Result> | Result,
 ) => {
 	const rawOptions = {
-		comment: options?.comment,
-		map: options?.map,
-		meta: options?.meta,
-		name: options?.name,
-		signal: options?.signal,
+		...options,
 		timeoutMs: options?.timeoutMs ?? context.options.raw?.timeoutMs,
 	} satisfies RawOptions<unknown, unknown, Meta>;
 	const query = withSqlComment(

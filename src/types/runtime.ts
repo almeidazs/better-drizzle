@@ -246,6 +246,14 @@ export type PluginRuntimeTransform = (
 ) => Record<string, unknown> | undefined;
 
 /**
+ * Runtime signature for a plugin intercept. Receives the raw intercept
+ * context and resolves to the operation result.
+ */
+export type PluginRuntimeIntercept = (
+	context: Record<string, unknown>,
+) => Promise<unknown>;
+
+/**
  * Bucket holding all plugin hooks and transforms for a specific operation
  * kind. Precomputed during initialization to avoid per-call iteration.
  */
@@ -258,8 +266,12 @@ export type PluginRuntimeBucket = {
 	hasAfterHooks: boolean;
 	/** `true` when at least one before-hook is registered. */
 	hasBeforeHooks: boolean;
+	/** `true` when at least one intercept is registered. */
+	hasIntercepts: boolean;
 	/** `true` when at least one transform is registered. */
 	hasTransforms: boolean;
+	/** Registered intercepts, outermost first. */
+	intercepts: PluginRuntimeIntercept[];
 	/** Registered transform functions. */
 	transforms: PluginRuntimeTransform[];
 };
