@@ -26,15 +26,19 @@ const stats = await db
 	.groupBy(posts.authorId);
 ```
 
-## `orderBy` is column and direction only
+## `orderBy` is column based
 
-`orderBy` accepts scalar columns of the queried table, each with `'asc'` or `'desc'`, as one object or an array for multi-column ordering. It does not support:
+`orderBy` accepts scalar columns of the queried table as one field map or an array for multi-column ordering. A value can be `'asc'` / `'desc'`, or an object with `direction` and optional `nulls`:
 
-- `NULLS FIRST` / `NULLS LAST`, so null placement is the database default (for example, PostgreSQL puts nulls last in ascending order, SQLite and MySQL put them first)
-- SQL expressions
-- ordering the root rows by a relation's columns
+```ts
+orderBy: {
+	lastSeenAt: { direction: 'desc', nulls: 'last' },
+}
+```
 
-For those, use Drizzle directly:
+When `nulls` is omitted, the database default applies. Explicit null placement is supported by PostgreSQL and SQLite using their `NULLS FIRST` / `NULLS LAST` syntax; MySQL uses an equivalent `IS NULL` ordering term. Better Drizzle fails during client initialization if it cannot identify the provider's dialect.
+
+`orderBy` does not support SQL expressions or ordering root rows by a relation's columns. Use Drizzle directly for those cases:
 
 ```ts
 import { sql } from 'drizzle-orm';
@@ -47,7 +51,7 @@ const rows = await db
 
 ## Pagination inputs
 
-- `paginate()` takes `limit` and `skip`. There is no `page` or `perPage` input; compute `skip` as `(page - 1) * limit`. The response still reports `page`, `perPage`, `total`, and `pageCount`.
+- `paginate()` takes `page` and `perPage`, or `limit` and `skip`. `page` computes `skip`, so the two cannot be combined.
 - `cursor()` takes `limit` and one of `after` or `before`. Without `orderBy` it pages by primary key ascending. When you sort by another column, end the `orderBy` with a unique column so pages cannot overlap or skip rows.
 
 ## Transforms apply to the root query only
@@ -66,19 +70,25 @@ const users = await client.users.findMany({
 
 ## Soft delete coverage
 
-`better-drizzle/soft-delete` hides deleted rows only in `findMany`, `findFirst`, `count`, and `exists`, and rewrites only `delete` into an update. Everything else sees and changes deleted rows as ordinary rows:
+`better-drizzle/soft-delete` filters every read and every update or delete with a `where`, and turns `delete` / `deleteMany` into updates. Two gaps remain:
 
-| Operation | Behavior with the plugin |
-| --- | --- |
-| `findMany`, `findFirst`, `count`, `exists` | deleted rows hidden by default; `deleted: 'with' \| 'only'` changes it |
-| `findUnique`, `findOne` | **not filtered**, returns a deleted row |
-| `paginate`, `cursor` | **not filtered**, includes deleted rows in `data` and `total` |
-| relations in `include` / `select`, `_count` | **not filtered**, see [above](#transforms-apply-to-the-root-query-only) |
-| `delete` | soft delete by default; `mode: 'hard'` deletes physically |
-| `deleteMany` | **physical delete**, not rewritten |
-| `update`, `updateMany`, `updateEach`, `upsert`, `upsertMany` | **not filtered**, can modify deleted rows |
+- `upsert` and `upsertMany` are not filtered, because hiding a deleted row there would turn its update into a duplicate insert
+- relations in `include` / `select` and `_count` are not filtered, see [above](#transforms-apply-to-the-root-query-only)
 
-Add `deletedAt: null` to the `where` of these calls when they must ignore deleted rows. The [rules plugin](/docs/plugins/rules) rule `noHardDeleteOnSoftDeleteModel` only checks `delete({ mode: 'hard' })`; it does not flag `deleteMany`.
+See [soft delete](/docs/plugins/soft-delete#what-is-filtered) for the full table.
+
+## Relations the loader cannot use
+
+better-drizzle reads relations from Drizzle 1.x `defineRelations(...)`, but its loader does not support every relation shape:
+
+- relations with a relation-level `where` (filtered relations)
+- `one` relations declared through a junction table
+
+Loading one with `include` or `select` throws `Relation "x" on "t" cannot be loaded: ...`, and filtering through one in `where` throws `Relation "x" on "t" cannot be filtered: ...`. They still work with Drizzle's own relational queries on the underlying `db`. See [troubleshooting](/docs/guides/troubleshooting#a-relation-cannot-be-loaded).
+
+## PostgreSQL-only filters and mutations
+
+JSONB path filters and mutations, and native array filters and mutations, compile to PostgreSQL operators and fail fast on SQLite and MySQL. JSONB path filters also require a `jsonb` column: Drizzle 1.x types `json` and `jsonb` alike, so a path filter on `json` type-checks and throws at runtime.
 
 ## Row locks reject relation loading
 
@@ -93,17 +103,17 @@ A single `one` relation `include` on the root query, such as `include: { author:
 
 ## `upsertMany` is native-first
 
-- supported on PostgreSQL and SQLite
-- currently unsupported on MySQL
-- fails fast on unsupported dialects instead of looping through many `upsert()` calls
+`upsertMany` compiles to one `INSERT ... ON CONFLICT` (PostgreSQL, SQLite) or `INSERT ... ON DUPLICATE KEY UPDATE` (MySQL) per batch and fails fast instead of looping through many `upsert()` calls. MySQL fires that clause on any unique key, so there it also requires:
 
-A slow hidden fallback would make throughput and behavior harder to reason about.
+- a `target` that is exactly the primary key or one unique key
+- no other unique key the rows could match: rows cannot set its columns, and they cannot have a static default (an auto-increment id is fine)
+- no `where`, and no returned rows (`data` is empty; `count` is the number of rows sent)
 
 `upsertMany` is also a write primitive, not a graph loader: it supports `select`, but not relation `include` or relation selects.
 
 ## Some transaction options are dialect-specific
 
-`isolationLevel` and `readOnly` are ignored on SQLite, and `comment` is PostgreSQL only. Choose how unsupported options are handled with the client's `transaction.unsupportedOptions` setting (`'warn'`, `'throw'`, or `'ignore'`) instead of discovering it by accident.
+`isolationLevel` and `readOnly` are ignored on SQLite, and `comment` is passed to transaction hooks but never sent to the database. Choose how unsupported options are handled with the client's `transaction.unsupportedOptions` setting (`'warn'`, `'throw'`, or `'ignore'`) instead of discovering it by accident.
 
 ## Raw SQL is explicit, and rules cover it partially
 

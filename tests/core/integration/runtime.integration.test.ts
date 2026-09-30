@@ -7,7 +7,6 @@ import {
 	createMassiveContext,
 	ENTRY_COUNT,
 	type MassiveContext,
-	schema,
 } from './setup';
 
 let ctx: MassiveContext;
@@ -137,7 +136,6 @@ describe('massive sqlite hooks, plugins and context', () => {
 					);
 				},
 			},
-			schema,
 		});
 		const scoped = client.$withContext({
 			requestId: 'request-1',
@@ -173,7 +171,7 @@ describe('massive sqlite hooks, plugins and context', () => {
 				return operation;
 			},
 		});
-		const client = better(ctx.raw, { plugins: [activeOnly], schema });
+		const client = better(ctx.raw, { plugins: [activeOnly] });
 
 		const active = await client.users.findMany();
 		const all = await client.users
@@ -231,7 +229,6 @@ describe('massive sqlite hooks, plugins and context', () => {
 					events.push(`before:${context.action}`);
 				},
 			},
-			schema,
 		});
 
 		await client.entries.create({
@@ -296,11 +293,12 @@ describe('massive sqlite raw sql and errors', () => {
 
 	test('blocks unsafe SQL by default and allows it only when configured', async () => {
 		await expect(
-			ctx.client.$rawUnsafe('select count(*) from mass_users'),
+			Promise.resolve(
+				ctx.client.$rawUnsafe('select count(*) from mass_users'),
+			),
 		).rejects.toThrow('Unsafe raw SQL is disabled');
 		const unsafeClient = better(ctx.raw, {
 			raw: { allowUnsafe: true },
-			schema,
 		});
 		const rows = await unsafeClient.$rawUnsafe<{ total: number }>(
 			'select count(*) as total from mass_users where age >= ?',
@@ -311,8 +309,8 @@ describe('massive sqlite raw sql and errors', () => {
 	});
 
 	test('surfaces real unique and foreign-key database failures', async () => {
-		await expect(
-			ctx.client.users.create({
+		const unique = await ctx.client.users
+			.create({
 				data: {
 					active: true,
 					age: 30,
@@ -320,10 +318,10 @@ describe('massive sqlite raw sql and errors', () => {
 					id: 999_001,
 					name: 'Duplicate',
 				},
-			}),
-		).rejects.toThrow('UNIQUE constraint failed: mass_users.email');
-		await expect(
-			ctx.client.posts.create({
+			})
+			.catch((error: Error) => error);
+		const foreignKey = await ctx.client.posts
+			.create({
 				data: {
 					body: 'Invalid FK',
 					id: 999_001,
@@ -332,7 +330,14 @@ describe('massive sqlite raw sql and errors', () => {
 					title: 'Invalid FK',
 					userId: 999_001,
 				},
-			}),
-		).rejects.toThrow('FOREIGN KEY constraint failed');
+			})
+			.catch((error: Error) => error);
+
+		expect(String((unique as Error).cause)).toContain(
+			'UNIQUE constraint failed: mass_users.email',
+		);
+		expect(String((foreignKey as Error).cause)).toContain(
+			'FOREIGN KEY constraint failed',
+		);
 	});
 });

@@ -181,6 +181,8 @@ try {
 | `BetterDrizzleError.from(error, overrides?)` | Normalizes any value. An existing `BetterDrizzleError` is cloned with the overrides applied. A value that looks like a database error (an object with a string `message`, `code`, or `sqlState`, or a numeric `errno`, which includes plain `Error` instances) becomes `DATABASE_ERROR` with the parsed driver, constraint, table, and column. Anything else becomes `UNKNOWN`. The original value is kept as `cause`. |
 | `BetterDrizzleError.fromDatabaseError(error, overrides?)` | Always parses the value with `getDatabaseErrorInfo` and returns `DATABASE_ERROR` (unless `overrides.code` is set), with the parsed info under `details.database`. |
 
+Drizzle ORM 1.x wraps driver failures in `DrizzleQueryError` (message `Failed query: ...`) and keeps the driver error as its `cause`. `BetterDrizzleError.from(...)`, `fromDatabaseError(...)`, `getDatabaseErrorInfo`, and the `isUniqueViolation` / `isForeignKeyViolation` / `isNotNullViolation` / `isCheckViolation` helpers read that wrapped driver error, so `sqlState`, `constraint`, `table`, and `column` still resolve. When you inspect a raw Drizzle error yourself, read `error.cause` for the driver fields.
+
 Instances also have `withCause(cause)` and `withDetails(details)`, which return a new error (details are shallow-merged), and `toJSON()`, which returns a plain object with every field except `cause`.
 
 ```ts
@@ -205,6 +207,9 @@ try {
 | Database | `DATABASE_ERROR` | 500 | The database rejected the statement (unique, foreign key, not null, and so on). |
 | Database | `DIALECT_INFERENCE_FAILED` | 500 | The SQL dialect could not be inferred from the Drizzle client. |
 | Database | `JSONB_QUERY_UNSUPPORTED` | 400 | A JSONB path filter was used on a dialect other than PostgreSQL. |
+| Database | `JSONB_MUTATION_UNSUPPORTED` | 400 | A JSONB path mutation (dotted path or `{ json }` wrapper) was used on a dialect other than PostgreSQL. |
+| Database | `ARRAY_QUERY_UNSUPPORTED` | 400 | A native array filter was used on a dialect other than PostgreSQL. |
+| Database | `ARRAY_MUTATION_UNSUPPORTED` | 400 | A native array mutation (`append`, `prepend`, `remove`, `replace`, `addUnique`) was used on a dialect other than PostgreSQL. |
 | Operations | `OPERATION_ERROR` | 500 | An operation received invalid input or failed, for example an invalid `batchSize` or a bad cursor. |
 | Operations | `UNKNOWN` | 500 | An uncategorized error. |
 | Hooks | `HOOK_ERROR` | 500 | A lifecycle hook threw. |

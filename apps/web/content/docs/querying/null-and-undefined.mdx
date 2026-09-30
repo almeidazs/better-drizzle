@@ -243,7 +243,7 @@ export function searchUsers(input: UserSearch) {
 		active: input.active,
 		name: input.search ? { contains: input.search } : undefined,
 		posts: input.hasPosts ? { some: {} } : undefined,
-	} satisfies WhereInput<typeof schema, 'users'>;
+	} satisfies WhereInput<typeof relations, 'users'>;
 
 	return client.users.findMany({ where, orderBy: { id: 'asc' } });
 }
@@ -329,7 +329,6 @@ The [rules plugin](/docs/plugins/rules) can reject these calls before they run:
 import { rules } from 'better-drizzle/rules';
 
 const client = better(db, {
-	schema,
 	plugins: [
 		rules({
 			noDeleteManyWithoutWhere: true,

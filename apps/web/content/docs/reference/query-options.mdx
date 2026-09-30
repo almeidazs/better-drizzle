@@ -27,8 +27,8 @@ Accepted by `findMany`, `findFirst`, `findOne`, and `findUnique`:
 			type: 'IncludeInput',
 		},
 		orderBy: {
-			description: 'Sort order. One field map, or an array for multi-column ordering.',
-			type: '{ [column]: "asc" | "desc" } | [...]',
+			description: 'Sort scalar columns. Values can set direction and optional NULL placement; one field map or an array for multi-column ordering.',
+			type: '{ [column]: "asc" | "desc" | { direction: "asc" | "desc"; nulls?: "first" | "last" } } | [...]',
 		},
 		take: {
 			description: 'Max rows to return. A negative value reverses ordering and takes from the end.',
@@ -52,6 +52,8 @@ Accepted by `findMany`, `findFirst`, `findOne`, and `findUnique`:
 		},
 	}}
 />
+
+For example, `orderBy: { lastSeenAt: { direction: 'desc', nulls: 'last' } }` puts rows with a `NULL` value after non-`NULL` values. When `nulls` is omitted, the database default applies. PostgreSQL and SQLite use native `NULLS FIRST` / `NULLS LAST` ordering; MySQL gets equivalent behavior through an `IS NULL` ordering term. Better Drizzle rejects an unrecognized provider dialect during client initialization. Ordering remains limited to scalar columns of the current table; SQL expressions and root ordering by relation columns require Drizzle directly. See [limitations](/docs/guides/limitations).
 
 `count` and `exists` accept only `where`, `cursor`, and `meta`.
 
@@ -93,7 +95,7 @@ Operators available inside `where`, by column type. A bare value means `equals`;
 | To-one relation | `is`, `isNot` |
 | To-many relation | `some`, `every`, `none` |
 
-`mode` is `'default'` or `'insensitive'` (case-insensitive string matching). See [filters](/docs/querying/filters) and [relations](/docs/querying/relations) for examples.
+`mode` is `'default'` (`LIKE`, case sensitivity follows the dialect) or `'insensitive'` (`ILIKE`, PostgreSQL only). See [filters](/docs/querying/filters) and [relations](/docs/querying/relations) for examples.
 
 ## Projections
 
@@ -112,17 +114,26 @@ A relation value can be `true` or a nested read-args object (with its own `where
 
 ## Pagination arguments
 
-`paginate` accepts everything above plus `limit`. Only `limit`, `take`, and `skip` control the page:
+`paginate` accepts everything above plus `page`, `perPage`, and `limit`:
 
 <TypeTable
 	type={{
+		page: {
+			description: '1-based page number. Computes `skip`; cannot be combined with it.',
+			type: 'number',
+		},
+		perPage: {
+			description: 'Rows per page. Alias of `limit`.',
+			type: 'number',
+			default: '10',
+		},
 		limit: {
 			description: 'Rows per page. Used when `take` is not set.',
 			type: 'number',
 			default: '10',
 		},
 		take: {
-			description: 'Rows per page. Wins over `limit` when both are set.',
+			description: 'Rows per page. Wins over `perPage` and `limit`.',
 			type: 'number',
 		},
 		skip: {
@@ -133,7 +144,7 @@ A relation value can be `true` or a nested read-args object (with its own `where
 	}}
 />
 
-There is no `page` or `perPage` input. It returns `{ data, pagination: { type, page, perPage, total, pageCount, hasNext, hasPrevious } }`, where `perPage` is the resolved page size and `page` is `Math.floor(skip / perPage) + 1`.
+It returns `{ data, pagination: { type, page, perPage, total, pageCount, hasNext, hasPrevious } }`, where `perPage` is the resolved page size and `page` is `Math.floor(skip / perPage) + 1`.
 
 `cursor` accepts everything above plus:
 

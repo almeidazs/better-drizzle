@@ -98,7 +98,9 @@ describe('massive sqlite reads', () => {
 		expect(one).toEqual(unique);
 		expect(throwing).toEqual(one);
 		await expect(
-			ctx.client.users.findUnique({ where: { id: 99_999 } }).throw(),
+			Promise.resolve(
+				ctx.client.users.findUnique({ where: { id: 99_999 } }).throw(),
+			),
 		).rejects.toThrow();
 	});
 
@@ -188,15 +190,12 @@ describe('massive sqlite reads', () => {
 	});
 
 	test('projects relation counts in the root query', async () => {
-		const database = ctx.sqlite as unknown as {
-			prepare: (query: string) => unknown;
-		};
-		const prepare = database.prepare.bind(database);
+		const query = ctx.sqlite.query.bind(ctx.sqlite);
 		const statements: string[] = [];
-		database.prepare = (query) => {
-			statements.push(query);
-			return prepare(query);
-		};
+		ctx.sqlite.query = ((statement: string) => {
+			statements.push(statement);
+			return query(statement);
+		}) as typeof ctx.sqlite.query;
 
 		try {
 			const user = await ctx.client.users.findFirst({
@@ -216,7 +215,7 @@ describe('massive sqlite reads', () => {
 			expect(statements).toHaveLength(1);
 			expect(statements[0]).toContain('count(*)');
 		} finally {
-			database.prepare = prepare;
+			ctx.sqlite.query = query;
 		}
 	});
 
@@ -280,14 +279,18 @@ describe('massive sqlite reads', () => {
 
 	test('rejects invalid relation count selections', async () => {
 		await expect(
-			ctx.client.users.findMany({
-				include: { _count: { select: {} } },
-			} as never),
+			Promise.resolve(
+				ctx.client.users.findMany({
+					include: { _count: { select: {} } },
+				} as never),
+			),
 		).rejects.toThrow('_count.select must include at least one relation');
 		await expect(
-			ctx.client.users.findMany({
-				include: { _count: { select: { missing: true } } },
-			} as never),
+			Promise.resolve(
+				ctx.client.users.findMany({
+					include: { _count: { select: { missing: true } } },
+				} as never),
+			),
 		).rejects.toThrow('Unknown relation "missing" in _count');
 	});
 
@@ -324,7 +327,7 @@ describe('massive sqlite reads', () => {
 		}
 	});
 
-	test('loads inferred many-to-many relations with per-parent pagination', async () => {
+	test('loads many-to-many through relations with per-parent pagination', async () => {
 		const rows = await ctx.client.users.findMany({
 			include: {
 				groups: { orderBy: { id: 'asc' }, skip: 1, take: 1 },
@@ -386,10 +389,12 @@ describe('massive sqlite reads', () => {
 
 	test('rejects sqlite row locks against a real driver', async () => {
 		await expect(
-			ctx.client.users.findMany({
-				lock: { mode: 'forUpdate' },
-				where: { id: 1 },
-			}),
+			Promise.resolve(
+				ctx.client.users.findMany({
+					lock: { mode: 'forUpdate' },
+					where: { id: 1 },
+				}),
+			),
 		).rejects.toThrow('Row locks are not supported');
 	});
 

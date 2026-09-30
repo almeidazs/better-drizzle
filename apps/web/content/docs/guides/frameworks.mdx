@@ -20,11 +20,11 @@ The same three pieces apply to every server framework:
 import { better } from 'better-drizzle';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
-import { schema } from './schema';
+import { relations } from './relations';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-export const client = better(drizzle(pool, { schema }), { schema });
+export const client = better(drizzle({ client: pool, relations }));
 export type Db = typeof client;
 ```
 
@@ -51,8 +51,7 @@ await db.posts.findMany({ where: { published: true } });
 Read the metadata in a hook, for example to tag failures:
 
 ```ts title="lib/db.ts"
-export const client = better(drizzle(pool, { schema }), {
-	schema,
+export const client = better(drizzle({ client: pool, relations }), {
 	hooks: {
 		onError(ctx) {
 			logger.error('db operation failed', {
@@ -76,7 +75,7 @@ Library errors are `BetterDrizzleError` instances with a `code` and an HTTP-like
 
 Database failures reach you in one of two shapes:
 
-- **the raw driver error**, for example from a plain `create()` on a client without hooks
+- **Drizzle's `DrizzleQueryError`**, with the driver error on `cause`, for example from a plain `create()` on a client without hooks
 - **a wrapped `BetterDrizzleError`** with code `OPERATION_ERROR`, status 500, and the driver error in `cause`, when the failure happens inside `transaction()`, inside a raw query, or while an `onError` hook or a hook for that operation is configured
 
 Check both the error and its `cause` so a unique violation maps to 409 whichever shape arrives:
@@ -153,7 +152,7 @@ import 'server-only';
 import { better } from 'better-drizzle';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
-import { schema } from './schema';
+import { relations } from './relations';
 
 const globalForDb = globalThis as unknown as { pool?: Pool };
 
@@ -161,7 +160,7 @@ const pool =
 	globalForDb.pool ?? new Pool({ connectionString: process.env.DATABASE_URL });
 if (process.env.NODE_ENV !== 'production') globalForDb.pool = pool;
 
-export const client = better(drizzle(pool, { schema }), { schema });
+export const client = better(drizzle({ client: pool, relations }));
 ```
 
 A route handler scopes the client from the request and maps errors:

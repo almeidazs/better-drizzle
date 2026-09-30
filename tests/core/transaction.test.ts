@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 
+import { defineRelations } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
@@ -26,9 +27,10 @@ const users = sqliteTable('transaction_users', {
 });
 
 const schema = { users };
+const relations = defineRelations(schema);
 
 const createContext = (
-	options?: Parameters<typeof better<typeof schema>>[1],
+	options?: Parameters<typeof better<typeof relations>>[1],
 ) => {
 	const sqlite = new Database(':memory:');
 	sqlite.exec(`
@@ -41,9 +43,8 @@ const createContext = (
 		);
 	`);
 
-	const raw = drizzle(sqlite, { schema });
+	const raw = drizzle({ client: sqlite, relations });
 	const client = better(raw, {
-		schema,
 		...options,
 	});
 
@@ -68,7 +69,6 @@ describe('transactions', () => {
 					seen.push(hook.meta as Record<string, unknown> | undefined);
 				},
 			},
-			schema,
 		});
 
 		const scoped = ctx.client.$withContext({
@@ -214,7 +214,6 @@ describe('transactions', () => {
 					seen.push(hook.transactionContext);
 				},
 			},
-			schema,
 		});
 
 		await ctx.client.transaction(
@@ -310,6 +309,33 @@ describe('transactions', () => {
 		});
 
 		expect(calls).toEqual(['commit']);
+		ctx.close();
+	});
+
+	test('afterCommit failure keeps committed rows and does not run rollback hooks', async () => {
+		const calls: string[] = [];
+		const ctx = createContext({
+			hooks: {
+				afterTransactionRollback() {
+					calls.push('rollback-hook');
+				},
+			},
+		});
+
+		await expect(
+			ctx.client.transaction(async (tx) => {
+				tx.afterCommit(() => {
+					throw new Error('after commit failed');
+				});
+				tx.afterRollback(() => calls.push('rollback-callback'));
+				await tx.users.create({
+					data: { id: 1, email: 'a@test.com', name: 'Alice' },
+				});
+			}),
+		).rejects.toThrow('after commit failed');
+
+		expect(await ctx.client.users.count()).toBe(1);
+		expect(calls).toEqual([]);
 		ctx.close();
 	});
 
@@ -425,7 +451,6 @@ describe('transactions', () => {
 					},
 				}),
 			],
-			schema,
 		});
 
 		await ctx.client.transaction(async (tx) => {
@@ -477,7 +502,6 @@ describe('transactions', () => {
 					id: 'tx-hooks',
 				}),
 			],
-			schema,
 		});
 
 		await ctx.client.transaction(async (tx) => {
@@ -513,7 +537,6 @@ describe('transactions', () => {
 
 	test('unsupported transaction options can throw on sqlite', async () => {
 		const ctx = createContext({
-			schema,
 			transaction: {
 				unsupportedOptions: 'throw',
 			},
@@ -535,7 +558,6 @@ describe('transactions', () => {
 
 	test('unsupported transaction options can be ignored on sqlite', async () => {
 		const ctx = createContext({
-			schema,
 			transaction: {
 				unsupportedOptions: 'ignore',
 			},

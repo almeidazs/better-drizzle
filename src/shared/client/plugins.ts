@@ -585,7 +585,7 @@ export const initializePlugins = <
 		PluginHookKind,
 		Record<string, string>
 	>;
-	const plugins = context.options.plugins ?? [];
+	const plugins: readonly AnyPlugin[] = context.options.plugins ?? [];
 
 	for (const kind of Object.keys(context.plugins.byKind) as PluginHookKind[])
 		seenOperationArgs[kind] = Object.create(null) as Record<string, string>;
@@ -636,7 +636,8 @@ export const initializePlugins = <
 					if (
 						type &&
 						column.columnType !== type &&
-						column.dataType !== type
+						column.dataType !== type &&
+						!column.dataType.split(' ').includes(type)
 					)
 						throw new BetterDrizzleError({
 							code: BetterDrizzleErrorCode.PluginRequiredColumnType,
@@ -680,7 +681,15 @@ export const initializePlugins = <
 			}
 
 		context.plugins.meta.push(getPluginMeta(plugin));
-		if (plugin.hooks) registerPluginHooks(context, plugin.hooks);
+		if (plugin.hooks)
+			registerPluginHooks(
+				context,
+				plugin.hooks as unknown as PluginHooks<
+					AnySchema,
+					unknown,
+					PluginState
+				>,
+			);
 		if (plugin.transform)
 			registerTransform(
 				context,
@@ -758,7 +767,7 @@ export const applyModelExtensions = <
 	tableName: Name,
 	delegate: BetterDrizzleModelDelegate<Schema, Name, Meta, Plugins>,
 ) => {
-	const plugins = context.options.plugins ?? [];
+	const plugins: readonly AnyPlugin[] = context.options.plugins ?? [];
 	const runtime = context.tables[tableName as string];
 	if (!runtime) return delegate;
 
@@ -805,7 +814,7 @@ export const applyClientExtensions = <
 	context: RuntimeContext<Schema, Meta, Plugins>,
 	client: BetterDrizzleClient<Schema, Meta, Plugins>,
 ) => {
-	const plugins = context.options.plugins ?? [];
+	const plugins: readonly AnyPlugin[] = context.options.plugins ?? [];
 
 	for (const plugin of plugins) {
 		const extension = plugin.extendClient?.({

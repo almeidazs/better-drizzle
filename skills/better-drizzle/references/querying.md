@@ -1,151 +1,143 @@
 # Querying
 
-Read this file for read helpers, filters, relation loading, pagination, explain plans, row locks, and raw SQL.
+Docs: `/docs/querying/reads`, `/filters`, `/relations`, `/selecting-fields`, `/pagination`, `/explain`, `/jsonb`, `/arrays`, `/docs/advanced/locks` (all under `https://better-drizzle.com`).
 
-Public docs:
+## Filters
 
-- `https://better-drizzle.com/docs/querying/reads`
-- `https://better-drizzle.com/docs/querying/filters`
-- `https://better-drizzle.com/docs/querying/relations`
-- `https://better-drizzle.com/docs/querying/pagination`
-- `https://better-drizzle.com/docs/querying/explain`
-- `https://better-drizzle.com/docs/advanced/raw-sql`
-- `https://better-drizzle.com/docs/advanced/locks`
+A bare value means `equals`. `undefined` values are ignored: on reads, `{ where: { id: undefined } }` matches every row; on `update`/`updateMany`/`delete`/`deleteMany` an empty `where` is a no-op (`null` / `{ count: 0 }`). Guard optional inputs or use the rules plugin's `noEmptyWhere`.
 
-## Read helpers
-
-The main read entry points are:
-
-- `findMany`
-- `findFirst`
-- `findOne`
-- `findUnique`
-- `count`
-- `exists`
-- `paginate`
-- `cursor`
-
-These read helpers return explainable thenables with `.explain(options?)`.
-
-## Query behavior
-
-- `paginate()` is offset-based only.
-- `cursor()` is the cursor-based API.
-- `count()` and `exists()` honor cursor filters when provided.
-- Locking is supported on `QueryArgs`-based reads, not on `count`, `exists`, or write operations.
-- Locked reads with relation loading are intentionally rejected rather than silently degraded.
-
-## Example patterns
-
-**Simple point lookup**
+| Column | Operators |
+| --- | --- |
+| string | `equals`, `in`, `notIn`, `contains`, `startsWith`, `endsWith`, `not`, `mode: 'insensitive'` (PostgreSQL `ILIKE` only) |
+| number / bigint / Date | `equals`, `in`, `notIn`, `lt`, `lte`, `gt`, `gte`, `not` |
+| boolean | `equals`, `not` |
+| nullable | `null` or `{ not: null }` |
+| logical | `AND: [...]`, `OR: [...]`, `NOT` (object or array) |
+| to-one relation | `is`, `isNot` (a filter or `null`) |
+| to-many / many-to-many | `some`, `every`, `none` |
 
 ```ts
-const user = await client.users.findFirst({
-	where: { id: 1 },
-});
-```
-
-**Nested relation filter with include**
-
-```ts
-const posts = await client.posts.findMany({
+await client.posts.findMany({
 	where: {
 		published: true,
-		author: {
-			is: {
-				active: true,
-			},
+		title: { contains: 'drizzle' },
+		OR: [{ score: { gte: 10 } }, { author: { is: { role: 'admin' } } }],
+		comments: { none: { flagged: true } },
+	},
+});
+```
+
+`where` also accepts a Drizzle `SQL` fragment: `where: sql\`${posts.score} > ${posts.minScore}\``.
+
+## Projections and relations
+
+```ts
+// select narrows the result type; relations take nested read args
+await client.users.findMany({
+	select: {
+		id: true,
+		name: true,
+		posts: {
+			where: { published: true },
+			orderBy: { id: 'desc' },
+			take: 3,
+			select: { id: true, title: true },
 		},
 	},
+});
+
+// include keeps every scalar and adds relations and counts
+await client.users.findUnique({
+	where: { id: 1 },
 	include: {
-		author: true,
+		profile: true,
+		_count: { select: { posts: true, comments: { where: { approved: true } } } },
 	},
-	orderBy: [{ id: 'desc' }],
-	take: 20,
 });
 ```
 
-**Explain without executing the normal read path twice**
+- The loader runs one query for the root plus one per relation node, never one per parent row. Nested `take`/`skip` are per parent.
+- `_count` is a correlated subquery in the same statement and works for one, many, and `.through()` relations.
+- Relations come only from `defineRelations`. A `.references()` foreign key alone is not a relation.
+
+## Ordering
 
 ```ts
-const plan = await client.users
-	.findMany({
-		where: { active: true },
-		orderBy: [{ id: 'asc' }],
-	})
-	.explain({
-		analyze: true,
-		comment: 'users.active.explain',
-	});
+orderBy: { createdAt: 'desc' }
+orderBy: [{ lastSeenAt: { direction: 'desc', nulls: 'last' } }, { id: 'asc' }]
 ```
 
-**Offset pagination**
+Only scalar columns of the queried table are allowed. There is no ordering by relation columns or SQL expressions.
+
+## Pagination
 
 ```ts
-const page = await client.users.paginate({
+const { data, pagination: { total, pageCount, hasNext } } = await client.users.paginate({
 	where: { active: true },
-	page: 2,
-	perPage: 25,
-	orderBy: [{ id: 'asc' }],
+	orderBy: { id: 'asc' },
+	page: 3,
+	perPage: 25, // or limit + skip; page cannot be combined with skip
+});
+
+const first = await client.users.cursor({ orderBy: { id: 'asc' }, limit: 20 });
+const next = await client.users.cursor({
+	orderBy: { id: 'asc' },
+	limit: 20,
+	after: first.pagination.nextCursor!, // raw cursor object, e.g. { id: 20 }
 });
 ```
 
-**Cursor pagination**
+- `paginate` runs a data query plus a `count`. `page` is derived as `Math.floor(skip / perPage) + 1`.
+- `cursor` orders by the primary key when `orderBy` is missing. Include a unique column last in `orderBy` for stable pages.
+- `count` and `exists` accept `where` and `cursor`, and nothing else.
+
+## Explain
 
 ```ts
-const page = await client.users.cursor({
-	take: 20,
-	after: { id: 42 },
-	orderBy: [{ id: 'asc' }],
-});
+const plan = await client.users.findMany({ where: { active: true } }).explain({ analyze: true });
+// { driver, operation, statements: [{ key, sql, params, raw, ignoredOptions }], deferredRelations?, deferredProbes? }
 ```
 
-## Raw SQL
+Relation stages appear under `deferredRelations`. With `analyze: true`, PostgreSQL and MySQL execute the statement. SQLite uses `EXPLAIN QUERY PLAN` and ignores `analyze`.
 
-- Safe raw calls use tagged templates or Drizzle `sql` objects.
-- Plain strings are only allowed through `$rawUnsafe`.
-- `$rawUnsafe` is gated by `raw.allowUnsafe`.
-- Raw execution bypasses model transforms and CRUD hooks, but uses dedicated raw hooks.
-
-**Safe raw example**
+## Row locks (PostgreSQL, MySQL)
 
 ```ts
-const rows = await client.$raw<{ id: number; name: string }[]>`
-	select id, name
-	from users
-	where active = ${true}
-`;
-```
-
-**Locked read example**
-
-```ts
-const jobs = await client.transaction(async (tx) => {
-	return tx.jobs.findMany({
+await client.transaction(async (tx) => {
+	const jobs = await tx.jobs.findMany({
 		where: { status: 'pending' },
-		lock: {
-			mode: 'update',
-			skipLocked: true,
-		},
+		orderBy: { id: 'asc' },
 		take: 10,
+		lock: { mode: 'update', skipLocked: true }, // or 'update' | 'share'
 	});
 });
 ```
 
-## Anti-patterns
+- Modes are `update`, `share`, plus `noKeyUpdate` and `keyShare` on PostgreSQL. `skipLocked` and `noWait` are mutually exclusive. `tables` is PostgreSQL-only.
+- SQLite throws `LOCK_NOT_SUPPORTED`. `count`, `exists`, and writes have no `lock`.
+- Relation loading is rejected, except one to-one `include` whose relation is also filtered with `is` (compiled to an inner join).
+- Outside a transaction, a lock is released when the statement ends. `better(db, { locks: { transactionsOnly: true } })` enforces transactions.
 
-- using `before` and `after` together in one cursor query
-- claiming `count()` accepts row locks
-- showing lock examples on SQLite as if they are supported
-- silently replacing locked relation reads with unlocked reads
-- routing plain string SQL through `$raw` instead of `$rawUnsafe`
+## JSONB (PostgreSQL `jsonb` columns)
 
-## Agent checks
+```ts
+// jsonb('metadata').$type<{ profile: { age: number; city: string } }>()
+where: { metadata: { 'profile.age': { gte: 18 }, 'profile.city': 'Lisbon' } }
+```
 
-Before suggesting a query:
+- Dotted keys are path filters only on PostgreSQL `jsonb` columns. On other JSON columns they are whole-document equality and match nothing.
+- The legacy `{ json: { 'a.b': ... } }` wrapper still works. It throws `JSONB_QUERY_UNSUPPORTED` outside PostgreSQL.
+- `json` (not `jsonb`) columns throw on path filters, even though they type-check.
+- Containment and other operators: pass a Drizzle `sql` fragment.
 
-- verify the method exists on the real delegate surface
-- do not mix cursor and offset semantics
-- do not suggest locks on SQLite as supported behavior
-- do not suggest relation `include` for lock-based reads
-- do not route plain strings through safe raw APIs
+## Arrays (PostgreSQL `.array()` columns)
+
+```ts
+where: {
+	tags: { has: 'drizzle', length: { lte: 5 } },
+	roles: { hasEvery: ['admin', 'editor'] },
+	scores: { some: { gt: 100 } }, // also every / none with the element's filter
+}
+```
+
+Operators: `has`, `hasEvery`, `hasSome`, `hasNone`, `containedBy`, `isEmpty`, `length`, `equals`, `some`/`every`/`none`. Outside PostgreSQL they throw `ARRAY_QUERY_UNSUPPORTED`.

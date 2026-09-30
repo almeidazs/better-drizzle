@@ -7,6 +7,7 @@ import {
 	getTableColumns,
 	gt,
 	gte,
+	lte,
 	like,
 	sql,
 } from 'drizzle-orm';
@@ -95,17 +96,34 @@ export const betterFilteredList = async (context: BenchmarkContext) =>
 		},
 	});
 
+export const rawSimpleOrder = async (context: BenchmarkContext) =>
+	context.raw.select().from(users).orderBy(asc(users.id)).limit(25);
+
+export const betterSimpleOrder = async (context: BenchmarkContext) =>
+	betterClient(context).users.findMany({
+		orderBy: { id: 'asc' },
+		take: 25,
+	});
+
 export const rawNullsLastOrder = async (context: BenchmarkContext) =>
 	context.raw
 		.select()
 		.from(nullOrderRecords)
-		.orderBy(sql`${nullOrderRecords.lastSeenAt} asc nulls last`)
+		.where(lte(nullOrderRecords.id, 25))
+		.orderBy(
+			sql`${nullOrderRecords.lastSeenAt} asc nulls last`,
+			asc(nullOrderRecords.id),
+		)
 		.limit(25);
 
 export const betterNullsLastOrder = async (context: BenchmarkContext) =>
 	betterClient(context).nullOrderRecords.findMany({
-		orderBy: { lastSeenAt: { direction: 'asc', nulls: 'last' } },
+		orderBy: [
+			{ lastSeenAt: { direction: 'asc', nulls: 'last' } },
+			{ id: 'asc' },
+		],
 		take: 25,
+		where: { id: { lte: 25 } },
 	});
 
 export const rawRelationGraph = async (context: BenchmarkContext) =>
@@ -467,25 +485,26 @@ export const betterComplexJoinEquivalent = async (context: BenchmarkContext) =>
  * `db.transaction()` callback.
  */
 export const rawSimpleTransaction = async (context: BenchmarkContext) =>
-	context.raw.transaction(async (tx) => {
+	context.raw.transaction((tx) => {
 		const id = nextWriteId(context);
 		const token = nextWriteToken(context);
 
-		await tx
-			.insert(benchWrites)
+		tx.insert(benchWrites)
 			.values({
 				id,
 				payload: `payload-${id}`,
 				token,
 				value: id % 1000,
 			})
-			.returning();
+			.returning()
+			.all();
 
-		const rows = await tx
+		const rows = tx
 			.select()
 			.from(benchWrites)
 			.where(eq(benchWrites.id, id))
-			.limit(1);
+			.limit(1)
+			.all();
 
 		return rows[0] ?? null;
 	});
@@ -518,59 +537,60 @@ export const betterSimpleTransaction = async (context: BenchmarkContext) =>
  * and one select inside a single transaction.
  */
 export const rawMultiOpTransaction = async (context: BenchmarkContext) =>
-	context.raw.transaction(async (tx) => {
+	context.raw.transaction((tx) => {
 		const baseId = nextWriteId(context);
 		const id2 = nextWriteId(context);
 		const id3 = nextWriteId(context);
 		const baseToken = nextWriteToken(context);
 
-		await tx
-			.insert(benchWrites)
+		tx.insert(benchWrites)
 			.values({
 				id: baseId,
 				payload: `payload-${baseId}`,
 				token: baseToken,
 				value: baseId % 1000,
 			})
-			.returning();
+			.returning()
+			.all();
 
-		await tx
-			.insert(benchWrites)
+		tx.insert(benchWrites)
 			.values({
 				id: id2,
 				payload: `payload-${id2}`,
 				token: `bench-${context.counters.createDeleteToken}`,
 				value: id2 % 1000,
 			})
-			.returning();
+			.returning()
+			.all();
 		context.counters.createDeleteToken += 1;
 
-		await tx
-			.insert(benchWrites)
+		tx.insert(benchWrites)
 			.values({
 				id: id3,
 				payload: `payload-${id3}`,
 				token: `bench-${context.counters.createDeleteToken}`,
 				value: id3 % 1000,
 			})
-			.returning();
+			.returning()
+			.all();
 		context.counters.createDeleteToken += 1;
 
 		const nextValue = (context.counters.updateOffset * 19) % 10_000;
-		await tx
-			.update(benchWrites)
+		tx.update(benchWrites)
 			.set({
 				payload: `payload-updated-${nextValue}`,
 				value: nextValue,
 			})
 			.where(eq(benchWrites.id, baseId))
-			.returning();
+			.returning()
+			.all();
 
-		const rows = await tx
+		const rows = tx
 			.select()
 			.from(benchWrites)
 			.where(eq(benchWrites.id, baseId))
-			.limit(1);
+			.limit(1)
+			.all();
 
 		return rows[0] ?? null;
 	});
@@ -680,18 +700,20 @@ export const betterNestedTransaction = async (context: BenchmarkContext) =>
  * verify that read-path transaction overhead is minimal.
  */
 export const rawReadOnlyTransaction = async (context: BenchmarkContext) =>
-	context.raw.transaction(async (tx) => {
-		const first = await tx
+	context.raw.transaction((tx) => {
+		const first = tx
 			.select()
 			.from(users)
 			.where(eq(users.id, context.ids.userLookupId))
-			.limit(1);
+			.limit(1)
+			.all();
 
-		const second = await tx
+		const second = tx
 			.select()
 			.from(benchWrites)
 			.where(eq(benchWrites.id, context.ids.userLookupId))
-			.limit(1);
+			.limit(1)
+			.all();
 
 		return { benchWrite: second[0] ?? null, user: first[0] ?? null };
 	});

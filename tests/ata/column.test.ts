@@ -4,9 +4,11 @@ import { getTableColumns } from 'drizzle-orm';
 import {
 	bigint,
 	boolean,
+	integer as pgInteger,
 	jsonb,
 	numeric,
 	pgTable,
+	text as pgText,
 	timestamp,
 	uuid,
 	varchar,
@@ -23,9 +25,9 @@ import { columnToSchema } from '../../src/plugins/ata/shared/column';
 // accepting hands the value on.
 
 const pg = pgTable('t', {
-	id: integer('id').primaryKey(),
+	id: pgInteger('id').primaryKey(),
 	name: varchar('name', { length: 80 }).notNull(),
-	email: text('email').notNull(),
+	email: pgText('email').notNull(),
 	uid: uuid('uid').notNull(),
 	price: numeric('price').notNull(),
 	big: bigint('big', { mode: 'bigint' }).notNull(),
@@ -38,7 +40,7 @@ const lite = sqliteTable('l', {
 	id: integer('id').primaryKey(),
 	title: text('title').notNull(),
 	active: integer('active', { mode: 'boolean' }).notNull(),
-	payload: blob('payload').notNull(),
+	payload: blob('payload', { mode: 'buffer' }).notNull(),
 });
 
 const pgCols = getTableColumns(pg);
@@ -72,6 +74,15 @@ describe('columnToSchema', () => {
 		expect(columnToSchema(pgCols.price).schema).toEqual({ type: 'string' });
 	});
 
+	// drizzle-orm 1.x: numeric({ mode: 'number' }) has dataType 'number' and
+	// returns a JS number.
+	test('numeric in number mode is a number', () => {
+		const table = pgTable('n', {
+			amount: numeric('amount', { mode: 'number' }).notNull(),
+		});
+		expect(columnToSchema(table.amount).schema).toEqual({ type: 'number' });
+	});
+
 	test('boolean', () => {
 		expect(columnToSchema(pgCols.flag).schema).toEqual({ type: 'boolean' });
 		expect(columnToSchema(liteCols.active).schema).toEqual({
@@ -86,26 +97,26 @@ describe('columnToSchema', () => {
 	// The three JSON Schema cannot express.
 	test('a timestamp asks ata for nothing and names a date residue', () => {
 		const { schema, residue } = columnToSchema(pgCols.created);
-		expect(schema).toEqual({});
+		expect(schema).toEqual({ not: { type: 'null' } });
 		expect(residue).toBe('date');
 	});
 
 	test('a bigint column names a bigint residue', () => {
 		const { schema, residue } = columnToSchema(pgCols.big);
-		expect(schema).toEqual({});
+		expect(schema).toEqual({ not: { type: 'null' } });
 		expect(residue).toBe('bigint');
 	});
 
 	test('a blob column names a buffer residue', () => {
 		const { schema, residue } = columnToSchema(liteCols.payload);
-		expect(schema).toEqual({});
+		expect(schema).toEqual({ not: { type: 'null' } });
 		expect(residue).toBe('buffer');
 	});
 
 	test('a nullable column is nullable in the schema, residue unchanged', () => {
 		const nullablePg = pgTable('n', {
 			when: timestamp('when'),
-			count: integer('count'),
+			count: pgInteger('count'),
 		});
 		const cols = getTableColumns(nullablePg);
 		expect(columnToSchema(cols.count).schema).toEqual({

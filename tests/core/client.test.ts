@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 
+import { defineRelations } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
@@ -17,9 +18,10 @@ const users = sqliteTable('client_users', {
 });
 
 const schema = { users };
+const relations = defineRelations(schema);
 
 const createContext = (
-	options?: Parameters<typeof better<typeof schema>>[1],
+	options?: Parameters<typeof better<typeof relations>>[1],
 ) => {
 	const sqlite = new Database(':memory:');
 	sqlite.exec(`
@@ -32,9 +34,8 @@ const createContext = (
 			(2, 'Bob');
 	`);
 
-	const raw = drizzle(sqlite, { schema });
+	const raw = drizzle({ client: sqlite, relations });
 	const client = better(raw, {
-		schema,
 		...options,
 	});
 
@@ -116,7 +117,6 @@ describe('client', () => {
 					id: 'client-plugin-value',
 				}),
 			],
-			schema,
 		});
 
 		ctx.client.extends({
@@ -151,7 +151,6 @@ describe('client', () => {
 					);
 				},
 			},
-			schema,
 		});
 
 		const scoped = ctx.client.$withContext({
@@ -201,6 +200,7 @@ describe('client', () => {
 
 	test('fails fast when dialect inference is impossible', () => {
 		const fakeDb = {
+			_: { relations },
 			delete() {
 				throw new Error('unused');
 			},
@@ -221,14 +221,12 @@ describe('client', () => {
 			},
 		};
 
-		expect(() =>
-			better(fakeDb as never, {
-				schema,
-			}),
-		).toThrow('Unable to infer Better Drizzle dialect');
+		expect(() => better(fakeDb as never)).toThrow(
+			'Unable to infer Better Drizzle dialect',
+		);
 
 		try {
-			better(fakeDb as never, { schema });
+			better(fakeDb as never);
 		} catch (error) {
 			expect(error).toBeInstanceOf(BetterDrizzleError);
 			expect((error as BetterDrizzleError).code).toBe(

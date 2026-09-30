@@ -137,6 +137,9 @@ export type ExplainOperation =
  * ```
  */
 export interface ExplainStatement {
+	/** When present, this statement runs only under the stated condition. */
+	condition?: string;
+
 	/**
 	 * A stable key identifying the role of this statement within the
 	 * operation (e.g. `"data"`, `"total"`, `"probe:hasNext"`).
@@ -232,6 +235,12 @@ export interface ExplainResult {
 	}[];
 
 	/**
+	 * Cursor probes whose SQL depends on a row returned by the data query.
+	 * They cannot be explained without running that read first.
+	 */
+	deferredProbes?: { key: string; reason: string }[];
+
+	/**
 	 * The statements produced by the `EXPLAIN`. Most operations yield a
 	 * single statement; `paginate` yields two (`data` + `total`), and
 	 * `cursor` may yield additional probe statements.
@@ -243,6 +252,7 @@ export interface ExplainResult {
  * A `Promise<T>` augmented with an `.explain()` method.
  *
  * Calling `.explain()` does **not** start the underlying database operation.
+ * `analyze: true` asks PostgreSQL and MySQL to execute the explained SQL.
  * It runs the `EXPLAIN` path independently while preserving native promise
  * behavior for `await`, `.then()`, and test helpers such as
  * `expect(...).resolves` / `expect(...).rejects`.

@@ -23,9 +23,9 @@ better-drizzle is a thin repository-style wrapper on top of Drizzle ORM. It does
 Key characteristics:
 - Not a new ORM. Does not hide Drizzle or rebuild a query engine.
 - Supports PostgreSQL, MySQL, and SQLite through Drizzle's driver layer.
-- Current release line: 0.2.x. Ships as ONE package. The official plugins are subpath exports (\`better-drizzle/rules\`, \`/zod\`, \`/timestamps\`, \`/soft-delete\`, \`/eslint\`, \`/plugins\`), NOT the old scoped \`@better-drizzle/*\` packages, which are discontinued as of 0.2.0.
+- Current release line: 0.3.x, which supports only Drizzle ORM 1.x (\`defineRelations\`, \`drizzle({ client, relations })\`, \`better(db)\`); projects on drizzle-orm 0.x stay on 0.2.x. Ships as ONE package. The official plugins are subpath exports (\`better-drizzle/rules\`, \`/zod\`, \`/ata\`, \`/timestamps\`, \`/soft-delete\`, \`/eslint\`, \`/plugins\`), NOT the old scoped \`@better-drizzle/*\` packages, which are discontinued as of 0.2.0.
 - Native-first batch operations: \`upsertMany\`, \`updateEach\`, \`createMany\`.
-- Batched relation loading with nested \`include\`/\`select\`, inferred many-to-many, and \`include._count\` relation totals as correlated subqueries.
+- Batched relation loading with nested \`include\`/\`select\`, many-to-many through Drizzle \`.through()\` relations, and \`include._count\` relation totals as correlated subqueries.
 - Relational writes: \`connect\`, \`disconnect\`, and exclusive \`set\`, run in an implicit transaction.
 - Lazy \`.explain()\` on every read helper, with cross-dialect query plans.
 - Row locks (\`lock\`, \`skipLocked\`, \`noWait\`) on PostgreSQL and MySQL.
@@ -34,7 +34,7 @@ Key characteristics:
 - Transaction support with savepoints, retries, and lifecycle callbacks.
 - Raw SQL passthrough with safety gates and dialect awareness.
 - Scoped metadata via \`$withContext()\` for multi-tenancy and request tracing.
-- Peer dependencies: \`drizzle-orm\` (>=0.30.0) and \`typescript\` (^5).
+- Peer dependencies: \`drizzle-orm\` (^1.0.0-rc.4) and \`typescript\` (^5).
 
 ## Documentation
 
@@ -49,12 +49,14 @@ Key characteristics:
 - [Selecting Fields](${BASE}/docs/querying/selecting-fields): Pick specific columns or load nested relations with select and include.
 - [Relations](${BASE}/docs/querying/relations): Loading related records - one-to-one, one-to-many, and many-to-many patterns.
 - [Pagination](${BASE}/docs/querying/pagination): \`paginate()\` for offset pages and \`cursor()\` for cursor navigation, both with typed metadata.
-- [JSONB Filters](${BASE}/docs/querying/jsonb): Typed PostgreSQL JSONB path filters derived from \`jsonb().$type<T>()\` columns.
+- [JSONB](${BASE}/docs/querying/jsonb): Typed PostgreSQL JSONB path filters and \`jsonb_set\` path mutations derived from \`jsonb().$type<T>()\` columns.
+- [Arrays](${BASE}/docs/querying/arrays): Typed PostgreSQL array filters and atomic array mutations.
 - [Explain](${BASE}/docs/querying/explain): Lazy \`.explain()\` on read helpers for cross-dialect query plans, including deferred relation stages.
 
 ## Writing
 
 - [Create, Update & Delete](${BASE}/docs/writing/crud): The full write surface - create, createMany, update, updateMany, updateEach, delete, deleteMany, upsert, and upsertMany.
+- [Atomic Updates](${BASE}/docs/writing/atomic-updates): increment, decrement, multiply, divide, and toggle compiled into one UPDATE.
 - [Relation Writes](${BASE}/docs/writing/relation-writes): Attach, detach, and replace related rows from a single write with connect, disconnect, and set.
 - [Throwing Results](${BASE}/docs/writing/throwing-results): Use .throw() on nullable results to convert null into a typed error instead of manual null checks.
 
@@ -74,6 +76,7 @@ Key characteristics:
 - [Soft Delete](${BASE}/docs/plugins/soft-delete): Official soft delete plugin - marks rows as deleted instead of removing them.
 - [Timestamps](${BASE}/docs/plugins/timestamps): Official timestamps plugin - auto-manages createdAt and updatedAt columns.
 - [Zod](${BASE}/docs/plugins/zod): Official Zod plugin - per-table generated schemas on \`db.<table>.$zod\` plus hook-driven runtime validation.
+- [ATA](${BASE}/docs/plugins/ata): Official ATA plugin - per-table JSON Schemas on \`db.<table>.$ata\` plus compiled ata validation.
 - [Writing Plugins](${BASE}/docs/plugins/writing-plugins): Build your own plugin - extend clients, models, hooks, transforms, and operation args.
 
 ## Guides
@@ -84,8 +87,13 @@ Key characteristics:
 - [Client Extensions](${BASE}/docs/guides/client-extensions): Attach app-specific helpers to the client with \`extends()\`, preserved across \`$withContext()\` clones and transactions.
 - [Dynamic Repositories](${BASE}/docs/guides/dynamic-repositories): Resolve delegates at runtime by schema key or database table name.
 - [Migrating from Drizzle](${BASE}/docs/guides/migrating-from-drizzle): Step-by-step guide for adding better-drizzle to an existing Drizzle project.
-- [Upgrading to 0.2](${BASE}/docs/guides/upgrading): Migrate from the scoped \`@better-drizzle/*\` plugin packages to the unified package subpaths.
+- [Upgrading](${BASE}/docs/guides/upgrading): Move to Drizzle ORM 1.x relations, or from the scoped \`@better-drizzle/*\` plugin packages to the unified package subpaths.
+- [Typing Results](${BASE}/docs/guides/typing-results): Exported helper types keyed by \`typeof relations\`.
+- [Testing](${BASE}/docs/guides/testing): Test against a real in-memory SQLite database; awaiting lazy reads in test matchers.
+- [Observability](${BASE}/docs/guides/observability): Logging, metrics, and tracing through hooks.
+- [Recipes](${BASE}/docs/guides/recipes): Short answers to common app questions.
 - [Limitations](${BASE}/docs/guides/limitations): Known boundaries, unsupported patterns, and where raw Drizzle is the better choice.
+- [Troubleshooting](${BASE}/docs/guides/troubleshooting): Error messages, their causes, and fixes.
 
 ## Performance
 

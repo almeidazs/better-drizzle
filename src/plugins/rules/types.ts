@@ -40,7 +40,7 @@ export type RuleSeverity = 'off' | 'warn' | 'error';
 export type RuleSetting<TOptions extends object = Record<never, never>> =
 	| boolean
 	| RuleSeverity
-	| ({
+	| (object & {
 			level?: RuleSeverity;
 	  } & TOptions);
 

@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite';
 
-import { relations } from 'drizzle-orm';
+import { defineRelations } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
@@ -46,39 +46,27 @@ const memberships = sqliteTable('test_memberships', {
 	note: text('note').notNull(),
 });
 
-const usersRelations = relations(users, ({ many }) => ({
-	posts: many(posts),
-	comments: many(comments),
-}));
-
-const postsRelations = relations(posts, ({ many, one }) => ({
-	author: one(users, {
-		fields: [posts.userId],
-		references: [users.id],
-	}),
-	comments: many(comments),
-}));
-
-const commentsRelations = relations(comments, ({ one }) => ({
-	author: one(users, {
-		fields: [comments.authorId],
-		references: [users.id],
-	}),
-	post: one(posts, {
-		fields: [comments.postId],
-		references: [posts.id],
-	}),
-}));
-
 const schema = {
 	comments,
-	commentsRelations,
 	memberships,
 	posts,
-	postsRelations,
 	users,
-	usersRelations,
 };
+
+const relations = defineRelations(schema, (r) => ({
+	comments: {
+		author: r.one.users({ from: r.comments.authorId, to: r.users.id }),
+		post: r.one.posts({ from: r.comments.postId, to: r.posts.id }),
+	},
+	posts: {
+		author: r.one.users({ from: r.posts.userId, to: r.users.id }),
+		comments: r.many.comments(),
+	},
+	users: {
+		comments: r.many.comments(),
+		posts: r.many.posts(),
+	},
+}));
 
 const createTablesSql = `
 CREATE TABLE IF NOT EXISTS test_users (
@@ -193,7 +181,7 @@ const SEED_MEMBERSHIPS = [
 	{ id: 2, userId: 2, label: 'editor', note: 'Initial editor' },
 ];
 
-export type TestSchema = typeof schema;
+export type TestSchema = typeof relations;
 
 export const createTestContext = () => {
 	const sqlite = new Database(':memory:');
@@ -244,12 +232,13 @@ ${createTablesSql}
 
 	seed();
 
-	const raw = drizzle(sqlite, { schema });
-	const client = better(raw, { schema });
+	const raw = drizzle({ client: sqlite, relations });
+	const client = better(raw);
 
 	return {
 		better: client,
 		raw,
+		relations,
 		schema,
 		sqlite,
 		seed: {

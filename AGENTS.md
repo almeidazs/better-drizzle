@@ -30,7 +30,7 @@
     - `typescript` as a peer dependency
     - `mitata` for benchmarking
     - Ultracite presets with `oxfmt` and `oxlint` for formatting and linting
-    - the published compatibility floor is `drizzle-orm@^0.30.0`; `0.29.5` failed the workspace typecheck, while `0.30.0` passed typecheck plus the core/plugin test suites
+    - the peer range is `drizzle-orm@^1.0.0-rc.4` (RQB v2); drizzle-orm 0.x is supported only by the `0.2.x` releases
 
 ## Architecture
 
@@ -41,6 +41,7 @@
     - Builds a base runtime context once
     - Initializes plugins once during bootstrap
     - Re-binds delegates/extensions per bound client (`db` or `tx`) without re-running plugin setup
+    - Reads tables and relations from the Drizzle instance (`db._.relations`, built by `drizzle({ relations })`); `better()` takes no `schema` option and fails fast when no tables are found
     - Registers repositories by TypeScript table key and database table name
 - **Runtime layout**:
     - `src/shared/client/context.ts`: builds the runtime context and precomputed table metadata
@@ -97,19 +98,23 @@
     - callback form is the safer default when an extension method needs to reference the bound client instance
     - extensions must not override built-in or plugin-provided client keys; conflicts fail fast
 - **Pagination split**:
-    - `paginate()` is offset-only and returns `{ data, pagination: { type: "offset", page, perPage, total, pageCount, hasNext, hasPrevious } }`
+    - `paginate()` is offset-only; it takes `page` + `perPage` (sugar for `skip` + `limit`, `page` cannot be combined with `skip`) and returns `{ data, pagination: { type: "offset", page, perPage, total, pageCount, hasNext, hasPrevious } }`
     - `cursor()` is the cursor-based API and returns `{ data, pagination: { type: "cursor", hasNext, hasPrevious, nextCursor, previousCursor } }`
     - cursor pagination accepts `before` or `after`, never both, and returns raw cursor objects by default
+    - `orderBy` accepts direction strings or `{ direction, nulls: "first" | "last" }`; PostgreSQL/SQLite use native NULL ordering and MySQL emulates non-default placement with `IS NULL`
+    - cursor tokens include every `orderBy` field; repeat the same order and include a unique, non-null tie-breaker to traverse rows sharing a nullable key
+    - unsupported SQL dialects fail during client initialization instead of silently ignoring NULL placement
     - `count()` and `exists()` also honor `cursor` filters when provided, so helper queries stay aligned with cursor pagination semantics
 - **Read query plans**:
     - read helpers (`findMany`, `findFirst`, `findOne`, `findUnique`, `count`, `exists`, `paginate`, `cursor`) now return explainable thenables with `.explain(options?)`
-    - `.explain()` is lazy and does not execute the normal read path or query hooks unless the result is separately awaited
+    - reads are lazy thenables (`ExplainableQuery` in `src/shared/client/hooks.ts`, modeled on Drizzle's `QueryPromise`): the operation starts on the first `then`/`catch`/`finally` and runs once; `.explain()` alone never runs the read or query hooks
+    - they are deliberately not native promises: a pending native promise that starts lazily hangs Bun's `expect(...).resolves/.rejects`, while a thenable fails fast; tests wrap reads with `Promise.resolve(...)` for those matchers
     - plugin transforms still affect `.explain()`, but query hooks do not
     - explain output is cross-dialect and structured as `{ driver, operation, statements }`; unsupported explain flags are reported under `ignoredOptions`
     - PostgreSQL maps `analyze`, `verbose`, `costs`, `timing`, and `summary`; SQLite uses `EXPLAIN QUERY PLAN`; MySQL uses the best available `EXPLAIN` form and ignores unsupported flags
 - **Relational reads**:
     - nested `select` and `include` use Better Drizzle's own batched loader rather than Drizzle's `db.query.*` path
-    - the loader executes one root query plus one query per requested relation node, including inferred many-to-many nodes
+    - the loader executes one root query plus one query per requested relation node, including `.through()` many-to-many nodes
     - nested `where`, `orderBy`, `cursor`, `take`, `skip`, `select`, and `include` are supported; per-parent pagination uses `row_number()` window queries
     - internal linking columns are selected as needed and removed from the public payload
     - `select` and `include` are mutually exclusive at every level
@@ -119,7 +124,8 @@
     - `create` supports relation `connect`; `update` supports `connect`, `disconnect`, and exclusive `set`; `upsert` follows the corresponding create/update branch rules
     - relation selectors must be non-empty and match exactly one row
     - relation writes run in an implicit transaction when no transaction is already active and preserve delegate plugin state
-    - simple two-FK junction tables are inferred as direct many-to-many relations; ambiguous paths fail and can be configured with `options.relations.manyToMany`
+    - many-to-many comes only from native `.through()` relations (no junction inference); relations with a relation-level `where` or `one` relations through a junction are recorded as unsupported and throw when used
+    - a `one` relation owns the foreign key (connect writes the source columns) unless its `from` columns are exactly the source primary key and its `to` columns are not the target primary key
     - batch mutation APIs intentionally remain scalar-only
 - **Row locks**:
     - read helpers built on `QueryArgs` (`findMany`, `findFirst`, `findOne`, `findUnique`, `paginate`, `cursor`) accept `lock`
@@ -127,7 +133,7 @@
     - PostgreSQL and MySQL are supported; SQLite should fail fast with a lock-specific error
     - `skipLocked` and `noWait` are mutually exclusive
     - `locks.transactionsOnly` can enforce that locked reads only run inside transactions
-    - Drizzle's relational `db.query.*` path does not expose row-lock configuration, so v1 lock support intentionally rejects general relation loading (`include` / relation `select`) instead of silently dropping the lock
+    - lock support intentionally rejects general relation loading (`include` / relation `select`) instead of silently dropping the lock, since nested stages run as separate queries
 - **Scoped metadata**:
     - `db.$withContext(meta)` returns a cloned client that merges default `meta` into every repository operation, raw SQL call, and transaction lifecycle payload
     - final operation metadata is a shallow merge: scoped context first, per-call `meta` second
@@ -159,6 +165,7 @@
     - `updateEach` is an update-oriented batch operation with its own plugin kind, but it still flows through `beforeUpdate` / `afterUpdate`
     - `src/plugins/rules` is intentionally runtime-only and hook-driven; it enforces only checks that can be inferred from current hook payloads and silently ignores unsupported rule types
     - `src/plugins/rules` accepts boolean rule settings as shorthand: `true` means `error`, `false` means `off`
+    - `src/plugins/soft-delete` filters every read and every update/delete with a `where` (`deleted` arg on each); `upsert`/`upsertMany` and relation loads stay unfiltered. Soft `delete`/`deleteMany` run in `beforeDelete` (before transforms), so they apply the visibility filter themselves. Writes with an empty `where` are core no-ops and must stay no-ops: the plugin only adds its filter when the original `where` has a condition. `mode: 'hard'` matches deleted rows unless `deleted` is passed
     - `src/plugins/soft-delete` writes ISO 8601 values for string-backed delete timestamp columns and `Date` values for Drizzle date columns; this preserves SQLite text-column compatibility while retaining native timestamp encoders
 - **Batch updateEach API**:
     - `updateEach` is native-first and performance-sensitive
@@ -170,6 +177,7 @@
     - it accepts `data`, explicit `target`, `update`, optional `select`, optional `batchSize`, and optional SQL `where`
     - it intentionally supports `select` but not relation `include`
     - unsupported dialect/feature combinations should fail fast instead of degrading to slow userland loops
+    - MySQL uses `ON DUPLICATE KEY UPDATE` with `values(col)` for excluded values; because it fires on any unique key, `assertMysqlUpsertTarget` requires the target to equal the primary key or one unique key and rejects rows that set, or static defaults that fill, another unique key. `where` is rejected and `count` is the number of rows sent (MySQL reports 2 per updated row)
 - **Error model**:
     - runtime-thrown library errors should use `BetterDrizzleError` from `src/shared/errors.ts`
     - `BetterDrizzleError` carries `message`, `status`, `code`, `driver`, and structured metadata such as `table`, `column`, `constraint`, `operation`, and `details`
@@ -215,6 +223,7 @@
     - mixed-read and transaction batches use more heap, not less
 - **Cursor parity is easy to fake**: an earlier revision of `rawCursorPaginate` hardcoded `hasPrevious: true`, so the raw side ran one query against better-drizzle's two and `cursor()` measured ~2x slower. The raw side must resolve `hasPrevious` for real (correlated `exists` subquery). Re-check this whenever a pagination scenario changes.
 - **Benchmark rule**: parity matters. If `better-drizzle` returns nested objects, pagination metadata, or relation payloads, the raw Drizzle comparison must return the same effective shape and do the same effective work.
+- **Array benchmark state**: do not benchmark repeated `append`/`prepend` against the same row without resetting its array. Its size grows during sampling, so each iteration measures different work. The current PostgreSQL array benchmark keeps only stable mutation scenarios.
 - **Two benchmark views exist intentionally**:
     - `api parity`: fair comparison where raw Drizzle and `better-drizzle` do the same work
     - `manual drizzle reference`: lower-level manual queries that intentionally do less work and are not parity claims
@@ -254,7 +263,6 @@
 - **Files**:
     - `docker-compose.yml`: postgres service with healthcheck and persistent volume
     - `.env` / `.env.example`: connection config (port, credentials, db name)
-    - `docker/postgres/init/01-schema.sql`: optional init SQL mirroring benchmark schema
 - **Commands**:
     - `docker compose up -d`: start the database
     - `docker compose down`: stop the database
@@ -302,9 +310,12 @@
     - schema-only extension fields are allowed during validation, but the plugin strips non-column keys before returning payloads to Drizzle
     - package internals are intentionally split with a minimal `src/shared/` layout: `validation.ts` for hook parsing/flags, `schema-builder.ts` for Zod shape builders, and `registry.ts` for Drizzle schema traversal plus registry assembly
 - **Plugin typing**:
-    - core plugin typing now supports table-specific model extensions through an optional model-extension resolver generic on `definePlugin(...)`; use this when an extension type depends on the current table
+    - table-specific model extensions use a type-level resolver: an interface extending `ModelExtensionTypeResolver` whose `extension` reads `this['schema']` / `this['name']` (HKT pattern); generic function resolvers are still accepted but inferring them against `PluginModelExtensionContext` recursed through the delegate type (TS2589), so first-party plugins must use the interface form
+    - conditional helpers over plugin/zod config must guard `never` (`[X] extends [never]`): distributing over `never` silently erased static model extensions and every zod shape
+    - delegate method args are checked with `Args & NoInfer<Base & ArgsCheck<Args, Base>>` (unknown keys become `never`; `select` + `include` at one level is rejected); keep `Args extends Base` as the constraint (an `object` constraint degrades error locations) and keep `ArgsCheck` neutral when `Base` extends `Args` so `Parameters<typeof db.x.findMany>[0]` stays usable
+    - `ExtendedClient` re-declares `extends`, `$withContext`, and `transaction` so extensions survive scoped and transaction clients, matching the runtime
 - **ATA plugin**:
-    - `better-drizzle/ata` must derive relations through Drizzle's `extractTablesRelationalConfig` (never invoke a `relations(...).config` callback directly), run Date/BigInt/Buffer residues after JSON Schema validation, and validate relation-aware result envelopes through `afterCreate`, `afterQuery`, and `afterUpdate`
+    - `better-drizzle/ata` reads tables and relations from the relations config it receives as `schema` (`db._.relations`), runs Date/BigInt/Buffer residues after JSON Schema validation, and validate relation-aware result envelopes through `afterCreate`, `afterQuery`, and `afterUpdate`
 - **Multi-agent surfaces**:
     - `AGENTS.md` remains the repo-wide source of truth for agent context
     - `CLAUDE.md` and `GEMINI.md` were removed in `71e1758`; do not reintroduce them or reference them in docs
@@ -357,7 +368,8 @@
     - reducing wrapper overhead
     - making benchmarks fairer
     - improving README quality and positioning
-- **Drizzle ORM v1 RC compatibility (checked against `1.0.0-rc.4`)**: this is a separate compatibility target, not a peer-range-only change. The RC removes the legacy relational metadata APIs used by the runtime (`createTableRelationsHelpers`, `extractTablesRelationalConfig`, and `normalizeRelation`) and replaces `TableRelationalConfig.tsName` plus legacy `One`/`Many` shapes with RQB v2 metadata. The current package fails at module load under the RC. A dedicated implementation/build and RC CI matrix are required; do not widen the stable peer range until that implementation passes type, runtime, integration, and benchmark parity checks.
+- **Drizzle ORM 1.x (RQB v2) migration**: the runtime builds table/relation metadata from `db._.relations` (`TableRelationalConfig` is `{ table, name, relations }`; relations are v2 `Relation` objects with `sourceColumns`, `targetColumns`, `through`, `throughTable`, `where`, `relationType`). The `Schema` type parameter everywhere is the relations config (`typeof relations`), so `TableFor` reads `Schema[K]['table']` and relation targets come from `targetTableName`. Column facts that changed: `dataType` is `"<type> <constraint>"` (compare prefixes, never `=== 'number'`); PG arrays are the element column with `dimensions > 0` (no `PgArray`/`baseColumn`), element params must be encoded through `getPgArrayElementColumn()` because codecs cast params from `dimensions`; at the type level `json` and `jsonb` are indistinguishable (`object json`), so JSONB path types are keyed on dataType and the runtime rejects dotted paths on `PgJson`. Driver errors arrive wrapped in `DrizzleQueryError` with the driver error as `cause`; error helpers unwrap it. Bun SQLite prepares through `client.query()`, and raw `db.transaction` callbacks must be sync there.
+- **Migration audit traps**: `bunx tsc --noEmit` can pass while `tsdown` declaration generation fails if an exported plugin factory closes over a private local interface; run `bun run build` or `pack`. A many-to-many `_count` must correlate all source columns even when the target key has fewer columns. MySQL query-builder methods such as `onDuplicateKeyUpdate` use `this`; invoke them on the builder. `cursor().explain()` must not execute the data query to discover row-dependent probes; describe these as deferred. On SQLite, an `afterCommit` failure must not trigger rollback after COMMIT. PostgreSQL enum array casts must quote schema and type names. Timestamp plugins should emit ISO strings for text-backed columns, while native date columns receive `Date`.
 - **PostgreSQL array filters**: native `PgArray` columns use a dedicated typed `ArrayFilter`, not the generic scalar filter, so JSON columns typed as arrays do not gain array operators. The compiler uses PostgreSQL `@>`, `&&`, `<@`, and `cardinality()` with parameter binding; array filter objects must fail fast outside PostgreSQL. `length` always means total cardinality across dimensions.
 - **PostgreSQL array element predicates**: `some`, `every`, and `none` accept the element's typed scalar filter. The compiler uses GIN-compatible containment/overlap fast paths for simple equality/list predicates, `ANY`/`ALL` for lone comparisons, and `unnest()` otherwise. Generic paths must bind through the innermost array base-column encoder so custom PostgreSQL types retain `toDriver()` behavior. Empty arrays make `some` false and `every`/`none` true; `NULL` arrays never match, while NULL elements fail `every` but do not satisfy `some` or block `none`.
 - **PostgreSQL array mutations**: `PgArray` update inputs accept one typed atomic envelope (`append`, `prepend`, `remove`, `replace`, or `addUnique`) in `update`, `updateMany`, `updateEach`, `upsert`, and object/callback `upsertMany`. Compilation happens immediately before Drizzle writes so plugins retain declarative input. `addUnique` is a single PostgreSQL statement that preserves first-input order, skips existing values, preserves stored `NULL`, and must remain linear in input size.
@@ -365,3 +377,4 @@
 - **JSONB path shorthand**: PostgreSQL JSONB filters accept dotted paths directly on the column (`{ metadata: { 'profile.age': { gte: 18 } } }`). The legacy `{ json: { ... } }` wrapper remains supported for root paths; direct shorthand intentionally requires every key to contain a dot so ordinary JSON document equality remains unchanged. Note both filter and mutation compilers split wrapper keys on `.`, so the wrapper does not preserve literal dotted keys.
 - **JSONB path mutations**: update operations (`update`, `updateMany`, `updateEach`, `upsert`, `upsertMany`) accept dotted paths and the `{ json: ... }` wrapper, compiling object-key paths to chained PostgreSQL `jsonb_set(..., true)` calls with JSON-encoded bound params. Both forms validate known paths and value types for `$type<T>()` columns; untyped columns keep open path names and JSON-encodable values. Dotted shorthand requires every key to contain a dot; the wrapper also supports single-level keys. One value must be all dotted keys (partial update) or no dotted keys (full replacement); mixing throws `OPERATION_ERROR`, and a top-level `json` object key on a `PgJsonb` column is reserved for the wrapper. Missing ancestors are created, SQL NULL and non-object JSONB roots start as `{}`, existing object ancestors/unrelated keys are preserved, and non-object intermediates become `{}`. Duplicate paths and ancestor/descendant overlaps throw `OPERATION_ERROR`; recursively nested `undefined` and unencodable values also throw. Only dotted/wrapper path shapes are dialect-gated (non-PostgreSQL fails fast with `JSONB_MUTATION_UNSUPPORTED` before shape validation); full-document replacements work on any dialect. Literal dotted keys always compile to nested paths.
 - If future tasks discover important architectural or benchmarking constraints, add them here instead of leaving them buried in commit history.
+- **MySQL upsert and driver results**: Drizzle 1.0-rc.4's MySQL `onDuplicateKeyUpdate` needs its insert builder as `this`; never call a detached builder method. mysql2 writes return `[ResultSetHeader, FieldPacket[]]`, so affected-row counts come from the first tuple item. MySQL's `ON DUPLICATE KEY UPDATE` fires on any unique key, not specifically the `where` primary key; use the native path only when the Drizzle table declares no other unique key, then fall back to the regular read/write path to avoid updating a different row.

@@ -258,10 +258,12 @@ describe('include - relations', () => {
 
 	test('rejects select and include at the same level', async () => {
 		await expect(
-			ctx.better.users.findMany({
-				include: { posts: true },
-				select: { name: true },
-			} as never),
+			Promise.resolve(
+				ctx.better.users.findMany({
+					include: { posts: true },
+					select: { name: true },
+				} as never),
+			),
 		).rejects.toThrow('select and include cannot be used');
 	});
 });

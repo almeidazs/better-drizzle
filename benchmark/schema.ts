@@ -1,4 +1,4 @@
-import { relations } from 'drizzle-orm';
+import { defineRelations } from 'drizzle-orm';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 export const users = sqliteTable('users', {
@@ -44,40 +44,28 @@ export const nullOrderRecords = sqliteTable('null_order_records', {
 	lastSeenAt: integer('last_seen_at'),
 });
 
-export const usersRelations = relations(users, ({ many }) => ({
-	posts: many(posts),
-	comments: many(comments),
-}));
-
-export const postsRelations = relations(posts, ({ many, one }) => ({
-	author: one(users, {
-		fields: [posts.userId],
-		references: [users.id],
-	}),
-	comments: many(comments),
-}));
-
-export const commentsRelations = relations(comments, ({ one }) => ({
-	author: one(users, {
-		fields: [comments.authorId],
-		references: [users.id],
-	}),
-	post: one(posts, {
-		fields: [comments.postId],
-		references: [posts.id],
-	}),
-}));
-
 export const schema = {
 	benchWrites,
 	comments,
-	commentsRelations,
-	posts,
-	postsRelations,
 	nullOrderRecords,
+	posts,
 	users,
-	usersRelations,
 };
+
+export const relations = defineRelations(schema, (r) => ({
+	comments: {
+		author: r.one.users({ from: r.comments.authorId, to: r.users.id }),
+		post: r.one.posts({ from: r.comments.postId, to: r.posts.id }),
+	},
+	posts: {
+		author: r.one.users({ from: r.posts.userId, to: r.users.id }),
+		comments: r.many.comments(),
+	},
+	users: {
+		comments: r.many.comments(),
+		posts: r.many.posts(),
+	},
+}));
 
 export const createTablesSql = `
 CREATE TABLE users (
@@ -118,4 +106,4 @@ CREATE TABLE null_order_records (
 );
 `;
 
-export type BenchmarkSchema = typeof schema;
+export type BenchmarkSchema = typeof relations;

@@ -125,8 +125,9 @@ try {
 		.insert(users)
 		.values({ email: 'taken@example.com', name: 'Dup', active: true });
 } catch (error) {
+	// Drizzle 1.x wraps driver errors in DrizzleQueryError; the driver error is `cause`.
 	// PostgreSQL unique_violation; SQLite and MySQL report it differently
-	if ((error as { code?: string }).code === '23505') {
+	if ((error as { cause?: { code?: string } }).cause?.code === '23505') {
 		return { status: 409, message: 'Email already in use' };
 	}
 	throw error;

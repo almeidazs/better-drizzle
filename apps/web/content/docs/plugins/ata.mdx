@@ -55,7 +55,6 @@ import { better } from 'better-drizzle';
 import { ata } from 'better-drizzle/ata';
 
 const client = better(db, {
-	schema,
 	plugins: [
 		ata({
 			validate: {
@@ -136,7 +135,7 @@ The plugin reads each column and writes the constraint it can prove:
 
 - a `varchar(80)` becomes `{ "type": "string", "maxLength": 80 }`
 - a `uuid` becomes `{ "type": "string", "format": "uuid" }`
-- `numeric` and `decimal` become strings, which is what every driver Drizzle supports returns
+- `numeric` and `decimal` in Drizzle's default string mode become strings, which is what the drivers return
 - a nullable column becomes `{ "type": ["integer", "null"] }`
 - on `create`, a column with a default or a generated key is not required; on `update`, nothing is
 - `additionalProperties: false` everywhere, so a misspelled column or operator is refused rather than ignored
@@ -145,9 +144,9 @@ The `where` clause is recursive in two places, a filter's `not` and the whole cl
 
 ## Array columns
 
-An array column's element is a column in its own right on the drizzle side, so `text('tags').array()` becomes `{ "type": "array", "items": { "type": "string" } }`. The element keeps its own constraints, so `varchar('tags', { length: 20 }).array()` carries the `maxLength` on the items.
+In Drizzle 1.x an array column is its element column with `dimensions`, so the element schema is that column read with one dimension fewer: `text('tags').array()` becomes `{ "type": "array", "items": { "type": "string" } }`. The element keeps its own constraints, so `varchar('tags', { length: 20 }).array()` carries the `maxLength` on the items.
 
-The element is not nullable even though drizzle's base column reports `notNull: false`, because that is an artifact of how the base column is built rather than a statement about entries: drizzle's own inferred type for `text('tags').array().notNull()` is `string[]`, and assigning `['x', null]` to it is a type error.
+Elements are never nullable, whatever the array's own nullability: Drizzle's own inferred type for `text('tags').array().notNull()` is `string[]`, and assigning `['x', null]` to it is a type error.
 
 The where clause carries the array filters the core compiles: `has` for one element, `hasEvery`, `hasSome`, `hasNone` and `containedBy` for a list of them, `isEmpty`, `length` (a number or a comparison on one), `equals` for the whole array, `not`, and `some`, `none` and `every` for a filter on the element. Passing an element where a list belongs, or the reverse, is refused rather than coerced.
 

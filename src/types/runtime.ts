@@ -1,5 +1,4 @@
 import type { AnyColumn, SQL, SQLWrapper, Table } from 'drizzle-orm';
-import type { extractTablesRelationalConfig } from 'drizzle-orm/relations';
 
 import type {
 	AnyPlugin,
@@ -164,21 +163,16 @@ export type RuntimeClientExtensionFactory = (
 ) => Record<string, unknown> | undefined;
 
 /**
- * Resolved relational schema configuration returned by Drizzle's
- * `extractTablesRelationalConfig`. Used internally to build the runtime
- * table metadata map.
+ * Relational config exposed by the Drizzle instance (`db._.relations`). Used
+ * internally to build the runtime table metadata map.
  */
-export type RuntimeSchema = ReturnType<
-	typeof extractTablesRelationalConfig<Record<string, BetterRelationalConfig>>
->;
+export type RuntimeSchema = Record<string, BetterRelationalConfig>;
 
 /**
  * Precomputed per-table metadata used at runtime for query compilation,
  * relation resolution, and plugin operations.
  */
 export type TableRuntime = {
-	/** Ambiguous inferred relation names and the junctions that caused them. */
-	ambiguousRelations: Record<string, string[]>;
 	/** Map of column name to Drizzle column instance. */
 	columns: Record<string, AnyColumn>;
 	/** The database table name. */
@@ -187,7 +181,9 @@ export type TableRuntime = {
 	hasColumn(column: string): boolean;
 	/** Plugin model info descriptor for this table. */
 	model: PluginModelInfo;
-	/** Primary key column names. */
+	/** Primary key columns. */
+	primaryKey: AnyColumn[];
+	/** Primary key column keys. */
 	primaryKeyFields: string[];
 	/** Map of relation name to resolved relation metadata. */
 	relations: Record<
@@ -212,6 +208,8 @@ export type TableRuntime = {
 	table: Table;
 	/** The full relational config for this table. */
 	tableConfig: BetterRelationalConfig;
+	/** Declared relations Better Drizzle cannot load, with the reason. */
+	unsupportedRelations: Record<string, string>;
 };
 
 /**
@@ -362,7 +360,8 @@ export type RuntimeContext<
 	/** Per-model info descriptors keyed by table name. */
 	models: Record<string, PluginModelInfo>;
 	/** The client configuration provided to `better()`. */
-	options: BetterClientOptions<Schema, Meta, Plugins>;
+	// oxlint-disable-next-line typescript/no-explicit-any -- Hooks are contravariant in Plugins; internals only read them.
+	options: BetterClientOptions<Schema, Meta, any>;
 	/** Default metadata merged into every scoped operation. */
 	scopedMeta: Meta | undefined;
 	/** Precomputed plugin buckets and metadata. */

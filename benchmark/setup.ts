@@ -8,7 +8,7 @@ import { drizzle } from 'drizzle-orm/bun-sqlite';
 import type { BetterDrizzleClient } from '../src';
 import { better } from '../src';
 import type { BenchmarkSchema } from './schema';
-import { createTablesSql, schema } from './schema';
+import { createTablesSql, relations } from './schema';
 
 const USER_COUNT = 400;
 const POSTS_PER_USER = 4;
@@ -16,7 +16,7 @@ const COMMENTS_PER_POST = 3;
 const BENCH_WRITE_COUNT = 2048;
 
 const createRawBenchmarkClient = (sqlite: Database) =>
-	drizzle(sqlite, { schema });
+	drizzle({ client: sqlite, relations });
 
 type BenchmarkRawClient = ReturnType<typeof createRawBenchmarkClient>;
 
@@ -124,9 +124,7 @@ ${createTablesSql}
 	seed();
 
 	const raw = createRawBenchmarkClient(sqlite);
-	const client: BetterDrizzleClient<BenchmarkSchema> = better(raw, {
-		schema,
-	});
+	const client: BetterDrizzleClient<BenchmarkSchema> = better(raw);
 
 	return {
 		better: client,

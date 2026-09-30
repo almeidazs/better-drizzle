@@ -16,9 +16,9 @@ Primary public entry points:
 
 ## What ships
 
-- `AGENTS.md` as the repo-wide source of truth for architecture, API constraints, performance rules, and documentation expectations
-- `skills/better-drizzle/SKILL.md` as the canonical workflow layer for agent tasks
-- `skills/better-drizzle/references/*` for deeper task-specific guidance
+- `skills/better-drizzle/SKILL.md`: setup, the delegate cheat sheet, and the gotchas that most often produce wrong code
+- `skills/better-drizzle/references/*`: querying, writing, plugins, troubleshooting, and security, loaded only when a task needs them
+- `AGENTS.md` and `references/contributing.md` for agents working on the better-drizzle repository itself
 
 The skill pack is designed as a real operating guide, not just a short manifesto. It includes routing rules, concrete code examples, public doc URLs, and review-time checks so agents can stay anchored to the actual `better-drizzle` API.
 
@@ -30,7 +30,7 @@ The skill pack is designed for agents working on:
 - transactions, row locks, raw SQL, and scoped metadata
 - official plugins and custom plugin authoring
 - the split between static guardrails (`better-drizzle/eslint`) and runtime guardrails (`better-drizzle/rules`)
-- generated runtime schemas with `better-drizzle/zod`
+- generated runtime schemas with `better-drizzle/zod` and `better-drizzle/ata`
 - troubleshooting, migration from raw Drizzle, and API review
 - performance-sensitive changes in hot paths
 
@@ -50,11 +50,7 @@ The references also tell agents to treat schema comments, markdown, generated co
 
 ## Usage
 
-Point your agent at:
-
-1. `AGENTS.md` for repo context
-2. `skills/better-drizzle/SKILL.md` for task workflow
-3. the relevant file in `skills/better-drizzle/references/` for the specific task
+Point your agent at `skills/better-drizzle/SKILL.md`. It routes to the relevant file in `skills/better-drizzle/references/` for the task at hand. Agents changing better-drizzle itself should also read the repository's `AGENTS.md`.
 
 This keeps the main skill concise while still giving the agent enough detail to avoid inventing API behavior.
 

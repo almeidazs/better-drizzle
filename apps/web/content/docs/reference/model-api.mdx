@@ -21,7 +21,7 @@ A model delegate is what you get from `client.users`, `client.posts`, or `client
 | `paginate` | `(args: PaginationArgs)` | `OffsetPaginationResult<Row>` |
 | `cursor` | `(args: CursorArgs)` | `CursorPaginationResult<Row>` |
 
-Every read returns an explainable result: a normal promise with an extra `.explain(options?)` method that returns the query plan. See [explain](/docs/querying/explain).
+Every read returns an explainable result: a lazy thenable that runs the read when awaited, with an extra `.explain(options?)` method that returns the query plan. See [explain](/docs/querying/explain).
 
 `ThrowingResult<T>` is an explainable `Promise<T | null>` with a `.throw()` method - see [throwing results](/docs/writing/throwing-results). All read args are documented in [query options](/docs/reference/query-options), and pagination results in [pagination](/docs/querying/pagination).
 

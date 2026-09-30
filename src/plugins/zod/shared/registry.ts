@@ -1,11 +1,12 @@
 import type { AnySchema, BetterTableKey } from 'better-drizzle';
 import {
-	createTableRelationsHelpers,
-	extractTablesRelationalConfig,
-	getTableColumns,
+	getColumns,
+	getTableName,
+	is,
 	isTable,
-	Many,
 	One,
+	Relation,
+	type TablesRelationalConfig,
 } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -64,26 +65,23 @@ export const createZodSchemasRegistry = <Schema extends AnySchema>(
 	options: ZodPluginOptions<Schema>,
 ): ZodSchemasRegistry => {
 	const behavior = options.behavior;
-	const relational = extractTablesRelationalConfig(
-		schema,
-		createTableRelationsHelpers,
-	);
+	const relational = schema as unknown as TablesRelationalConfig;
 	const registry: TableRegistry = new Map();
 
-	for (const [tableName, tableValue] of Object.entries(schema)) {
-		if (!isTable(tableValue)) continue;
+	for (const tableName in relational) {
+		const tableConfig = relational[tableName];
+		const tableValue = tableConfig?.table;
+		if (!tableConfig || !isTable(tableValue)) continue;
 
-		const tableConfig = relational.tables[tableName];
-		if (!tableConfig) continue;
-
-		const columns = getTableColumns(tableValue);
+		const columns = getColumns(tableValue);
+		const dbName = getTableName(tableValue);
 		const key = tableName as BetterTableKey<Schema>;
 		const createShape = buildRowShape(
 			columns,
 			behavior,
 			options,
 			key,
-			tableConfig.dbName,
+			dbName,
 			'create',
 		);
 		const selectShape = buildRowShape(
@@ -91,7 +89,7 @@ export const createZodSchemasRegistry = <Schema extends AnySchema>(
 			behavior,
 			options,
 			key,
-			tableConfig.dbName,
+			dbName,
 			'select',
 		);
 		const updateShape = buildRowShape(
@@ -99,29 +97,28 @@ export const createZodSchemasRegistry = <Schema extends AnySchema>(
 			behavior,
 			options,
 			key,
-			tableConfig.dbName,
+			dbName,
 			'update',
 		);
 		const createSchema = applySchemaBlock(
 			z.object(createShape),
 			behavior,
 			options.schemas?.[key]?.create ??
-				options.schemas?.[tableConfig.dbName as BetterTableKey<Schema>]
-					?.create,
+				options.schemas?.[dbName as BetterTableKey<Schema>]?.create,
 		);
 		const updateSchema = applySchemaBlock(
 			z.object(updateShape),
 			behavior,
 			options.schemas?.[key]?.update ??
-				options.schemas?.[tableConfig.dbName as BetterTableKey<Schema>]
-					?.update ?? { partial: true },
+				options.schemas?.[dbName as BetterTableKey<Schema>]?.update ?? {
+					partial: true,
+				},
 		);
 		const selectSchema = applySchemaBlock(
 			z.object(selectShape),
 			behavior,
 			options.schemas?.[key]?.select ??
-				options.schemas?.[tableConfig.dbName as BetterTableKey<Schema>]
-					?.select,
+				options.schemas?.[dbName as BetterTableKey<Schema>]?.select,
 		);
 		const upsertSchema = applySchemaBlock(
 			z.object({
@@ -133,35 +130,29 @@ export const createZodSchemasRegistry = <Schema extends AnySchema>(
 			}),
 			behavior,
 			options.schemas?.[key]?.upsert ??
-				options.schemas?.[tableConfig.dbName as BetterTableKey<Schema>]
-					?.upsert,
+				options.schemas?.[dbName as BetterTableKey<Schema>]?.upsert,
 		);
 		const relationMeta = Object.create(null) as Record<
 			string,
 			RelationMeta
 		>;
 
-		for (const [relationName, relation] of Object.entries(
-			tableConfig.relations,
-		)) {
-			const referencedTable =
-				relational.tableNamesMap[
-					`public.${relation.referencedTableName}`
-				] ??
-				relational.tableNamesMap[relation.referencedTableName] ??
-				relation.referencedTableName;
+		for (const relationName in tableConfig.relations) {
+			const relation = tableConfig.relations[relationName];
+			if (!is(relation, Relation)) continue;
 
 			relationMeta[relationName] = {
-				isMany: relation instanceof Many,
-				isNullable:
-					relation instanceof One ? relation.isNullable : false,
-				tableName: referencedTable,
+				isMany: relation.relationType === 'many',
+				isNullable: is(relation, One)
+					? relation.optional !== false
+					: false,
+				tableName: relation.targetTableName,
 			};
 		}
 
 		registry.set(tableName, {
 			columns,
-			dbName: tableConfig.dbName,
+			dbName: dbName,
 			queryInputSchema: z.object({}),
 			relations: relationMeta,
 			schemas: {

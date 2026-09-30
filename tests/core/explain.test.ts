@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { sql } from 'drizzle-orm';
+import { defineRelations, sql } from 'drizzle-orm';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 import { better, definePlugin } from '../../src';
@@ -11,9 +11,9 @@ const explainUsers = sqliteTable('explain_users', {
 	name: text('name').notNull(),
 });
 
-const explainSchema = {
+const explainRelations = defineRelations({
 	users: explainUsers,
-};
+});
 
 const toSqlText = (query: { toQuery(config: unknown): { sql: string } }) =>
 	query.toQuery({
@@ -86,6 +86,7 @@ const createFakePgDb = () => {
 	const executed: string[] = [];
 	const selectQuery = createFakeSelectQuery();
 	const db = {
+		_: { relations: explainRelations },
 		dialect: {
 			constructor: {
 				name: 'PgDialect',
@@ -206,8 +207,13 @@ describe('explain', () => {
 
 		expect(result.statements.map((statement) => statement.key)).toEqual([
 			'data',
+			'probe:hasPrevious',
 		]);
 		expect(result.statements[0]?.sql).toContain('exists');
+		expect(result.statements[1]?.condition).toBe(
+			'when the data page is empty',
+		);
+		expect(result.statements[1]?.params).toEqual([1]);
 
 		const empty = await ctx.better.users
 			.cursor({ after: { id: 999 }, limit: 2, orderBy: { id: 'asc' } })
@@ -216,25 +222,65 @@ describe('explain', () => {
 			'data',
 			'probe:hasPrevious',
 		]);
+		expect(empty.statements[1]?.condition).toBe(
+			'when the data page is empty',
+		);
+		expect(empty.statements[1]?.params).toEqual([1]);
 
+		ctx.close();
+	});
+
+	test('defers cursor probes whose SQL needs a returned row', async () => {
+		const ctx = createTestContext();
+		const result = await ctx.better.users
+			.cursor({ after: { id: 2 }, include: { posts: true }, limit: 2 })
+			.explain();
+
+		expect(result.statements.map((statement) => statement.key)).toEqual([
+			'data',
+		]);
+		expect(result.deferredProbes).toEqual([
+			{
+				key: 'probe:hasPrevious',
+				reason: 'The probe cursor comes from the first returned row.',
+			},
+		]);
+		ctx.close();
+	});
+
+	test('cursor explain does not execute the data SELECT', async () => {
+		const ctx = createTestContext();
+		const statements: string[] = [];
+		const query = ctx.sqlite.query.bind(ctx.sqlite);
+		ctx.sqlite.query = ((sqlText: string) => {
+			statements.push(sqlText);
+			return query(sqlText);
+		}) as typeof ctx.sqlite.query;
+
+		await ctx.better.users
+			.cursor({ after: { id: 2 }, limit: 2, orderBy: { id: 'asc' } })
+			.explain();
+
+		expect(
+			statements.filter((sqlText) => /^select\b/i.test(sqlText)),
+		).toEqual([]);
 		ctx.close();
 	});
 
 	test('relation explain exposes deferred batch stages', async () => {
 		const ctx = createTestContext();
 
-		const result = await ctx.better.users
-			.findMany({
-				include: {
-					posts: {
-						include: { comments: true },
-						orderBy: { score: 'desc' },
-						take: 1,
-						where: { published: true },
-					},
+		const read = ctx.better.users.findMany({
+			include: {
+				posts: {
+					include: { comments: true },
+					orderBy: { score: 'desc' },
+					take: 1,
+					where: { published: true },
 				},
-			})
-			.explain();
+			},
+		});
+		const result = await read.explain();
 
 		expect(result.statements).toHaveLength(1);
 		expect(result.deferredRelations).toEqual([
@@ -281,7 +327,6 @@ describe('explain', () => {
 				},
 			},
 			plugins: [forceActive],
-			schema: ctx.schema,
 		});
 
 		const result = await client.users
@@ -290,17 +335,59 @@ describe('explain', () => {
 			})
 			.explain();
 
-		expect(beforeQueryCalls).toEqual(['findMany']);
+		expect(beforeQueryCalls).toEqual([]);
 		expect(result.statements[0]?.sql).toContain('active');
+
+		ctx.close();
+	});
+
+	test('reads run only when awaited, once, and explain alone never runs them', async () => {
+		const ctx = createTestContext();
+		const actions: string[] = [];
+		const client = better(ctx.raw, {
+			hooks: {
+				beforeQuery(context) {
+					actions.push(context.action);
+				},
+			},
+		});
+
+		const pending = [
+			client.users.findMany(),
+			client.users.findFirst(),
+			client.users.findOne({ where: { id: 1 } }),
+			client.users.findUnique({ where: { id: 1 } }),
+			client.users.count(),
+			client.users.exists({ where: { id: 1 } }),
+			client.users.paginate({ limit: 2 }),
+			client.users.cursor({ limit: 2 }),
+		];
+		for (const read of pending) await read.explain();
+		await Promise.resolve();
+		expect(actions).toEqual([]);
+
+		const read = client.users.findMany({ where: { id: 1 } });
+		expect(read).toBeInstanceOf(Promise);
+		const [first, second] = await Promise.all([read, read]);
+		expect(first).toBe(second);
+		expect(actions).toEqual(['findMany']);
+
+		expect(await client.users.findMany()).toHaveLength(
+			ctx.seed.users.length,
+		);
+		let finalized = false;
+		await client.users.findMany().finally(() => {
+			finalized = true;
+		});
+		expect(finalized).toBe(true);
+		expect(actions).toEqual(['findMany', 'findMany', 'findMany']);
 
 		ctx.close();
 	});
 
 	test('postgres explain applies supported options and prefixes the query', async () => {
 		const fake = createFakePgDb();
-		const client = better(fake.db as never, {
-			schema: explainSchema,
-		});
+		const client = better(fake.db);
 
 		const result = await client.users
 			.findMany({ where: { id: 1 } })

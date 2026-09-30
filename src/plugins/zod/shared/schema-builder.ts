@@ -94,12 +94,6 @@ const baseNumberSchema = (
 	column: AnyColumn,
 	behavior: ZodPluginBehavior | undefined,
 ) => {
-	if (
-		sqlTypeIncludes(column, 'numeric') ||
-		sqlTypeIncludes(column, 'decimal')
-	)
-		return hasCoerce(behavior, 'number') ? z.coerce.number() : z.string();
-
 	const schema = hasCoerce(behavior, 'number')
 		? z.coerce.number()
 		: z.number();
@@ -108,7 +102,7 @@ const baseNumberSchema = (
 };
 
 const baseBigintSchema = (behavior: ZodPluginBehavior | undefined) =>
-	hasCoerce(behavior, 'bigint') ? z.coerce.bigint() : z.string();
+	hasCoerce(behavior, 'bigint') ? z.coerce.bigint() : z.bigint();
 
 const baseDateSchema = (behavior: ZodPluginBehavior | undefined) =>
 	hasCoerce(behavior, 'date') ? z.coerce.date() : z.date();
@@ -116,17 +110,20 @@ const baseDateSchema = (behavior: ZodPluginBehavior | undefined) =>
 const baseBooleanSchema = (behavior: ZodPluginBehavior | undefined) =>
 	hasCoerce(behavior, 'boolean') ? z.coerce.boolean() : z.boolean();
 
+const getArrayDimensions = (column: AnyColumn | undefined) =>
+	(column as { dimensions?: number } | undefined)?.dimensions ?? 0;
+
 const baseColumnSchema = (
 	column: AnyColumn,
 	behavior: ZodPluginBehavior | undefined,
 ): z.ZodTypeAny => {
-	if (
-		(column as { columnType?: string }).columnType === 'PgArray' &&
-		'baseColumn' in column
-	)
+	const dimensions = getArrayDimensions(column);
+	if (dimensions > 0)
 		return z.array(
 			baseColumnSchema(
-				(column as { baseColumn: AnyColumn }).baseColumn,
+				Object.create(column, {
+					dimensions: { value: dimensions - 1 },
+				}) as AnyColumn,
 				behavior,
 			),
 		);
@@ -138,14 +135,20 @@ const baseColumnSchema = (
 
 	if (enumValues?.length) return z.enum(enumValues as [string, ...string[]]);
 
-	if (column.dataType === 'boolean') return baseBooleanSchema(behavior);
-	if (column.dataType === 'date') return baseDateSchema(behavior);
-	if (column.dataType === 'bigint') return baseBigintSchema(behavior);
-	if (column.dataType === 'number') return baseNumberSchema(column, behavior);
-	if (column.dataType === 'json') return z.unknown();
-	if (column.dataType === 'buffer') return z.instanceof(Buffer);
+	// Drizzle 1.x spells dataType as `<type> <constraint>` (`number int32`,
+	// `object date`, `string uuid`).
+	const [type, constraint] = column.dataType.split(' ');
+
+	if (type === 'boolean') return baseBooleanSchema(behavior);
+	if (type === 'object' && constraint === 'date')
+		return baseDateSchema(behavior);
+	if (type === 'bigint') return baseBigintSchema(behavior);
+	if (type === 'number') return baseNumberSchema(column, behavior);
+	if (type === 'object' && constraint === 'json') return z.unknown();
+	if (type === 'object' && constraint === 'buffer')
+		return z.instanceof(Buffer);
 	if (
-		column.dataType === 'string' ||
+		type === 'string' ||
 		sqlTypeIncludes(column, 'text') ||
 		sqlTypeIncludes(column, 'char')
 	)
@@ -216,12 +219,12 @@ const applyFieldOverride = (
 const isGeneratedColumn = (column: AnyColumn) =>
 	('generated' in column &&
 		typeof column.generated === 'object' &&
-		(column.generated as Record<string, unknown> | null)?.type ===
-			'always') ||
+		(column.generated as unknown as Record<string, unknown> | null)
+			?.type === 'always') ||
 	('generatedIdentity' in column &&
 		typeof column.generatedIdentity === 'object' &&
-		(column.generatedIdentity as Record<string, unknown> | null)?.type ===
-			'always');
+		(column.generatedIdentity as unknown as Record<string, unknown> | null)
+			?.type === 'always');
 
 const getOptionality = (column: AnyColumn, mode: SchemaMode) => {
 	if (mode === 'select')
@@ -273,7 +276,7 @@ export const buildRowShape = <
 		if (overridden === false) continue;
 		const mutation =
 			mode === 'update'
-				? (column as { columnType?: string }).columnType === 'PgArray'
+				? getArrayDimensions(column) > 0
 					? createArrayMutationSchema(overridden)
 					: createScalarMutationSchema(column)
 				: undefined;
@@ -418,7 +421,7 @@ const createArrayMutationSchema = (valueSchema: z.ZodTypeAny) => {
 const createScalarMutationSchema = (column: AnyColumn) => {
 	if (column.dataType === 'boolean')
 		return z.object({ toggle: z.literal(true) }).strict();
-	if (column.dataType !== 'number') return;
+	if (!column.dataType.startsWith('number')) return;
 
 	const value = z.number().finite();
 	return z
@@ -588,8 +591,7 @@ export const createWhereSchema = <Schema extends AnySchema>(
 	)) {
 		const column = entry.columns[columnName];
 		shape[columnName] =
-			(column as { columnType?: string } | undefined)?.columnType ===
-			'PgArray'
+			getArrayDimensions(column) > 0
 				? createArrayFilterSchema(
 						columnSchema as z.ZodTypeAny,
 					).optional()
@@ -678,6 +680,8 @@ export const createPaginationSchema = <Schema extends AnySchema>(
 				cursor: getCursorSchema(entry).optional(),
 				include: getIncludeInputSchema(entry).optional(),
 				limit: z.number().int().optional(),
+				page: z.number().int().min(1).optional(),
+				perPage: z.number().int().optional(),
 				lock: createLockSchema().optional(),
 				orderBy: entry.schemas.orderBy.optional(),
 				select: getSelectInputSchema(entry).optional(),

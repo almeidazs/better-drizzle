@@ -70,10 +70,10 @@ const posts = await client.posts.findMany({
 ```
 
 ```ts tab="Drizzle" tab-group="orm"
-import { eq, getTableColumns } from 'drizzle-orm';
+import { eq, getColumns } from 'drizzle-orm';
 
 const rows = await db
-	.select({ ...getTableColumns(posts), author: getTableColumns(users) })
+	.select({ ...getColumns(posts), author: getColumns(users) })
 	.from(posts)
 	.leftJoin(users, eq(posts.authorId, users.id));
 ```

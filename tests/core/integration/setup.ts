@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite';
 
-import { relations } from 'drizzle-orm';
+import { defineRelations } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import {
 	integer,
@@ -81,69 +81,50 @@ export const entries = sqliteTable('mass_entries', {
 	value: integer('value').notNull(),
 });
 
-export const usersRelations = relations(users, ({ many, one }) => ({
-	comments: many(comments),
-	posts: many(posts),
-	profile: one(profiles),
-	userGroups: many(userGroups),
-}));
-
-export const postsRelations = relations(posts, ({ many, one }) => ({
-	author: one(users, {
-		fields: [posts.userId],
-		references: [users.id],
-	}),
-	comments: many(comments),
-}));
-
-export const commentsRelations = relations(comments, ({ one }) => ({
-	author: one(users, {
-		fields: [comments.authorId],
-		references: [users.id],
-	}),
-	post: one(posts, {
-		fields: [comments.postId],
-		references: [posts.id],
-	}),
-}));
-
-export const profilesRelations = relations(profiles, ({ one }) => ({
-	user: one(users, {
-		fields: [profiles.userId],
-		references: [users.id],
-	}),
-}));
-
-export const groupsRelations = relations(groups, ({ many }) => ({
-	userGroups: many(userGroups),
-}));
-
-export const userGroupsRelations = relations(userGroups, ({ one }) => ({
-	group: one(groups, {
-		fields: [userGroups.groupId],
-		references: [groups.id],
-	}),
-	user: one(users, {
-		fields: [userGroups.userId],
-		references: [users.id],
-	}),
-}));
-
 export const schema = {
 	comments,
-	commentsRelations,
 	entries,
 	groups,
-	groupsRelations,
 	posts,
-	postsRelations,
 	profiles,
-	profilesRelations,
 	userGroups,
-	userGroupsRelations,
 	users,
-	usersRelations,
 };
+
+export const relations = defineRelations(schema, (r) => ({
+	comments: {
+		author: r.one.users({ from: r.comments.authorId, to: r.users.id }),
+		post: r.one.posts({ from: r.comments.postId, to: r.posts.id }),
+	},
+	groups: {
+		userGroups: r.many.userGroups(),
+		users: r.many.users({
+			from: r.groups.id.through(r.userGroups.groupId),
+			to: r.users.id.through(r.userGroups.userId),
+		}),
+	},
+	posts: {
+		author: r.one.users({ from: r.posts.userId, to: r.users.id }),
+		comments: r.many.comments(),
+	},
+	profiles: {
+		user: r.one.users({ from: r.profiles.userId, to: r.users.id }),
+	},
+	userGroups: {
+		group: r.one.groups({ from: r.userGroups.groupId, to: r.groups.id }),
+		user: r.one.users({ from: r.userGroups.userId, to: r.users.id }),
+	},
+	users: {
+		comments: r.many.comments(),
+		groups: r.many.groups({
+			from: r.users.id.through(r.userGroups.userId),
+			to: r.groups.id.through(r.userGroups.groupId),
+		}),
+		posts: r.many.posts(),
+		profile: r.one.profiles({ from: r.users.id, to: r.profiles.userId }),
+		userGroups: r.many.userGroups(),
+	},
+}));
 
 const createSql = `
 CREATE TABLE mass_users (
@@ -283,8 +264,8 @@ export const createMassiveContext = () => {
 	});
 	seed();
 
-	const raw = drizzle(sqlite, { schema });
-	const client = better(raw, { schema });
+	const raw = drizzle({ client: sqlite, relations });
+	const client = better(raw);
 
 	return {
 		client,
@@ -292,6 +273,7 @@ export const createMassiveContext = () => {
 			sqlite.close();
 		},
 		raw,
+		relations,
 		schema,
 		sqlite,
 	};

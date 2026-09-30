@@ -105,7 +105,7 @@ Several paths inside one JSONB filter are combined with `AND`, and several opera
 
 ## Legacy JSON filter wrapper
 
-The former `{ json: { ... } }` filter wrapper remains supported but is deprecated. Use it for a root path without a dot, for an object whose literal key contains a dot, or when its stricter path and leaf validation is useful during migration; dotted shorthand would otherwise be ambiguous with JSON document equality. Mutation path typing is described below; both mutation forms validate typed paths and values.
+The former `{ json: { ... } }` filter wrapper remains supported but is deprecated. Use it for a root path without a dot, or when its stricter path and leaf validation is useful during migration; dotted shorthand would otherwise be ambiguous with JSON document equality. Mutation path typing is described below; both mutation forms validate typed paths and values.
 
 ```ts
 await client.accounts.findMany({
@@ -427,7 +427,7 @@ const enterpriseOrders = await client.orders.findMany({
 ```
 
 ```ts tab="Drizzle" tab-group="orm"
-import { and, eq, exists, getTableColumns, sql } from 'drizzle-orm';
+import { and, eq, exists, getColumns, sql } from 'drizzle-orm';
 
 const bigSpenders = await db
 	.select()
@@ -450,7 +450,7 @@ const bigSpenders = await db
 	);
 
 const enterpriseOrders = await db
-	.select({ ...getTableColumns(orders), account: getTableColumns(accounts) })
+	.select({ ...getColumns(orders), account: getColumns(accounts) })
 	.from(orders)
 	.innerJoin(accounts, eq(accounts.id, orders.accountId))
 	.where(
@@ -623,6 +623,7 @@ There are no structured path operators for deleting a key, merging an object, in
 ## Limits and dialect support
 
 - **PostgreSQL only for path shapes.** SQLite and MySQL reject `json` filters with `JSONB_QUERY_UNSUPPORTED` (and dotted/wrapper path mutations with `JSONB_MUTATION_UNSUPPORTED`) instead of silently changing semantics. Full-document replacements are not gated.
+- **`jsonb` columns only for path filters.** On a PostgreSQL `json` column, dotted and wrapper path filters throw `JSON path filters require a jsonb column; json columns only support whole-document filters.`
 - **Scalar object paths only for filtering.** Arrays, object containment (`@>`), PostgreSQL JSONPath strings (`@?`, `@@`), and keys that contain a dot are intentionally outside the structured filter API. Mutations address object-key paths and accept JSON objects and arrays as values.
 - **Filtering and partial updates.** JSON paths are available in `where` and in update `data`; ordering by a JSON path is not part of the structured API.
 
@@ -643,5 +644,5 @@ const proTrials = await client.accounts.findMany({
 ```
 
 <Callout title="Untyped JSONB columns">
-	A plain `jsonb('metadata')` column has the type `unknown`, so it deliberately does not expose `json` path filters. Add `.$type<Metadata>()` to opt into typed paths.
+	A plain `jsonb('metadata')` column has the type `unknown`. It accepts dotted path filters with open path names and JSON scalar values, but not the `{ json: ... }` wrapper. Add `.$type<Metadata>()` for exact path and leaf types.
 </Callout>

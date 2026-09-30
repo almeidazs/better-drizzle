@@ -27,7 +27,6 @@ Read it in [hooks](/docs/advanced/hooks):
 
 ```ts
 const client = better(db, {
-	schema,
 	hooks: {
 		beforeQuery(ctx) {
 			console.log(ctx.meta?.tenantId, ctx.meta?.requestId);

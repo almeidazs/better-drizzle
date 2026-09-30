@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
-import { relations } from 'drizzle-orm';
+import { defineRelations } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import {
 	integer,
@@ -128,7 +128,6 @@ describe('direct relation writes', () => {
 					},
 				}),
 			],
-			schema: ctx.schema,
 		});
 
 		await client.users.$withoutPlugins().update({
@@ -167,35 +166,27 @@ const userGroups = sqliteTable(
 	(table) => [primaryKey({ columns: [table.userId, table.groupId] })],
 );
 
-const usersRelations = relations(users, ({ many }) => ({
-	userGroups: many(userGroups),
+const m2mRelations = defineRelations({ groups, userGroups, users }, (r) => ({
+	groups: {
+		users: r.many.users({
+			from: r.groups.id.through(r.userGroups.groupId),
+			to: r.users.id.through(r.userGroups.userId),
+		}),
+	},
+	userGroups: {
+		group: r.one.groups({ from: r.userGroups.groupId, to: r.groups.id }),
+		user: r.one.users({ from: r.userGroups.userId, to: r.users.id }),
+	},
+	users: {
+		groups: r.many.groups({
+			from: r.users.id.through(r.userGroups.userId),
+			to: r.groups.id.through(r.userGroups.groupId),
+		}),
+		userGroups: r.many.userGroups(),
+	},
 }));
 
-const groupsRelations = relations(groups, ({ many }) => ({
-	userGroups: many(userGroups),
-}));
-
-const userGroupsRelations = relations(userGroups, ({ one }) => ({
-	group: one(groups, {
-		fields: [userGroups.groupId],
-		references: [groups.id],
-	}),
-	user: one(users, {
-		fields: [userGroups.userId],
-		references: [users.id],
-	}),
-}));
-
-const m2mSchema = {
-	groups,
-	groupsRelations,
-	userGroups,
-	userGroupsRelations,
-	users,
-	usersRelations,
-};
-
-describe('inferred many-to-many relations', () => {
+describe('many-to-many through relations', () => {
 	test('includes, connects, disconnects, and sets targets', async () => {
 		const sqlite = new Database(':memory:');
 		sqlite.exec(`
@@ -210,21 +201,9 @@ describe('inferred many-to-many relations', () => {
 			INSERT INTO m2m_users VALUES (1, 'Alice');
 			INSERT INTO m2m_groups VALUES (1, 'Admin'), (2, 'Editor');
 		`);
-		const raw = drizzle(sqlite, { schema: m2mSchema });
-		const inferredClient = better(raw, { schema: m2mSchema });
-		const client = better(raw, {
-			relations: {
-				inferManyToMany: false,
-				manyToMany: [
-					{
-						left: { relation: 'user' },
-						right: { relation: 'group' },
-						through: 'userGroups',
-					},
-				],
-			},
-			schema: m2mSchema,
-		});
+		const client = better(
+			drizzle({ client: sqlite, relations: m2mRelations }),
+		);
 
 		await client.users.update({
 			data: { groups: { connect: [{ id: 1 }, { id: 2 }] } },
@@ -235,11 +214,16 @@ describe('inferred many-to-many relations', () => {
 			where: { id: 1 },
 		});
 		expect(user?.groups.map((group) => group.id)).toEqual([1, 2]);
-		const inferred = await inferredClient.users.findFirst({
-			include: { groups: { orderBy: { id: 'asc' } } },
-			where: { id: 1 },
-		});
-		expect(inferred?.groups.map((group) => group.id)).toEqual([1, 2]);
+		expect(
+			await client.users.count({
+				where: { groups: { some: { name: 'Editor' } } },
+			}),
+		).toBe(1);
+		expect(
+			await client.users.count({
+				where: { groups: { none: { name: 'Editor' } } },
+			}),
+		).toBe(0);
 		const page = await client.users.findFirst({
 			include: {
 				groups: { orderBy: { id: 'asc' }, skip: 1, take: 1 },

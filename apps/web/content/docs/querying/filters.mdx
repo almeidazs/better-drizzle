@@ -71,7 +71,7 @@ await db
 | `in` / `notIn`            | value is (not) in a list                        |
 | `contains`                | substring match                                 |
 | `startsWith` / `endsWith` | prefix / suffix match                           |
-| `mode`                    | `'default'` (case-sensitive) or `'insensitive'` |
+| `mode`                    | `'insensitive'` compiles to `ILIKE` (PostgreSQL only); `'default'` compiles to `LIKE`, whose case sensitivity follows the dialect and collation |
 | `not`                     | negate a value or a nested filter               |
 
 ## Numeric and date filters
@@ -185,7 +185,7 @@ await db
 Native PostgreSQL array columns support exact equality, containment, overlap, emptiness, and total element-count filters. These filters are PostgreSQL-only.
 
 ```ts
-const posts = await db.posts.findMany({
+const posts = await client.posts.findMany({
 	where: {
 		tags: { has: 'drizzle', length: { lte: 3 } },
 		roles: { hasEvery: ['admin', 'member'] },

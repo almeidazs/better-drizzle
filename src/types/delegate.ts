@@ -1,4 +1,9 @@
-import type { AnyColumn, SQL, TableRelationalConfig } from 'drizzle-orm';
+import type {
+	AnyColumn,
+	SQL,
+	SQLWrapper,
+	TableRelationalConfig,
+} from 'drizzle-orm';
 import type { Many } from 'drizzle-orm/relations';
 
 import type {
@@ -23,6 +28,7 @@ import type {
 	PaginationArgs,
 	PayloadForArgs,
 	QueryArgs,
+	ScalarSelectInput,
 	SelectInput,
 	WhereArg,
 } from './query';
@@ -188,9 +194,7 @@ type ScalarUpdateValue<T> =
 			? T | BooleanMutationInput
 			: T;
 
-type IsPgJsonbColumn<Column> = Column extends { columnType: 'PgJsonb' }
-	? true
-	: false;
+type IsPgJsonbColumn<Column> = import('./utils').IsPgJsonColumn<Column>;
 
 /** Partial JSONB path update accepted by update operations (`jsonb_set`). */
 export type JsonbMutationField<Model> =
@@ -358,7 +362,7 @@ export type SkipDuplicatesOption<
  *
  * @example
  * ```ts
- * const args: CreateArgs<typeof schema, 'user'> = {
+ * const args: CreateArgs<typeof relations, 'user'> = {
  *   data: { name: 'Alice', email: 'alice@example.com' },
  *   skipDuplicates: true,
  *   select: { id: true, name: true },
@@ -392,7 +396,7 @@ export interface CreateArgs<
  *
  * @example
  * ```ts
- * const args: UpdateArgs<typeof schema, 'user'> = {
+ * const args: UpdateArgs<typeof relations, 'user'> = {
  *   where: { id: 1 },
  *   data: { name: 'Bob' },
  *   select: { id: true, name: true },
@@ -570,7 +574,7 @@ export interface UpdateEachArgs<
 	/** Optional extra filter combined with the generated `by in (...)` predicate. */
 	where?: WhereArg<Schema, Name>;
 	/** Optional scalar projection for returned rows. */
-	select?: SelectInput<Schema, Name>;
+	select?: ScalarSelectInput<Schema, Name>;
 	/** Empty-input handling. Defaults to `'return'`. */
 	onEmpty?: 'return' | 'throw';
 	/** Custom metadata forwarded to hooks. */
@@ -835,7 +839,7 @@ export interface UpsertManyArgs<
 	/** Strategy used to build the update payload on conflict. */
 	update: UpsertManyUpdateStrategy<Schema, Name>;
 	/** Optional scalar projection for returned rows. */
-	select?: SelectInput<Schema, Name>;
+	select?: ScalarSelectInput<Schema, Name>;
 	/** Optional batch size for chunked native execution. */
 	batchSize?: number;
 	/** Optional SQL condition applied to the update side of the conflict path. */
@@ -856,13 +860,143 @@ type RepositorySourceKey<
 		? Name
 		: SourceKeyFromDbName<Schema, Extract<Name, string>>;
 
+type KeysOfUnion<T> = T extends unknown ? keyof T : never;
+
+type NoExtraKeys<Value, Shape> = [Value] extends [never]
+	? unknown
+	: Value extends SQLWrapper | Date
+		? unknown
+		: Value extends readonly (infer Entry)[]
+			? NonNullable<Shape> extends readonly (infer ShapeEntry)[]
+				? readonly NoExtraKeys<Entry, ShapeEntry>[]
+				: unknown
+			: Value extends object
+				? {
+						[
+							K in Exclude<
+								keyof Value,
+								KeysOfUnion<NonNullable<Shape>>
+							>
+						]: never;
+					}
+				: unknown;
+
+type ProjectionKey = 'include' | 'select';
+
+type HasDefinedKey<Value, Key extends PropertyKey> = Key extends keyof Value
+	? [Exclude<Value[Key], undefined>] extends [never]
+		? false
+		: true
+	: false;
+
+type HasSelectAndInclude<Value> = [Value] extends [never]
+	? false
+	: Value extends SQLWrapper | readonly unknown[]
+		? false
+		: Value extends object
+			? HasDefinedKey<Value, 'select'> extends true
+				? HasDefinedKey<Value, 'include'>
+				: true extends {
+							[K in Extract<keyof Value, ProjectionKey>]: {
+								[
+									Relation in keyof Value[K]
+								]: HasSelectAndInclude<Value[K][Relation]>;
+							}[keyof Value[K]];
+					  }[Extract<keyof Value, ProjectionKey>]
+					? true
+					: false
+			: false;
+
+/**
+ * Restores the checks TypeScript skips for inferred generic arguments:
+ * unknown keys at the top level and inside `where`, `data`, `create`,
+ * `update`, `select`, `include`, and `orderBy` are rejected, and `select`
+ * and `include` cannot appear together at any relation level.
+ */
+type ArgsCheck<Args, Base> = [Base] extends [Args]
+	? unknown
+	: NoExtraKeys<Args, Base> &
+			(HasSelectAndInclude<Args> extends true
+				? {
+						include: 'select and include cannot be used together at the same relation level';
+					}
+				: unknown) & {
+				[
+					K in Extract<
+						keyof Args,
+						| 'create'
+						| 'data'
+						| 'include'
+						| 'orderBy'
+						| 'select'
+						| 'update'
+						| 'where'
+					>
+				]?: NoExtraKeys<
+					Args[K],
+					K extends KeysOfUnion<Base>
+						? Base extends unknown
+							? K extends keyof Base
+								? Base[K]
+								: never
+							: never
+						: never
+				>;
+			};
+
 type BetterDrizzleClientExtensionShape = Record<string, unknown>;
 
-type BetterDrizzleExtendsMethod<Client> = <
-	Extension extends BetterDrizzleClientExtensionShape,
+/**
+ * Signature of `client.extends(...)`, returning the extended client type.
+ * Extension keys that override an existing client key are a type error.
+ */
+export type BetterDrizzleExtendsMethod<Client> = <
+	Extension extends BetterDrizzleClientExtensionShape & {
+		[K in keyof Client]?: never;
+	},
 >(
 	extension: Extension | ((client: Client) => Extension | undefined),
-) => Client & Extension;
+) => ExtendedClient<Client, Extension>;
+
+type TransactionParamsOf<Client> = Client extends {
+	transaction: (...args: infer Params) => unknown;
+}
+	? Params
+	: never;
+
+type TransactionClientOf<Client> = Parameters<
+	Extract<TransactionParamsOf<Client>[0], (tx: never) => unknown>
+>[0];
+
+type TransactionOptionsOf<Client> = NonNullable<TransactionParamsOf<Client>[1]>;
+
+type ScopedMetaOf<Client> = Client extends {
+	$withContext(meta: infer Meta): unknown;
+}
+	? Meta
+	: never;
+
+/**
+ * A client plus an extension. The runtime reapplies extensions to
+ * `$withContext()` clones, transaction clients, and later `extends()` calls,
+ * so all of them keep the extension type.
+ */
+export type ExtendedClient<Client, Extension> = Omit<
+	Client,
+	'$withContext' | 'extends' | 'transaction'
+> &
+	Extension & {
+		extends: BetterDrizzleExtendsMethod<ExtendedClient<Client, Extension>>;
+		$withContext(
+			meta: ScopedMetaOf<Client>,
+		): ExtendedClient<Client, Extension>;
+		transaction<T>(
+			callback: (
+				tx: ExtendedClient<TransactionClientOf<Client>, Extension>,
+			) => Promise<T> | T,
+			options?: TransactionOptionsOf<Client>,
+		): Promise<T>;
+	};
 
 /**
  * The fully-typed client returned by {@link better}. Provides a delegate for
@@ -881,10 +1015,10 @@ type BetterDrizzleExtendsMethod<Client> = <
  * ```ts
  * import { better } from 'better-drizzle';
  * import { drizzle } from 'drizzle-orm/better-sqlite3';
- * import * as schema from './schema';
+ * import { relations } from './relations';
  *
- * const raw = drizzle('file:local.db');
- * const db = better(raw, { schema });
+ * const raw = drizzle('file:local.db', { relations });
+ * const db = better(raw);
  *
  * // Direct table access
  * const users = await db.user.findMany({ where: { active: true } });
@@ -1098,6 +1232,18 @@ export type BetterDrizzleClient<
 			) => Promise<T> | T,
 			options?: TransactionOptions & { meta?: Meta },
 		): Promise<T>;
+		/**
+		 * Registers a callback to run after the active transaction commits.
+		 * On the root client, outside a transaction, it throws the explicit
+		 * Better Drizzle error; use `tx.afterCommit()` inside `transaction()`.
+		 */
+		afterCommit(callback: () => unknown | Promise<unknown>): void;
+		/**
+		 * Registers a callback to run after the active transaction rolls back.
+		 * On the root client, outside a transaction, it throws the explicit
+		 * Better Drizzle error; use `tx.afterRollback()` inside `transaction()`.
+		 */
+		afterRollback(callback: () => unknown | Promise<unknown>): void;
 		/**
 		 * Retrieves the model delegate for the given repository name.
 		 *
@@ -1354,7 +1500,22 @@ export type BetterDrizzleModelDelegate<
 			'create'
 		>,
 	>(
-		args: Args,
+		args: Args &
+			NoInfer<
+				OperationArgsWithPlugins<
+					CreateArgs<Schema, Name, Meta>,
+					Plugins,
+					'create'
+				> &
+					ArgsCheck<
+						Args,
+						OperationArgsWithPlugins<
+							CreateArgs<Schema, Name, Meta>,
+							Plugins,
+							'create'
+						>
+					>
+			>,
 	): Promise<
 		Args extends { skipDuplicates: infer Skip }
 			? Skip extends false | undefined
@@ -1396,7 +1557,22 @@ export type BetterDrizzleModelDelegate<
 			'createMany'
 		>,
 	>(
-		args: Args,
+		args: Args &
+			NoInfer<
+				OperationArgsWithPlugins<
+					CreateManyArgs<Schema, Name, Meta>,
+					Plugins,
+					'createMany'
+				> &
+					ArgsCheck<
+						Args,
+						OperationArgsWithPlugins<
+							CreateManyArgs<Schema, Name, Meta>,
+							Plugins,
+							'createMany'
+						>
+					>
+			>,
 	): Promise<BatchResult<PayloadForArgs<Schema, Name, Args>>>;
 	/**
 	 * Inserts a row if no match is found, otherwise updates it.
@@ -1432,7 +1608,22 @@ export type BetterDrizzleModelDelegate<
 			'upsert'
 		>,
 	>(
-		args: Args,
+		args: Args &
+			NoInfer<
+				OperationArgsWithPlugins<
+					UpsertArgs<Schema, Name, Meta>,
+					Plugins,
+					'upsert'
+				> &
+					ArgsCheck<
+						Args,
+						OperationArgsWithPlugins<
+							UpsertArgs<Schema, Name, Meta>,
+							Plugins,
+							'upsert'
+						>
+					>
+			>,
 	): Promise<PayloadForArgs<Schema, Name, Args>>;
 	/**
 	 * Performs a native batch upsert against an explicit conflict target.
@@ -1471,7 +1662,22 @@ export type BetterDrizzleModelDelegate<
 			'upsertMany'
 		>,
 	>(
-		args: Args,
+		args: Args &
+			NoInfer<
+				OperationArgsWithPlugins<
+					UpsertManyArgs<Schema, Name, Meta>,
+					Plugins,
+					'upsertMany'
+				> &
+					ArgsCheck<
+						Args,
+						OperationArgsWithPlugins<
+							UpsertManyArgs<Schema, Name, Meta>,
+							Plugins,
+							'upsertMany'
+						>
+					>
+			>,
 	): Promise<BatchResult<PayloadForArgs<Schema, Name, Args>>>;
 	/**
 	 * Returns all matching rows.
@@ -1515,7 +1721,22 @@ export type BetterDrizzleModelDelegate<
 			'findMany'
 		>,
 	>(
-		args?: Args,
+		args?: Args &
+			NoInfer<
+				OperationArgsWithPlugins<
+					QueryArgs<Schema, Name, Meta>,
+					Plugins,
+					'findMany'
+				> &
+					ArgsCheck<
+						Args,
+						OperationArgsWithPlugins<
+							QueryArgs<Schema, Name, Meta>,
+							Plugins,
+							'findMany'
+						>
+					>
+			>,
 	): ExplainableResult<PayloadForArgs<Schema, Name, Args>[]>;
 	/**
 	 * Updates a single matching row and returns the updated record.
@@ -1556,7 +1777,22 @@ export type BetterDrizzleModelDelegate<
 			'update'
 		>,
 	>(
-		args: Args,
+		args: Args &
+			NoInfer<
+				OperationArgsWithPlugins<
+					UpdateArgs<Schema, Name, Meta>,
+					Plugins,
+					'update'
+				> &
+					ArgsCheck<
+						Args,
+						OperationArgsWithPlugins<
+							UpdateArgs<Schema, Name, Meta>,
+							Plugins,
+							'update'
+						>
+					>
+			>,
 	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	/**
 	 * Updates all matching rows and returns the affected count.
@@ -1634,7 +1870,22 @@ export type BetterDrizzleModelDelegate<
 			'findOne'
 		>,
 	>(
-		args?: Args,
+		args?: Args &
+			NoInfer<
+				OperationArgsWithPlugins<
+					QueryArgs<Schema, Name, Meta>,
+					Plugins,
+					'findOne'
+				> &
+					ArgsCheck<
+						Args,
+						OperationArgsWithPlugins<
+							QueryArgs<Schema, Name, Meta>,
+							Plugins,
+							'findOne'
+						>
+					>
+			>,
 	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	/**
 	 * Returns the first matching row.
@@ -1664,7 +1915,22 @@ export type BetterDrizzleModelDelegate<
 			'findFirst'
 		>,
 	>(
-		args?: Args,
+		args?: Args &
+			NoInfer<
+				OperationArgsWithPlugins<
+					QueryArgs<Schema, Name, Meta>,
+					Plugins,
+					'findFirst'
+				> &
+					ArgsCheck<
+						Args,
+						OperationArgsWithPlugins<
+							QueryArgs<Schema, Name, Meta>,
+							Plugins,
+							'findFirst'
+						>
+					>
+			>,
 	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	/**
 	 * Returns exactly one matching row; throws if not found.
@@ -1701,7 +1967,22 @@ export type BetterDrizzleModelDelegate<
 			'findUnique'
 		>,
 	>(
-		args: Args,
+		args: Args &
+			NoInfer<
+				OperationArgsWithPlugins<
+					QueryArgs<Schema, Name, Meta>,
+					Plugins,
+					'findUnique'
+				> &
+					ArgsCheck<
+						Args,
+						OperationArgsWithPlugins<
+							QueryArgs<Schema, Name, Meta>,
+							Plugins,
+							'findUnique'
+						>
+					>
+			>,
 	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	/**
 	 * Returns an offset-based paginated result set with page metadata.
@@ -1727,7 +2008,22 @@ export type BetterDrizzleModelDelegate<
 			'paginate'
 		>,
 	>(
-		args: Args,
+		args: Args &
+			NoInfer<
+				OperationArgsWithPlugins<
+					PaginationArgs<Schema, Name, Meta>,
+					Plugins,
+					'paginate'
+				> &
+					ArgsCheck<
+						Args,
+						OperationArgsWithPlugins<
+							PaginationArgs<Schema, Name, Meta>,
+							Plugins,
+							'paginate'
+						>
+					>
+			>,
 	): ExplainableResult<
 		OffsetPaginationResult<PayloadForArgs<Schema, Name, Args>>
 	>;
@@ -1743,7 +2039,22 @@ export type BetterDrizzleModelDelegate<
 			'cursor'
 		>,
 	>(
-		args: Args,
+		args: Args &
+			NoInfer<
+				OperationArgsWithPlugins<
+					CursorArgs<Schema, Name, Meta>,
+					Plugins,
+					'cursor'
+				> &
+					ArgsCheck<
+						Args,
+						OperationArgsWithPlugins<
+							CursorArgs<Schema, Name, Meta>,
+							Plugins,
+							'cursor'
+						>
+					>
+			>,
 	): ExplainableResult<
 		CursorPaginationResult<PayloadForArgs<Schema, Name, Args>>
 	>;
@@ -1781,7 +2092,22 @@ export type BetterDrizzleModelDelegate<
 			'delete'
 		>,
 	>(
-		args: Args,
+		args: Args &
+			NoInfer<
+				OperationArgsWithPlugins<
+					DeleteArgs<Schema, Name, Meta>,
+					Plugins,
+					'delete'
+				> &
+					ArgsCheck<
+						Args,
+						OperationArgsWithPlugins<
+							DeleteArgs<Schema, Name, Meta>,
+							Plugins,
+							'delete'
+						>
+					>
+			>,
 	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
 	/**
 	 * Deletes all matching rows and returns the affected count.
@@ -1830,7 +2156,7 @@ export type BetterTableConfig<
  *
  * @example
  * ```ts
- * type TableName = BetterTableKey<typeof schema>; // 'user' | 'post' | ...
+ * type TableName = BetterTableKey<typeof relations>; // 'user' | 'post' | ...
  * ```
  */
 export type BetterTableKey<Schema extends AnySchema> = TableKey<Schema>;
@@ -1851,7 +2177,7 @@ export type BetterAliasKey<Schema extends AnySchema> =
  *
  * @example
  * ```ts
- * type Keys = BetterRepositoryKey<typeof schema>; // 'user' | 'users' | ...
+ * type Keys = BetterRepositoryKey<typeof relations>; // 'user' | 'users' | ...
  * ```
  */
 export type BetterRepositoryKey<Schema extends AnySchema> =
@@ -1882,7 +2208,7 @@ export type BetterRelationalConfig = TableRelationalConfig;
  *
  * @example
  * ```ts
- * type UserRow = BetterRecord<typeof schema, 'user'>;
+ * type UserRow = BetterRecord<typeof relations, 'user'>;
  * // { id: number; name: string; email: string; ... }
  * ```
  */

@@ -3,7 +3,7 @@ title: Relation writes
 description: Attach, detach, and replace related rows from a single create, update, or upsert with connect, disconnect, and set.
 icon: Workflow
 seoTitle: 'Relation Writes - connect, disconnect & set'
-seoDescription: 'Connect, disconnect, and set related rows from a single Drizzle ORM create, update, or upsert, including inferred many-to-many junction tables.'
+seoDescription: 'Connect, disconnect, and set related rows from a single Drizzle ORM create, update, or upsert, including many-to-many relations declared with through().'
 ---
 
 Single-row `create`, `update`, and `upsert` accept relation commands alongside
@@ -123,8 +123,8 @@ await db.transaction(async (tx) => {
 });
 ```
 
-For an inferred many-to-many relation, `connect` inserts the junction rows for
-you:
+For a many-to-many relation declared with `.through()` in `defineRelations`,
+`connect` inserts the junction rows for you:
 
 ```ts tab="better-drizzle" tab-group="orm"
 await client.posts.update({
@@ -181,15 +181,11 @@ import { and, eq, inArray } from 'drizzle-orm';
 // to-one: null the foreign key
 await db.update(posts).set({ authorId: null }).where(eq(posts.id, 10));
 
-// to-many: the rows to detach
-await db.transaction(async (tx) => {
-	const detached = await tx
-		.update(posts)
-		.set({ authorId: null })
-		.where(and(eq(posts.authorId, 1), inArray(posts.id, [2, 3])))
-		.returning({ id: posts.id });
-	if (detached.length !== 2) throw new Error('Post not linked');
-});
+// to-many: the rows to detach; rows linked to another user are left alone
+await db
+	.update(posts)
+	.set({ authorId: null })
+	.where(and(eq(posts.authorId, 1), inArray(posts.id, [2, 3])));
 ```
 
 <Callout type="warn">
@@ -198,6 +194,9 @@ await db.transaction(async (tx) => {
 	fails and the whole write rolls back - use `set` to point it somewhere
 	else instead.
 </Callout>
+
+A to-many `disconnect` selector must match an existing row, but a row that is
+linked to a different parent is skipped rather than rejected.
 
 ## `set` - replace the whole relation
 

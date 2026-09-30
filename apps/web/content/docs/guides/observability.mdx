@@ -48,8 +48,7 @@ const logOperation = (ctx: OperationContext) => {
 	});
 };
 
-export const client = better<typeof schema, Meta>(db, {
-	schema,
+export const client = better<typeof relations, Meta>(db, {
 	hooks: {
 		beforeQuery: start,
 		afterQuery: logOperation,
@@ -102,8 +101,7 @@ Keep argument values out of the log line. `ctx.args.where` and `ctx.args.data` o
 ```ts
 import { type BetterDrizzleError, better } from 'better-drizzle';
 
-export const client = better<typeof schema, Meta>(db, {
-	schema,
+export const client = better<typeof relations, Meta>(db, {
 	hooks: {
 		// ...timing hooks from above
 		onError(ctx) {
@@ -149,8 +147,7 @@ const rawElapsed = (key: object) => {
 	return at === undefined ? undefined : performance.now() - at;
 };
 
-export const client = better<typeof schema, Meta>(db, {
-	schema,
+export const client = better<typeof relations, Meta>(db, {
 	hooks: {
 		beforeRaw(ctx) {
 			rawStarted.set(ctx.rawOptions, performance.now());
@@ -202,8 +199,7 @@ const txElapsed = (key: object) => {
 	return at === undefined ? undefined : performance.now() - at;
 };
 
-export const client = better<typeof schema, Meta>(db, {
-	schema,
+export const client = better<typeof relations, Meta>(db, {
 	hooks: {
 		beforeTransaction(ctx) {
 			txStarted.set(ctx.client, performance.now());
@@ -310,7 +306,6 @@ export const failSpan = (ctx: OperationContext & { error: unknown }) => {
 import { endSpan, failSpan, startSpan } from './db-tracing';
 
 export const client = better(db, {
-	schema,
 	hooks: {
 		beforeQuery: startSpan,
 		afterQuery: endSpan,
@@ -335,8 +330,9 @@ export const client = better(db, {
 CRUD hooks work at the operation level: action, table, args, and result. They do not show the generated SQL. When you need the statements themselves, turn on Drizzle's own logger on the database you pass to `better(...)`:
 
 ```ts
-const db = drizzle(pool, {
-	schema,
+const db = drizzle({
+	client: pool,
+	relations,
 	logger: {
 		logQuery(query, params) {
 			console.debug('sql', { query, params: params.length });
@@ -455,7 +451,6 @@ export const observability = ({
 
 ```ts
 export const client = better(db, {
-	schema,
 	plugins: [observability({ slowMs: 100 })],
 });
 ```

@@ -25,6 +25,20 @@ type JsonSchema = Record<string, unknown>;
  */
 
 const SORT_ORDER = ['asc', 'desc'] as const;
+const ORDER_BY_VALUE: JsonSchema = {
+	anyOf: [
+		{ enum: [...SORT_ORDER] },
+		{
+			additionalProperties: false,
+			properties: {
+				direction: { enum: [...SORT_ORDER] },
+				nulls: { enum: ['first', 'last'] },
+			},
+			required: ['direction'],
+			type: 'object',
+		},
+	],
+};
 const LOCK_MODES = ['keyShare', 'noKeyUpdate', 'share', 'update'] as const;
 
 /** `meta` is the caller's own request-scoped context, so nothing is claimed about it. */
@@ -52,8 +66,7 @@ export const orderByDefinitions = (
 	const field = `${prefix}orderByField`;
 	const name = `${prefix}orderBy`;
 	const properties: Record<string, JsonSchema> = {};
-	for (const key of Object.keys(columns))
-		properties[key] = { enum: [...SORT_ORDER] };
+	for (const key of Object.keys(columns)) properties[key] = ORDER_BY_VALUE;
 
 	return {
 		defs: {
@@ -186,6 +199,10 @@ export const createQueryArgsSchema = (
 	};
 
 	if (shape !== 'query') properties.limit = { minimum: 0, type: 'integer' };
+	if (shape === 'pagination') {
+		properties.page = { minimum: 1, type: 'integer' };
+		properties.perPage = { minimum: 0, type: 'integer' };
+	}
 	if (shape === 'cursor') {
 		// Only cursor pagination takes a position, and it takes either the row
 		// values or the encoded string the previous page handed back.

@@ -31,6 +31,38 @@ describe('paginate - offset', () => {
 		});
 	});
 
+	test('page and perPage compute the offset', async () => {
+		const { data, pagination } = await ctx.better.users.paginate({
+			orderBy: { id: 'asc' },
+			page: 2,
+			perPage: 2,
+		});
+
+		expect(data.map((row) => row.id)).toEqual([3, 4]);
+		expect(pagination).toMatchObject({
+			hasNext: true,
+			hasPrevious: true,
+			page: 2,
+			pageCount: 3,
+			perPage: 2,
+		});
+
+		const last = await ctx.better.users.paginate({
+			limit: 2,
+			orderBy: { id: 'asc' },
+			page: 3,
+		});
+		expect(last.data.map((row) => row.id)).toEqual([5]);
+		expect(last.pagination.hasNext).toBe(false);
+	});
+
+	test('page rejects skip and invalid numbers', async () => {
+		for (const args of [{ page: 2, skip: 2 }, { page: 0 }, { page: 1.5 }])
+			await expect(
+				Promise.resolve(ctx.better.users.paginate(args)),
+			).rejects.toBeInstanceOf(BetterDrizzleError);
+	});
+
 	test('paginate with limit', async () => {
 		const result = await ctx.better.users.paginate({
 			limit: 2,
@@ -150,11 +182,11 @@ describe('paginate - offset', () => {
 describe('cursor - cursor pagination', () => {
 	test('uses one statement for populated primary-key pages', async () => {
 		const statements: string[] = [];
-		const prepare = ctx.sqlite.prepare.bind(ctx.sqlite);
-		ctx.sqlite.prepare = ((query: string) => {
-			statements.push(query);
-			return prepare(query);
-		}) as typeof ctx.sqlite.prepare;
+		const query = ctx.sqlite.query.bind(ctx.sqlite);
+		ctx.sqlite.query = ((sql: string) => {
+			statements.push(sql);
+			return query(sql);
+		}) as typeof ctx.sqlite.query;
 
 		const forward = await ctx.better.users.cursor({
 			after: { id: 2 },
@@ -180,6 +212,14 @@ describe('cursor - cursor pagination', () => {
 		});
 		expect(backward.pagination.hasNext).toBe(true);
 		expect(statements).toHaveLength(1);
+
+		statements.length = 0;
+		await ctx.better.users.cursor({
+			after: { id: 2 },
+			limit: 2,
+			orderBy: { id: { direction: 'asc', nulls: 'last' } },
+		});
+		expect(statements).toHaveLength(1);
 	});
 
 	test('keeps exact flags with filters, descending order, and empty pages', async () => {
@@ -201,11 +241,11 @@ describe('cursor - cursor pagination', () => {
 		expect(descending.pagination.hasPrevious).toBe(true);
 
 		const statements: string[] = [];
-		const prepare = ctx.sqlite.prepare.bind(ctx.sqlite);
-		ctx.sqlite.prepare = ((query: string) => {
-			statements.push(query);
-			return prepare(query);
-		}) as typeof ctx.sqlite.prepare;
+		const query = ctx.sqlite.query.bind(ctx.sqlite);
+		ctx.sqlite.query = ((sql: string) => {
+			statements.push(sql);
+			return query(sql);
+		}) as typeof ctx.sqlite.query;
 		const empty = await ctx.better.users.cursor({
 			after: { id: 999 },
 			limit: 2,
@@ -344,12 +384,14 @@ describe('cursor - cursor pagination', () => {
 
 	test('cursor rejects before and after together', async () => {
 		await expect(
-			ctx.better.users.cursor({
-				before: { id: 4 },
-				after: { id: 2 },
-				limit: 2,
-				orderBy: [{ id: 'asc' }],
-			}),
+			Promise.resolve(
+				ctx.better.users.cursor({
+					before: { id: 4 },
+					after: { id: 2 },
+					limit: 2,
+					orderBy: [{ id: 'asc' }],
+				}),
+			),
 		).rejects.toBeInstanceOf(BetterDrizzleError);
 	});
 });

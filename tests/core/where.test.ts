@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
+import { defineRelations } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { integer, sqliteTable } from 'drizzle-orm/sqlite-core';
 
@@ -11,7 +12,7 @@ const nullOrderRecords = sqliteTable('null_order_records', {
 	id: integer('id').primaryKey(),
 	lastSeenAt: integer('last_seen_at'),
 });
-const nullOrderSchema = { nullOrderRecords };
+const nullOrderRelations = defineRelations({ nullOrderRecords });
 
 let ctx: TestContext;
 
@@ -328,9 +329,9 @@ describe('where with orderBy', () => {
 			sqlite.run(
 				'insert into null_order_records (id, last_seen_at) values (1, null), (2, 100), (3, null), (4, 300), (5, 200)',
 			);
-			const db = better(drizzle(sqlite, { schema: nullOrderSchema }), {
-				schema: nullOrderSchema,
-			});
+			const db = better(
+				drizzle({ client: sqlite, relations: nullOrderRelations }),
+			);
 
 			const nullsLast = await db.nullOrderRecords.findMany({
 				orderBy: { lastSeenAt: { direction: 'asc', nulls: 'last' } },
@@ -350,28 +351,70 @@ describe('where with orderBy', () => {
 
 			const firstPage = await db.nullOrderRecords.cursor({
 				limit: 2,
-				orderBy: { lastSeenAt: { direction: 'asc', nulls: 'last' } },
+				orderBy: [
+					{ lastSeenAt: { direction: 'asc', nulls: 'last' } },
+					{ id: 'asc' },
+				],
 			});
 			expect(firstPage.data.map((row) => row.id)).toEqual([2, 5]);
 			expect(firstPage.pagination.nextCursor).toEqual({
 				lastSeenAt: 200,
+				id: 5,
 			});
+			await expect(
+				Promise.resolve(
+					db.nullOrderRecords.cursor({
+						after: { lastSeenAt: 200 },
+						limit: 2,
+						orderBy: [
+							{ lastSeenAt: { direction: 'asc', nulls: 'last' } },
+							{ id: 'asc' },
+						],
+					}),
+				),
+			).rejects.toThrow('Cursor must include orderBy field "id"');
 
 			const afterNonNull = await db.nullOrderRecords.cursor({
 				after: firstPage.pagination.nextCursor as {
 					lastSeenAt: number;
+					id: number;
 				},
 				limit: 2,
-				orderBy: { lastSeenAt: { direction: 'asc', nulls: 'last' } },
+				orderBy: [
+					{ lastSeenAt: { direction: 'asc', nulls: 'last' } },
+					{ id: 'asc' },
+				],
 			});
 			expect(afterNonNull.data.map((row) => row.id)).toEqual([4, 1]);
+			expect(afterNonNull.pagination.hasNext).toBe(true);
+			expect(afterNonNull.pagination.nextCursor).toEqual({
+				lastSeenAt: null,
+				id: 1,
+			});
+
+			const afterNull = await db.nullOrderRecords.cursor({
+				after: afterNonNull.pagination.nextCursor as {
+					lastSeenAt: number | null;
+					id: number;
+				},
+				limit: 2,
+				orderBy: [
+					{ lastSeenAt: { direction: 'asc', nulls: 'last' } },
+					{ id: 'asc' },
+				],
+			});
+			expect(afterNull.data.map((row) => row.id)).toEqual([3]);
+			expect(afterNull.pagination.hasNext).toBe(false);
 
 			const beforeNull = await db.nullOrderRecords.cursor({
-				before: { lastSeenAt: null },
+				before: { lastSeenAt: null, id: 3 },
 				limit: 2,
-				orderBy: { lastSeenAt: { direction: 'asc', nulls: 'last' } },
+				orderBy: [
+					{ lastSeenAt: { direction: 'asc', nulls: 'last' } },
+					{ id: 'asc' },
+				],
 			});
-			expect(beforeNull.data.map((row) => row.id)).toEqual([5, 4]);
+			expect(beforeNull.data.map((row) => row.id)).toEqual([4, 1]);
 		} finally {
 			sqlite.close();
 		}
@@ -381,9 +424,11 @@ describe('where with orderBy', () => {
 describe('JSONB where', () => {
 	test('rejects JSONB path filters outside PostgreSQL', async () => {
 		await expect(
-			ctx.better.users.findMany({
-				where: { name: { json: { 'profile.age': { gte: 18 } } } },
-			} as never),
+			Promise.resolve(
+				ctx.better.users.findMany({
+					where: { name: { json: { 'profile.age': { gte: 18 } } } },
+				} as never),
+			),
 		).rejects.toMatchObject({
 			code: 'JSONB_QUERY_UNSUPPORTED',
 			dialect: 'sqlite',

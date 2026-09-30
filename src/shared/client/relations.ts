@@ -164,14 +164,11 @@ const getRelationSource = (
 	let hasRelations = false;
 	for (const key in source) {
 		if (include && key === '_count') continue;
-		if (runtime.ambiguousRelations[key])
+		if (runtime.unsupportedRelations[key])
 			throw new BetterDrizzleError({
 				code: BetterDrizzleErrorCode.OperationError,
-				details: {
-					paths: runtime.ambiguousRelations[key],
-					relation: key,
-				},
-				message: `Relation "${key}" on "${runtime.dbName}" is ambiguous. Configure its junction explicitly.`,
+				details: { relation: key },
+				message: `Relation "${key}" on "${runtime.dbName}" cannot be loaded: ${runtime.unsupportedRelations[key]}.`,
 				operation: 'relation',
 				table: runtime.dbName,
 			});
@@ -344,6 +341,8 @@ const buildRelationCount = <Schema extends AnySchema, Meta>(
 					aliasedTableColumn(targetField, targetAlias),
 				),
 			);
+	}
+	for (let index = 0; index < relation.fields.length; index += 1) {
 		const sourceField = relation.fields[index];
 		const throughSource = through.sourceFields[index];
 		if (sourceField && throughSource)
@@ -731,7 +730,7 @@ export const getDeferredRelationPlans = <Schema extends AnySchema, Meta>(
 				path,
 				sorted: Boolean(nested?.orderBy),
 				table: getTableRuntime(context, relation.tableName).tableConfig
-					.tsName,
+					.name,
 				through: relation.through?.tableName,
 			});
 			visit(getTableRuntime(context, relation.tableName), nested, path);
@@ -798,7 +797,7 @@ const resolveSelector = async <Schema extends AnySchema, Meta>(
 		{
 			...context,
 			runtime,
-			tableName: runtime.tableConfig.tsName,
+			tableName: runtime.tableConfig.name,
 		} as WhereCompilerContext<Schema, Meta>,
 		selector,
 	);
@@ -1019,7 +1018,7 @@ const updateResolvedTarget = async <Schema extends AnySchema, Meta>(
 		{
 			...context,
 			runtime,
-			tableName: runtime.tableConfig.tsName,
+			tableName: runtime.tableConfig.name,
 		} as WhereCompilerContext<Schema, Meta>,
 		getPrimaryKeyWhere(runtime, target),
 	);
@@ -1084,7 +1083,26 @@ const applyDirectRelation = async <Schema extends AnySchema, Meta>(
 					relationName,
 				);
 
-	if ('set' in command) {
+	const connectTargets = [
+		...setTargets,
+		...(connectValue === undefined
+			? []
+			: await resolveSelectors(
+					context,
+					targetRuntime,
+					connectValue,
+					relationName,
+				)),
+	];
+	// A to-one whose foreign key lives on the target (users.profile) has at
+	// most one linked row: `disconnect: true` detaches it, and connecting a new
+	// row replaces it, like `set`.
+	const replacesCurrent =
+		'set' in command ||
+		(relation.kind === 'one' &&
+			(disconnectValue === true || connectValue !== undefined));
+
+	if (replacesCurrent) {
 		const current = await findLinkedTargets(
 			context,
 			parentRuntime,
@@ -1093,7 +1111,7 @@ const applyDirectRelation = async <Schema extends AnySchema, Meta>(
 			relation,
 		);
 		const selected = new Set(
-			setTargets.map((row) =>
+			connectTargets.map((row) =>
 				rowKey(targetRuntime, row, primaryKeyColumns(targetRuntime)),
 			),
 		);
@@ -1120,49 +1138,39 @@ const applyDirectRelation = async <Schema extends AnySchema, Meta>(
 		}
 	}
 
-	for (const selector of selectorList(disconnectValue)) {
-		const target = await resolveSelector(
-			context,
-			targetRuntime,
-			selector,
-			relationName,
-		);
-		if (
-			!recordMatchesParent(
-				parentRuntime,
-				parent,
+	if (disconnectValue !== true)
+		for (const selector of selectorList(disconnectValue)) {
+			const target = await resolveSelector(
+				context,
+				targetRuntime,
+				selector,
+				relationName,
+			);
+			if (
+				!recordMatchesParent(
+					parentRuntime,
+					parent,
+					targetRuntime,
+					target,
+					relation,
+				)
+			)
+				continue;
+			await updateResolvedTarget(
+				context,
 				targetRuntime,
 				target,
-				relation,
-			)
-		)
-			continue;
-		await updateResolvedTarget(
-			context,
-			targetRuntime,
-			target,
-			relationTargetData(
-				parentRuntime,
-				parent,
-				targetRuntime,
-				relation,
-				'disconnect',
-				relationName,
-			),
-		);
-	}
-
-	const connectTargets = [
-		...setTargets,
-		...(connectValue === undefined
-			? []
-			: await resolveSelectors(
-					context,
+				relationTargetData(
+					parentRuntime,
+					parent,
 					targetRuntime,
-					connectValue,
+					relation,
+					'disconnect',
 					relationName,
-				)),
-	];
+				),
+			);
+		}
+
 	if (relation.kind === 'one' && connectTargets.length > 1)
 		throw relationError(
 			parentRuntime,

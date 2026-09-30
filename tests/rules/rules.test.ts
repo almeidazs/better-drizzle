@@ -12,7 +12,6 @@ const createRulesContext = (pluginOptions: Parameters<typeof rules>[0]) => {
 		raw: {
 			allowUnsafe: true,
 		},
-		schema: base.schema,
 	});
 
 	return {
@@ -103,15 +102,19 @@ describe('better-drizzle/rules', () => {
 		});
 
 		await expect(
-			ctx.client.users.findMany({
-				limit: 2,
-			}),
+			Promise.resolve(
+				ctx.client.users.findMany({
+					limit: 2,
+				}),
+			),
 		).rejects.toThrow('The requested limit 2 exceeds the maximum 1.');
 
 		await expect(
-			ctx.client.users.paginate({
-				limit: 1,
-			}),
+			Promise.resolve(
+				ctx.client.users.paginate({
+					limit: 1,
+				}),
+			),
 		).rejects.toThrow('paginate requires orderBy.');
 
 		ctx.close();
@@ -126,23 +129,10 @@ describe('better-drizzle/rules', () => {
 		});
 
 		await expect(
-			ctx.client.users.findMany({
-				lock: {
-					mode: 'forUpdate',
-					skipLocked: true,
-				},
-				orderBy: {
-					id: 'asc',
-				},
-			}),
-		).rejects.toThrow('Row locks require an active transaction.');
-
-		await expect(
-			ctx.client.transaction((tx) =>
-				tx.users.findMany({
+			Promise.resolve(
+				ctx.client.users.findMany({
 					lock: {
 						mode: 'forUpdate',
-						noWait: true,
 						skipLocked: true,
 					},
 					orderBy: {
@@ -150,16 +140,35 @@ describe('better-drizzle/rules', () => {
 					},
 				}),
 			),
+		).rejects.toThrow('Row locks require an active transaction.');
+
+		await expect(
+			Promise.resolve(
+				ctx.client.transaction((tx) =>
+					tx.users.findMany({
+						lock: {
+							mode: 'forUpdate',
+							noWait: true,
+							skipLocked: true,
+						},
+						orderBy: {
+							id: 'asc',
+						},
+					}),
+				),
+			),
 		).rejects.toThrow('skipLocked and noWait cannot be used together.');
 
 		await expect(
-			ctx.client.transaction((tx) =>
-				tx.users.findMany({
-					lock: {
-						mode: 'forUpdate',
-						skipLocked: true,
-					},
-				}),
+			Promise.resolve(
+				ctx.client.transaction((tx) =>
+					tx.users.findMany({
+						lock: {
+							mode: 'forUpdate',
+							skipLocked: true,
+						},
+					}),
+				),
 			),
 		).rejects.toThrow('skipLocked requires orderBy.');
 
@@ -179,24 +188,28 @@ describe('better-drizzle/rules', () => {
 		});
 
 		await expect(
-			ctx.client.users.findMany({
-				include: {
-					posts: {
-						with: {
-							comments: true,
+			Promise.resolve(
+				ctx.client.users.findMany({
+					include: {
+						posts: {
+							with: {
+								comments: true,
+							},
 						},
 					},
-				},
-			}),
+				}),
+			),
 		).rejects.toThrow('include depth 2 exceeds the maximum 1.');
 
 		await expect(
-			ctx.client.posts.findMany({
-				include: {
-					author: true,
-					comments: true,
-				},
-			}),
+			Promise.resolve(
+				ctx.client.posts.findMany({
+					include: {
+						author: true,
+						comments: true,
+					},
+				}),
+			),
 		).rejects.toThrow('include relation count 2 exceeds the maximum 1.');
 
 		ctx.close();
@@ -263,11 +276,13 @@ describe('better-drizzle/rules', () => {
 		});
 
 		await expect(
-			ctx.client.users.findMany({
-				where: {
-					id: 1,
-				},
-			}),
+			Promise.resolve(
+				ctx.client.users.findMany({
+					where: {
+						id: 1,
+					},
+				}),
+			),
 		).rejects.toThrow('Tenant context "tenantId" is required.');
 
 		const scoped = ctx.client.$withContext({
@@ -318,11 +333,13 @@ describe('better-drizzle/rules', () => {
 		});
 
 		await expect(
-			ctx.client.users.findMany({
-				where: {
-					id: 1,
-				},
-			}),
+			Promise.resolve(
+				ctx.client.users.findMany({
+					where: {
+						id: 1,
+					},
+				}),
+			),
 		).resolves.toEqual([
 			{
 				active: true,

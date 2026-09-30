@@ -53,7 +53,6 @@ import { better } from 'better-drizzle';
 import { softDelete } from 'better-drizzle/soft-delete';
 
 const client = better(db, {
-	schema,
 	plugins: [
 		softDelete({
 			column: 'deletedAt',
@@ -82,14 +81,14 @@ Every option is optional. Column names are the property keys in your Drizzle tab
 
 | Operation | Behavior |
 | --- | --- |
-| `findMany`, `findFirst`, `count`, `exists` | deleted rows hidden; accept `deleted: 'without' \| 'with' \| 'only'` |
-| `findOne`, `findUnique`, `paginate`, `cursor` | not filtered, deleted rows are returned |
-| `update`, `updateMany`, `updateEach`, `upsert`, `upsertMany` | not filtered, deleted rows can be updated |
-| `delete` | soft by default: sets `column` instead of deleting |
-| `deleteMany` | always a hard delete |
-| relations loaded with `include` or a relation `select` | not filtered |
+| `findMany`, `findFirst`, `findOne`, `findUnique`, `count`, `exists` | deleted rows hidden |
+| `paginate`, `cursor` | deleted rows hidden from `data`, `total`, and the navigation flags |
+| `update`, `updateMany`, `updateEach` | deleted rows are not updated |
+| `delete`, `deleteMany` | soft by default: set `column` on live rows instead of deleting |
+| `upsert`, `upsertMany` | not filtered: hiding a deleted row would turn the update into a duplicate insert |
+| relations loaded with `include`, a relation `select`, or `_count` | not filtered |
 
-Add `{ deletedAt: null }` to the `where` yourself for the operations that are not filtered.
+Every filtered operation accepts `deleted: 'without' | 'with' | 'only'`. A write whose `where` is empty stays a no-op: the plugin never turns `deleteMany({})` into "soft delete everything".
 
 ```ts
 await client.users.findMany(); // visible rows only
@@ -107,15 +106,21 @@ await client.users.delete({ where: { id: 1 } });
 // Record who deleted it (when deletedByColumn exists)
 await client.users.delete({ where: { id: 1 }, deletedBy: 'admin_42' });
 
+// Soft delete many rows; already deleted rows keep their timestamp
+await client.users.deleteMany({ where: { active: false } });
+
 // Force a real, physical delete
 await client.users.delete({ where: { id: 1 }, mode: 'hard' });
+
+// Purge rows that were soft deleted
+await client.users.deleteMany({ where: { id: { in: ids } }, mode: 'hard', deleted: 'only' });
 
 // Restore
 await client.users.restore({ where: { id: 1 } });
 await client.users.restoreById(1);
 ```
 
-A soft `delete()` runs an `update` of the same `where`, then returns the updated row (or `null`), so it still has `.throw()`. Its `where` is not filtered, so deleting an already deleted row sets a new timestamp.
+A soft `delete()` runs an `update` of the same `where` limited to live rows, then returns the updated row (or `null`), so it still has `.throw()`. A soft `deleteMany()` runs an `updateMany` and returns `{ count }` of the rows it marked. Deleting an already deleted row finds nothing and keeps the original timestamp.
 
 ## Behavior details
 
@@ -124,7 +129,7 @@ A soft `delete()` runs an `update` of the same `where`, then returns the updated
 - `restore()` and `restoreById()` exist only on tables with `column`. They set `column` (and `deletedByColumn`, when present) to `null` through `$withoutPlugins().update(...)`. Both accept `select`, `include`, and `meta`.
 - `restoreById(id)` matches the `id` column. Tables whose primary key is named differently should use `restore({ where })`.
 - The inner update runs through `$withoutPlugins()`, so other plugins (such as timestamps) do not see it. Client `beforeUpdate` / `afterUpdate` hooks still fire for it, before the delete hooks.
-- `mode: 'hard'` falls back to the built-in physical delete.
+- `mode: 'hard'` falls back to the built-in physical delete. It matches deleted and live rows alike unless the call passes `deleted`.
 
 <Callout title="Need a one-off hard delete elsewhere?">
 	Any delegate can bypass plugins for a single call with

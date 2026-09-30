@@ -6,23 +6,34 @@ seoTitle: 'Client API Reference - better()'
 seoDescription: 'API reference for better(), the Drizzle ORM client wrapper: options, plugins, hooks, raw SQL, $rawUnsafe, $withContext, extends, and exports.'
 ---
 
-```ts
-import { better } from 'better-drizzle';
+```ts title="relations.ts"
+import { defineRelations } from 'drizzle-orm';
+import * as schema from './schema';
 
-const client = better(db, options);
+export const relations = defineRelations(schema, (r) => ({
+	users: { posts: r.many.posts() },
+	posts: { author: r.one.users({ from: r.posts.authorId, to: r.users.id }) },
+}));
 ```
 
-`better(db, options)` wraps a Drizzle database instance and returns a fully typed client.
+```ts title="db.ts"
+import { better } from 'better-drizzle';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { relations } from './relations';
+
+const db = drizzle({ connection: process.env.DATABASE_URL!, relations });
+
+export const client = better(db, options); // options are optional: better(db)
+```
+
+`better(db, options?)` wraps a Drizzle database instance and returns a fully typed client. Tables and relations are read from the Drizzle instance (`db._.relations`), so it must be created with `relations`; use `defineRelations(schema)` without a callback when there are no relations. A Drizzle instance without tables makes `better()` throw `No tables found on the Drizzle instance. Pass your relations to drizzle(), e.g. drizzle({ client, relations: defineRelations(schema) }).`
+
+The client's type parameter is the relations config: `BetterDrizzleClient<typeof relations>`.
 
 ## Options
 
 <TypeTable
 	type={{
-		schema: {
-			description: 'The Drizzle schema object with all table definitions and relations.',
-			type: 'Schema',
-			required: true,
-		},
 		plugins: {
 			description: 'Plugins to extend the client. Run in array order.',
 			type: 'Plugin[]',
@@ -43,57 +54,10 @@ const client = better(db, options);
 			description: 'Row lock configuration, e.g. requiring locked reads to run inside transactions.',
 			type: '{ transactionsOnly?: boolean }',
 		},
-		relations: {
-			description: 'Many-to-many inference and ambiguity overrides (see below).',
-			type: 'RelationsOptions',
-		},
 	}}
 />
 
-### `relations` options
-
-better-drizzle infers a direct many-to-many relation whenever a junction table
-has exactly two required foreign-key relations and no other required columns.
-Use these options when your schema has more than one possible path.
-
-<TypeTable
-	type={{
-		inferManyToMany: {
-			description: 'Infer simple junction-table relations automatically. Set to false to require every many-to-many to be declared explicitly.',
-			type: 'boolean',
-			default: 'true',
-		},
-		manyToMany: {
-			description: 'Explicit junction relations used to resolve aliases or ambiguous paths.',
-			type: '{ through: string; left: { relation: string; name?: string }; right: { relation: string; name?: string } }[]',
-		},
-	}}
-/>
-
-```ts
-const client = better(db, {
-	schema,
-	relations: {
-		manyToMany: [
-			{
-				through: 'memberships',
-				left: { relation: 'user' },
-				right: { relation: 'group', name: 'groups' },
-			},
-		],
-	},
-});
-
-// `groups` is now a first-class relation on the user delegate
-const user = await client.users.findFirst({
-	where: { id: 1 },
-	include: { groups: { take: 10 } },
-});
-```
-
-Ambiguous paths fail with a structured error at use time instead of picking a
-junction silently. See [relations](/docs/querying/relations#many-to-many-relations) for
-the inference rules.
+Many-to-many relations are declared in `defineRelations` with `.through()`; see [relations](/docs/querying/relations#many-to-many-relations).
 
 ### `raw` options
 
@@ -167,7 +131,7 @@ See the full guide at [Client extensions](/docs/guides/client-extensions).
 `$rawUnsafe(query, params?, options?)` takes a plain SQL string. Use `?` placeholders for values: each one is replaced by the matching entry of `params` as a bound parameter, in order. It returns rows like `$raw`.
 
 ```ts
-const client = better(db, { schema, raw: { allowUnsafe: true } });
+const client = better(db, { raw: { allowUnsafe: true } });
 
 const rows = await client.$rawUnsafe(
 	'select id, name from users where id = ? and active = ?',
@@ -180,7 +144,7 @@ When `params` is non-empty and the number of `?` placeholders differs from `para
 
 ### Transaction clients
 
-The client passed to a `transaction(...)` callback also has `rollback(reason?)`, `afterCommit(cb)`, and `afterRollback(cb)`. See [transactions](/docs/advanced/transactions). The root client does not declare `afterCommit` / `afterRollback`; calling them on it at runtime throws `AFTER_COMMIT_OUTSIDE_TRANSACTION` / `AFTER_ROLLBACK_OUTSIDE_TRANSACTION`.
+The client passed to a `transaction(...)` callback also has `rollback(reason?)`, `afterCommit(cb)`, and `afterRollback(cb)`. See [transactions](/docs/advanced/transactions). The root client also exposes `afterCommit` / `afterRollback`, but outside an active transaction they throw `AFTER_COMMIT_OUTSIDE_TRANSACTION` / `AFTER_ROLLBACK_OUTSIDE_TRANSACTION`.
 
 ## Exports
 
@@ -215,8 +179,9 @@ enum OrderType {
 
 The library also exports its full type surface (`BetterDrizzleClient`, `BetterDrizzleModelDelegate`, `QueryArgs`, `WhereInput`, `Plugin`, hook context types, and more) for typing your own helpers.
 
-Every entrypoint re-exports the package `version`. Since `0.2.0` ships as a
-single package, these are always the same value:
+The root and individual plugin entrypoints export the package `version`. Since
+they ship in one package, these are always the same value. The
+`better-drizzle/plugins` authoring entrypoint exports `definePlugin` only:
 
 ```ts
 import { version } from 'better-drizzle';

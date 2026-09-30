@@ -6,7 +6,7 @@ seoTitle: 'Explain - Drizzle ORM Query Plans'
 seoDescription: 'Inspect SQL query plans for any Drizzle ORM read with .explain(): EXPLAIN ANALYZE on PostgreSQL, EXPLAIN QUERY PLAN on SQLite, and MySQL EXPLAIN.'
 ---
 
-Every read operation in Better Drizzle returns an **explainable result**: a normal promise with an extra `.explain()` method. Calling `.explain()` sends an `EXPLAIN` for the compiled SQL and returns the plan.
+Every read operation in Better Drizzle returns an **explainable result**: a lazy thenable, awaited like a promise, with an extra `.explain()` method. Calling `.explain()` sends an `EXPLAIN` for the compiled SQL and returns the plan.
 
 ## Basic usage
 
@@ -30,15 +30,17 @@ const plan = await db.execute(sql`EXPLAIN ${query}`);
 
 ## What runs, and when
 
-- Calling a read method starts the read right away, on the next microtask, whether or not you await it. `.explain()` does not delay or cancel it.
-- `.explain()` runs a separate `EXPLAIN` statement for each SQL statement the read would send. Query hooks do not run for it.
+- Read methods are lazy, like Drizzle's own query builders: calling one builds the read but runs nothing. The read, and its query hooks, run only when the result is awaited (or consumed through `then`, `catch`, `finally`, or `Promise.all`), and at most once. `.explain()` alone never runs the read.
+- `.explain()` runs only `EXPLAIN` statements for the SQL the read would send. Query hooks do not run for it. Cursor probes that depend on page contents appear as conditional statements; `.explain()` does not fetch the page to decide whether they will run.
 - A plain `EXPLAIN` (the default) only plans the statement. With `analyze: true`, PostgreSQL (`EXPLAIN (ANALYZE true)`) and MySQL (`EXPLAIN ANALYZE`) **execute** the statement to collect real timings. SQLite ignores `analyze`.
 
 ```ts
 const result = client.users.findMany({ where: { active: true } });
 
-// the read above has already been scheduled
+// nothing has run yet; this only plans the statements
 const { statements } = await result.explain();
+
+// the read runs here
 const users = await result;
 ```
 
@@ -49,7 +51,7 @@ const users = await result;
 
 ## Result shape
 
-`ExplainResult` contains four fields:
+`ExplainResult` contains four standard fields and an optional `deferredProbes` field:
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -57,6 +59,7 @@ const users = await result;
 | `operation` | `string` | The operation name (e.g. `"findMany"`, `"paginate"`) |
 | `statements` | `ExplainStatement[]` | One or more statement details |
 | `deferredRelations` | `object[]` | Relation queries from `include` / relation `select` that depend on root rows, so they are described but not explained |
+| `deferredProbes` | `{ key, reason }[]?` | Cursor probes whose SQL needs a returned page-edge row, so they cannot be explained without running the read |
 
 Each `deferredRelations` entry has `path`, `table`, `cardinality` (`'one' \| 'many'`), `filtered`, `sorted`, `paginated`, and `through` (the junction table, for many-to-many).
 
@@ -65,6 +68,7 @@ Each `ExplainStatement` contains:
 | Field | Type | Description |
 | --- | --- | --- |
 | `key` | `string` | Role of the statement: `"data"`, `"total"`, `"count"`, `"exists"`, `"probe:hasNext"`, `"probe:hasPrevious"` |
+| `condition` | `string?` | When present, describes when a cursor probe runs |
 | `sql` | `string` | The compiled SQL **without** the `EXPLAIN` prefix |
 | `params` | `unknown[]` | Bound parameter values |
 | `appliedOptions` | `Partial<ExplainOptions>` | Options the driver actually recognized |
@@ -86,7 +90,7 @@ console.log(result.statements.map((s) => s.key));
 // ["data", "total"]
 ```
 
-**`cursor`** includes an indexed existence check in the data query for simple primary-key pages. Empty pages and other query shapes may also need a `hasNext` / `hasPrevious` probe:
+**`cursor`** includes an indexed existence check in the data query for simple primary-key pages. An empty page may also need a `hasNext` / `hasPrevious` probe. The plan includes that probe with `condition: 'when the data page is empty'`, even if the page would be populated:
 
 ```ts
 const result = await client.users
@@ -98,8 +102,13 @@ const result = await client.users
 	.explain();
 
 console.log(result.statements.map((s) => s.key));
-// ["data"] for a populated primary-key page
+// ["data", "probe:hasPrevious"]
+
+console.log(result.statements[1].condition);
+// "when the data page is empty"
 ```
+
+For other cursor query shapes, the probe binds a cursor from the first or last returned row. `.explain()` reports it under `deferredProbes` instead of showing SQL with guessed parameters.
 
 ## Options
 
@@ -160,7 +169,6 @@ console.log(stmt.appliedOptions); // { analyze: true, verbose: true }
 
 ```ts
 const client = better(db, {
-	schema,
 	plugins: [forceActivePlugin], // injects { active: true } into every findMany
 });
 

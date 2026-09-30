@@ -59,15 +59,19 @@ const page = {
 };
 ```
 
-`paginate()` reads only three paging inputs:
+`paginate()` reads these paging inputs:
 
 | Input | Meaning |
 | --- | --- |
-| `limit` | page size, default `10` |
-| `take` | page size; wins over `limit` when both are set |
+| `page` | 1-based page number; computes `skip` and cannot be combined with it |
+| `perPage` / `limit` | page size, default `10` |
+| `take` | page size; wins over `perPage` and `limit` |
 | `skip` | rows to skip, default `0` |
 
-There is no `page` or `perPage` input: pass `skip: (page - 1) * perPage`.
+```ts
+const { data, pagination } = await client.users.paginate({ page: 3, perPage: 20 });
+```
+
 In the result, `perPage` is the resolved page size, `page` is
 `Math.floor(skip / perPage) + 1`, and `pageCount` is `0` when `total` is `0`.
 
@@ -155,6 +159,10 @@ by primary key ascending.
 	rows.
 </Callout>
 
+Cursor tokens include every column in `orderBy`. Pass the returned token unchanged
+and repeat the same `orderBy` for each page. Include a unique, non-null key such
+as the primary key to distinguish rows that share a sort value, including `NULL`.
+
 ## Pagination with projection
 
 Both helpers accept the same `select` / `include` as a normal read:
@@ -180,11 +188,11 @@ const {
 ```
 
 ```ts tab="Drizzle" tab-group="orm"
-import { count, desc, eq, getTableColumns } from 'drizzle-orm';
+import { count, desc, eq, getColumns } from 'drizzle-orm';
 
 const postsWithAuthor = () =>
 	db
-		.select({ ...getTableColumns(posts), author: getTableColumns(users) })
+		.select({ ...getColumns(posts), author: getColumns(users) })
 		.from(posts)
 		.leftJoin(users, eq(posts.authorId, users.id))
 		.orderBy(desc(posts.id));

@@ -60,7 +60,7 @@ await client.accounts.updateEach({
 });
 ```
 
-PostgreSQL, SQLite, and MySQL support atomic updates wherever the underlying write API is available. `upsertMany` itself remains unavailable on MySQL.
+PostgreSQL, SQLite, and MySQL support atomic updates in every write that accepts them, including `upsertMany`.
 
 ## Hooks
 
@@ -68,7 +68,6 @@ After an atomic write, post-write hooks receive a readonly `compiled` object con
 
 ```ts
 const client = better(db, {
-	schema,
 	hooks: {
 		afterUpdate({ compiled }) {
 			console.log(compiled);

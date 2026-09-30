@@ -15,7 +15,7 @@ const DEFAULT_UPDATED_AT = 'updatedAt';
 const withTimestamp = <T extends MutableRecord>(
 	data: T,
 	column: string,
-	value: Date,
+	value: Date | string,
 	enabled: boolean,
 ) => {
 	if (!enabled) return data;
@@ -77,6 +77,16 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 								return operation.data;
 
 							const now = new Date();
+							const createdValue = operation.model.columns[
+								createdAt
+							]?.dataType.startsWith('string')
+								? now.toISOString()
+								: now;
+							const updatedValue = operation.model.columns[
+								updatedAt
+							]?.dataType.startsWith('string')
+								? now.toISOString()
+								: now;
 
 							if (operation.kind === 'create') {
 								if (!isRecord(operation.data))
@@ -86,11 +96,11 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 									withTimestamp(
 										{ ...operation.data },
 										createdAt,
-										now,
+										createdValue,
 										hasCreatedAt,
 									),
 									updatedAt,
-									now,
+									updatedValue,
 									hasUpdatedAt,
 								);
 							}
@@ -116,11 +126,11 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 										withTimestamp(
 											{ ...row },
 											createdAt,
-											now,
+											createdValue,
 											hasCreatedAt,
 										),
 										updatedAt,
-										now,
+										updatedValue,
 										hasUpdatedAt,
 									);
 								}
@@ -149,11 +159,11 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 										withTimestamp(
 											{ ...row },
 											createdAt,
-											now,
+											createdValue,
 											hasCreatedAt,
 										),
 										updatedAt,
-										now,
+										updatedValue,
 										hasUpdatedAt,
 									);
 								}
@@ -210,7 +220,7 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 												)
 											: { ...update },
 										updatedAt,
-										now,
+										updatedValue,
 										hasUpdatedAt,
 									);
 									return result;
@@ -240,7 +250,7 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 										return withTimestamp(
 											base,
 											updatedAt,
-											now,
+											updatedValue,
 											hasUpdatedAt,
 										);
 									};
@@ -260,11 +270,11 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 										withTimestamp(
 											{ ...operation.data.create },
 											createdAt,
-											now,
+											createdValue,
 											hasCreatedAt,
 										),
 										updatedAt,
-										now,
+										updatedValue,
 										hasUpdatedAt,
 									)
 								: operation.data.create;
@@ -272,7 +282,7 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 								? withTimestamp(
 										{ ...operation.data.update },
 										updatedAt,
-										now,
+										updatedValue,
 										hasUpdatedAt,
 									)
 								: operation.data.update;
@@ -287,6 +297,11 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 								return operation.data;
 
 							const now = new Date();
+							const value = operation.model.columns[
+								updatedAt
+							]?.dataType.startsWith('string')
+								? now.toISOString()
+								: now;
 
 							if (operation.kind === 'updateEach') {
 								const args = operation.args as {
@@ -295,7 +310,7 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 
 								args.update = {
 									...(args.update ?? {}),
-									[updatedAt]: () => now,
+									[updatedAt]: () => value,
 								};
 								return operation.data;
 							}
@@ -306,7 +321,7 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 							return withTimestamp(
 								{ ...operation.data },
 								updatedAt,
-								now,
+								value,
 								true,
 							);
 						},

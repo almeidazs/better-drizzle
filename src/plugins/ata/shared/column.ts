@@ -26,7 +26,7 @@ export type ColumnSchema = {
 	 * whose element is undescribable: an array of `Date` is a valid array, and it
 	 * is each entry that has to be a `Date`.
 	 */
-	residueInArray?: boolean;
+	residueDimensions?: number;
 	/** The column accepts null. */
 	nullable: boolean;
 };
@@ -40,6 +40,20 @@ const RESIDUE_CHECK: Record<ResidueKind, (value: unknown) => boolean> = {
 /** The predicate for a residue kind, for a caller that has a value in hand. */
 export const checkResidue = (kind: ResidueKind, value: unknown): boolean =>
 	RESIDUE_CHECK[kind](value);
+
+export const invalidResiduePath = (
+	kind: ResidueKind,
+	value: unknown,
+	dimensions: number,
+): string | null => {
+	if (dimensions === 0) return checkResidue(kind, value) ? null : '';
+	if (!Array.isArray(value)) return '';
+	for (let index = 0; index < value.length; index++) {
+		const path = invalidResiduePath(kind, value[index], dimensions - 1);
+		if (path !== null) return `/${index}${path}`;
+	}
+	return null;
+};
 
 const sqlTypeIncludes = (column: AnyColumn, token: string) =>
 	column.getSQLType().toLowerCase().includes(token);
@@ -62,31 +76,37 @@ const withoutNull = (
 };
 
 /**
- * An array column's element is a column in its own right on the drizzle side,
- * reachable as `baseColumn`, so the schema for `text[]` is the schema for `text`
- * wrapped in an array. A residue on the element carries up: an array of `Date`
- * is as undescribable as one `Date`, and the predicate that judges it has to see
- * the array.
+ * Drizzle 1.x declares an array column as its element column with
+ * `dimensions`, so the schema for `text[]` is the schema for `text` wrapped in
+ * an array, read through a view of the column with one dimension fewer. A
+ * residue on the element carries up: an array of `Date` is as undescribable as
+ * one `Date`, and the predicate that judges it has to see the array.
  */
 const arraySchema = (
 	column: AnyColumn,
+	dimensions: number,
 	nullable: boolean,
-): ColumnSchema | null => {
-	const base = (column as { baseColumn?: AnyColumn }).baseColumn;
-	if (!base) return null;
-
-	const element = columnToSchema(base);
-	// drizzle's base column carries `notNull: false` because nothing sets it, not
-	// because the elements may be null. Its own inferred type says otherwise:
+): ColumnSchema => {
+	const element = columnToSchema(
+		Object.create(column, {
+			dimensions: { value: dimensions - 1 },
+			notNull: { value: true },
+		}) as AnyColumn,
+	);
+	// The array's nullability does not apply to its elements:
 	// `text('tags').array().notNull()` is `string[]`, and assigning
-	// `['x', null]` to it is a type error. So the element keeps its type and
-	// loses the nullability the base column never meant.
+	// `['x', null]` to it is a type error.
 	const schema = withNull(
 		{ items: withoutNull(element.schema), type: 'array' },
 		nullable,
 	);
 	return element.residue
-		? { nullable, residue: element.residue, residueInArray: true, schema }
+		? {
+				nullable,
+				residue: element.residue,
+				residueDimensions: dimensions,
+				schema,
+			}
 		: { nullable, schema };
 };
 
@@ -103,13 +123,8 @@ const stringSchema = (column: AnyColumn): Record<string, unknown> => {
 };
 
 const numberSchema = (column: AnyColumn): Record<string, unknown> => {
-	// numeric and decimal arrive as strings from every driver drizzle supports,
-	// which is what the zod plugin encodes too.
-	if (
-		sqlTypeIncludes(column, 'numeric') ||
-		sqlTypeIncludes(column, 'decimal')
-	)
-		return { type: 'string' };
+	// Only number-mode columns reach here: numeric/decimal in the default string
+	// mode have a `string` dataType and take the string branch.
 	return sqlTypeIncludes(column, 'int')
 		? { type: 'integer' }
 		: { type: 'number' };
@@ -124,6 +139,10 @@ const numberSchema = (column: AnyColumn): Record<string, unknown> => {
 export const columnToSchema = (column: AnyColumn): ColumnSchema => {
 	const nullable = !column.notNull;
 
+	// Before the scalar kinds, since an array of anything is an array first.
+	const dimensions = (column as { dimensions?: number }).dimensions ?? 0;
+	if (dimensions > 0) return arraySchema(column, dimensions, nullable);
+
 	const enumValues =
 		'enumValues' in column && Array.isArray(column.enumValues)
 			? column.enumValues
@@ -135,25 +154,36 @@ export const columnToSchema = (column: AnyColumn): ColumnSchema => {
 		return { nullable, schema: { enum: values } };
 	}
 
-	// Before the scalar kinds, since an array of anything is an array first.
-	if (column.dataType === 'array') {
-		const array = arraySchema(column, nullable);
-		if (array) return array;
-	}
+	// Drizzle 1.x spells dataType as `<type> <constraint>` (`number int32`,
+	// `object date`, `string uuid`).
+	const [type, constraint] = column.dataType.split(' ');
 
-	if (column.dataType === 'boolean')
+	if (type === 'boolean')
 		return { nullable, schema: withNull({ type: 'boolean' }, nullable) };
-	if (column.dataType === 'date')
-		return { nullable, residue: 'date', schema: {} };
-	if (column.dataType === 'bigint')
-		return { nullable, residue: 'bigint', schema: {} };
-	if (column.dataType === 'number')
+	if (type === 'object' && constraint === 'date')
+		return {
+			nullable,
+			residue: 'date',
+			schema: nullable ? {} : { not: { type: 'null' } },
+		};
+	if (type === 'bigint')
+		return {
+			nullable,
+			residue: 'bigint',
+			schema: nullable ? {} : { not: { type: 'null' } },
+		};
+	if (type === 'number')
 		return { nullable, schema: withNull(numberSchema(column), nullable) };
-	if (column.dataType === 'json') return { nullable, schema: {} };
-	if (column.dataType === 'buffer')
-		return { nullable, residue: 'buffer', schema: {} };
+	if (type === 'object' && constraint === 'json')
+		return { nullable, schema: {} };
+	if (type === 'object' && constraint === 'buffer')
+		return {
+			nullable,
+			residue: 'buffer',
+			schema: nullable ? {} : { not: { type: 'null' } },
+		};
 	if (
-		column.dataType === 'string' ||
+		type === 'string' ||
 		sqlTypeIncludes(column, 'text') ||
 		sqlTypeIncludes(column, 'char')
 	)
@@ -162,9 +192,17 @@ export const columnToSchema = (column: AnyColumn): ColumnSchema => {
 	// SQL-type fallbacks, for drivers whose dataType is less specific than the
 	// declared column. Same order as the zod plugin's.
 	if (sqlTypeIncludes(column, 'bigint'))
-		return { nullable, residue: 'bigint', schema: {} };
+		return {
+			nullable,
+			residue: 'bigint',
+			schema: nullable ? {} : { not: { type: 'null' } },
+		};
 	if (sqlTypeIncludes(column, 'timestamp') || sqlTypeIncludes(column, 'date'))
-		return { nullable, residue: 'date', schema: {} };
+		return {
+			nullable,
+			residue: 'date',
+			schema: nullable ? {} : { not: { type: 'null' } },
+		};
 	if (sqlTypeIncludes(column, 'bool'))
 		return { nullable, schema: withNull({ type: 'boolean' }, nullable) };
 	if (sqlTypeIncludes(column, 'int'))
@@ -173,7 +211,11 @@ export const columnToSchema = (column: AnyColumn): ColumnSchema => {
 	if (sqlTypeIncludes(column, 'uuid'))
 		return { nullable, schema: withNull(stringSchema(column), nullable) };
 	if (sqlTypeIncludes(column, 'blob') || sqlTypeIncludes(column, 'bytea'))
-		return { nullable, residue: 'buffer', schema: {} };
+		return {
+			nullable,
+			residue: 'buffer',
+			schema: nullable ? {} : { not: { type: 'null' } },
+		};
 
 	// Unknown to this classifier: accept, and let nothing be claimed about it.
 	// Declining to constrain is recoverable; constraining wrongly is not.

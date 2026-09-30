@@ -1,8 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 
 import { better } from 'better-drizzle';
-import { sql } from 'drizzle-orm';
-import { boolean, integer, pgTable, text } from 'drizzle-orm/pg-core';
+import { defineRelations, sql } from 'drizzle-orm';
+import {
+	bigint,
+	boolean,
+	integer,
+	numeric,
+	pgTable,
+	text,
+} from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 
 import { zod as betterZod } from '../../src/plugins/zod';
@@ -72,7 +79,6 @@ const createZodContext = () => {
 				},
 			}),
 		],
-		schema: base.schema,
 	});
 
 	return {
@@ -87,7 +93,10 @@ describe('better-drizzle/zod - PostgreSQL array update schemas', () => {
 			id: integer().primaryKey(),
 			tags: text().array(),
 		});
-		const registry = createZodSchemasRegistry({ users }, {});
+		const registry = createZodSchemasRegistry(
+			defineRelations({ users }),
+			{},
+		);
 		const schema = registry.get('users')?.schemas.update;
 		const upsertMany = registry.getUpsertManyArgsSchema('users');
 
@@ -153,9 +162,10 @@ describe('better-drizzle/zod - scalar atomic update schemas', () => {
 			balance: integer('balance').notNull(),
 			id: integer('id').primaryKey(),
 		});
-		const schema = createZodSchemasRegistry({ accounts }, {}).get(
-			'accounts',
-		)?.schemas.update;
+		const schema = createZodSchemasRegistry(
+			defineRelations({ accounts }),
+			{},
+		).get('accounts')?.schemas.update;
 
 		expect(
 			schema?.safeParse({
@@ -170,6 +180,21 @@ describe('better-drizzle/zod - scalar atomic update schemas', () => {
 		expect(schema?.safeParse({ active: { toggle: false } }).success).toBe(
 			false,
 		);
+	});
+});
+
+describe('better-drizzle/zod - PostgreSQL bigint schemas', () => {
+	test('accepts native bigint values without coercion', () => {
+		const counters = pgTable('zod_bigint_counters', {
+			id: integer('id').primaryKey(),
+			value: bigint('value', { mode: 'bigint' }).notNull(),
+		});
+		const schema = createZodSchemasRegistry(
+			defineRelations({ counters }),
+			{},
+		).get('counters')?.schemas.create;
+		expect(schema?.safeParse({ id: 1, value: 2n }).success).toBe(true);
+		expect(schema?.safeParse({ id: 1, value: '2' }).success).toBe(false);
 	});
 });
 
@@ -733,11 +758,13 @@ describe('better-drizzle/zod - query arg validation', () => {
 		const ctx = createZodContext();
 
 		await expect(
-			ctx.client.users.findMany({
-				orderBy: {
-					name: 'sideways',
-				} as never,
-			}),
+			Promise.resolve(
+				ctx.client.users.findMany({
+					orderBy: {
+						name: 'sideways',
+					} as never,
+				}),
+			),
 		).rejects.toThrow('Zod validation failed for query args');
 
 		const rows = await ctx.client.users.findMany({
@@ -768,15 +795,19 @@ describe('better-drizzle/zod - query arg validation', () => {
 		const ctx = createZodContext();
 
 		await expect(
-			ctx.client.users.findFirst({
-				orderBy: 'bad' as never,
-			}),
+			Promise.resolve(
+				ctx.client.users.findFirst({
+					orderBy: 'bad' as never,
+				}),
+			),
 		).rejects.toThrow('Zod validation failed for query args');
 
 		await expect(
-			ctx.client.users.findOne({
-				where: 'bad' as never,
-			}),
+			Promise.resolve(
+				ctx.client.users.findOne({
+					where: 'bad' as never,
+				}),
+			),
 		).rejects.toThrow('Zod validation failed for query args');
 
 		ctx.close();
@@ -786,9 +817,11 @@ describe('better-drizzle/zod - query arg validation', () => {
 		const ctx = createZodContext();
 
 		await expect(
-			ctx.client.users.findUnique({
-				where: 'bad' as never,
-			}),
+			Promise.resolve(
+				ctx.client.users.findUnique({
+					where: 'bad' as never,
+				}),
+			),
 		).rejects.toThrow('Zod validation failed for query args');
 
 		ctx.close();
@@ -798,9 +831,11 @@ describe('better-drizzle/zod - query arg validation', () => {
 		const ctx = createZodContext();
 
 		await expect(
-			ctx.client.users.paginate({
-				limit: '2' as never,
-			}),
+			Promise.resolve(
+				ctx.client.users.paginate({
+					limit: '2' as never,
+				}),
+			),
 		).rejects.toThrow('Zod validation failed for paginate args');
 
 		const page = await ctx.client.users.paginate({
@@ -822,11 +857,13 @@ describe('better-drizzle/zod - query arg validation', () => {
 		const ctx = createZodContext();
 
 		await expect(
-			ctx.client.users.cursor({
-				after: 1 as never,
-				limit: 2,
-				orderBy: [{ id: 'asc' }],
-			}),
+			Promise.resolve(
+				ctx.client.users.cursor({
+					after: 1 as never,
+					limit: 2,
+					orderBy: [{ id: 'asc' }],
+				}),
+			),
 		).rejects.toThrow('Zod validation failed for cursor args');
 
 		const page = await ctx.client.users.cursor({
@@ -844,15 +881,19 @@ describe('better-drizzle/zod - query arg validation', () => {
 		const ctx = createZodContext();
 
 		await expect(
-			ctx.client.users.count({
-				cursor: 'nope' as never,
-			}),
+			Promise.resolve(
+				ctx.client.users.count({
+					cursor: 'nope' as never,
+				}),
+			),
 		).rejects.toThrow('Zod validation failed for count args');
 
 		await expect(
-			ctx.client.users.exists({
-				cursor: 'nope' as never,
-			}),
+			Promise.resolve(
+				ctx.client.users.exists({
+					cursor: 'nope' as never,
+				}),
+			),
 		).rejects.toThrow('Zod validation failed for exists args');
 
 		expect(
@@ -1010,5 +1051,35 @@ describe('better-drizzle/zod - result validation', () => {
 
 		expect(Array.isArray(result)).toBe(true);
 		ctx.close();
+	});
+});
+
+describe('drizzle-orm 1.x numeric modes', () => {
+	const prices = pgTable('prices', {
+		amount: numeric('amount', { mode: 'number' }).notNull(),
+		id: integer('id').primaryKey(),
+		precise: numeric('precise').notNull(),
+	});
+	const schemas = () =>
+		createZodSchemasRegistry(defineRelations({ prices }), {}).get('prices')
+			?.schemas;
+
+	test('default numeric mode stays a string', () => {
+		const select = schemas()?.select;
+		const issues = (value: unknown) =>
+			select
+				?.safeParse(value)
+				.error?.issues.map((issue) => issue.path[0]) ?? [];
+		expect(issues({ amount: 1, id: 1, precise: '1.50' })).toEqual([]);
+		expect(issues({ amount: 1, id: 1, precise: 1.5 })).toEqual(['precise']);
+	});
+
+	// numeric({ mode: 'number' }) has dataType 'number' in drizzle-orm 1.x and
+	// returns a JS number.
+	test('numeric in number mode accepts numbers', () => {
+		const create = schemas()?.create;
+		expect(
+			create?.safeParse({ amount: 1.5, id: 1, precise: '1' }).success,
+		).toBe(true);
 	});
 });

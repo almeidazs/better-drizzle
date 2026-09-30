@@ -19,7 +19,9 @@ import type {
 
 type JsonbKeysFor<Schema extends AnySchema, Name extends TableKey<Schema>> = {
 	[K in ScalarKeysFor<Schema, Name>]: K extends keyof TableFor<Schema, Name>
-		? TableFor<Schema, Name>[K] extends { columnType: 'PgJsonb' }
+		? import('./utils').IsPgJsonColumn<
+				TableFor<Schema, Name>[K]
+			> extends true
 			? K
 			: never
 		: never;
@@ -28,7 +30,7 @@ type JsonbKeysFor<Schema extends AnySchema, Name extends TableKey<Schema>> = {
 type JsonbWhereField<T> =
 	| T
 	| import('./utils').ScalarFilter<T>
-	| import('./utils').JsonDottedWhereInput
+	| import('./utils').JsonDottedWhereInput<T>
 	| {
 			/** @deprecated Pass dotted JSON paths directly on the JSONB column. */
 			json: import('./utils').JsonWhereInput<T>;
@@ -219,6 +221,14 @@ export type SelectInput<
 	[K in RelationKeysFor<Schema, Name>]?: SelectRelationArg<Schema, Name, K>;
 };
 
+/** Scalar-only projection for native batch mutations. */
+export type ScalarSelectInput<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+> = SelectInput<Schema, Name> & {
+	[K in RelationKeysFor<Schema, Name>]?: never;
+};
+
 /**
  * Include projection for a query. Only relations are selectable here; scalar
  * columns are always included in the result when `include` is used.
@@ -304,7 +314,6 @@ export type OrderByInput<
  *
  * // Access in hooks
  * const db = better(drizzle, {
- *   schema,
  *   hooks: {
  *     beforeCreate(ctx) {
  *       console.log(ctx.meta); // { userId: 1, requestId: 'abc-123' }
@@ -401,7 +410,6 @@ export type LockOption<Schema extends AnySchema = AnySchema> =
  * @example
  * ```ts
  * const db = better(drizzle, {
- *   schema,
  *   locks: { transactionsOnly: true },
  * });
  * ```
@@ -606,8 +614,24 @@ type SelectedRelationPayload<
 			: never
 	]: RelationFor<Schema, Name, K> extends Many<string>
 		? RelationPayloadFromArg<Schema, Name, K, Select[K]>[]
-		: RelationPayloadFromArg<Schema, Name, K, Select[K]> | null;
+		: OneRelationPayload<
+				RelationFor<Schema, Name, K>,
+				Select[K],
+				RelationPayloadFromArg<Schema, Name, K, Select[K]>
+			>;
 };
+
+/**
+ * A one-relation payload is nullable unless Drizzle declares it with
+ * `optional: false` and the nested args do not filter it with `where`.
+ */
+type OneRelationPayload<Relation, Arg, Payload> = Relation extends {
+	optional: false;
+}
+	? Arg extends { where: object }
+		? Payload | null
+		: Payload
+	: Payload | null;
 
 type IncludedRelationPayload<
 	Schema extends AnySchema,
@@ -624,7 +648,11 @@ type IncludedRelationPayload<
 			: never
 	]: RelationFor<Schema, Name, K> extends Many<string>
 		? RelationPayloadFromArg<Schema, Name, K, Include[K]>[]
-		: RelationPayloadFromArg<Schema, Name, K, Include[K]> | null;
+		: OneRelationPayload<
+				RelationFor<Schema, Name, K>,
+				Include[K],
+				RelationPayloadFromArg<Schema, Name, K, Include[K]>
+			>;
 };
 
 type IncludedCountPayload<

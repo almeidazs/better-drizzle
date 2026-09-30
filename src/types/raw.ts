@@ -61,7 +61,6 @@ export type RawOptions<
  * @example
  * ```ts
  * const db = better(drizzle, {
- *   schema,
  *   raw: {
  *     enabled: true,
  *     allowUnsafe: true,
