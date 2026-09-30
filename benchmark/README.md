@@ -65,6 +65,10 @@ This suite is I/O bound: the cost is dominated by PostgreSQL planning, execution
 
 The raw side builds path updates with the same shared-prefix trie as the runtime, so both sides emit one `jsonb_set` per path-tree edge and normalize the same roots and ancestors. It also matches the repository operation's query count and result shape, including the count query used by `updateMany` and `updateEach`. These are real PostgreSQL mutation timings, useful for checking SQL and work parity. They are database-bound and should not be reported as wrapper-overhead claims.
 
+### Cache scope
+
+The general time/full/memory suites do not measure Redis cache hits, misses, or invalidation. `bun run bench:cache` adds ten cache workloads with complete result-parity checks: use `REDIS_URL` for real Redis, `CACHE_BENCH_VERIFY_ONLY=1` to skip timing, and `CACHE_BENCH_FILTER` to select a workload. Its Map modes measure local plugin and serialization costs, not Redis latency. Measure those against your database and Redis topology: a hit uses a store lookup; a miss adds SQL and an entry write, and missing dependency versions add a version-write batch before SQL. The Redis adapter uses `MGET` outside cluster mode, concurrent `GET`s in cluster mode, and concurrent `SET`s for version batches. The wrapper-overhead tables do not establish a cache speedup.
+
 ### Memory benchmark
 
 Measures heap and RSS overhead across batches of operations. It includes 2000 relation-count reads over 100 real seeded users, each with filtered post and comment counts, alongside single/mixed reads, writes, and transactions.
