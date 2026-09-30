@@ -50,8 +50,9 @@ await client.users.upsertMany({
 });
 ```
 
-- `updateMany`/`deleteMany` without `where` touch every row. The rules plugin can forbid that.
+- `updateMany`/`deleteMany` with no condition are no-ops returning `{ count: 0 }`. Write `where: sql\`1 = 1\`` to target every row on purpose.
 - `data` is returned only when the driver supports `RETURNING` (not MySQL).
+- `upsertMany` on MySQL (`ON DUPLICATE KEY UPDATE`): `target` must be the primary key or one unique key, rows cannot set another unique key, and `where` is rejected.
 - `updateEach` rejects duplicate `by` values and relation selects.
 
 ## Atomic updates

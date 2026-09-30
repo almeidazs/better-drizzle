@@ -592,7 +592,8 @@ const count = rows.length;
 - `target` is required: one column key (`'email'`) or an array of keys (`['tenantId', 'email']`)
 - `update` can be `'all'`, a column list, an object, or a function
 - `batchSize` chunks large inserts without changing the API. It must be a positive integer, otherwise the call throws `batchSize must be a positive integer.`
-- `where` is available for SQL-only conflict-update predicates
+- `where` is available for SQL-only conflict-update predicates (not on MySQL)
+- on MySQL it compiles to `ON DUPLICATE KEY UPDATE`, which fires on any unique key, so `target` must be the primary key or a unique key and rows cannot set another unique key; `data` is never returned there
 - relation `include` is intentionally not supported
 
 ## Projecting write results
@@ -623,5 +624,5 @@ const [user] = await db
 - Returning affected rows (`data`) depends on the driver supporting `RETURNING`.
 - `updateEach` is native-first - it generates a single `UPDATE ... CASE` statement instead of per-row loops.
 - `updateEach` rejects duplicate `by` values in the input data.
-- `upsertMany` is intentionally native-first and currently fails fast on unsupported dialects instead of degrading to slow per-row loops.
+- `upsertMany` is intentionally native-first and fails fast on shapes the dialect cannot express instead of degrading to slow per-row loops.
 - Need lifecycle behavior on writes - timestamps, soft delete, audit trails? That belongs in [plugins](/docs/plugins/overview) or [hooks](/docs/advanced/hooks), not duplicated per call.

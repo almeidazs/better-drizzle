@@ -98,7 +98,7 @@
     - callback form is the safer default when an extension method needs to reference the bound client instance
     - extensions must not override built-in or plugin-provided client keys; conflicts fail fast
 - **Pagination split**:
-    - `paginate()` is offset-only and returns `{ data, pagination: { type: "offset", page, perPage, total, pageCount, hasNext, hasPrevious } }`
+    - `paginate()` is offset-only; it takes `page` + `perPage` (sugar for `skip` + `limit`, `page` cannot be combined with `skip`) and returns `{ data, pagination: { type: "offset", page, perPage, total, pageCount, hasNext, hasPrevious } }`
     - `cursor()` is the cursor-based API and returns `{ data, pagination: { type: "cursor", hasNext, hasPrevious, nextCursor, previousCursor } }`
     - cursor pagination accepts `before` or `after`, never both, and returns raw cursor objects by default
     - `orderBy` accepts direction strings or `{ direction, nulls: "first" | "last" }`; PostgreSQL/SQLite use native NULL ordering and MySQL emulates non-default placement with `IS NULL`
@@ -165,6 +165,7 @@
     - `updateEach` is an update-oriented batch operation with its own plugin kind, but it still flows through `beforeUpdate` / `afterUpdate`
     - `src/plugins/rules` is intentionally runtime-only and hook-driven; it enforces only checks that can be inferred from current hook payloads and silently ignores unsupported rule types
     - `src/plugins/rules` accepts boolean rule settings as shorthand: `true` means `error`, `false` means `off`
+    - `src/plugins/soft-delete` filters every read and every update/delete with a `where` (`deleted` arg on each); `upsert`/`upsertMany` and relation loads stay unfiltered. Soft `delete`/`deleteMany` run in `beforeDelete` (before transforms), so they apply the visibility filter themselves. Writes with an empty `where` are core no-ops and must stay no-ops: the plugin only adds its filter when the original `where` has a condition. `mode: 'hard'` matches deleted rows unless `deleted` is passed
     - `src/plugins/soft-delete` writes ISO 8601 values for string-backed delete timestamp columns and `Date` values for Drizzle date columns; this preserves SQLite text-column compatibility while retaining native timestamp encoders
 - **Batch updateEach API**:
     - `updateEach` is native-first and performance-sensitive
@@ -176,6 +177,7 @@
     - it accepts `data`, explicit `target`, `update`, optional `select`, optional `batchSize`, and optional SQL `where`
     - it intentionally supports `select` but not relation `include`
     - unsupported dialect/feature combinations should fail fast instead of degrading to slow userland loops
+    - MySQL uses `ON DUPLICATE KEY UPDATE` with `values(col)` for excluded values; because it fires on any unique key, `assertMysqlUpsertTarget` requires the target to equal the primary key or one unique key and rejects rows that set, or static defaults that fill, another unique key. `where` is rejected and `count` is the number of rows sent (MySQL reports 2 per updated row)
 - **Error model**:
     - runtime-thrown library errors should use `BetterDrizzleError` from `src/shared/errors.ts`
     - `BetterDrizzleError` carries `message`, `status`, `code`, `driver`, and structured metadata such as `table`, `column`, `constraint`, `operation`, and `details`

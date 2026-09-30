@@ -114,17 +114,26 @@ A relation value can be `true` or a nested read-args object (with its own `where
 
 ## Pagination arguments
 
-`paginate` accepts everything above plus `limit`. Only `limit`, `take`, and `skip` control the page:
+`paginate` accepts everything above plus `page`, `perPage`, and `limit`:
 
 <TypeTable
 	type={{
+		page: {
+			description: '1-based page number. Computes `skip`; cannot be combined with it.',
+			type: 'number',
+		},
+		perPage: {
+			description: 'Rows per page. Alias of `limit`.',
+			type: 'number',
+			default: '10',
+		},
 		limit: {
 			description: 'Rows per page. Used when `take` is not set.',
 			type: 'number',
 			default: '10',
 		},
 		take: {
-			description: 'Rows per page. Wins over `limit` when both are set.',
+			description: 'Rows per page. Wins over `perPage` and `limit`.',
 			type: 'number',
 		},
 		skip: {
@@ -135,7 +144,7 @@ A relation value can be `true` or a nested read-args object (with its own `where
 	}}
 />
 
-There is no `page` or `perPage` input. It returns `{ data, pagination: { type, page, perPage, total, pageCount, hasNext, hasPrevious } }`, where `perPage` is the resolved page size and `page` is `Math.floor(skip / perPage) + 1`.
+It returns `{ data, pagination: { type, page, perPage, total, pageCount, hasNext, hasPrevious } }`, where `perPage` is the resolved page size and `page` is `Math.floor(skip / perPage) + 1`.
 
 `cursor` accepts everything above plus:
 

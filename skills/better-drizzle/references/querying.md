@@ -4,7 +4,7 @@ Docs: `/docs/querying/reads`, `/filters`, `/relations`, `/selecting-fields`, `/p
 
 ## Filters
 
-A bare value means `equals`. `undefined` values are ignored, so `{ where: { id: undefined } }` matches every row. Guard optional inputs or use the rules plugin's `noEmptyWhere`.
+A bare value means `equals`. `undefined` values are ignored: on reads, `{ where: { id: undefined } }` matches every row; on `update`/`updateMany`/`delete`/`deleteMany` an empty `where` is a no-op (`null` / `{ count: 0 }`). Guard optional inputs or use the rules plugin's `noEmptyWhere`.
 
 | Column | Operators |
 | --- | --- |
@@ -75,8 +75,8 @@ Only scalar columns of the queried table are allowed. There is no ordering by re
 const { data, pagination: { total, pageCount, hasNext } } = await client.users.paginate({
 	where: { active: true },
 	orderBy: { id: 'asc' },
-	limit: 25,
-	skip: 50, // page 3
+	page: 3,
+	perPage: 25, // or limit + skip; page cannot be combined with skip
 });
 
 const first = await client.users.cursor({ orderBy: { id: 'asc' }, limit: 20 });

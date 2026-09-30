@@ -116,9 +116,10 @@ Rejected calls throw `ARRAY_QUERY_UNSUPPORTED` or `ARRAY_MUTATION_UNSUPPORTED`. 
 | `create({ skipDuplicates: true })` | Yes | Yes | dialect-dependent |
 | `createMany({ skipDuplicates: true })` | Yes | Yes | dialect-dependent |
 | `skipDuplicates: ['column']` explicit targets | Yes | Yes | No |
-| `upsertMany` | Yes | Yes | No |
+| `upsertMany` | Yes | Yes | Yes, with a unique-key `target` |
+| `upsertMany` `where` | Yes | Yes | rejected |
 
-`upsertMany` is intentionally native-first and currently supported only on PostgreSQL and SQLite.
+`upsertMany` is native-first on every dialect. On MySQL it compiles to `ON DUPLICATE KEY UPDATE`, so the `target` must be the primary key or one unique key, and the rows cannot set another unique key. See [limitations](/docs/guides/limitations#upsertmany-is-native-first).
 
 ## Result projection support
 
@@ -127,7 +128,7 @@ Rejected calls throw `ARRAY_QUERY_UNSUPPORTED` or `ARRAY_MUTATION_UNSUPPORTED`. 
 | `select` on reads | Yes | Yes | Yes |
 | `include` on reads | Yes | Yes | Yes |
 | `select` / `include` on single-row writes | Yes | Yes | Yes |
-| `select` on `upsertMany` | Yes | Yes | No support because `upsertMany` itself is unsupported |
+| `select` on `upsertMany` | Yes | Yes | No `RETURNING`: only `count` |
 | relation `include` on `upsertMany` | No | No | No |
 
 ## Raw SQL options

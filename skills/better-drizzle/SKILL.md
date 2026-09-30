@@ -41,7 +41,7 @@ export const client = better(db); // or better(db, { plugins, hooks, raw, locks,
 | `findMany` | `where`, `select`\|`include`, `orderBy`, `take`, `skip`, `cursor`, `lock` | `Row[]` |
 | `findFirst` / `findOne` / `findUnique` | same | `Row \| null`, `.throw()` for not-found |
 | `count` / `exists` | `where`, `cursor` | `number` / `boolean` |
-| `paginate` | read args + `limit` (default 10) or `take`, `skip` | `{ data, pagination: { page, perPage, total, pageCount, hasNext, hasPrevious } }` |
+| `paginate` | read args + `page`, `perPage` (default 10), or `limit`/`take` + `skip` | `{ data, pagination: { page, perPage, total, pageCount, hasNext, hasPrevious } }` |
 | `cursor` | read args + `limit`, `after` **or** `before` | `{ data, pagination: { hasNext, hasPrevious, nextCursor, previousCursor } }` |
 | `create` / `createMany` | `data`, `skipDuplicates`, `select`\|`include` | `Row` (`null` if skipped) / `{ count, data? }` |
 | `update` / `delete` | `where`, `data`, `select`\|`include` | `Row \| null`, `.throw()` |
@@ -56,7 +56,7 @@ Every call accepts `meta`. Client: `transaction`, `$withContext(meta)`, `$raw`, 
 
 - Reads are **lazy thenables**: nothing runs until awaited, and a read runs once. `.explain()` never runs the read. In Bun/Jest matchers, wrap with `Promise.resolve(read)` before `.resolves`/`.rejects`.
 - `select` and `include` are mutually exclusive at every level. `_count` exists only inside `include`.
-- `paginate` has no `page`/`perPage` input: page with `limit` + `skip`. `cursor` takes `after` or `before`, never both.
+- `paginate` takes `page` + `perPage` (or `limit` + `skip`, never `page` with `skip`). `cursor` takes `after` or `before`, never both.
 - Unknown keys in `where`/`data`/`select`/`include`/`orderBy` are compile errors. Fix the key; do not cast.
 - Locks (`lock`) are PostgreSQL/MySQL only and reject `include`/relation `select`, except a single to-one `include` that `where` also filters with `is`.
 - Many-to-many needs `.through()` in `defineRelations`; junctions are never inferred. Relations with a relation-level `where`, or `one` relations through a junction, throw `cannot be loaded`.

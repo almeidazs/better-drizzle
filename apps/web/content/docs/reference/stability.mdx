@@ -70,8 +70,8 @@ When a dialect cannot support a feature safely or honestly, the project prefers:
 2. explicit unsupported behavior with a structured [error](/docs/reference/errors)
 
 It does **not** prefer hidden userland fallbacks that materially change
-performance or semantics without saying so. `upsertMany` on MySQL and row
-[locks](/docs/advanced/locks) on SQLite fail fast for exactly this reason.
+performance or semantics without saying so. An `upsertMany` target MySQL cannot honor
+and row [locks](/docs/advanced/locks) on SQLite fail fast for exactly this reason.
 
 ## Release notes
 
