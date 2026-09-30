@@ -1139,7 +1139,17 @@ export const runPluginTransactionHooks = async <
 					? bucket.afterRollbackHooks
 					: bucket.errorHooks;
 
-	for (const hook of hooks) await hook(payload);
+	let failed = false;
+	let firstError: unknown;
+	for (const hook of hooks)
+		try {
+			await hook(payload);
+		} catch (error) {
+			if (hookName !== 'afterTransactionCommit') throw error;
+			if (!failed) firstError = error;
+			failed = true;
+		}
+	if (failed) throw firstError;
 };
 
 export const runPluginRawHooks = async <
@@ -1159,7 +1169,17 @@ export const runPluginRawHooks = async <
 				? bucket.afterHooks
 				: bucket.errorHooks;
 
-	for (const hook of hooks) await hook(payload);
+	let failed = false;
+	let firstError: unknown;
+	for (const hook of hooks)
+		try {
+			await hook(payload);
+		} catch (error) {
+			if (hookName !== 'afterRaw') throw error;
+			if (!failed) firstError = error;
+			failed = true;
+		}
+	if (failed) throw firstError;
 };
 
 /**

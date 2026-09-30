@@ -339,6 +339,92 @@ describe('transactions', () => {
 		ctx.close();
 	});
 
+	test('commit observers and callbacks all run and preserve the first error', async () => {
+		const calls: string[] = [];
+		const firstError = new Error('client commit observer failed');
+		const ctx = createContext({
+			hooks: {
+				afterTransactionCommit() {
+					calls.push('client');
+					throw firstError;
+				},
+				afterTransactionRollback() {
+					calls.push('rollback');
+				},
+			},
+			plugins: [
+				definePlugin({
+					id: 'failing-commit-observer',
+					hooks: {
+						afterTransactionCommit() {
+							calls.push('plugin-1');
+							throw new Error('plugin failed');
+						},
+					},
+				}),
+				definePlugin({
+					id: 'remaining-commit-observer',
+					hooks: {
+						afterTransactionCommit() {
+							calls.push('plugin-2');
+						},
+					},
+				}),
+			],
+		});
+		await expect(
+			ctx.client.transaction(async (tx) => {
+				tx.afterCommit(() => {
+					calls.push('callback-1');
+					throw new Error('callback failed');
+				});
+				tx.afterCommit(() => {
+					calls.push('callback-2');
+				});
+				await tx.users.create({
+					data: { id: 1, email: 'a@test.com', name: 'Alice' },
+				});
+			}),
+		).rejects.toBe(firstError);
+		expect(calls).toEqual([
+			'client',
+			'plugin-1',
+			'plugin-2',
+			'callback-1',
+			'callback-2',
+		]);
+		expect(await ctx.client.users.count()).toBe(1);
+		ctx.close();
+	});
+
+	test('released savepoint retains commit callbacks when its observer throws', async () => {
+		const calls: string[] = [];
+		const ctx = createContext({
+			hooks: {
+				afterTransactionCommit(hook) {
+					if (hook.depth === 2)
+						throw new Error('nested observer failed');
+				},
+			},
+		});
+		await ctx.client.transaction(async (tx) => {
+			await expect(
+				tx.transaction(async (nested) => {
+					nested.afterCommit(() => {
+						calls.push('nested');
+					});
+					await nested.users.create({
+						data: { id: 1, email: 'a@test.com', name: 'Alice' },
+					});
+				}),
+			).rejects.toThrow('nested observer failed');
+			expect(calls).toEqual([]);
+		});
+		expect(calls).toEqual(['nested']);
+		expect(await ctx.client.users.count()).toBe(1);
+		ctx.close();
+	});
+
 	test('afterRollback only runs on rollback', async () => {
 		const calls: string[] = [];
 		const ctx = createContext();
