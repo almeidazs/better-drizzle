@@ -7,8 +7,8 @@ import {
 	test,
 } from 'bun:test';
 
-import { DrizzleQueryError, defineRelations } from 'drizzle-orm';
-import { int, mysqlTable, varchar } from 'drizzle-orm/mysql-core';
+import { DrizzleQueryError, defineRelations, sql } from 'drizzle-orm';
+import { int, mysqlTable, serial, varchar } from 'drizzle-orm/mysql-core';
 import { drizzle } from 'drizzle-orm/mysql2';
 import mysql from 'mysql2/promise';
 
@@ -34,7 +34,13 @@ const counters = mysqlTable('better_drizzle_v1_counters', {
 	value: int('value').notNull(),
 });
 
-const relations = defineRelations({ counters, members });
+const tags = mysqlTable('better_drizzle_v1_tags', {
+	id: serial('id').primaryKey(),
+	label: varchar('label', { length: 255 }).notNull(),
+	slug: varchar('slug', { length: 255 }).notNull().unique(),
+});
+
+const relations = defineRelations({ counters, members, tags });
 
 const MYSQL_URL = process.env.MYSQL_URL;
 
@@ -58,7 +64,7 @@ describe.skipIf(!MYSQL_URL)('Drizzle 1.x migration (MySQL)', () => {
 			uri: MYSQL_URL,
 		});
 		await connection.query(`
-			drop table if exists better_drizzle_v1_members, better_drizzle_v1_counters;
+			drop table if exists better_drizzle_v1_members, better_drizzle_v1_counters, better_drizzle_v1_tags;
 			create table better_drizzle_v1_members (
 				id int primary key,
 				email varchar(255) not null unique,
@@ -67,6 +73,11 @@ describe.skipIf(!MYSQL_URL)('Drizzle 1.x migration (MySQL)', () => {
 			create table better_drizzle_v1_counters (
 				id int primary key,
 				value int not null
+			);
+			create table better_drizzle_v1_tags (
+				id serial primary key,
+				slug varchar(255) not null unique,
+				label varchar(255) not null
 			);
 		`);
 		db = drizzle({ client: connection, mode: 'default', relations });
@@ -77,6 +88,8 @@ describe.skipIf(!MYSQL_URL)('Drizzle 1.x migration (MySQL)', () => {
 		await connection.query(`
 			delete from better_drizzle_v1_members;
 			delete from better_drizzle_v1_counters;
+			delete from better_drizzle_v1_tags;
+			insert into better_drizzle_v1_tags (slug, label) values ('orm', 'ORM');
 			insert into better_drizzle_v1_members (id, email, name) values
 				(1, 'alice@example.com', 'Alice'),
 				(2, 'bob@example.com', 'Bob');
@@ -86,7 +99,7 @@ describe.skipIf(!MYSQL_URL)('Drizzle 1.x migration (MySQL)', () => {
 
 	afterAll(async () => {
 		await connection?.query(
-			'drop table if exists better_drizzle_v1_members, better_drizzle_v1_counters',
+			'drop table if exists better_drizzle_v1_members, better_drizzle_v1_counters, better_drizzle_v1_tags',
 		);
 		await connection?.end();
 	});
@@ -187,5 +200,81 @@ describe.skipIf(!MYSQL_URL)('Drizzle 1.x migration (MySQL)', () => {
 		);
 		expect(wrapped).toBeInstanceOf(BetterDrizzleError);
 		expect(isUniqueViolation(wrapped)).toBe(true);
+	});
+
+	test('upsertMany uses ON DUPLICATE KEY UPDATE on the primary key', async () => {
+		const result = await client.counters.upsertMany({
+			data: [
+				{ id: 1, value: 99 },
+				{ id: 2, value: 5 },
+			],
+			target: ['id'],
+			update: ({ excluded }) => ({ value: excluded.value }),
+		});
+
+		expect(result).toEqual({ count: 2 });
+		expect(
+			await client.counters.findMany({ orderBy: { id: 'asc' } }),
+		).toEqual([
+			{ id: 1, value: 99 },
+			{ id: 2, value: 5 },
+		]);
+	});
+
+	test('upsertMany targets a unique key next to an auto-increment id', async () => {
+		await client.tags.upsertMany({
+			data: [
+				{ label: 'Object-relational mapping', slug: 'orm' },
+				{ label: 'SQL', slug: 'sql' },
+			],
+			target: ['slug'],
+			update: ['label'],
+		});
+
+		const rows = await client.tags.findMany({ orderBy: { slug: 'asc' } });
+		expect(rows.map(({ label, slug }) => ({ label, slug }))).toEqual([
+			{ label: 'Object-relational mapping', slug: 'orm' },
+			{ label: 'SQL', slug: 'sql' },
+		]);
+	});
+
+	test('upsertMany rejects targets MySQL cannot honor', async () => {
+		const notUnique = await captureError(() =>
+			client.members.upsertMany({
+				data: [{ email: 'alice@example.com', id: 1, name: 'A' }],
+				target: ['name'],
+				update: ['email'],
+			}),
+		);
+		expect((notUnique as Error).message).toBe(
+			'upsertMany target must be the primary key or a unique key on MySQL.',
+		);
+
+		// rows set id, the primary key, so a collision there would update Alice
+		const otherKey = await captureError(() =>
+			client.members.upsertMany({
+				data: [{ email: 'new@example.com', id: 1, name: 'Intruder' }],
+				target: ['email'],
+				update: ['name'],
+			}),
+		);
+		expect((otherKey as Error).message).toContain(
+			'another unique key can match',
+		);
+
+		const withWhere = await captureError(() =>
+			client.counters.upsertMany({
+				data: [{ id: 1, value: 1 }],
+				target: ['id'],
+				update: ['value'],
+				where: sql`1 = 1`,
+			}),
+		);
+		expect((withWhere as Error).message).toBe(
+			'upsertMany where is not supported on MySQL.',
+		);
+		expect(
+			await client.members.findUnique({ where: { id: 1 } }),
+		).toMatchObject({ name: 'Alice' });
 	});
 });

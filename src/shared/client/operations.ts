@@ -818,23 +818,17 @@ const getTargetColumns = <Schema extends AnySchema, Meta>(
 		});
 	}
 
-	if (context.dialect === 'mysql')
-		throw new BetterDrizzleError({
-			code: BetterDrizzleErrorCode.OperationError,
-			details: { target: targets },
-			message: 'upsertMany is only supported on PostgreSQL and SQLite.',
-			operation: 'upsertMany',
-			table: runtime.dbName,
-		});
-
 	return columns;
 };
 
-const getExcludedReference = (column: AnyColumn) =>
-	sql`${sql.identifier('excluded')}.${sql.identifier(column.name)}`;
+const getExcludedReference = (column: AnyColumn, dialect: string) =>
+	dialect === 'mysql'
+		? sql`values(${sql.identifier(column.name)})`
+		: sql`${sql.identifier('excluded')}.${sql.identifier(column.name)}`;
 
 const getUpsertManyUpdateContext = <Schema extends AnySchema>(
 	runtime: TableRuntime,
+	dialect: string,
 ) => {
 	const excluded = Object.create(null) as Record<string, SQL>;
 	const table = Object.create(null) as Record<string, AnyColumn>;
@@ -843,7 +837,7 @@ const getUpsertManyUpdateContext = <Schema extends AnySchema>(
 		const column = runtime.columns[key];
 		if (!column) continue;
 
-		excluded[key] = getExcludedReference(column);
+		excluded[key] = getExcludedReference(column, dialect);
 		table[key] = column;
 	}
 
@@ -898,6 +892,7 @@ const buildUpsertManySet = <Schema extends AnySchema, Meta>(
 	runtime: TableRuntime,
 	args: UpsertManyArgs<Schema, BetterTableKey<Schema>, Meta>,
 	targetColumns: AnyColumn[],
+	dialect: string,
 ) => {
 	const targetNames = new Set(targetColumns.map((column) => column.name));
 
@@ -908,7 +903,7 @@ const buildUpsertManySet = <Schema extends AnySchema, Meta>(
 			const column = runtime.columns[key];
 			if (!column || targetNames.has(column.name)) continue;
 
-			result[key] = getExcludedReference(column);
+			result[key] = getExcludedReference(column, dialect);
 		}
 
 		return result;
@@ -928,7 +923,7 @@ const buildUpsertManySet = <Schema extends AnySchema, Meta>(
 					table: runtime.dbName,
 				});
 
-			result[key] = getExcludedReference(column);
+			result[key] = getExcludedReference(column, dialect);
 		}
 
 		return result;
@@ -937,7 +932,7 @@ const buildUpsertManySet = <Schema extends AnySchema, Meta>(
 	if (typeof args.update === 'function')
 		return validateUpsertManyUpdateObject(
 			runtime,
-			args.update(getUpsertManyUpdateContext<Schema>(runtime)),
+			args.update(getUpsertManyUpdateContext<Schema>(runtime, dialect)),
 		);
 
 	return validateUpsertManyUpdateObject(
@@ -1289,6 +1284,68 @@ const hasOtherMysqlUniqueKey = (runtime: TableRuntime) => {
 		config.uniqueConstraints.length > 0 ||
 		config.indexes.some((index) => index.config.unique)
 	);
+};
+
+/**
+ * MySQL's ON DUPLICATE KEY UPDATE fires on any unique key, not on a chosen
+ * target. The native batch path is only safe when the target is one of the
+ * table's unique keys and no other unique key can collide: none of its
+ * columns is set by the rows or filled by a static default.
+ */
+const assertMysqlUpsertTarget = (
+	runtime: TableRuntime,
+	targetColumns: AnyColumn[],
+	rows: readonly Record<string, unknown>[],
+) => {
+	const config = getMysqlTableConfig(runtime.table as never);
+	const keys: unknown[][] = runtime.primaryKey.length
+		? [runtime.primaryKey]
+		: [];
+	for (const column of config.columns)
+		if (column.isUnique) keys.push([column]);
+	for (const constraint of config.uniqueConstraints)
+		keys.push(constraint.columns);
+	for (const index of config.indexes)
+		if (index.config.unique) keys.push(index.config.columns);
+
+	const isTarget = (key: unknown[]) =>
+		key.length === targetColumns.length &&
+		key.every((column) => targetColumns.includes(column as AnyColumn));
+	const fail = (message: string, details?: Record<string, unknown>) => {
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			details: {
+				target: targetColumns.map((column) => column.name),
+				...details,
+			},
+			message,
+			operation: 'upsertMany',
+			table: runtime.dbName,
+		});
+	};
+
+	if (!keys.some(isTarget))
+		fail(
+			'upsertMany target must be the primary key or a unique key on MySQL.',
+		);
+
+	for (const key of keys) {
+		if (isTarget(key)) continue;
+		for (const column of key) {
+			const field = Object.keys(runtime.columns).find(
+				(name) => runtime.columns[name] === column,
+			);
+			if (
+				!field ||
+				(column as AnyColumn).default !== undefined ||
+				rows.some((row) => row[field] !== undefined)
+			)
+				fail(
+					`upsertMany on MySQL cannot target (${targetColumns.map((target) => target.name).join(', ')}) while another unique key can match: ON DUPLICATE KEY UPDATE would update the row that key matches.`,
+					{ column: field ?? String(column) },
+				);
+		}
+	}
 };
 
 const getPrimaryKeyTarget = (runtime: TableRuntime) =>
@@ -2210,7 +2267,12 @@ const upsertManyChunk = async <Schema extends AnySchema, Meta>(
 		runtime,
 		args.select as Record<string, unknown> | undefined,
 	);
-	const update = buildUpsertManySet(runtime, args, targetColumns);
+	const update = buildUpsertManySet(
+		runtime,
+		args,
+		targetColumns,
+		context.dialect,
+	);
 	const set = compileUpdateMutations(
 		runtime,
 		context.dialect,
@@ -2229,6 +2291,23 @@ const upsertManyChunk = async <Schema extends AnySchema, Meta>(
 		});
 
 	const builder = context.db.insert(runtime.table).values(args.data);
+	if (context.dialect === 'mysql') {
+		if (args.where)
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.OperationError,
+				message: 'upsertMany where is not supported on MySQL.',
+				operation: 'upsertMany',
+				table: runtime.dbName,
+			});
+		assertMysqlUpsertTarget(
+			runtime,
+			targetColumns,
+			args.data as readonly Record<string, unknown>[],
+		);
+		// MySQL reports 1 per insert and 2 per update, so count the rows sent.
+		await builder.onDuplicateKeyUpdate({ set });
+		return { count: args.data.length };
+	}
 	if (typeof builder.onConflictDoUpdate !== 'function')
 		throw new BetterDrizzleError({
 			code: BetterDrizzleErrorCode.OperationError,
