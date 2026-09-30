@@ -5,7 +5,7 @@ Only for changes inside the better-drizzle repository. `AGENTS.md` at the repo r
 ## Layout
 
 - `src/shared/client/operations.ts`, `src/shared/query/compiler.ts`, and `src/shared/client/context.ts` are the hot paths. Keep them free of new helpers, object spreads, and extra allocations unless a benchmark shows the gain.
-- `src/types/*`: the public type surface (`*.type-test.ts` files guard it).
+- `src/types/*`: the public type surface.
 - `src/plugins/*`: official plugins, published as `better-drizzle/<name>` subpaths.
 - `tests/core/*.test.ts` run on SQLite. `*.pg.test.ts` needs `DATABASE_URL` and `*.mysql.test.ts` needs `MYSQL_URL`. Without them, those suites skip.
 - `apps/web/content/docs`: the docs site. `README.md` must stay in sync with user-facing changes.
