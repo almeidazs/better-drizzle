@@ -5,6 +5,10 @@
 		"moduleResolution": "bundler",
 		"paths": {
 			"better-drizzle": ["./src/index.ts"],
+			"better-drizzle/cache": ["./src/plugins/cache/index.ts"],
+			"better-drizzle/cache/redis": [
+				"./src/plugins/cache/redis/index.ts"
+			],
 			"better-drizzle/plugins": ["./src/plugins/index.ts"],
 			"better-drizzle/rules": ["./src/plugins/rules/index.ts"],
 			"better-drizzle/soft-delete": [
