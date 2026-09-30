@@ -81,6 +81,8 @@ type HookBaseContext<
 	action: Action;
 	afterCommit(callback: () => unknown | Promise<unknown>): void;
 	afterRollback(callback: () => unknown | Promise<unknown>): void;
+	/** Values recorded by plugin intercepts; set on after hooks only. */
+	annotations?: Readonly<Record<string, unknown>>;
 	args: Args;
 	db: unknown;
 	isInTransaction: boolean;

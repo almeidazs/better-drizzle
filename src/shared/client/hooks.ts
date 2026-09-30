@@ -13,6 +13,7 @@ import type {
 } from '../../types';
 import { BetterDrizzleError, BetterDrizzleErrorCode } from '../errors';
 import { getMeta } from './context';
+import type { InterceptState } from './plugins';
 
 const HOOK_ERROR_REPORTED = Symbol('better-drizzle-hook-error-reported');
 
@@ -221,6 +222,7 @@ export const executeOperation = async <
 	beforeHookName,
 	beforePayload,
 	context,
+	interception,
 	operation,
 	runtime,
 	tableName,
@@ -232,6 +234,7 @@ export const executeOperation = async <
 	beforeHookName?: keyof BetterClientHooks<Schema, Meta, Plugins>;
 	beforePayload?: () => unknown;
 	context: RuntimeContext<Schema, Meta, Plugins>;
+	interception?: InterceptState;
 	operation: () => Promise<Result>;
 	runtime: TableRuntime;
 	tableName: string;
@@ -257,7 +260,12 @@ export const executeOperation = async <
 
 		const result = await operation();
 
-		if (afterHookName && afterHook && afterPayload)
+		if (
+			afterHookName &&
+			afterHook &&
+			afterPayload &&
+			!interception?.skipAfterHooks
+		)
 			await runHook(
 				afterHook as (payload: unknown) => unknown,
 				context,
@@ -266,7 +274,12 @@ export const executeOperation = async <
 				action,
 				args,
 				afterHookName,
-				afterPayload(result),
+				interception?.annotations
+					? {
+							...(afterPayload(result) as object),
+							annotations: interception.annotations,
+						}
+					: afterPayload(result),
 			);
 
 		return result;

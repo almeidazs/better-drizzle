@@ -1,0 +1,339 @@
+---
+title: Cache
+description: Cache opted-in reads in Redis. Keys, serialization, and invalidation after writes are handled for you.
+icon: DatabaseZap
+seoTitle: 'Cache Plugin for Drizzle ORM with Redis'
+seoDescription: 'Cache Drizzle ORM reads in Redis with better-drizzle: per-query opt-in, automatic invalidation after writes and commits, tags, and tenant-safe keys.'
+---
+
+`better-drizzle/cache` caches the reads you opt into. The plugin builds automatic keys from the final query, and observed writes invalidate declared dependencies. Inside a transaction, invalidation waits until the transaction commits. `better-drizzle/cache/redis` is the store.
+
+## Install
+
+<Tabs items={['npm', 'pnpm', 'yarn', 'bun']}>
+
+<Tab value="npm">
+
+```bash
+npm install better-drizzle
+```
+
+</Tab>
+
+<Tab value="pnpm">
+
+```bash
+pnpm add better-drizzle
+```
+
+</Tab>
+
+<Tab value="yarn">
+
+```bash
+yarn add better-drizzle
+```
+
+</Tab>
+
+<Tab value="bun">
+
+```bash
+bun add better-drizzle
+```
+
+</Tab>
+
+</Tabs>
+
+The Redis store drives the client your app already has, so the package adds no Redis dependency. Supported clients are Bun's `RedisClient`, `ioredis`, and `node-redis`. The store never opens or closes connections.
+
+## Usage
+
+```ts
+import { better } from 'better-drizzle';
+import { cache } from 'better-drizzle/cache';
+import { redis } from 'better-drizzle/cache/redis';
+
+import Redis from 'ioredis';
+
+const client = better(db, {
+	plugins: [cache({ store: redis({ client: new Redis(process.env.REDIS_URL!) }), ttl: '5m' })],
+});
+```
+
+```ts tab="better-drizzle" tab-group="orm"
+const user = await client.users.findUnique({ where: { id }, cache: true });
+
+await client.users.update({ where: { id }, data: { name } });
+// The next findUnique misses and reads the fresh row.
+```
+
+```ts tab="Drizzle" tab-group="orm"
+const key = `users:${id}`;
+const cached = await redis.get(key);
+
+const user = cached
+	? JSON.parse(cached) // Dates and bigints come back as strings
+	: ((await db.select().from(users).where(eq(users.id, id)))[0] ?? null);
+
+if (!cached) await redis.set(key, JSON.stringify(user), 'EX', 300);
+
+await db.update(users).set({ name }).where(eq(users.id, id));
+
+await redis.del(key); // and every list, count, and page that contains this user
+```
+
+## Turning caching on
+
+Caching is off by default. A read uses the cache in one of three cases:
+
+1. The call passes `cache` (anything except `false`).
+2. Its model is enabled under `models` and the call does not pass `cache: false`.
+3. The plugin has `enabled: true` and neither the model nor the call disables it.
+
+```ts
+await client.users.findMany({ cache: true }); // defaults
+await client.users.findMany({ cache: { ttl: '30s', tags: ['feed'] } }); // per-call settings
+await client.users.findFirst({ cache: 'newest-user', orderBy: { id: 'desc' } }); // custom key
+await client.posts.findMany({ cache: false }); // opt out of a model default
+```
+
+Every read accepts `cache`: `findMany`, `findFirst`, `findOne`, `findUnique`, `count`, `exists`, `paginate`, and `cursor`. `paginate` and `cursor` cache the whole `{ data, pagination }` result, so `total` and the navigation flags come from the cache too.
+
+## When to use it, and when not to
+
+The cache pays off when the same read runs often, its result changes rarely, and every write to its tables goes through `client`. Typical fits:
+
+- lookups by primary key on rows that are read far more than written (users, products, settings, feature flags)
+- lists and counts behind public or dashboard pages that many requests share
+- reference data that almost never changes (countries, plans, categories)
+
+Leave it off, or pass `cache: false`, in these cases:
+
+- **Writes happen outside `client`.** Another service, a raw Drizzle call on `db`, a database trigger, a migration, or a job in another language changes the table. The plugin never sees those writes, so entries stay stale until their TTL unless you call `$cache.invalidate()`.
+- **The table is write-heavy.** Every write to a model invalidates every cached list, count, and page of it. When writes are as frequent as reads, lists almost never hit, and each miss adds a cache lookup and entry write on top of the query, plus version initialization when dependencies are missing.
+- **The read decides something that must be exact.** Balances, stock, permission checks, and rate limits should read the database, ideally inside a transaction, where the cache is always skipped. The database commit and cache invalidation are separate operations: a concurrent read can see the previous cached result after the commit, and a failed invalidation can leave it cached. TTL limits entry lifetime, not transaction consistency.
+- **The query rarely repeats.** Free-text search, per-user filters with many combinations, and deep pagination fill Redis with entries that are never read again.
+- **The query is already cheap.** A primary key lookup against a nearby database can take about as long as the Redis round trip that replaces it. Measure before caching it.
+- **The result depends on something outside the arguments.** This covers PostgreSQL row-level security driven by session settings, `now()`-relative data, and per-tenant databases or schemas behind the same model. The key cannot see any of these. Return them from `vary`, or don't cache the read.
+- **Results are large.** Anything over `maxSize` (1 MiB by default) is returned but never stored.
+
+## How a cached read works
+
+For each read the plugin decides to cache:
+
+1. **Bypass check.** Reads inside a transaction, reads with `lock`, and reads using automatic keys whose arguments or `vary` cannot be hashed go straight to the database.
+2. **Key and dependencies.** The plugin computes the entry key ([see below](#how-the-key-is-built)) and the list of versions the result depends on ([see below](#what-an-entry-depends-on)).
+3. **Lookup and version initialization.** The store fetches the entry and dependency versions. Missing versions receive fresh random tokens, stored before SQL runs. The Redis store uses one `MGET` outside cluster mode and concurrent individual `GET`s in cluster mode.
+4. **Hit.** The entry exists and every required version it stored matches the current one. The plugin deserializes the result and returns it without SQL.
+5. **Miss.** The entry is missing or a required version differs. The query runs, the result is serialized, and the plugin stores it together with the versions established in step 3 using `SET ... EX ttl`. Unsupported results are returned without being stored.
+
+A hit with existing versions needs one store lookup and no SQL. A miss adds the query and one entry `SET`; missing versions add an earlier batch of `SET`s. A write adds a batch of version `SET`s after SQL, or after commit in a transaction. The Redis adapter sends each batch as concurrent commands; network round trips depend on the client and topology.
+
+Identical reads that miss with the same dependency versions in the same plugin instance share one query. When the result can be serialized, waiting readers get their own deserialized copies; otherwise they run their own queries.
+
+## How the key is built
+
+With `cache: true` you never pick a key. The plugin hashes the read and stores the entry at:
+
+```txt
+<namespace>:<version>:q:<sha256 of the read>
+better-drizzle:1:q:Vb3V2d0l5aF5q0Y1rN8uZg0N7yH3cJm1eQx2sWkLpTo   # example
+```
+
+The hash covers, in this order:
+
+1. the model's schema key (`users`)
+2. the operation (`findMany`, `count`, `paginate`, ...)
+3. the final arguments, after every plugin before hook and transform has run, except `cache` and `meta`
+4. the call's `tags` and `vary`
+5. the value returned by the plugin's `vary` option
+
+Arguments are normalized before hashing:
+
+- Query option keys and outer `where` field names are sorted, so `{ where: { a, b } }` and `{ where: { b, a } }` share an entry. `orderBy` object keys retain their priority, including in nested relation reads: `{ name: 'asc', id: 'asc' }` differs from `{ id: 'asc', name: 'asc' }`.
+- Array order counts: `orderBy: [{ name: 'asc' }, { id: 'asc' }]` and the reverse are different reads, and so are `AND` members in a different order.
+- Object order inside filter values is preserved: SQLite JSON text comparisons can distinguish differently ordered documents. Some equivalent compound filters can therefore use different entries.
+- `undefined` properties are dropped, so `{ take: undefined }` is the same read as omitting `take`.
+- Types count: `where: { id: 1 }` and `where: { id: 1n }` are different keys. Dates hash by their timestamp.
+
+| These two calls | Same entry? | Why |
+| --- | --- | --- |
+| `findMany({ where: { a: 1, b: 2 } })` / `findMany({ where: { b: 2, a: 1 } })` | yes | object keys are sorted |
+| `findMany({ cache: true })` / `findMany({ cache: { ttl: '1h' } })` | yes | `ttl`, `negativeTtl`, `refresh`, and `afterHooks` are not part of the key |
+| `findMany({ meta: { requestId: 'a' } })` / `findMany({ meta: { requestId: 'b' } })` | yes | `meta` is not part of the key |
+| `findMany()` / `findFirst()` | no | different operation |
+| `findMany({ take: 10 })` / `findMany({ take: 20 })` | no | different arguments |
+| `findMany({ select: { id: true } })` / `findMany()` | no | different projection |
+| `findMany({ cache: { tags: ['a'] } })` / `findMany({ cache: true })` | no | tags are part of the key |
+| `findMany({ deleted: 'with' })` / `findMany()` with soft delete | no | plugin arguments and the filters they add are part of the key |
+
+Arguments added by other plugins (`deleted` from soft delete, `validate` from zod) and filters injected by transforms (a tenant filter, the soft-delete `deletedAt IS NULL`) are part of the final arguments. Two readers whose transforms produce different filters never share an entry.
+
+Some values cannot be hashed reliably: cyclic values, raw `sql` fragments, functions, and class instances other than `Date`, `Buffer`, and `Uint8Array`. With automatic keys, a read whose arguments or `vary` contain one is not cached, and after hooks see `annotations.cache` as `'bypass'`.
+
+### Varying by request context
+
+`meta` stays out of the key on purpose: a request id or trace id in `meta` would give every call its own entry. When something outside the arguments decides what a reader may see, return it from `vary`. The value is hashed into every automatic key.
+
+```ts
+cache({
+	store,
+	ttl: '5m',
+	vary: ({ meta }) => (meta as { tenantId?: string } | undefined)?.tenantId,
+});
+
+await client.$withContext({ tenantId }).users.findMany({ cache: true });
+```
+
+`vary` receives `{ meta, state, model, operation, transactionContext }` and may return any hashable value: a string, a number, an array, or a plain object. A tenant filter added by a transform does not need `vary`, because the filter is already in the arguments. Use `vary` when the tenant, locale, role, or database session changes the result without changing the arguments.
+
+A single call can add its own value with `cache: { vary: locale }`.
+
+### Custom keys
+
+`cache: 'newest-user'` or `cache: { key: 'newest-user' }` replaces the hash with your key:
+
+```txt
+<namespace>:<version>:k:newest-user
+```
+
+Its model and relation dependencies still come from the query, so a write to `users` still invalidates it. Use a custom key when you need to invalidate one specific entry with `$cache.invalidate({ keys: ['newest-user'] })`. This deletes the entry and changes its custom-key version, so an older in-flight query cannot repopulate a valid entry. You are responsible for its uniqueness: two different queries that use the same custom key overwrite each other, and `vary` does not apply to them.
+
+## What an entry depends on
+
+The plugin never searches Redis for keys to delete. Instead, every entry stores the versions it was computed from, and a write replaces those versions with new random values. An entry whose required stored versions no longer match stops being a hit and expires through its TTL. Missing versions are initialized before queries run, so version expiry or eviction cannot revive an old entry by matching a missing-value sentinel.
+
+| Version key | Replaced by | Read depends on it when |
+| --- | --- | --- |
+| `v:all` | `$cache.clear()` | always |
+| `v:m:<model>:epoch` | writes whose target rows are unknown, primary key changes, cascades, `invalidate({ models })` | the read touches the model at all |
+| `v:m:<model>:rows` | every write to the model, `invalidate({ models })` | the read is a list, count, or page, or its result is empty |
+| `v:e:<model>:<primary key>` | writes whose `where` pins that primary key | the read's `where` pins that primary key |
+| `v:t:<tag>` | `invalidate({ tags })`, write and raw `cache.invalidate.tags` | the read has the tag |
+| `v:k:<key>` | `invalidate({ keys })` | the read uses that custom key |
+
+`<model>` is the schema key (`users`), not the database table name. Use the same key in `models` options and invalidation hints.
+
+"The read touches the model" covers the root model and every model reached through `include`, a relation `select`, `_count`, or a relation filter in `where` such as `{ posts: { some: { published: true } } }`. `.through()` relations also depend on the junction table.
+
+A `where` pins a primary key when its top level, or one of its top-level `AND` members, sets every primary key column to a value (`{ id: 1 }` or `{ id: { equals: 1 } }`). Other conditions next to it may narrow the result further, and the read still depends only on that row.
+
+### A worked example
+
+```ts
+await client.users.findUnique({ where: { id: 1 }, include: { posts: true }, cache: true });
+// depends on: all, users epoch, user 1, posts epoch, posts rows
+// (and users rows, but only while the cached result is null)
+await client.users.findMany({ where: { active: true }, cache: true });
+// depends on: all, users epoch, users rows
+
+await client.users.update({ where: { id: 2 }, data: { name: 'Grace' } });
+// replaces: user 2, users rows
+// -> the findUnique for user 1 is still a hit; the findMany misses
+
+await client.posts.create({ data: { authorId: 1, title: 'Hello' } });
+// replaces: posts rows
+// -> the findUnique with its posts misses; the findMany is still a hit
+
+await client.users.updateMany({ where: { active: false }, data: { active: true } });
+// target rows unknown: replaces users epoch and users rows
+// -> every cached read that touches users misses
+```
+
+### What each write invalidates
+
+Mutations that return no matched rows skip automatic invalidation. Explicit `cache.invalidate` hints still apply.
+
+| Write | Replaces |
+| --- | --- |
+| `create`, `createMany` | model rows |
+| `update`, `delete`, `upsert` whose `where` pins primary keys, or uses `id: { in: [...] }` | those rows' versions and model rows |
+| `update`, `updateMany`, `delete`, `deleteMany`, `upsert` with any other `where` | model epoch and rows |
+| `updateEach` keyed (`by`) on the primary key | those rows' versions and model rows. Any other `by` replaces the epoch |
+| `upsertMany` whose `target` is the primary key and whose rows all carry it | those rows' versions and model rows. Anything else replaces the epoch |
+| `connect`, `disconnect`, `set` in `data` | the related model's epoch and its junction table's epoch |
+| a write that changes a primary key, including bulk upserts | model epoch, plus epochs reachable through declared foreign-key dependencies |
+| a write that changes another column referenced by a declared relation | epochs reachable through declared foreign-key dependencies |
+| `delete`, `deleteMany` | also epochs reachable through declared foreign-key dependencies, including transitive, inverse, and self relations, since the database may cascade or set them to `NULL` |
+
+Creates only replace model rows because a new row cannot change a cached row that already exists. It can change lists, counts, pages, and empty lookups. This is why a primary key lookup that returned `null` also depends on the model rows version: creating that row invalidates the cached `null`.
+
+### Invalidating by hand
+
+Writes and raw SQL can invalidate more than the plugin infers:
+
+```ts
+await client.users.create({ data, cache: { invalidate: { tags: ['feed'] } } });
+
+await client.$executeRaw(sql`UPDATE users SET active = false`, {
+	cache: { invalidate: { models: ['users'] } },
+});
+
+await client.$cache.invalidate({ models: ['users'], tags: ['feed'], keys: ['newest-user'] });
+await client.$cache.clear(); // every entry under this namespace and version
+```
+
+Hints on writes and raw calls apply after the call succeeds, or after the commit inside a transaction. `$cache.invalidate()` and `$cache.clear()` apply immediately and throw a `CACHE_STORE_ERROR` when the store fails.
+
+<Callout title="Writes the plugin cannot see" type="warn">
+	Raw SQL without a `cache.invalidate` hint, raw Drizzle calls on `db`, other
+	services, and trigger effects beyond declared dependencies are not inferred. Call
+	`$cache.invalidate()` after them, or rely on the TTL.
+</Callout>
+
+## Transactions
+
+- Reads inside a transaction skip the cache and always query the database, so a transaction sees its own writes.
+- Writes inside a transaction collect their invalidations. The plugin batches them per transaction client and applies them after the outermost transaction commits.
+- A rollback leaves the cache untouched. A savepoint that rolls back drops only its own invalidations.
+- Other requests can receive a previous cached value until invalidation completes. Commit and invalidation are not atomic, so this cache does not provide linearizable reads.
+
+## Choosing TTLs
+
+TTLs bound the lifetime of a stored entry; they do not guarantee consistency with the database. Unobserved writes, failed invalidation, and reads racing a commit can leave old results cached. Pick TTLs from the staleness your application can tolerate:
+
+- `ttl` (required) applies to every entry. Numbers are seconds; strings accept `s`, `m`, `h`, and `d`.
+- `negativeTtl` applies to `null` results from `findFirst`, `findOne`, and `findUnique`. It defaults to the smaller of `ttl` and 30 seconds, so a missing row is retried soon even if an outside write created it.
+- Per model: `models: { plans: { ttl: '1d' } }`. Per call: `cache: { ttl: '10s' }`.
+- No TTL may exceed `versionTtl` (7 days by default). Dependency versions live that long, and an entry must never outlive the versions it checks.
+
+## Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `store` | required | where entries live, e.g. `redis({ client })` |
+| `ttl` | required | default entry TTL, in seconds or as `'30s'`, `'5m'`, `'1h'`, `'1d'` |
+| `enabled` | `false` | cache every read unless a model or call disables it |
+| `models` | `{}` | per-model defaults: `true`, `false`, or `{ enabled, ttl, negativeTtl, tags }` |
+| `vary` | none | function whose return value goes into automatic keys, e.g. the tenant from `meta` |
+| `negativeTtl` | `min(ttl, 30s)` | TTL for `null` results from `findFirst`, `findOne`, and `findUnique` |
+| `afterHooksOnHit` | `true` | run client and plugin after hooks when a read is served from the cache |
+| `namespace` | `'better-drizzle'` | key prefix; give each app or database its own when they share a Redis |
+| `version` | `1` | change it to ignore every entry written by another version, e.g. after a schema change |
+| `maxSize` | `1048576` | largest entry in bytes; larger results are returned but not cached |
+| `serializer` | tagged JSON | `{ serialize, deserialize }` to replace the default format |
+| `versionTtl` | `'7d'` | lifetime of dependency versions; entry TTLs cannot exceed it |
+| `onError` | none | receives store failures and values that could not be cached |
+
+Per-call `cache` objects accept:
+
+| Field | Description |
+| --- | --- |
+| `ttl`, `negativeTtl` | override the model and plugin TTLs |
+| `tags` | added to the model's tags; part of the key and of the dependencies |
+| `key` | custom key instead of the hash |
+| `vary` | extra value hashed into the key |
+| `refresh` | skip the stored value, run the query, and store the fresh result |
+| `afterHooks` | run after hooks on a hit; overrides `afterHooksOnHit` |
+
+## Operating it
+
+- **Observing hits.** Client and plugin after hooks receive `annotations.cache` as `'hit'`, `'miss'`, or `'bypass'`. Reads that were never cache candidates carry no annotation. Log it from `afterQuery` to measure the hit rate per model and operation. To skip after hooks on hits, pass `afterHooksOnHit: false`, or `cache: { afterHooks: false }` on a call.
+- **Failures fail open.** When the store fails, reads fall back to the database and writes still succeed. Every failure reaches `onError` as a `BetterDrizzleError` with code `CACHE_STORE_ERROR`, `CACHE_SERIALIZATION_ERROR`, or `CACHE_VALUE_TOO_LARGE`, and `details.stage` set to `read`, `write`, `invalidate`, `serialize`, or `deserialize`. `CACHE_VALUE_TOO_LARGE` carries `details.size` and `details.maxSize` instead. Without `onError` they are silent, so set it in production.
+- **Serialization.** The default serializer keeps `Date`, `bigint`, `Buffer`, and `Uint8Array` alongside ordinary JSON values. Cycles, unsupported class instances, `undefined`, functions, symbol values, non-finite numbers, and negative zero are rejected rather than silently changed; the original result is returned and `onError` receives the serialization failure. Pass `serializer` to use another format, and change `version` when you do so that old entries are ignored.
+- **Memory.** Redis holds one entry per distinct read plus small version keys for model, row, tag, custom-key, and namespace dependencies established by reads or invalidations. Entries expire with their TTL. Version keys expire `versionTtl` after their last write, so give the Redis instance a memory limit and an eviction policy such as `volatile-lru`.
+- **Redis Cluster.** Pass `redis({ client, cluster: true })`, or an ioredis `Cluster`, to read keys one by one instead of `MGET` so they can live in different slots. For a node-redis cluster client, pass `redis({ command, cluster: true })` with a function that runs one command.
+- **Several instances.** Versions live in Redis, so an invalidation from one app instance is seen by every other instance on its next read. Deduplication of concurrent misses is per process.
+- **Not implemented.** Stale-while-revalidate and distributed locks. Two instances that miss the same key at the same time both run the query.

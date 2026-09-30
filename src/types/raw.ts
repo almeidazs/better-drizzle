@@ -53,7 +53,23 @@ export type RawOptions<
 	 * @returns The mapped row.
 	 */
 	map?: (row: Row) => Mapped;
-};
+} & RawOptionsExtensions;
+
+/**
+ * Extra raw options contributed by plugins through module augmentation.
+ * Raw hooks receive them unchanged in `rawOptions`.
+ *
+ * @example
+ * ```ts
+ * declare module 'better-drizzle' {
+ *   interface RawOptionsExtensions {
+ *     audit?: boolean;
+ *   }
+ * }
+ * ```
+ */
+// oxlint-disable-next-line typescript/no-empty-interface, typescript/no-empty-object-type -- Augmented by plugins.
+export interface RawOptionsExtensions {}
 
 /**
  * Global raw SQL configuration. Passed to {@link better} via `options.raw`.

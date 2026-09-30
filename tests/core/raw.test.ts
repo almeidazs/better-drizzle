@@ -354,6 +354,55 @@ describe('raw sql', () => {
 		ctx.close();
 	});
 
+	test('successful raw writes run every after hook and preserve the first error', async () => {
+		for (const clientThrows of [false, true]) {
+			const events: string[] = [];
+			const ctx = createContext({
+				hooks: {
+					afterRaw() {
+						events.push('client');
+						if (clientThrows)
+							throw new Error('client observer failed');
+					},
+				},
+				plugins: [
+					definePlugin({
+						id: 'failing-raw-observer',
+						hooks: {
+							afterRaw() {
+								events.push('plugin-1');
+								throw new Error('plugin observer failed');
+							},
+						},
+					}),
+					definePlugin({
+						id: 'remaining-raw-observer',
+						hooks: {
+							afterRaw() {
+								events.push('plugin-2');
+							},
+						},
+					}),
+				],
+			});
+			await expect(
+				ctx.client.$executeRaw(
+					sql`update raw_users set status = 'updated' where id = 1`,
+				),
+			).rejects.toThrow(
+				clientThrows
+					? 'client observer failed'
+					: 'plugin observer failed',
+			);
+			expect(events).toEqual(['client', 'plugin-1', 'plugin-2']);
+			expect(
+				(await ctx.client.users.findUnique({ where: { id: 1 } }))
+					?.status,
+			).toBe('updated');
+			ctx.close();
+		}
+	});
+
 	test('raw hooks run', async () => {
 		const events: string[] = [];
 		const plugin = definePlugin({

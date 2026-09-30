@@ -131,6 +131,24 @@ export type PluginModelInfo<
 	hasColumn(column: string): boolean;
 	/** The TypeScript table key. */
 	name: Name;
+	/** Primary key column keys. */
+	primaryKey: readonly string[];
+	/** Loadable relations keyed by relation name. */
+	relations: Readonly<Record<string, PluginModelRelation>>;
+};
+
+/**
+ * A relation Better Drizzle can load, as exposed on {@link PluginModelInfo}.
+ */
+export type PluginModelRelation = {
+	/** Which table holds the linking columns. */
+	foreignKey: 'junction' | 'source' | 'target';
+	/** `manyToMany` relations come from `.through()`. */
+	kind: 'many' | 'manyToMany' | 'one';
+	/** Target table key. */
+	model: string;
+	/** Junction table key for `.through()` relations. */
+	through?: string;
 };
 
 /**
@@ -430,9 +448,61 @@ type PluginAfterHookContext<
 	OperationArgs extends Partial<PluginOperationArgsExtensionMap>,
 	Kind extends PluginHookKind,
 > = PluginBeforeHookContext<Schema, Name, Meta, State, OperationArgs, Kind> & {
+	/** Values recorded by intercepts through `annotate()`. */
+	annotations?: Readonly<Record<string, unknown>>;
 	compiled?: Readonly<Record<string, unknown>>;
 	result: PluginOperationResultMap<Schema, Name, Meta>[Kind];
 };
+
+/**
+ * Context passed to a plugin `intercept`. The operation input is final:
+ * before hooks, transforms, and the client before hook have already run.
+ *
+ * @typeParam Kind - The operation kind being performed.
+ */
+export type PluginInterceptContext<
+	Schema extends AnySchema = AnySchema,
+	Name extends TableKey<Schema> = TableKey<Schema>,
+	Meta = BetterMeta,
+	State extends PluginState = PluginState,
+	OperationArgs extends Partial<PluginOperationArgsExtensionMap> = Record<
+		never,
+		never
+	>,
+	Kind extends PluginHookKind = PluginHookKind,
+> = PluginBeforeHookContext<Schema, Name, Meta, State, OperationArgs, Kind> & {
+	/** Records a value that after hooks receive in `annotations`. */
+	annotate(key: string, value: unknown): void;
+	/** Runs the next intercept, or the operation for the innermost one. */
+	next(): Promise<PluginOperationResultMap<Schema, Name, Meta>[Kind]>;
+	/** Skips client and plugin after hooks for this call. */
+	skipAfterHooks(): void;
+};
+
+/**
+ * Wraps the execution of every operation. Call `next()` to run the
+ * operation or return a result without running SQL. When a before hook
+ * returned an override, `next()` resolves to it without running SQL.
+ * Intercepts never run for `.explain()`.
+ */
+export type PluginIntercept<
+	Schema extends AnySchema = AnySchema,
+	Meta = BetterMeta,
+	State extends PluginState = PluginState,
+	OperationArgs extends Partial<PluginOperationArgsExtensionMap> = Record<
+		never,
+		never
+	>,
+> = (
+	context: PluginInterceptContext<
+		Schema,
+		BetterTableKey<Schema>,
+		Meta,
+		State,
+		OperationArgs,
+		PluginHookKind
+	>,
+) => Promise<unknown>;
 
 /**
  * Context object provided to plugin transaction lifecycle hooks
@@ -968,6 +1038,13 @@ export interface Plugin<
 		| undefined;
 	/** Lifecycle hooks for intercepting CRUD, query, transaction, and raw operations. */
 	hooks?: PluginHooks<AnySchema, BetterMeta, State, NoInfer<OperationArgs>>;
+	/** Wraps operation execution; runs in plugin array order, outermost first. */
+	intercept?: PluginIntercept<
+		AnySchema,
+		BetterMeta,
+		State,
+		NoInfer<OperationArgs>
+	>;
 	/** Custom operation args fields added to every delegate method call. */
 	operationArgs?: OperationArgs;
 	/** Runs once during client initialization. Used to register hooks and transforms. */

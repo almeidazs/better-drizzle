@@ -232,9 +232,10 @@ For one delegate call:
 1. plugin before hooks, in plugin order
 2. plugin transforms, in plugin order
 3. client before hook
-4. the database call, skipped when a `beforeDelete` or `beforeQuery` returned a value
-5. client after hook
-6. plugin after hooks, in plugin order
+4. plugin intercepts, outermost first
+5. the database call, skipped when a `beforeDelete` or `beforeQuery` returned a value or an intercept returned without calling `next()`
+6. client after hook
+7. plugin after hooks, in plugin order
 
 Every before hook runs even after one returns an override. The last override wins.
 
@@ -245,6 +246,33 @@ Every before hook runs even after one returns an override. The last override win
 	`select`, and the other query fields.
 </Callout>
 
+### Intercepts
+
+`intercept(ctx)` wraps the execution of every operation kind. It receives the final operation input: before hooks, transforms, and the client before hook have already run. Call `ctx.next()` to run the next intercept (or the database call), or return a value to skip the call. The [cache plugin](/docs/plugins/cache) uses an intercept to serve hits without SQL and to invalidate after writes.
+
+```ts
+definePlugin({
+	id: '@acme/timing',
+	async intercept(ctx) {
+		const started = performance.now();
+		
+		const result = await ctx.next();
+		
+		ctx.annotate('durationMs', performance.now() - started);
+		
+		return result;
+	},
+});
+```
+
+| `ctx` member | Purpose |
+| --- | --- |
+| `next()` | run the next intercept, or the operation for the innermost one |
+| `annotate(key, value)` | record a value that client and plugin after hooks receive in `annotations` |
+| `skipAfterHooks()` | skip client and plugin after hooks for this call |
+
+Intercepts run in plugin order, so the first plugin is the outermost. When a before hook returned an override, `next()` resolves to it without SQL. `.explain()` never runs intercepts. An intercept's return value becomes the result, so a skipped call must return the same shape the operation would.
+
 ### Hook context
 
 CRUD and query hooks (and transforms) receive:
@@ -253,7 +281,7 @@ CRUD and query hooks (and transforms) receive:
 	type={{
 		kind: { type: 'string', description: 'Operation kind, e.g. `findMany` or `upsertMany`.' },
 		table: { type: 'string', description: 'Schema key of the table.' },
-		model: { type: 'PluginModelInfo', description: '`name`, `dbName`, `columns`, and `hasColumn(column)`.' },
+		model: { type: 'PluginModelInfo', description: '`name`, `dbName`, `columns`, `hasColumn(column)`, `primaryKey`, and `relations`.' },
 		args: { type: 'object', description: 'Shallow copy of the call args, including plugin operation args.' },
 		where: { type: 'object | undefined', description: 'Present when the args contain `where`. Same for `select`, `include`, `orderBy`, `take`, `skip`, and `cursor`.' },
 		data: { type: 'object | object[] | undefined', description: 'Write payload. For `upsert` it is `{ create, update }`.' },
@@ -270,6 +298,7 @@ CRUD and query hooks (and transforms) receive:
 		afterRollback: { type: '(callback) => void', description: 'Queue a callback for after rollback. Throws `AFTER_ROLLBACK_OUTSIDE_TRANSACTION` outside a transaction.' },
 		client: { type: 'Delegate', description: 'Hooks only. The delegate for this table, with the current state.' },
 		result: { type: 'unknown', description: 'After hooks only. The operation result.' },
+		annotations: { type: 'Record<string, unknown> | undefined', description: 'After hooks only. Values recorded by intercepts with `annotate()`.' },
 	}}
 />
 
@@ -287,7 +316,7 @@ Client hooks run before plugin hooks for transaction and raw events.
 | --- | --- |
 | `addHook(hooks)` | register a hooks object, same shape as `hooks` |
 | `addTransform(fn)` | register a transform, same shape as `transform` |
-| `models` | model registry keyed by schema key: `name`, `dbName`, `columns`, `hasColumn()` |
+| `models` | model registry keyed by schema key: `name`, `dbName`, `columns`, `hasColumn()`, `primaryKey`, `relations` |
 | `isColumnExists(model, column)` | `true` when the model exists and has the column |
 | `dialect` | `'pg'`, `'mysql'`, or `'sqlite'` |
 | `schema` | the relations config from `defineRelations(...)`, keyed by table key: `{ table, name, relations }` per entry. Iterate `models` for column metadata |

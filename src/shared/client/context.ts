@@ -17,6 +17,7 @@ import type {
 	BetterMeta,
 	BetterTableKey,
 	PluginHookKind,
+	PluginModelRelation,
 	PluginRuntimeBucket,
 	PluginRuntimeRawBucket,
 	PluginRuntimeTransactionBucket,
@@ -48,7 +49,9 @@ const createPluginBuckets = () => {
 		beforeHooks: [],
 		hasAfterHooks: false,
 		hasBeforeHooks: false,
+		hasIntercepts: false,
 		hasTransforms: false,
+		intercepts: [],
 		transforms: [],
 	});
 
@@ -258,6 +261,11 @@ export const createRuntimeContext = <
 		const columns = getColumns(table) as Record<string, AnyColumn>;
 		const primaryKey = getPrimaryKey(table, columns);
 		const dbName = getTableName(table);
+		const primaryKeyFields = primaryKey.map(
+			(column) =>
+				Object.keys(columns).find((key) => columns[key] === column) ??
+				column.name,
+		);
 		const model = {
 			columns,
 			dbName,
@@ -265,6 +273,8 @@ export const createRuntimeContext = <
 				return column in columns;
 			},
 			name: tableName as never,
+			primaryKey: primaryKeyFields,
+			relations: Object.create(null),
 		} as TableRuntime['model'];
 
 		tables[tableName] = {
@@ -275,12 +285,7 @@ export const createRuntimeContext = <
 			},
 			model,
 			primaryKey,
-			primaryKeyFields: primaryKey.map(
-				(column) =>
-					Object.keys(columns).find(
-						(key) => columns[key] === column,
-					) ?? column.name,
-			),
+			primaryKeyFields,
 			relations: Object.create(null) as TableRuntime['relations'],
 			relationNames: new Set(),
 			table,
@@ -299,6 +304,32 @@ export const createRuntimeContext = <
 		});
 
 	buildRelations(tables, relational);
+
+	for (const tableName in tables) {
+		const runtime = tables[tableName] as TableRuntime;
+		const relations = runtime.model.relations as Record<
+			string,
+			PluginModelRelation
+		>;
+		for (const name in runtime.relations) {
+			const relation = runtime.relations[name];
+			if (!relation) continue;
+			relations[name] = relation.through
+				? {
+						foreignKey: 'junction',
+						kind: relation.kind,
+						model: relation.tableName,
+						through: relation.through.tableName,
+					}
+				: {
+						foreignKey: relation.sourceOwnsForeignKey
+							? 'source'
+							: 'target',
+						kind: relation.kind,
+						model: relation.tableName,
+					};
+		}
+	}
 
 	const hooks = options.hooks;
 	const plugins = options.plugins ?? [];

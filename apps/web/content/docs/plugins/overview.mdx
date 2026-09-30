@@ -56,6 +56,10 @@ await client.users.restore({ where: { id: 1 } }); // plugin-added method
 		Turn `delete()` into a recoverable state change, filter deleted rows by
 		default, and add `restore()` helpers.
 	</Card>
+	<Card title="Cache" href="/docs/plugins/cache">
+		Cache opted-in reads in Redis, invalidated after writes and commits
+		without scanning keys.
+	</Card>
 </Cards>
 
 | Plugin | Good fit when | Main behavior |
@@ -66,6 +70,7 @@ await client.users.restore({ where: { id: 1 } }); // plugin-added method
 | ATA | you want JSON Schema for inputs and results | builds per-table JSON Schemas and validates operations with compiled validators |
 | Timestamps | you want managed `createdAt` / `updatedAt` | fills timestamp columns on writes |
 | Soft delete | rows should stay recoverable and hidden by default | rewrites deletes, filters reads, adds restore helpers |
+| Cache | hot reads should skip the database | caches opted-in reads in Redis and invalidates them after writes |
 
 `better-drizzle/eslint` is intentionally separate from the runtime plugin pipeline. It mirrors the statically-checkable subset of `better-drizzle/rules` for direct call sites, while runtime-only concerns such as transaction state, merged `meta`, and dialect behavior stay in `better-drizzle/rules`.
 
@@ -74,6 +79,7 @@ await client.users.restore({ where: { id: 1 } }); // plugin-added method
 - declare a stable `id`, `name`, `version`, and `description`
 - add **typed operation args** (e.g. `deleted`, `mode`) that flow into transforms and hooks
 - **transform** an operation before it runs (rewrite `where`, inject data, skip it)
+- **intercept** execution to return a result without SQL or act after it runs
 - observe CRUD, query, raw, and transaction **lifecycle hooks**
 - **extend the client** with new top-level methods
 - **extend each delegate** with model-specific helpers

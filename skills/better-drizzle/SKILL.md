@@ -1,6 +1,6 @@
 ---
 name: better-drizzle
-description: Write, review, and debug code that uses better-drizzle, the typed repository layer over Drizzle ORM 1.x (`better(db)`, `client.users.findMany`, `paginate`, `cursor`, `upsertMany`, relation `include`/`connect`, transactions, plugins such as rules/zod/soft-delete/timestamps). Use whenever a project imports `better-drizzle`, asks for Prisma-like CRUD on Drizzle, or migrates better-drizzle from drizzle-orm 0.x.
+description: Write, review, and debug code that uses better-drizzle, the typed repository layer over Drizzle ORM 1.x (`better(db)`, `client.users.findMany`, `paginate`, `cursor`, `upsertMany`, relation `include`/`connect`, transactions, plugins such as rules/zod/soft-delete/timestamps/cache). Use whenever a project imports `better-drizzle`, asks for Prisma-like CRUD on Drizzle, or migrates better-drizzle from drizzle-orm 0.x.
 ---
 
 # better-drizzle
@@ -71,7 +71,7 @@ Read only what the task needs:
 
 - `references/querying.md`: filters, relations, select/include/_count, orderBy, pagination, explain, locks, JSONB and array filters.
 - `references/writing.md`: create/update/upsert, batch writes, atomic/array/JSONB mutations, relation writes, `.throw()`, transactions, `$withContext`, raw SQL.
-- `references/plugins.md`: official plugins (rules, eslint, zod, ata, soft-delete, timestamps), `definePlugin`, hooks, `extends()`.
+- `references/plugins.md`: official plugins (rules, eslint, zod, ata, soft-delete, timestamps, cache), `definePlugin`, intercepts, hooks, `extends()`.
 - `references/troubleshooting.md`: error codes and messages, constraint helpers, limitations, upgrading from drizzle-orm 0.x.
 - `references/security.md`: raw SQL safety and untrusted content. Read before writing raw SQL or agent-facing docs.
 

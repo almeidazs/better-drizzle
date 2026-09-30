@@ -8,6 +8,7 @@
     - `src/plugins/rules`: official runtime rules/guardrails plugin
     - `src/plugins/eslint`: official ESLint plugin for static Better Drizzle guardrails
     - `src/plugins/soft-delete`: official soft delete plugin
+    - `src/plugins/cache`: official read cache plugin; `src/plugins/cache/redis` is its Redis store
     - `src/plugins/timestamps`: official timestamps plugin
     - `src/plugins/zod`: official Zod schema generation and validation plugin
     - `benchmark`: Bun + SQLite benchmark suite
@@ -17,7 +18,7 @@
 - **Package publishing/build**:
     - the root `package.json` is the only publishable manifest
     - tsdown emits minified, tree-shaken ESM, CommonJS, and declaration files for the root and each plugin subpath
-    - public APIs are limited to `better-drizzle` plus `better-drizzle/{plugins,eslint,rules,soft-delete,timestamps,zod}` through conditional exports
+    - public APIs are limited to `better-drizzle` plus `better-drizzle/{ata,cache,cache/redis,plugins,eslint,rules,soft-delete,timestamps,zod}` through conditional exports
     - `bun run pack` builds, checks every ESM/CJS export, then inspects the root tarball
 - **Top-level scripts**:
     - `bun run bench`: run the time benchmark suite
@@ -166,6 +167,13 @@
     - `src/plugins/rules` is intentionally runtime-only and hook-driven; it enforces only checks that can be inferred from current hook payloads and silently ignores unsupported rule types
     - `src/plugins/rules` accepts boolean rule settings as shorthand: `true` means `error`, `false` means `off`
     - `src/plugins/soft-delete` filters every read and every update/delete with a `where` (`deleted` arg on each); `upsert`/`upsertMany` and relation loads stay unfiltered. Soft `delete`/`deleteMany` run in `beforeDelete` (before transforms), so they apply the visibility filter themselves. Writes with an empty `where` are core no-ops and must stay no-ops: the plugin only adds its filter when the original `where` has a condition. `mode: 'hard'` matches deleted rows unless `deleted` is passed
+    - `intercept(ctx)` is the only plugin primitive that wraps execution: it runs inside `executeOperation` after before hooks, transforms, and the client before hook, so it sees final args. Plugins compose outermost-first; `next()` resolves a before-hook override without SQL; `annotate()` reaches client and plugin after hooks as `annotations`; `skipAfterHooks()` skips both. `.explain()` never runs intercepts. Buckets track `hasIntercepts`, so clients without intercepts keep the old path
+    - `PluginModelInfo` exposes `primaryKey` (column keys) and `relations` (`{ model, kind, foreignKey: 'source' | 'target' | 'junction', through? }`), filled after `buildRelations`
+    - `RawOptions` includes the augmentable `RawOptionsExtensions` interface, and raw calls forward unknown options to raw hooks in `rawOptions`
+    - `src/plugins/cache` does reads and invalidation in one intercept. Keys hash the post-transform args minus `cache`/`meta`, plus tags, per-call `vary`, and the `vary()` option. Entries store `[dependency versions, empty]\n<serialized>`. A hit needs every version to match, and `emptyOnly` versions (model rows for primary key lookups) are compared only for empty results. Versions are random tokens that live for `versionTtl`, and entry TTLs are clamped to it, so an expired version key cannot revive a stale entry. Writes bump rows plus entity versions when the `where` pins primary keys; otherwise they bump the model epoch. Deletes also bump the epoch of models whose declared relation holds a foreign key to the deleted model (DB cascades). Inside a transaction, targets queue per transaction client through `afterCommit` and are dropped on rollback. The in-flight dedup key includes the dependency versions, so a read that starts after an invalidation cannot join an older query. There is no public memory store; `tests/cache/memory-store.ts` is a test fake, and `tests/cache/suite.ts` runs against both it and Redis (`REDIS_URL`, `bun run test:redis`)
+    - Cache identity preserves `orderBy` priority and JSON filter operand order (SQLite compares encoded JSON text). Cyclic keys bypass caching; lossy result values are rejected rather than silently changed. Missing dependency versions receive fresh tokens before SQL, coalesced for identical cold reads; never store a null version sentinel, which can revive stale entries after expiry or eviction. Manual custom-key invalidation also bumps a `v:k` dependency so delayed readers cannot repopulate a valid stale entry.
+    - Cache cascade dependencies and referenced columns are precomputed from native relations at setup, including inverse-only, transitive, and self references. `updateEach.by` is a Drizzle column instance, not a column key. Successful raw/commit observers and queued commit callbacks all run even when an earlier observer throws; the first error still propagates. No-op mutations skip automatic version writes, but explicit invalidation hints still apply.
+    - `bun run bench:cache` measures cache costs with mitata and validates complete result parity first. Map stores isolate local overhead; set `REDIS_URL` for real Redis measurements. `CACHE_BENCH_VERIFY_ONLY=1` skips timings and `CACHE_BENCH_FILTER` selects scenarios. Bulk entity invalidation sends one Redis SET per targeted entity; cluster reads issue GET per key.
     - `src/plugins/soft-delete` writes ISO 8601 values for string-backed delete timestamp columns and `Date` values for Drizzle date columns; this preserves SQLite text-column compatibility while retaining native timestamp encoders
 - **Batch updateEach API**:
     - `updateEach` is native-first and performance-sensitive
@@ -259,7 +267,7 @@
 
 ## Local development database
 
-- **Docker Compose** provides a Postgres 16 instance for local development and manual testing.
+- **Docker Compose** provides Postgres 16, MySQL 8, and Redis 7 instances for local development and manual testing.
 - **Files**:
     - `docker-compose.yml`: postgres service with healthcheck and persistent volume
     - `.env` / `.env.example`: connection config (port, credentials, db name)

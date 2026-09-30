@@ -1,6 +1,6 @@
 # Plugins, hooks, and extensions
 
-Docs: `/docs/plugins/overview`, `/writing-plugins`, `/rules`, `/eslint`, `/zod`, `/ata`, `/soft-delete`, `/timestamps`, `/docs/advanced/hooks`, `/docs/guides/client-extensions` (all under `https://better-drizzle.com`).
+Docs: `/docs/plugins/overview`, `/writing-plugins`, `/rules`, `/eslint`, `/zod`, `/ata`, `/soft-delete`, `/timestamps`, `/cache`, `/docs/advanced/hooks`, `/docs/guides/client-extensions` (all under `https://better-drizzle.com`).
 
 ## Official plugins
 
@@ -30,10 +30,12 @@ const client = better(db, {
 | `softDelete` | `delete`/`deleteMany` become updates; every read, update, and delete skips deleted rows (not `upsert`/`upsertMany` or includes) | arg `deleted: 'without' \| 'with' \| 'only'` on each; delete args `mode: 'hard'` (matches deleted rows too), `deletedBy`; `restore({ where })`, `restoreById(id)` |
 | `zod` | Per-table Zod schemas on `client.users.$zod.{create,update,upsert,select,where,orderBy,pagination,query}` plus validation | `validate` defaults: writes and `result` on, read args off; per call `validate: false` |
 | `ata` | The same idea with JSON Schema and compiled ata validators on `$ata` | `{ validate, tables: { users: { columns } }, precompile }` |
+| `cache` | Caches opted-in reads in a store (`better-drizzle/cache/redis` wraps your Bun/ioredis/node-redis client). Writes invalidate dependents after commit | `cache({ store: redis({ client }), ttl: '5m', models?, vary?, enabled? })`; read arg `cache: true \| false \| 'key' \| { ttl, tags, key, refresh, vary, afterHooks }`; write/raw arg `cache: { invalidate: { models, tags } }`; `client.$cache.invalidate({ models, tags, keys })`, `$cache.clear()` |
 
 - Plugins run in array order. Ids must be unique. `setup()` runs once per `better()` call, not per transaction.
 - Transforms affect only the root query. Relations loaded through `include` are not rewritten, so soft-deleted or other-tenant children can still appear.
 - `$withoutPlugins()` bypasses every plugin (for example a real hard delete). Raw SQL also bypasses plugins.
+- Cache gotchas: `meta` is not in automatic keys, so tenant data that comes from `meta` needs `vary`. Custom keys bypass query hashing and `vary`; callers must separate queries and tenants. Reads inside transactions and reads with `lock` are never cached. Raw SQL without `cache.invalidate` and raw Drizzle writes do not invalidate anything; call `$cache.invalidate()`. Store failures fall back to the database and reach `onError`. Commit and invalidation are separate operations, so TTL limits entry lifetime rather than guaranteeing consistency. Automatic hashing preserves `orderBy` priority and bypasses cyclic or unsupported values; unsupported result values are returned without caching.
 
 ## Writing a plugin
 
@@ -58,8 +60,9 @@ export const tenantScope = () =>
 	});
 ```
 
+- `intercept(ctx)` wraps execution after transforms and the client before hook: `await ctx.next()` runs the operation, returning without it skips SQL, `ctx.annotate(key, value)` reaches after hooks as `annotations`, and `ctx.skipAfterHooks()` skips them. The first plugin is outermost. `.explain()` never runs intercepts.
 - `transform` is the mutation layer. It returns the operation, and its `kind` is one of the delegate names. `upsertMany` is create-like. `updateEach` flows through update hooks.
-- `setup(ctx)` receives `ctx.schema` (the relations config: `{ [key]: { table, name, relations } }`), `ctx.models` (per table: `columns`, `hasColumn`), `ctx.dialect`, `addHook`, and `addTransform`.
+- `setup(ctx)` receives `ctx.schema` (the relations config: `{ [key]: { table, name, relations } }`), `ctx.models` (per table: `columns`, `hasColumn`, `primaryKey`, `relations`), `ctx.dialect`, `addHook`, and `addTransform`.
 - `config.requires.columns[].type` matches `columnType` (`'PgTimestamp'`), the full `dataType` (`'object date'`), or one part of it (`'date'`). Compare `dataType` with `startsWith('string')`, not `===`.
 - Table-dependent model extension types: declare an interface extending `ModelExtensionTypeResolver` that reads `this['schema']` and `this['name']`, and pass it as `definePlugin`'s 6th type argument. Generic function resolvers can hit TS2589.
 - Validation errors fail at `better()` time with `PLUGIN_*` codes (duplicate id, missing column, extension conflict).

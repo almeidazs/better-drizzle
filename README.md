@@ -245,6 +245,19 @@ That gets you runtime guardrails, automatic timestamps, soft deletes with `resto
 
 Pair `better-drizzle/eslint` with the runtime rules to catch the statically-checkable subset in your editor.
 
+`better-drizzle/cache` caches the reads you opt into, and `better-drizzle/cache/redis` stores them in the Redis client you already have. Observed writes invalidate declared dependencies after they commit, including included relations and declared foreign-key cascades. Commit and invalidation are separate operations; concurrent reads and store failures can leave stale results cached, so use database reads when consistency must be exact. No Redis key is ever scanned. Raw Drizzle writes still need a manual `$cache.invalidate()`.
+
+```ts
+import { cache } from 'better-drizzle/cache';
+import { redis } from 'better-drizzle/cache/redis';
+
+const client = better(db, {
+	plugins: [cache({ store: redis({ client: redisClient }), ttl: '5m' })],
+});
+
+const user = await client.users.findUnique({ where: { id }, cache: true });
+```
+
 ## Performance
 
 Measured against raw Drizzle doing the same work and returning the same shape - not against a lower-level query that does less.

@@ -66,6 +66,26 @@
 				"default": "./dist/ata.cjs"
 			}
 		},
+		"./cache": {
+			"import": {
+				"types": "./dist/cache.d.ts",
+				"default": "./dist/cache.js"
+			},
+			"require": {
+				"types": "./dist/cache.d.cts",
+				"default": "./dist/cache.cjs"
+			}
+		},
+		"./cache/redis": {
+			"import": {
+				"types": "./dist/cache/redis.d.ts",
+				"default": "./dist/cache/redis.js"
+			},
+			"require": {
+				"types": "./dist/cache/redis.d.cts",
+				"default": "./dist/cache/redis.cjs"
+			}
+		},
 		"./eslint": {
 			"import": {
 				"types": "./dist/eslint.d.ts",
@@ -135,6 +155,7 @@
 		"check:types": "bunx tsc --noEmit",
 		"lint:commit": "commitlint",
 		"bench": "bun run benchmark/time.ts",
+		"bench:cache": "bun run benchmark/cache.ts",
 		"bench:all": "bun run benchmark/time.ts && bun run benchmark/full.ts && bun run benchmark/memory.ts",
 		"bench:full": "bun run benchmark/full.ts",
 		"bench:memory": "bun run benchmark/memory.ts",
@@ -142,13 +163,14 @@
 		"docs:dev": "bun run --filter @better-drizzle/web dev",
 		"docs:build": "bun run --filter @better-drizzle/web build",
 		"pack": "bun run build && npm pack --dry-run --ignore-scripts",
-		"test": "bun test tests/core tests/rules tests/eslint tests/timestamps tests/soft-delete tests/zod tests/ata",
+		"test": "bun test tests/core tests/rules tests/eslint tests/timestamps tests/soft-delete tests/zod tests/ata tests/cache",
 		"test:mysql": "bun test tests/core/where.mysql.test.ts",
 		"test:integration": "bun test tests/core/integration",
 		"bench:jsonb": "DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required} bun run benchmark/jsonb.ts",
 		"bench:jsonb:mutations": "DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required} bun run benchmark/jsonb-mutations.ts",
 		"bench:arrays": "DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required} bun run benchmark/arrays.ts",
 		"test:jsonb": "bun test tests/core/jsonb.pg.test.ts",
+		"test:redis": "bun test tests/cache/cache.redis.test.ts",
 		"test:arrays": "bun test tests/core/arrays.pg.test.ts",
 		"bench:report": "bun run benchmark/report.ts",
 		"bench:validation": "bun run benchmark/validation.ts",

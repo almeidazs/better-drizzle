@@ -219,7 +219,16 @@ const withSqlComment = <
 const runCallbacks = async (
 	callbacks: Array<() => unknown | Promise<unknown>>,
 ) => {
-	for (const callback of callbacks) await callback();
+	let failed = false;
+	let firstError: unknown;
+	for (const callback of callbacks)
+		try {
+			await callback();
+		} catch (error) {
+			if (!failed) firstError = error;
+			failed = true;
+		}
+	if (failed) throw firstError;
 };
 
 const getRetryReason = (error: unknown): TransactionRetryReason | null => {
@@ -358,8 +367,25 @@ const runTransactionHooks = async <
 		| 'onTransactionError',
 	payload: Record<string, unknown>,
 ) => {
-	await runClientTransactionHook(context, hookName, payload);
-	await runPluginTransactionHooks(context, hookName, payload);
+	if (hookName !== 'afterTransactionCommit') {
+		await runClientTransactionHook(context, hookName, payload);
+		await runPluginTransactionHooks(context, hookName, payload);
+		return;
+	}
+	let failed = false;
+	let firstError: unknown;
+	try {
+		await runClientTransactionHook(context, hookName, payload);
+	} catch (error) {
+		failed = true;
+		firstError = error;
+	}
+	try {
+		await runPluginTransactionHooks(context, hookName, payload);
+	} catch (error) {
+		if (!failed) throw error;
+	}
+	if (failed) throw firstError;
 };
 
 const runRawHooks = async <
@@ -372,9 +398,22 @@ const runRawHooks = async <
 	payload: Record<string, unknown>,
 ) => {
 	const hook = context.options.hooks?.[hookName];
-	if (hook)
-		await (hook as (ctx: Record<string, unknown>) => unknown)(payload);
-	await runPluginRawHooks(context, hookName, payload);
+	let failed = false;
+	let firstError: unknown;
+	try {
+		if (hook)
+			await (hook as (ctx: Record<string, unknown>) => unknown)(payload);
+	} catch (error) {
+		if (hookName !== 'afterRaw') throw error;
+		failed = true;
+		firstError = error;
+	}
+	try {
+		await runPluginRawHooks(context, hookName, payload);
+	} catch (error) {
+		if (!failed) throw error;
+	}
+	if (failed) throw firstError;
 };
 
 const mergeTransactionQueues = (
@@ -383,6 +422,32 @@ const mergeTransactionQueues = (
 ) => {
 	parent.afterCommit.push(...child.afterCommit);
 	parent.afterRollback.push(...child.afterRollback);
+};
+
+const finishTransactionCommit = async <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	context: RuntimeContext<Schema, Meta, Plugins>,
+	state: TransactionRuntime,
+	payload: Record<string, unknown>,
+) => {
+	let failed = false;
+	let firstError: unknown;
+	try {
+		await runTransactionHooks(context, 'afterTransactionCommit', payload);
+	} catch (error) {
+		failed = true;
+		firstError = error;
+	}
+	try {
+		if (state.parent) mergeTransactionQueues(state.parent, state);
+		else await runCallbacks(state.afterCommit);
+	} catch (error) {
+		if (!failed) throw error;
+	}
+	if (failed) throw firstError;
 };
 
 const bindAbortSignals = (transaction: TransactionRuntime) => {
@@ -596,11 +661,7 @@ const executeRawQuery = async <
 	executor: (query: SQL) => Promise<Result> | Result,
 ) => {
 	const rawOptions = {
-		comment: options?.comment,
-		map: options?.map,
-		meta: options?.meta,
-		name: options?.name,
-		signal: options?.signal,
+		...options,
 		timeoutMs: options?.timeoutMs ?? context.options.raw?.timeoutMs,
 	} satisfies RawOptions<unknown, unknown, Meta>;
 	const query = withSqlComment(
@@ -815,15 +876,11 @@ const runBetterTransaction = async <
 				context.db.run?.(commitSql);
 				committed = true;
 
-				await runTransactionHooks(
+				await finishTransactionCommit(
 					attemptContext,
-					'afterTransactionCommit',
+					attemptState,
 					payload,
 				);
-
-				if (attemptState.parent)
-					mergeTransactionQueues(attemptState.parent, attemptState);
-				else await runCallbacks(attemptState.afterCommit);
 
 				cleanupAbort();
 				return result;
@@ -951,14 +1008,7 @@ const runBetterTransaction = async <
 				options,
 			);
 
-			await runTransactionHooks(
-				txContext,
-				'afterTransactionCommit',
-				payload,
-			);
-
-			if (state.parent) mergeTransactionQueues(state.parent, state);
-			else await runCallbacks(state.afterCommit);
+			await finishTransactionCommit(txContext, state, payload);
 
 			return envelope as T;
 		} catch (error) {
