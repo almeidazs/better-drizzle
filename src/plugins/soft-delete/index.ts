@@ -23,6 +23,24 @@ import { version } from './version';
 const isRecord = (value: unknown): value is MutableRecord =>
 	typeof value === 'object' && value !== null && !Array.isArray(value);
 
+// Writes with an empty `where` are no-ops in the core. Adding the visibility
+// filter to one would turn it into a write over every live row.
+const hasCondition = (where: unknown): boolean => {
+	if (where === undefined) return false;
+	if (Array.isArray(where)) return where.some(hasCondition);
+	if (!isRecord(where)) return true;
+	for (const key in where) if (hasCondition(where[key])) return true;
+	return false;
+};
+
+const WRITE_KINDS = new Set<string>([
+	'delete',
+	'deleteMany',
+	'update',
+	'updateEach',
+	'updateMany',
+]);
+
 const buildDeletedWhere = (
 	where: unknown,
 	column: string,
@@ -72,6 +90,39 @@ const createRestoreExtension = <
 	};
 };
 
+type VisibilityArgs = { deleted?: SoftDeleteVisibility };
+type DeleteArgs = VisibilityArgs & {
+	deletedBy?: string;
+	mode?: SoftDeleteMode;
+};
+
+const visibilityArgs = {
+	deleted: undefined as SoftDeleteVisibility | undefined,
+};
+const deleteArgs = {
+	...visibilityArgs,
+	deletedBy: undefined as string | undefined,
+	mode: undefined as SoftDeleteMode | undefined,
+};
+
+// Every operation with a `where`. upsert/upsertMany stay unfiltered: hiding a
+// deleted row there would turn the update branch into a duplicate insert.
+const FILTERED_KINDS = new Set<string>([
+	'count',
+	'cursor',
+	'delete',
+	'deleteMany',
+	'exists',
+	'findFirst',
+	'findMany',
+	'findOne',
+	'findUnique',
+	'paginate',
+	'update',
+	'updateEach',
+	'updateMany',
+]);
+
 export const softDelete = (options: SoftDeleteOptions = {}) => {
 	const column = options.column ?? DEFAULT_COLUMN;
 	const deletedByColumn =
@@ -86,22 +137,19 @@ export const softDelete = (options: SoftDeleteOptions = {}) => {
 		RestoreModelExtension,
 		Record<string, unknown>,
 		{
-			count: {
-				deleted?: SoftDeleteVisibility;
-			};
-			delete: {
-				deletedBy?: string;
-				mode?: SoftDeleteMode;
-			};
-			exists: {
-				deleted?: SoftDeleteVisibility;
-			};
-			findFirst: {
-				deleted?: SoftDeleteVisibility;
-			};
-			findMany: {
-				deleted?: SoftDeleteVisibility;
-			};
+			count: VisibilityArgs;
+			cursor: VisibilityArgs;
+			delete: DeleteArgs;
+			deleteMany: DeleteArgs;
+			exists: VisibilityArgs;
+			findFirst: VisibilityArgs;
+			findMany: VisibilityArgs;
+			findOne: VisibilityArgs;
+			findUnique: VisibilityArgs;
+			paginate: VisibilityArgs;
+			update: VisibilityArgs;
+			updateEach: VisibilityArgs;
+			updateMany: VisibilityArgs;
 		}
 	>({
 		description:
@@ -109,28 +157,25 @@ export const softDelete = (options: SoftDeleteOptions = {}) => {
 		id: 'better-drizzle/soft-delete',
 		name: 'Soft Delete',
 		operationArgs: {
-			count: {
-				deleted: undefined as SoftDeleteVisibility | undefined,
-			},
-			delete: {
-				deletedBy: undefined as string | undefined,
-				mode: undefined as SoftDeleteMode | undefined,
-			},
-			exists: {
-				deleted: undefined as SoftDeleteVisibility | undefined,
-			},
-			findFirst: {
-				deleted: undefined as SoftDeleteVisibility | undefined,
-			},
-			findMany: {
-				deleted: undefined as SoftDeleteVisibility | undefined,
-			},
+			count: visibilityArgs,
+			cursor: visibilityArgs,
+			delete: deleteArgs,
+			deleteMany: deleteArgs,
+			exists: visibilityArgs,
+			findFirst: visibilityArgs,
+			findMany: visibilityArgs,
+			findOne: visibilityArgs,
+			findUnique: visibilityArgs,
+			paginate: visibilityArgs,
+			update: visibilityArgs,
+			updateEach: visibilityArgs,
+			updateMany: visibilityArgs,
 		},
 		hooks: {
 			beforeDelete(context) {
 				if (
-					context.kind !== 'delete' ||
-					!context.model.hasColumn(column)
+					!context.model.hasColumn(column) ||
+					!hasCondition(context.where)
 				)
 					return;
 
@@ -158,15 +203,28 @@ export const softDelete = (options: SoftDeleteOptions = {}) => {
 				)
 					data[deletedByColumn] = context.args.deletedBy;
 
+				// Hooks run before transforms, so the visibility filter is applied
+				// here: a soft delete never re-stamps an already deleted row.
+				const visibility = context.args.deleted ?? 'without';
+				const where = (
+					visibility === 'with'
+						? context.where
+						: buildDeletedWhere(context.where, column, visibility)
+				) as WhereArg<typeof context.schema, typeof context.table>;
+
+				if (context.kind === 'deleteMany')
+					return context.client.$withoutPlugins().updateMany({
+						data,
+						meta: context.meta,
+						where,
+					} as never);
+
 				return context.client.$withoutPlugins().update({
 					include: context.include,
 					meta: context.meta,
 					select: context.select,
 					data,
-					where: context.where as WhereArg<
-						typeof context.schema,
-						typeof context.table
-					>,
+					where,
 				} as never);
 			},
 		},
@@ -182,15 +240,26 @@ export const softDelete = (options: SoftDeleteOptions = {}) => {
 		options,
 		transform(operation) {
 			if (
-				(operation.kind !== 'findMany' &&
-					operation.kind !== 'findFirst' &&
-					operation.kind !== 'count' &&
-					operation.kind !== 'exists') ||
-				!operation.model.hasColumn(column)
+				!FILTERED_KINDS.has(operation.kind) ||
+				!operation.model.hasColumn(column) ||
+				(WRITE_KINDS.has(operation.kind) &&
+					!hasCondition(operation.where))
 			)
 				return operation;
 
-			const visibility = operation.args.deleted ?? defaultVisibility;
+			const args = operation.args as {
+				deleted?: SoftDeleteVisibility;
+				mode?: SoftDeleteMode;
+			};
+			// A hard delete purges whatever matches unless `deleted` narrows it.
+			if (
+				(operation.kind === 'delete' ||
+					operation.kind === 'deleteMany') &&
+				(args.mode ?? defaultMode) === 'hard' &&
+				args.deleted === undefined
+			)
+				return operation;
+			const visibility = args.deleted ?? defaultVisibility;
 
 			if (visibility === 'with') return operation;
 

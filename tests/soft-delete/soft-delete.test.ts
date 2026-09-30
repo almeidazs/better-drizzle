@@ -268,4 +268,128 @@ describe('better-drizzle/soft-delete', () => {
 		expect(afterDelete[0]?.id).toBe(2);
 		sqlite.close();
 	});
+
+	test('hides deleted rows from every read helper', async () => {
+		const ctx = createContext();
+		const client = better(ctx.db, { plugins: [softDelete()] });
+
+		expect(
+			await client.records.findUnique({ where: { id: 2 } }),
+		).toBeNull();
+		expect(await client.records.findOne({ where: { id: 2 } })).toBeNull();
+		expect(
+			await client.records.findUnique({
+				deleted: 'with',
+				where: { id: 2 },
+			}),
+		).toMatchObject({ id: 2 });
+
+		const page = await client.records.paginate({ limit: 10 });
+		expect(page.data.map((row) => row.id)).toEqual([1]);
+		expect(page.pagination.total).toBe(1);
+		const onlyDeleted = await client.records.paginate({
+			deleted: 'only',
+			limit: 10,
+		});
+		expect(onlyDeleted.pagination.total).toBe(1);
+		expect(onlyDeleted.data[0]?.id).toBe(2);
+
+		const cursor = await client.records.cursor({ limit: 10 });
+		expect(cursor.data.map((row) => row.id)).toEqual([1]);
+		ctx.close();
+	});
+
+	test('updates skip deleted rows unless asked', async () => {
+		const ctx = createContext();
+		const client = better(ctx.db, { plugins: [softDelete()] });
+
+		expect(
+			await client.records.update({
+				data: { name: 'Ghost' },
+				where: { id: 2 },
+			}),
+		).toBeNull();
+		expect(
+			await client.records.updateMany({
+				data: { name: 'Renamed' },
+				where: { id: { in: [1, 2] } },
+			}),
+		).toMatchObject({ count: 1 });
+		expect(
+			await client.records.updateMany({
+				data: { name: 'Everyone' },
+				deleted: 'with',
+				where: { id: { in: [1, 2] } },
+			}),
+		).toMatchObject({ count: 2 });
+		ctx.close();
+	});
+
+	test('deleteMany soft deletes live rows only', async () => {
+		const ctx = createContext();
+		const client = better(ctx.db, { plugins: [softDelete()] });
+		const before = await client.records.findUnique({
+			deleted: 'only',
+			where: { id: 2 },
+		});
+
+		expect(
+			await client.records.deleteMany({
+				deletedBy: 'admin',
+				where: { id: { in: [1, 2] } },
+			}),
+		).toMatchObject({ count: 1 });
+
+		const rows = await client.records.findMany({
+			deleted: 'with',
+			orderBy: { id: 'asc' },
+		});
+		expect(rows).toHaveLength(2);
+		expect(rows.every((row) => row.deletedAt !== null)).toBe(true);
+		expect(rows[0]?.deletedById).toBe('admin');
+		// the already deleted row keeps its original timestamp and author
+		expect(rows[1]?.deletedAt).toEqual(before?.deletedAt ?? null);
+		expect(rows[1]?.deletedById).toBe('seed-user');
+		ctx.close();
+	});
+
+	test('hard deletes purge soft-deleted rows', async () => {
+		const ctx = createContext();
+		const client = better(ctx.db, { plugins: [softDelete()] });
+
+		expect(
+			await client.records.delete({ mode: 'hard', where: { id: 2 } }),
+		).toMatchObject({ id: 2 });
+		expect(
+			await client.records.deleteMany({
+				deleted: 'only',
+				mode: 'hard',
+				where: { id: { in: [1, 2] } },
+			}),
+		).toMatchObject({ count: 0 });
+		expect(
+			await client.records.deleteMany({
+				mode: 'hard',
+				where: { id: { in: [1, 2] } },
+			}),
+		).toMatchObject({ count: 1 });
+		expect(await client.records.count({ deleted: 'with' })).toBe(0);
+		ctx.close();
+	});
+
+	test('writes with an empty where stay no-ops', async () => {
+		const ctx = createContext();
+		const client = better(ctx.db, { plugins: [softDelete()] });
+
+		expect(await client.records.deleteMany({})).toMatchObject({ count: 0 });
+		expect(
+			await client.records.deleteMany({ where: { id: undefined } }),
+		).toMatchObject({ count: 0 });
+		expect(
+			await client.records.updateMany({ data: { name: 'All' } }),
+		).toMatchObject({ count: 0 });
+		expect(await client.records.delete({ where: {} })).toBeNull();
+		expect(await client.records.count({ deleted: 'only' })).toBe(1);
+		ctx.close();
+	});
 });

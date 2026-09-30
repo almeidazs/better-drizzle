@@ -912,7 +912,8 @@ const evaluators: Partial<Record<RuleKey, RuleEvaluator>> = {
 	noHardDeleteOnSoftDeleteModel(context, options, emit) {
 		const rule = normalizeRule(options.noHardDeleteOnSoftDeleteModel);
 		if (
-			context.operation !== 'delete' ||
+			(context.operation !== 'delete' &&
+				context.operation !== 'deleteMany') ||
 			!matchesModelScope(context, rule.options)
 		)
 			return;
@@ -937,7 +938,8 @@ const evaluators: Partial<Record<RuleKey, RuleEvaluator>> = {
 	requireHardDeleteReason(context, options, emit) {
 		const rule = normalizeRule(options.requireHardDeleteReason);
 		if (
-			context.operation !== 'delete' ||
+			(context.operation !== 'delete' &&
+				context.operation !== 'deleteMany') ||
 			!matchesModelScope(context, rule.options)
 		)
 			return;
@@ -1047,7 +1049,9 @@ const buildOperationContext = (
 		data: context.data,
 		include: context.include,
 		isInTransaction: context.isInTransaction,
-		limit: (context.args as Record<string, unknown>)?.limit,
+		limit:
+			(context.args as Record<string, unknown>)?.limit ??
+			(context.args as Record<string, unknown>)?.perPage,
 		lock: (context.args as Record<string, unknown>)?.lock,
 		meta: asRecord(context.meta) ?? undefined,
 		model: String(context.table),
