@@ -1291,14 +1291,27 @@ export const countRows = async <Schema extends AnySchema, Meta>(
 export const buildOffsetPaginationQuery = <Schema extends AnySchema, Meta>(
 	args: PaginationArgs<Schema, BetterTableKey<Schema>, Meta>,
 ) => {
-	const limit = args.limit ?? args.take ?? 10;
-	const take = args.take ?? limit;
+	const take = args.take ?? args.perPage ?? args.limit ?? 10;
+	const { page } = args;
+	if (
+		page !== undefined &&
+		(args.skip !== undefined || !Number.isInteger(page) || page < 1)
+	)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			details: { page, skip: args.skip },
+			message:
+				args.skip === undefined
+					? 'paginate() page must be an integer greater than or equal to 1.'
+					: 'paginate() accepts either page or skip, but not both.',
+			operation: 'paginate',
+		});
 	return {
 		take,
 		query: {
 			...args,
 			take,
-			skip: args.skip ?? 0,
+			skip: page === undefined ? (args.skip ?? 0) : (page - 1) * take,
 		},
 	};
 };

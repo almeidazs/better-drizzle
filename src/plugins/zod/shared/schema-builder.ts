@@ -680,6 +680,8 @@ export const createPaginationSchema = <Schema extends AnySchema>(
 				cursor: getCursorSchema(entry).optional(),
 				include: getIncludeInputSchema(entry).optional(),
 				limit: z.number().int().optional(),
+				page: z.number().int().min(1).optional(),
+				perPage: z.number().int().optional(),
 				lock: createLockSchema().optional(),
 				orderBy: entry.schemas.orderBy.optional(),
 				select: getSelectInputSchema(entry).optional(),

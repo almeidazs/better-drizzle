@@ -31,6 +31,38 @@ describe('paginate - offset', () => {
 		});
 	});
 
+	test('page and perPage compute the offset', async () => {
+		const { data, pagination } = await ctx.better.users.paginate({
+			orderBy: { id: 'asc' },
+			page: 2,
+			perPage: 2,
+		});
+
+		expect(data.map((row) => row.id)).toEqual([3, 4]);
+		expect(pagination).toMatchObject({
+			hasNext: true,
+			hasPrevious: true,
+			page: 2,
+			pageCount: 3,
+			perPage: 2,
+		});
+
+		const last = await ctx.better.users.paginate({
+			limit: 2,
+			orderBy: { id: 'asc' },
+			page: 3,
+		});
+		expect(last.data.map((row) => row.id)).toEqual([5]);
+		expect(last.pagination.hasNext).toBe(false);
+	});
+
+	test('page rejects skip and invalid numbers', async () => {
+		for (const args of [{ page: 2, skip: 2 }, { page: 0 }, { page: 1.5 }])
+			await expect(
+				Promise.resolve(ctx.better.users.paginate(args)),
+			).rejects.toBeInstanceOf(BetterDrizzleError);
+	});
+
 	test('paginate with limit', async () => {
 		const result = await ctx.better.users.paginate({
 			limit: 2,

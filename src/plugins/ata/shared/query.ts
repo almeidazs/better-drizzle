@@ -199,6 +199,10 @@ export const createQueryArgsSchema = (
 	};
 
 	if (shape !== 'query') properties.limit = { minimum: 0, type: 'integer' };
+	if (shape === 'pagination') {
+		properties.page = { minimum: 1, type: 'integer' };
+		properties.perPage = { minimum: 0, type: 'integer' };
+	}
 	if (shape === 'cursor') {
 		// Only cursor pagination takes a position, and it takes either the row
 		// values or the encoded string the previous page handed back.

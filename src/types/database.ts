@@ -111,6 +111,10 @@ export interface OffsetPaginationOptions<
 > {
 	/** Maximum number of rows to return per page. */
 	limit?: number;
+	/** Rows per page; an alias of `limit`. */
+	perPage?: number;
+	/** 1-based page number; computes `skip`, so it cannot be combined with it. */
+	page?: number;
 	/** Sort order for the result set. */
 	orderBy?: OrderBy<Columns>;
 }
