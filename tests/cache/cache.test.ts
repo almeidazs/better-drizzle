@@ -13,6 +13,8 @@ describe('better-drizzle/cache options and failures', () => {
 	test('rejects invalid options', () => {
 		const { store } = createMemoryStore();
 		expect(() => cache({ store, ttl: 0 })).toThrow(/positive number/);
+		for (const maxSize of [0, -1, Number.NaN, Number.POSITIVE_INFINITY])
+			expect(() => cache({ store, ttl: 1, maxSize })).toThrow(/maxSize/);
 		expect(() => cache({ store, ttl: '5 minutes' as never })).toThrow(
 			/duration/,
 		);
@@ -20,6 +22,36 @@ describe('better-drizzle/cache options and failures', () => {
 		expect(() => cache({ store: undefined as never, ttl: 1 })).toThrow(
 			/store/,
 		);
+	});
+
+	test('writes that change no rows preserve cache entries and skip version writes', async () => {
+		const memory = createMemoryStore();
+		const { client, count } = createClient(memory.store);
+		const read = () => client.users.findMany({ cache: true });
+		await read();
+		const before = memory.calls.set;
+		await client.users.update({
+			where: { id: 99 },
+			data: { name: 'Missing' },
+		});
+		await client.users.updateMany({
+			where: { id: 99 },
+			data: { name: 'Missing' },
+		});
+		await client.users.delete({ where: { id: 99 } });
+		await client.users.deleteMany({ where: { id: 99 } });
+		await client.users.createMany({
+			data: [{ id: 1, name: 'Ada', tenantId: 1 }],
+			skipDuplicates: true,
+		});
+		expect(memory.calls.set).toBe(before);
+		expect(await count(read)).toBe(0);
+		await client.users.update({
+			where: { id: 99 },
+			data: { name: 'Missing' },
+			cache: { invalidate: { models: ['users'] } },
+		});
+		expect(await count(read)).toBe(1);
 	});
 
 	test('uses ttl, negativeTtl, and per-call ttl in seconds', async () => {

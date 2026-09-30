@@ -174,6 +174,46 @@ export const defineCacheSuite = (
 			expect((await read())?.name).toBe('Ada L.');
 		});
 
+		test('every read helper caches its complete result and invalidates after writes', async () => {
+			const { client, queries } = createClient(createStore());
+			const reads = [
+				() => client.users.findMany({ cache: true, where: { id: 1 } }),
+				() => client.users.findFirst({ cache: true, where: { id: 1 } }),
+				() => client.users.findOne({ cache: true, where: { id: 1 } }),
+				() =>
+					client.users.findUnique({ cache: true, where: { id: 1 } }),
+				() => client.users.count({ cache: true, where: { id: 1 } }),
+				() => client.users.exists({ cache: true, where: { id: 1 } }),
+				() =>
+					client.users.paginate({
+						cache: true,
+						page: 1,
+						perPage: 2,
+						where: { id: 1 },
+					}),
+				() =>
+					client.users.cursor({
+						cache: true,
+						orderBy: { id: 'asc' },
+						take: 1,
+						where: { id: 1 },
+					}),
+			];
+			for (const read of reads) {
+				const first = await read();
+				const before = queries.length;
+				const second = await read();
+				expect(second).toEqual(first);
+				expect(queries.length).toBe(before);
+			}
+			await client.users.delete({ where: { id: 1 } });
+			for (const read of reads) {
+				const before = queries.length;
+				await read();
+				expect(queries.length).toBeGreaterThan(before);
+			}
+		});
+
 		test('reads are cached only when opted in', async () => {
 			const { client, count } = createClient(createStore(), {
 				models: { posts: true },
