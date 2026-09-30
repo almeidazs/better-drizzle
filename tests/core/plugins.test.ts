@@ -194,6 +194,87 @@ describe('plugins', () => {
 		close();
 	});
 
+	test('intercepts wrap execution in plugin order after transforms', async () => {
+		const { raw, close } = createContext();
+		const calls: string[] = [];
+		const afterHooks: unknown[] = [];
+
+		const client = better(raw, {
+			hooks: {
+				afterQuery(context) {
+					afterHooks.push(context.annotations);
+				},
+			},
+			plugins: [
+				definePlugin({
+					id: 'outer',
+					async intercept(context) {
+						calls.push(`outer:${JSON.stringify(context.where)}`);
+						if (context.kind === 'count') {
+							context.skipAfterHooks();
+							return 42;
+						}
+						context.annotate('outer', true);
+						return context.next();
+					},
+				}),
+				definePlugin({
+					id: 'inner',
+					async intercept(context) {
+						calls.push(`inner:${context.kind}`);
+						const result = await context.next();
+						context.annotate('inner', 'done');
+						return result;
+					},
+					transform(operation) {
+						operation.where = { id: 1 } as typeof operation.where;
+						return operation;
+					},
+				}),
+			],
+		});
+
+		const users = await client.users.findMany();
+		expect(users.map((user) => user.id)).toEqual([1]);
+		expect(await client.users.count()).toBe(42);
+		await client.users.findMany().explain();
+
+		expect(calls).toEqual([
+			'outer:{"id":1}',
+			'inner:findMany',
+			'outer:{"id":1}',
+		]);
+		expect(afterHooks).toEqual([{ inner: 'done', outer: true }]);
+		close();
+	});
+
+	test('intercepts receive before-hook overrides from next()', async () => {
+		const { raw, close } = createContext();
+		const seen: unknown[] = [];
+
+		const client = better(raw, {
+			plugins: [
+				definePlugin({
+					hooks: {
+						beforeQuery() {
+							return 7;
+						},
+					},
+					id: 'override',
+					async intercept(context) {
+						const result = await context.next();
+						seen.push(result);
+						return result;
+					},
+				}),
+			],
+		});
+
+		expect(await client.users.count()).toBe(7);
+		expect(seen).toEqual([7]);
+		close();
+	});
+
 	test('transform filters reads and $withoutPlugins bypasses it', async () => {
 		const { raw, close } = createContext();
 
