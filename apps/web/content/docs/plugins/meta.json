@@ -5,6 +5,7 @@
 		"overview",
 		"timestamps",
 		"soft-delete",
+		"cache",
 		"zod",
 		"ata",
 		"rules",
