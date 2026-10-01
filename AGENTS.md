@@ -249,6 +249,7 @@
 - Every test creates a fresh SQLite `:memory:` database, applies real DDL and constraints, seeds real rows, and invokes the public `better(...)` API without database mocks or fake query functions.
 - The shared fixture seeds 300 users, 1,200 posts, 2,400 comments, 150 profiles, 15 groups, 900 memberships, and 1,000 batch rows per test.
 - Run the suite with `bun run test:integration`; it is also included in the root `bun run test` command.
+- `*.pg.test.ts`, `*.mysql.test.ts`, and `*.redis.test.ts` skip without `DATABASE_URL`, `MYSQL_URL`, or `REDIS_URL`. `bun run test:databases` runs only those suites; CI runs it in a separate job with PostgreSQL, MySQL, and Redis service containers.
 
 ## Tooling and commands
 

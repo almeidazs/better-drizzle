@@ -165,6 +165,7 @@
 		"pack": "bun run build && npm pack --dry-run --ignore-scripts",
 		"test": "bun test tests/core tests/rules tests/eslint tests/timestamps tests/soft-delete tests/zod tests/ata tests/cache",
 		"test:mysql": "bun test tests/core/where.mysql.test.ts",
+		"test:databases": "bun test .pg.test.ts .mysql.test.ts .redis.test.ts",
 		"test:integration": "bun test tests/core/integration",
 		"bench:jsonb": "DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required} bun run benchmark/jsonb.ts",
 		"bench:jsonb:mutations": "DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required} bun run benchmark/jsonb-mutations.ts",
