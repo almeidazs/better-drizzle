@@ -139,6 +139,7 @@ These exist on every delegate and are mostly used by [plugins](/docs/plugins/wri
 | `$state` | the current ephemeral plugin state |
 | `$withState(state)` | clone the delegate with merged plugin state |
 | `$withoutPlugins()` | clone the delegate with all plugin transforms/hooks bypassed |
+| `$where(where)` | compile a typed `where` into a Drizzle `SQL` condition |
 
 Plugins can also **add** methods here - for example the soft-delete plugin adds `restore()` and `restoreById()` to compatible models.
 

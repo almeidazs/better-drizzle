@@ -87,6 +87,7 @@
     - `cursor`
     - `$withState`
     - `$withoutPlugins`
+    - `$where`
 - **Create conflict handling**:
     - `create` and `createMany` accept `skipDuplicates`
     - supported forms: `true` or `readonly ColumnName[]`

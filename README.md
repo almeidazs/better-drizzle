@@ -196,6 +196,17 @@ await client.accounts.update({
 
 On typed JSONB columns, dotted paths and the `{ json: ... }` wrapper both check paths and values against `$type<T>()`; use the wrapper for single-level keys. Path updates create missing object ancestors, treat SQL `NULL` and non-object JSONB roots as `{}`, and preserve existing object ancestors and unrelated keys. A scalar, array, or JSON `null` at an intermediate path is replaced with `{}`. Duplicate or ancestor/descendant paths are rejected, as are values containing nested `undefined`. Untyped JSONB columns keep open path names and JSON-encodable values.
 
+## Your filters, inside raw Drizzle
+
+```ts
+const rows = await db
+	.select()
+	.from(users)
+	.where(client.users.$where({ age: { gte: 18 }, posts: { some: { published: true } } }));
+```
+
+`$where()` compiles the same typed `where` as `findMany` into a Drizzle `SQL` condition (`undefined` when empty), for joins, subqueries, and hand-written queries. It is pure compilation: plugin filters such as soft-delete visibility are not applied.
+
 ## Row locks with guardrails
 
 ```ts
