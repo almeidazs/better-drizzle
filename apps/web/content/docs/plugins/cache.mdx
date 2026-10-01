@@ -8,6 +8,13 @@ seoDescription: 'Cache Drizzle ORM reads in Redis with better-drizzle: per-query
 
 `better-drizzle/cache` caches the reads you opt into. The plugin builds automatic keys from the final query, and observed writes invalidate declared dependencies. Inside a transaction, invalidation waits until the transaction commits. `better-drizzle/cache/redis` is the store.
 
+<Callout type="warn" title="Experimental">
+	The cache plugin is experimental in `0.3.x`. Its options, `$cache` API,
+	store interface, and entry format can change in a patch release. Pin an
+	exact version if you depend on it. See
+	[stability](/docs/reference/stability#experimental-in-03x).
+</Callout>
+
 ## Install
 
 <Tabs items={['npm', 'pnpm', 'yarn', 'bun']}>

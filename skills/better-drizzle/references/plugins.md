@@ -35,6 +35,7 @@ const client = better(db, {
 - Plugins run in array order. Ids must be unique. `setup()` runs once per `better()` call, not per transaction.
 - Transforms affect only the root query. Relations loaded through `include` are not rewritten, so soft-deleted or other-tenant children can still appear.
 - `$withoutPlugins()` bypasses every plugin (for example a real hard delete). Raw SQL also bypasses plugins.
+- `cache` is experimental in 0.3.x: options, `$cache`, the store interface, and the entry format can change in a patch release.
 - Cache gotchas: `meta` is not in automatic keys, so tenant data that comes from `meta` needs `vary`. Custom keys bypass query hashing and `vary`; callers must separate queries and tenants. Reads inside transactions and reads with `lock` are never cached. Raw SQL without `cache.invalidate` and raw Drizzle writes do not invalidate anything; call `$cache.invalidate()`. Store failures fall back to the database and reach `onError`. Commit and invalidation are separate operations, so TTL limits entry lifetime rather than guaranteeing consistency. Automatic hashing preserves `orderBy` priority and bypasses cyclic or unsupported values; unsupported result values are returned without caching.
 
 ## Writing a plugin

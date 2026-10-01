@@ -39,6 +39,17 @@ logs, but the value is always the package version.
 - the plugin authoring API: `definePlugin`, hooks, transforms, extensions, and `operationArgs`
 - the published [support matrix](/docs/reference/support-matrix) for PostgreSQL, SQLite, and MySQL
 
+## Experimental in `0.3.x`
+
+- `better-drizzle/cache` and `better-drizzle/cache/redis`: option names,
+  per-call `cache` arguments, `$cache` methods, the store interface, and the
+  stored entry format can change in a **patch** release while the plugin
+  matures. Pin an exact version if you depend on it, and expect cached
+  entries to be discarded after an upgrade.
+
+Experimental entrypoints are not covered by the semver policy below until
+they move to the stable list.
+
 Anything reachable only through a deep import path (`better-drizzle/dist/...`)
 is internal and can change in a patch.
 
