@@ -199,10 +199,36 @@ rejected at the top level and inside `where`, `data`, `create`, `update`,
 `include` at the same level. Previously TypeScript let them through. A typo such as `{ where: { emial: '...' } }` is now a compile error.
 When a check fails, remove the key or fix its name.
 
+### Breaking plugin API changes
+
+- **`better-drizzle/rules`: `mergeRules` was removed.** Use
+  `merge({ extends, rules })`. `extends` takes one config or an array applied
+  in order, and `rules` holds overrides applied last. Falsy entries in
+  `extends` are skipped. See [rules](/docs/plugins/rules).
+
+```ts
+// [!code --:1]
+rules(mergeRules(safe(), { noRawMutation: 'warn' }));
+// [!code ++:1]
+rules(merge({ extends: [safe()], rules: { noRawMutation: 'warn' } }));
+```
+
 ### Behavior changes to review
 
 These do not show up in the typecheck, but they can change what your code
 observes at runtime:
+
+- **`softDelete()` filters more operations.** In `0.2.x` only `findMany`,
+  `findFirst`, `count`, and `exists` hid deleted rows. Now `findUnique`,
+  `findOne`, `paginate`, `cursor`, `update`, `updateMany`, `updateEach`,
+  `delete`, and `deleteMany` do too. An `update({ where: { id } })` that hits
+  a soft-deleted row now matches nothing; pass `deleted: 'with'` to keep the
+  old behavior. `deleteMany()` is now a soft delete instead of a physical
+  one, and returns the count of rows it marked. Writes with an empty `where`
+  stay no-ops, and `mode: 'hard'` still matches deleted rows. The
+  `requireTenantOnDelete`, `noHardDeleteOnSoftDeleteModel`, and
+  `requireHardDeleteReason` rules now also check `deleteMany`. See
+  [soft delete](/docs/plugins/soft-delete).
 
 - **Reads are lazy.** `findMany`, `findFirst`, `findOne`, `findUnique`,
   `count`, `exists`, `paginate`, and `cursor` return lazy thenables, like
@@ -232,9 +258,31 @@ observes at runtime:
 
 ### Also new in 0.3.0
 
-PostgreSQL JSONB columns accept [path mutations](/docs/querying/jsonb#jsonb-path-mutations) in
-`update`, `updateMany`, `updateEach`, `upsert`, and `upsertMany`. For example,
-`{ metadata: { 'profile.age': 31 } }` compiles to `jsonb_set(...)`.
+- **[`better-drizzle/cache`](/docs/plugins/cache)** (experimental): versioned
+  read caching with automatic invalidation and a Redis store at
+  `better-drizzle/cache/redis`.
+- **[`better-drizzle/ata`](/docs/plugins/ata)**: JSON Schema validation of
+  operation inputs and results.
+- **[Atomic updates](/docs/writing/atomic-updates)**: `increment`,
+  `decrement`, `multiply`, `divide`, and `set` on number columns, and
+  `toggle` on boolean columns.
+- **[PostgreSQL arrays](/docs/querying/arrays)**: typed array filters,
+  `some` / `every` / `none` element predicates, and `append`, `prepend`,
+  `remove`, `replace`, and `addUnique` mutations.
+- **[JSONB paths](/docs/querying/jsonb)**: dotted path filters such as
+  `{ metadata: { 'profile.age': { gte: 18 } } }`, and
+  [path mutations](/docs/querying/jsonb#jsonb-path-mutations) in `update`,
+  `updateMany`, `updateEach`, `upsert`, and `upsertMany` that compile to
+  `jsonb_set(...)`.
+- **`NULL` ordering**: `orderBy` accepts `{ direction, nulls: 'first' | 'last' }`.
+  See [reads](/docs/querying/reads#ordering-limit-and-offset).
+- **[`paginate()`](/docs/querying/pagination#offset-pagination)** accepts
+  `page` and `perPage`.
+- **`upsertMany` on MySQL** through `ON DUPLICATE KEY UPDATE`. See
+  [`upsertMany` details](/docs/reference/query-options#upsertmany-details).
+- **[Plugin intercepts](/docs/plugins/writing-plugins#intercepts)**:
+  `intercept(ctx)` wraps execution after transforms, so a plugin can serve a
+  result without SQL or annotate after hooks.
 
 ### Not supported with Drizzle 1.x
 
