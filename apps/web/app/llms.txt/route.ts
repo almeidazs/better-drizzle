@@ -34,7 +34,7 @@ Key characteristics:
 - Transaction support with savepoints, retries, and lifecycle callbacks.
 - Raw SQL passthrough with safety gates and dialect awareness.
 - Scoped metadata via \`$withContext()\` for multi-tenancy and request tracing.
-- Peer dependencies: \`drizzle-orm\` (^1.0.0-rc.4) and \`typescript\` (^5).
+- Peer dependencies: \`drizzle-orm\` (>=1.0.0-rc.4 <1.0.0-rc.5) and \`typescript\` (^5).
 
 ## Documentation
 

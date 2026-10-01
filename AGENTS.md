@@ -31,7 +31,7 @@
     - `typescript` as a peer dependency
     - `mitata` for benchmarking
     - Ultracite presets with `oxfmt` and `oxlint` for formatting and linting
-    - the peer range is `drizzle-orm@^1.0.0-rc.4` (RQB v2); drizzle-orm 0.x is supported only by the `0.2.x` releases
+    - the peer range is `drizzle-orm@>=1.0.0-rc.4 <1.0.0-rc.5` (RQB v2); the typecheck fails against the 1.0.0-rc.5 snapshot, so the range stays capped until that is fixed; drizzle-orm 0.x is supported only by the `0.2.x` releases
 
 ## Architecture
 

@@ -9,7 +9,7 @@ seoDescription: 'Upgrade better-drizzle to Drizzle ORM 1.x with defineRelations 
 ## Moving to Drizzle ORM 1.x
 
 better-drizzle `0.3.0` supports **only** Drizzle ORM 1.x: the `drizzle-orm`
-peer range is `^1.0.0-rc.4`, and the release is tested against
+peer range is `>=1.0.0-rc.4 <1.0.0-rc.5`, and the release is tested against
 `1.0.0-rc.4`. Drizzle 1.x replaces the `relations(...)` helpers with
 `defineRelations(...)` (relational queries v2). better-drizzle now reads
 tables and relations from the Drizzle instance, so `better()` no longer takes
@@ -26,7 +26,7 @@ a `schema` option.
 
 | | `0.2.x` (Drizzle 0.x) | `0.3.x` (Drizzle 1.x) |
 | --- | --- | --- |
-| `drizzle-orm` peer | `^0.30.0` | `^1.0.0-rc.4` |
+| `drizzle-orm` peer | `^0.30.0` | `>=1.0.0-rc.4 <1.0.0-rc.5` |
 | Relations | `relations(table, ...)` per table | one `defineRelations(schema, ...)` call |
 | Drizzle instance | `drizzle(client, { schema })` | `drizzle({ client, relations })` |
 | Client | `better(db, { schema, ...options })` | `better(db, options?)` |
@@ -45,7 +45,7 @@ build the client and the type annotations that name the schema.
 ### 1. Upgrade drizzle-orm
 
 ```bash
-npm install drizzle-orm@^1.0.0-rc.4 better-drizzle@^0.3.0
+npm install drizzle-orm@1.0.0-rc.4 better-drizzle@^0.3.0
 ```
 
 Follow Drizzle's own 1.x migration notes for driver and schema changes. The

@@ -51,7 +51,7 @@ Aggregates beyond `count` and `_count`, `groupBy`, `distinct`, ordering by expre
 
 ## Upgrading from drizzle-orm 0.x (better-drizzle 0.2 to 0.3)
 
-1. `drizzle-orm@^1.0.0-rc.4` and `better-drizzle@^0.3.0`.
+1. `drizzle-orm@1.0.0-rc.4` and `better-drizzle@^0.3.0`.
 2. Replace per-table `relations(table, ...)` with one `defineRelations(schema, (r) => ...)`. `fields/references` become `from/to`, and `relationName` becomes `alias`.
 3. `drizzle({ client, relations })`, then `better(db, options)` without `schema`.
 4. `typeof schema` becomes `typeof relations` in every exported type.

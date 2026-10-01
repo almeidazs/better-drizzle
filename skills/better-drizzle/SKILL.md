@@ -29,7 +29,7 @@ export const db = drizzle({ client: pool, relations });
 export const client = better(db); // or better(db, { plugins, hooks, raw, locks, transaction })
 ```
 
-- Peer: `drizzle-orm@^1.0.0-rc.4`. Projects on drizzle-orm 0.x must stay on better-drizzle `0.2.x`.
+- Peer: `drizzle-orm` `>=1.0.0-rc.4 <1.0.0-rc.5`. Projects on drizzle-orm 0.x must stay on better-drizzle `0.2.x`.
 - `better()` reads tables and relations from `db._.relations`. It has **no** `schema` option; without `relations` it throws `No tables found on the Drizzle instance`.
 - Only tables in the relations config get delegates. Use `defineRelations(schema)` without a callback when there are no relations.
 - Type parameters take the relations config: `BetterDrizzleClient<typeof relations>`, `BetterDrizzleTransactionClient<...>`, `WhereArg<typeof relations, 'users'>`, `BetterRecord<typeof relations, 'users'>`, `PayloadForArgs<typeof relations, 'users', Args>`.

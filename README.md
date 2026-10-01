@@ -55,11 +55,11 @@ A nested relation filter, three posts **per user**, and a relation count - typed
 No codegen. No client process. No new schema language. It is still your Drizzle client underneath, and you can drop back to it at any line.
 
 ```bash
-npm install better-drizzle drizzle-orm@^1.0.0-rc.4
+npm install better-drizzle drizzle-orm@1.0.0-rc.4
 ```
 
 > [!IMPORTANT]
-> better-drizzle supports **only Drizzle ORM 1.x** (`drizzle-orm@^1.0.0-rc.4`, including the 1.0 release candidates) and its `defineRelations(...)` API. **`drizzle-orm` 0.x is not supported** - projects on 0.x must stay on better-drizzle `0.2.x`. Install `drizzle-orm` with the explicit range: until Drizzle 1.0 is tagged `latest`, a plain install resolves to 0.x. See [upgrading](https://better-drizzle.com/docs/guides/upgrading#moving-to-drizzle-orm-1x).
+> better-drizzle supports **only Drizzle ORM 1.x** (`drizzle-orm` `>=1.0.0-rc.4 <1.0.0-rc.5`; later release candidates are not supported yet) and its `defineRelations(...)` API. **`drizzle-orm` 0.x is not supported** - projects on 0.x must stay on better-drizzle `0.2.x`. Install `drizzle-orm` with the explicit version: until Drizzle 1.0 is tagged `latest`, a plain install resolves to 0.x. See [upgrading](https://better-drizzle.com/docs/guides/upgrading#moving-to-drizzle-orm-1x).
 
 ## Setup
 

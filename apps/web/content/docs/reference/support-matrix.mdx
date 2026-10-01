@@ -9,8 +9,8 @@ seoDescription: 'Drizzle ORM dialect support for reads, relations, writes, upser
 This page is the practical compatibility matrix for the current better-drizzle release, which supports only Drizzle ORM 1.x.
 
 <Callout type="warn" title="Drizzle ORM 1.x only">
-	better-drizzle supports **only Drizzle ORM 1.x** (`drizzle-orm@^1.0.0-rc.4`,
-	including the 1.0 release candidates) with its `defineRelations(...)`
+	better-drizzle supports **only Drizzle ORM 1.x** (`drizzle-orm`
+	`>=1.0.0-rc.4 <1.0.0-rc.5`; later release candidates are not supported yet) with its `defineRelations(...)`
 	relations API. `drizzle-orm` 0.x is **not supported** by the current
 	release - projects on 0.x must stay on better-drizzle `0.2.x`. See
 	[upgrading](/docs/guides/upgrading#moving-to-drizzle-orm-1x).
@@ -22,7 +22,7 @@ Everything ships in one package, so there is a single version line to track.
 
 | Requirement | Version |
 | --- | --- |
-| `drizzle-orm` peer | `^1.0.0-rc.4` (1.x only) |
+| `drizzle-orm` peer | `>=1.0.0-rc.4 <1.0.0-rc.5` (1.x only) |
 | `drizzle-orm` 0.x | Not supported - use better-drizzle `0.2.x` |
 | `typescript` peer | `^5` |
 | Node | `>=18` |
