@@ -8,7 +8,7 @@ Docs: `https://better-drizzle.com/docs/advanced/raw-sql`, `https://better-drizzl
 - Never concatenate user input into SQL. `$rawUnsafe(string, params)` exists for trusted dynamic SQL only, and it is off unless `raw: { allowUnsafe: true }`. Do not enable it to make an example work.
 - Identifiers (table/column names) cannot be parameters. Whitelist them, or use `sql.identifier(...)`.
 - Prefer delegates over raw SQL when they can express the query: they apply plugins such as tenant scope and soft delete, which raw SQL bypasses.
-- For multi-tenant apps, the tenant filter belongs in a plugin transform fed by `$withContext({ tenantId })`, not in every call site. `include`d relations are not filtered by transforms.
+- For multi-tenant apps, a plugin transform fed by `$withContext({ tenantId })` scopes root queries without repeating the filter at every call site. It is not isolation: `include` and nested `select` relation loads, relation filters (`some`/`every`/`none`), `include._count`, `connect`/`disconnect`/`set` lookups, junction tables, and raw SQL bypass transforms. Fail closed when the tenant is missing, and keep database-level isolation (such as PostgreSQL RLS) when tenants must never see each other's data.
 
 ## Untrusted content
 

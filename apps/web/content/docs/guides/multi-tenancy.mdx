@@ -102,8 +102,25 @@ const scoped = client.users.$withState({ tenantId: currentTenant });
 await scoped.findMany();
 ```
 
+<Callout type="warn" title="This is not tenant isolation">
+	A transform only sees the root `where` of the operation. These run without
+	it and can read or change rows of other tenants:
+
+	- relation loads through `include` and nested `select`
+	- relation filters such as `{ posts: { some: ... } }`
+	- `include._count`
+	- the lookups behind `connect`, `disconnect`, and `set`, and `.through()` junction tables
+	- raw SQL (`$raw`, `$executeRaw`, `$rawUnsafe`)
+
+	The example is also fail-open: an operation without `tenantId` in its state
+	runs unfiltered, and `create` does not stamp the tenant column. Use it to
+	scope root queries on trusted code paths, and keep database-level isolation
+	(such as PostgreSQL row-level security) when tenants must never see each
+	other's data.
+</Callout>
+
 ## Where this fits
 
 - tenant-aware audit logging
 - request tracing with correlation IDs
-- consistent tenant scoping across repository calls and raw SQL
+- tenant filters on root repository queries
