@@ -12,7 +12,7 @@ import {
 	sql,
 } from 'drizzle-orm';
 
-import { OrderType, param } from '../src';
+import { param } from '../src';
 import {
 	benchWrites,
 	comments,
@@ -256,7 +256,7 @@ export const rawOffsetPaginate = async (context: BenchmarkContext) => {
 export const betterOffsetPaginate = async (context: BenchmarkContext) =>
 	betterClient(context).users.paginate({
 		limit: 25,
-		orderBy: [{ id: OrderType.Asc }],
+		orderBy: [{ id: 'asc' }],
 		skip: 80,
 	});
 
@@ -316,7 +316,7 @@ export const betterCursorPaginate = async (context: BenchmarkContext) =>
 	betterClient(context).users.cursor({
 		after: { id: context.ids.cursorAfterId },
 		limit: 25,
-		orderBy: [{ id: OrderType.Asc }],
+		orderBy: [{ id: 'asc' }],
 	});
 
 export const rawCreateDeleteRoundtrip = async (context: BenchmarkContext) => {
@@ -882,7 +882,7 @@ export const createBetterPreparedScenarios = (context: BenchmarkContext) => {
 	const page = db.users
 		.paginate({
 			limit: param('limit'),
-			orderBy: [{ id: OrderType.Asc }],
+			orderBy: [{ id: 'asc' }],
 			skip: param('skip'),
 		})
 		.prepare();
@@ -890,7 +890,7 @@ export const createBetterPreparedScenarios = (context: BenchmarkContext) => {
 		.cursor({
 			after: param('after'),
 			limit: 25,
-			orderBy: [{ id: OrderType.Asc }],
+			orderBy: [{ id: 'asc' }],
 		})
 		.prepare();
 

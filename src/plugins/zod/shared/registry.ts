@@ -232,9 +232,11 @@ export const createZodSchemasRegistry = <Schema extends AnySchema>(
 		z.object({
 			after: z
 				.union([getCursorInputSchema(entry), z.string()])
+				.nullable()
 				.optional(),
 			before: z
 				.union([getCursorInputSchema(entry), z.string()])
+				.nullable()
 				.optional(),
 			include: getIncludeSchema(entry).optional(),
 			limit: z.number().int().optional(),

@@ -39,9 +39,10 @@ export interface DeleteResult {
  *
  * @example
  * ```ts
- * const page = await db.user.paginate({ limit: 10 });
- * console.log(page.data);        // the rows
- * console.log(page.pagination);  // { type: 'offset', page, perPage, total, ... }
+ * const {
+ *   data,
+ *   pagination: { page, total, hasNext },
+ * } = await db.user.paginate({ page: 1, perPage: 10 });
  * ```
  */
 export interface OffsetPaginationResult<
@@ -73,16 +74,24 @@ export interface OffsetPaginationResult<
  * and cursor-based navigation metadata.
  *
  * @typeParam Columns - The row type returned by the query.
+ * @typeParam Cursor - The raw cursor object, keyed by the `orderBy` fields.
  *
  * @example
  * ```ts
- * const page = await db.user.cursor({ limit: 10 });
- * console.log(page.data);        // the rows
- * console.log(page.pagination);  // { type: 'cursor', hasNext, nextCursor, ... }
+ * const {
+ *   data,
+ *   pagination: { nextCursor },
+ * } = await db.user.cursor({ limit: 10, orderBy: { id: 'asc' } });
+ * const { data: next } = await db.user.cursor({
+ *   limit: 10,
+ *   orderBy: { id: 'asc' },
+ *   after: nextCursor,
+ * });
  * ```
  */
 export interface CursorPaginationResult<
 	Columns extends Record<string, unknown>,
+	Cursor extends object = Record<string, unknown>,
 > {
 	/** The page of rows matching the query. */
 	data: Columns[];
@@ -94,10 +103,10 @@ export interface CursorPaginationResult<
 		hasNext: boolean;
 		/** `true` when more rows exist before the current page. */
 		hasPrevious: boolean;
-		/** Cursor token for fetching the next page, or `null` if at the end. */
-		nextCursor: string | object | null;
-		/** Cursor token for fetching the previous page, or `null` if at the start. */
-		previousCursor: string | object | null;
+		/** Cursor object (last row's `orderBy` fields) to pass as `after`, or `null` when `hasNext` is `false`. */
+		nextCursor: Cursor | null;
+		/** Cursor object (first row's `orderBy` fields) to pass as `before`, or `null` when `hasPrevious` is `false`. */
+		previousCursor: Cursor | null;
 	};
 }
 
@@ -120,8 +129,8 @@ export interface OffsetPaginationOptions<
 }
 
 /**
- * Options for cursor-based pagination. Used by the `cursor()` operation.
- * Accepts either `after` or `before`, but never both.
+ * Options for cursor-based pagination. Used by the `cursor()` operation,
+ * whose `CursorArgs` add the `after` / `before` cursor objects.
  *
  * @typeParam Columns - The row type of the result set.
  */
@@ -132,10 +141,6 @@ export interface CursorPaginationOptions<
 	limit?: import('./utils').Bindable<number>;
 	/** Sort order for the result set. */
 	orderBy?: OrderBy<Columns>;
-	/** Cursor token pointing after which rows should be returned. */
-	after?: string | object;
-	/** Cursor token pointing before which rows should be returned. */
-	before?: string | object;
 }
 
 /**
@@ -148,28 +153,14 @@ export type OrderBy<Columns extends Record<string, unknown>> =
 	| Partial<
 			Record<
 				keyof Columns,
-				| import('./utils').SortOrder
-				| import('./utils').SortConfig
-				| OrderType
+				import('./utils').SortOrder | import('./utils').SortConfig
 			>
 	  >
 	| Partial<
 			Record<
 				keyof Columns,
-				| import('./utils').SortOrder
-				| import('./utils').SortConfig
-				| OrderType
+				import('./utils').SortOrder | import('./utils').SortConfig
 			>
 	  >[];
-
-/**
- * Sort direction values.
- */
-export enum OrderType {
-	/** Ascending order. */
-	Asc = 'asc',
-	/** Descending order. */
-	Desc = 'desc',
-}
 
 export type { BetterLockClientOptions } from './query';

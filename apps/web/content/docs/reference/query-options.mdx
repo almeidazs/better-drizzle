@@ -31,7 +31,7 @@ Accepted by `findMany`, `findFirst`, `findOne`, and `findUnique`:
 			type: '{ [column]: "asc" | "desc" | { direction: "asc" | "desc"; nulls?: "first" | "last" } } | [...]',
 		},
 		take: {
-			description: 'Max rows to return. A negative value reverses ordering and takes from the end.',
+			description: 'Max rows to return. A negative value does not reverse the order; sort with `orderBy` instead.',
 			type: 'number',
 		},
 		skip: {

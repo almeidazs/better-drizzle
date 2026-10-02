@@ -103,9 +103,9 @@ Nested objects are flattened into dot paths, optional keys and nullable leaves a
 
 Several paths inside one JSONB filter are combined with `AND`, and several operators on one path are combined with `AND` too.
 
-## Legacy JSON filter wrapper
+## The `json` filter wrapper
 
-The former `{ json: { ... } }` filter wrapper remains supported but is deprecated. Use it for a root path without a dot, or when its stricter path and leaf validation is useful during migration; dotted shorthand would otherwise be ambiguous with JSON document equality. Mutation path typing is described below; both mutation forms validate typed paths and values.
+Wrap paths in `{ json: { ... } }` to filter root-level keys. A key without a dot cannot be shorthand, because it would be read as JSON document equality, so the wrapper is the form for root keys such as `nickname`. It also accepts dotted paths. Dotted keys directly on the column stay the shorthand for nested paths. Mutation path typing is described below; both mutation forms validate typed paths and values.
 
 ```ts
 await client.accounts.findMany({

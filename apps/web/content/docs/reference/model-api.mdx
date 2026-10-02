@@ -31,13 +31,15 @@ Every read returns an explainable result: a lazy thenable that runs the read whe
 | --- | --- | --- |
 | `create` | `(args: { data, skipDuplicates?, select?, include?, meta? })` | `Row`, or `Row \| null` when `skipDuplicates` is set |
 | `createMany` | `(args: { data: Row[], skipDuplicates?, select?, include?, meta? })` | `BatchResult<Row>` |
-| `update` | `(args: { where, data, select?, include?, meta? })` | `ThrowingResult<Row>` |
+| `update` | `(args: { where, data, select?, include?, meta? })` | `ThrowingWriteResult<Row>` |
 | `updateMany` | `(args: { where?, data, meta? })` | `BatchResult<never>` |
 | `updateEach` | `(args: { by, data, update, where?, select?, onEmpty?, meta? })` | `BatchResult<Row>` |
 | `upsert` | `(args: { where, create, update, select?, include?, meta? })` | `Row` |
 | `upsertMany` | `(args: { data, target, update, select?, batchSize?, where?, meta? })` | `BatchResult<Row>` |
-| `delete` | `(args: { where, select?, include?, meta? })` | `ThrowingResult<Row>` |
+| `delete` | `(args: { where, select?, include?, meta? })` | `ThrowingWriteResult<Row>` |
 | `deleteMany` | `(args: { where?, meta? })` | `BatchResult<never>` |
+
+`ThrowingWriteResult<T>` is a plain `Promise<T | null>` with a `.throw()` method. Writes run as soon as they are called and expose neither `.explain()` nor `.prepare()`.
 
 `BatchResult<T>` is `{ count: number; data?: T[] }` - `data` is populated when the driver supports `RETURNING`.
 

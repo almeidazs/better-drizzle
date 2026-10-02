@@ -152,7 +152,6 @@ The client passed to a `transaction(...)` callback also has `rollback(reason?)`,
 import {
 	better,
 	definePlugin,
-	OrderType,
 	version,
 	// error helpers
 	isDatabaseError,
@@ -166,15 +165,6 @@ import {
 	BetterDrizzleErrorCode,
 	BetterDrizzleTransactionRollbackError,
 } from 'better-drizzle';
-```
-
-### Enums
-
-```ts
-enum OrderType {
-	Asc = 'asc',
-	Desc = 'desc',
-}
 ```
 
 The library also exports its full type surface (`BetterDrizzleClient`, `BetterDrizzleModelDelegate`, `QueryArgs`, `WhereInput`, `Plugin`, hook context types, and more) for typing your own helpers.

@@ -4,7 +4,6 @@ import type {
 	BetterTableKey,
 	CursorArgs,
 	InsertModelFor,
-	OrderType,
 	PaginationArgs,
 	PluginModelExtensionContext,
 	QueryArgs,
@@ -632,6 +631,3 @@ export type ZodPluginCursorInput<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 > = Omit<CursorArgs<Schema, Name>, 'meta'>;
-
-/** Re-exported from `better-drizzle` for convenience. */
-export type { OrderType };

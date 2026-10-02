@@ -32,7 +32,7 @@ type JsonbWhereField<T> =
 	| import('./utils').ScalarFilter<T>
 	| import('./utils').JsonDottedWhereInput<T>
 	| {
-			/** @deprecated Pass dotted JSON paths directly on the JSONB column. */
+			/** Path filters, including root-level keys; dotted paths directly on the column are the shorthand for nested paths. */
 			json: import('./utils').JsonWhereInput<T>;
 	  };
 
@@ -326,7 +326,9 @@ export type BetterMeta = Record<string, unknown>;
 
 /**
  * Cursor position used for cursor-based pagination. Contains the scalar
- * column values that identify a specific row.
+ * column values that identify a specific row. Reads return only rows
+ * strictly after the position in `orderBy` direction. `cursor()` returns
+ * this shape as `nextCursor` / `previousCursor`.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
@@ -443,10 +445,10 @@ export interface BetterLockClientOptions {
  *   include: { posts: { where: { published: true } } },
  * });
  *
- * // Cursor-based
+ * // Rows after a cursor position, in `orderBy` direction
  * const users = await db.user.findMany({
- *   where: { createdAt: { gt: lastDate } },
- *   orderBy: { createdAt: 'desc' },
+ *   cursor: { id: lastId },
+ *   orderBy: { id: 'asc' },
  *   take: 10,
  * });
  * ```
@@ -464,7 +466,7 @@ export interface QueryArgs<
 	include?: IncludeInput<Schema, Name>;
 	/** Sort order for the result set. */
 	orderBy?: OrderByInput<Schema, Name>;
-	/** Maximum number of rows to return (use a negative value to reverse ordering). */
+	/** Maximum number of rows to return. A negative value does not reverse the order; use `orderBy` with `'desc'`. */
 	take?: import('./utils').Bindable<number>;
 	/** Number of rows to skip from the start of the result set. */
 	skip?: import('./utils').Bindable<number>;
@@ -531,13 +533,15 @@ export type ExistsArgs<
  *
  * @example
  * ```ts
- * // Offset pagination
- * const page = await db.user.paginate({
- *   limit: 10,
+ * const {
+ *   data,
+ *   pagination: { total, hasNext },
+ * } = await db.user.paginate({
+ *   page: 1,
+ *   perPage: 10,
  *   orderBy: { name: 'asc' },
  *   where: { active: true },
  * });
- *
  * ```
  */
 export type PaginationArgs<
@@ -560,14 +564,11 @@ export type CursorArgs<
 	Name extends TableKey<Schema>,
 	Meta = BetterMeta,
 > = QueryArgs<Schema, Name, Meta> &
-	Omit<
-		CursorPaginationOptions<SelectModelFor<Schema, Name>>,
-		'after' | 'before'
-	> & {
-		/** Cursor object (e.g. a previous `nextCursor`) to page forward from. */
-		after?: import('./utils').Bindable<CursorInput<Schema, Name>>;
-		/** Cursor object (e.g. a previous `previousCursor`) to page backward from. */
-		before?: import('./utils').Bindable<CursorInput<Schema, Name>>;
+	CursorPaginationOptions<SelectModelFor<Schema, Name>> & {
+		/** Cursor object (e.g. a previous `nextCursor`) to page forward from; `null` starts at the first page. */
+		after?: import('./utils').Bindable<CursorInput<Schema, Name>> | null;
+		/** Cursor object (e.g. a previous `previousCursor`) to page backward from; `null` is ignored. */
+		before?: import('./utils').Bindable<CursorInput<Schema, Name>> | null;
 	};
 
 type RelationPayloadFromArg<

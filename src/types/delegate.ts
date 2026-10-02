@@ -30,6 +30,7 @@ import type {
 } from './prepared';
 import type {
 	CursorArgs,
+	CursorInput,
 	IncludeInput,
 	PaginationArgs,
 	PayloadForArgs,
@@ -260,14 +261,38 @@ export type UpdateDataInput<
 
 /**
  * A factory function that creates the error thrown when `.throw()` is invoked
- * on a {@link ThrowingResult} and no record was found.
+ * on a {@link ThrowingResult} or {@link ThrowingWriteResult} and no record was found.
  */
 export type ThrowFactory = () => unknown;
 
 /**
- * A promise-like type that resolves to `T | null` and exposes a `.throw()`
- * helper. Calling `.throw()` converts a `null` result into a thrown error,
- * making it convenient for operations that must always return a record.
+ * A write result (`update`, `delete`) that resolves to `T | null` and exposes
+ * a `.throw()` helper. Calling `.throw()` converts a `null` result into a
+ * thrown error. Writes run eagerly and cannot be explained or prepared.
+ *
+ * @typeParam T - The non-null result type.
+ *
+ * @example
+ * ```ts
+ * const user = await db.user
+ *   .update({ where: { id: 1 }, data: { name: 'Alice' } })
+ *   .throw();
+ * ```
+ */
+export type ThrowingWriteResult<T> = Promise<T | null> & {
+	/** Throws a `BetterDrizzleError` with code `RESULT_NOT_FOUND` when the result is `null`. */
+	throw(): Promise<import('./utils').NonNullish<T>>;
+	/**
+	 * Throws the error returned by the factory function when the result is `null`.
+	 *
+	 * @param factory - A function that returns the error to throw.
+	 */
+	throw(factory: ThrowFactory): Promise<import('./utils').NonNullish<T>>;
+};
+
+/**
+ * A single-row read result that resolves to `T | null`, exposes `.explain()`,
+ * and a `.throw()` helper that converts a `null` result into a thrown error.
  *
  * @typeParam T - The non-null result type.
  *
@@ -286,16 +311,8 @@ export type ThrowFactory = () => unknown;
  * );
  * ```
  */
-export type ThrowingResult<T> = ExplainableResult<T | null> & {
-	/** Throws a `BetterDrizzleError` with code `RESULT_NOT_FOUND` when the result is `null`. */
-	throw(): Promise<import('./utils').NonNullish<T>>;
-	/**
-	 * Throws the error returned by the factory function when the result is `null`.
-	 *
-	 * @param factory - A function that returns the error to throw.
-	 */
-	throw(factory: ThrowFactory): Promise<import('./utils').NonNullish<T>>;
-};
+export type ThrowingResult<T> = ExplainableResult<T | null> &
+	Pick<ThrowingWriteResult<T>, 'throw'>;
 
 export type { ExplainableResult, ExplainOptions, ExplainResult };
 
@@ -500,7 +517,7 @@ export interface UpdateManyArgs<
 	Name extends TableKey<Schema>,
 	Meta = import('./query').BetterMeta,
 > {
-	/** Optional filter. When omitted, all rows are updated. */
+	/** Filter for the rows to update. When omitted or it compiles to no condition (`{}`, only `undefined` values), nothing is updated and `count` is `0`. */
 	where?: WhereArg<Schema, Name>;
 	/** Partial column values to apply to every matched row. */
 	data: UpdateScalarDataInput<Schema, Name>;
@@ -625,7 +642,7 @@ export interface DeleteManyArgs<
 	Name extends TableKey<Schema>,
 	Meta = import('./query').BetterMeta,
 > {
-	/** Optional filter. When omitted, all rows are deleted. */
+	/** Filter for the rows to delete. When omitted or it compiles to no condition (`{}`, only `undefined` values), nothing is deleted and `count` is `0`. */
 	where?: WhereArg<Schema, Name>;
 	/** Custom metadata forwarded to hooks. */
 	meta?: Meta;
@@ -867,7 +884,7 @@ export interface UpsertManyArgs<
 	select?: ScalarSelectInput<Schema, Name>;
 	/** Optional batch size for chunked native execution. */
 	batchSize?: number;
-	/** Optional SQL condition applied to the update side of the conflict path. */
+	/** Optional SQL condition applied to the update side of the conflict path. Not supported on MySQL. */
 	where?: SQL;
 	/** Custom metadata forwarded to hooks. */
 	meta?: Meta;
@@ -1653,8 +1670,11 @@ export type BetterDrizzleModelDelegate<
 	/**
 	 * Inserts a row if no match is found, otherwise updates it.
 	 *
-	 * Uses native conflict resolution when possible (PostgreSQL, SQLite),
-	 * falling back to a read-then-write strategy on other dialects.
+	 * Runs one native conflict-update statement (`ON CONFLICT DO UPDATE`, or
+	 * `ON DUPLICATE KEY UPDATE` on MySQL tables without another unique key)
+	 * when `where` pins the full primary key and `create` sets the same key
+	 * values. Otherwise it reads first, then updates or inserts in separate
+	 * statements, which is not atomic under concurrent writers.
 	 *
 	 * @param args - The where filter, create data, update data, and optional
 	 *   select/include options.
@@ -1705,8 +1725,9 @@ export type BetterDrizzleModelDelegate<
 	 * Performs a native batch upsert against an explicit conflict target.
 	 *
 	 * Returns a `BatchResult` with `count` reflecting the number of rows
-	 * inserted or updated by the statement. Supports `select`, but not
-	 * relation `include`, to keep the hot path as direct as possible.
+	 * inserted or updated by the statement (on MySQL, the number of rows
+	 * sent). Supports `select`, but not relation `include`, to keep the hot
+	 * path as direct as possible.
 	 *
 	 * @param args - Batch upsert rows, conflict target, update strategy, and
 	 *   optional `select` / `batchSize` / `where` options.
@@ -1815,9 +1836,10 @@ export type BetterDrizzleModelDelegate<
 			>,
 	): PreparableRead<PayloadForArgs<Schema, Name, Args>[], Meta, Args>;
 	/**
-	 * Updates a single matching row and returns the updated record.
+	 * Updates at most one matching row (even when `where` matches several;
+	 * use `updateMany` for all) and returns the updated record.
 	 *
-	 * Returns a `ThrowingResult` – if no row matches, calling `.throw()`
+	 * Returns a `ThrowingWriteResult` – if no row matches, calling `.throw()`
 	 * on the result will throw a `BetterDrizzleError`. Without `.throw()`,
 	 * the result resolves to `null` when no row is found.
 	 *
@@ -1869,27 +1891,25 @@ export type BetterDrizzleModelDelegate<
 						>
 					>
 			>,
-	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	): ThrowingWriteResult<PayloadForArgs<Schema, Name, Args>>;
 	/**
 	 * Updates all matching rows and returns the affected count.
 	 *
-	 * @param args - Optional filter and partial data. When `where` is omitted,
-	 *   all rows are updated.
+	 * A `where` that is omitted or compiles to no condition is a no-op that
+	 * resolves to `{ count: 0 }`.
+	 * To update every row, pass a condition that matches every row, or use
+	 * Drizzle directly.
+	 *
+	 * @param args - Filter and partial data.
 	 * @returns A promise resolving to `{ count }` with the number of affected rows.
 	 *
 	 * @example
 	 * ```ts
-	 * // Deactivate all users
-	 * const result = await db.user.updateMany({
-	 *   data: { active: false },
-	 * });
-	 * console.log(result.count);
-	 *
-	 * // Deactivate only guests
 	 * const result = await db.user.updateMany({
 	 *   where: { role: 'guest' },
 	 *   data: { active: false },
 	 * });
+	 * console.log(result.count);
 	 * ```
 	 */
 	updateMany(
@@ -2009,14 +2029,15 @@ export type BetterDrizzleModelDelegate<
 			>,
 	): PreparableSingleRead<Schema, Name, Meta, Args>;
 	/**
-	 * Returns exactly one matching row; throws if not found.
+	 * Returns the row matching `where`, or `null` when none matches.
 	 *
-	 * Unlike `findFirst`, this method always expects exactly one result.
-	 * Returns a `ThrowingResult` – call `.throw()` to throw when no row
-	 * is found, or use it directly for a promise that resolves to the row.
+	 * Runs the same query as `findFirst` but requires `args`. It does not
+	 * check that `where` targets a unique key or that only one row matches;
+	 * the first matching row is returned. Returns a `ThrowingResult` – call
+	 * `.throw()` to throw when no row is found.
 	 *
 	 * @param args - Filter, projection, ordering, and cursor arguments.
-	 * @returns A throwing-aware promise resolving to the matching row.
+	 * @returns A throwing-aware promise resolving to the matching row or `null`.
 	 *
 	 * @example
 	 * ```ts
@@ -2063,18 +2084,23 @@ export type BetterDrizzleModelDelegate<
 	/**
 	 * Returns an offset-based paginated result set with page metadata.
 	 *
-	 * @param args - Offset pagination options including `limit`, `skip`, and `orderBy`.
+	 * `page` + `perPage` are sugar for `skip` + `limit`; `page` cannot be
+	 * combined with `skip`.
+	 *
+	 * @param args - Offset pagination options (`page`, `perPage` / `limit`,
+	 *   `skip`) plus the usual query arguments.
 	 * @returns A promise resolving to `{ data, pagination }`.
 	 *
 	 * @example
 	 * ```ts
-	 * // Offset pagination
-	 * const page = await db.user.paginate({
-	 *   limit: 10,
+	 * const {
+	 *   data,
+	 *   pagination: { total, pageCount, hasNext },
+	 * } = await db.user.paginate({
+	 *   page: 2,
+	 *   perPage: 10,
 	 *   orderBy: { name: 'asc' },
 	 * });
-	 * console.log(page.data);        // rows
-	 * console.log(page.pagination);  // { type, page, perPage, total, pageCount, hasNext, hasPrevious }
 	 * ```
 	 */
 	paginate<
@@ -2108,7 +2134,22 @@ export type BetterDrizzleModelDelegate<
 	/**
 	 * Returns a cursor-based result set with navigation cursors.
 	 *
-	 * Accepts either `after` or `before`, but never both.
+	 * Accepts either `after` or `before`, but never both. `nextCursor` /
+	 * `previousCursor` are raw objects holding the `orderBy` fields of the
+	 * last / first row, and can be passed back as `after` / `before`.
+	 *
+	 * @example
+	 * ```ts
+	 * const {
+	 *   data,
+	 *   pagination: { hasNext, nextCursor },
+	 * } = await db.user.cursor({ limit: 10, orderBy: { id: 'asc' } });
+	 * const { data: next } = await db.user.cursor({
+	 *   limit: 10,
+	 *   orderBy: { id: 'asc' },
+	 *   after: nextCursor,
+	 * });
+	 * ```
 	 */
 	cursor<
 		Args extends OperationArgsWithPlugins<
@@ -2134,14 +2175,18 @@ export type BetterDrizzleModelDelegate<
 					>
 			>,
 	): PreparableRead<
-		CursorPaginationResult<PayloadForArgs<Schema, Name, Args>>,
+		CursorPaginationResult<
+			PayloadForArgs<Schema, Name, Args>,
+			CursorInput<Schema, Name>
+		>,
 		Meta,
 		Args
 	>;
 	/**
-	 * Deletes a single matching row and returns the deleted record.
+	 * Deletes at most one matching row (even when `where` matches several;
+	 * use `deleteMany` for all) and returns the deleted record.
 	 *
-	 * Returns a `ThrowingResult` – call `.throw()` to throw when no row is found.
+	 * Returns a `ThrowingWriteResult` – call `.throw()` to throw when no row is found.
 	 *
 	 * @param args - The where filter and optional select/include options.
 	 * @returns A throwing-aware promise resolving to the deleted row or `null`.
@@ -2188,23 +2233,22 @@ export type BetterDrizzleModelDelegate<
 						>
 					>
 			>,
-	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	): ThrowingWriteResult<PayloadForArgs<Schema, Name, Args>>;
 	/**
 	 * Deletes all matching rows and returns the affected count.
 	 *
-	 * @param args - Optional filter. When `where` is omitted, all rows are deleted.
+	 * A `where` that is omitted or compiles to no condition (for example
+	 * `deleteMany({})`) is a no-op that resolves to `{ count: 0 }`.
+	 *
+	 * @param args - Filter for the rows to delete.
 	 * @returns A promise resolving to `{ count }` with the number of deleted rows.
 	 *
 	 * @example
 	 * ```ts
-	 * // Delete all guests
 	 * const result = await db.user.deleteMany({
 	 *   where: { role: 'guest' },
 	 * });
 	 * console.log(result.count);
-	 *
-	 * // Delete all rows (use with caution!)
-	 * const result = await db.user.deleteMany({});
 	 * ```
 	 */
 	deleteMany(

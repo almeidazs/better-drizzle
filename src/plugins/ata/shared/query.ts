@@ -205,8 +205,11 @@ export const createQueryArgsSchema = (
 	}
 	if (shape === 'cursor') {
 		// Only cursor pagination takes a position, and it takes either the row
-		// values or the encoded string the previous page handed back.
-		const position: JsonSchema = { anyOf: [cursor, { type: 'string' }] };
+		// values or the encoded string the previous page handed back; `null`
+		// is a missing `nextCursor` / `previousCursor`.
+		const position: JsonSchema = {
+			anyOf: [cursor, { type: 'string' }, { type: 'null' }],
+		};
 		properties.after = position;
 		properties.before = position;
 	}

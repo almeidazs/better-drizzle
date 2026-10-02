@@ -19,6 +19,7 @@ import type {
 	BetterMeta,
 	CountArgs,
 	CursorArgs,
+	CursorInput,
 	ExistsArgs,
 	PaginationArgs,
 	PayloadForArgs,
@@ -341,7 +342,8 @@ type QueryHookResultForAction<
 									Plugins,
 									Action
 								>
-							>
+							>,
+							CursorInput<Schema, Name>
 						>
 					: OffsetPaginationResult<
 							PayloadForArgs<

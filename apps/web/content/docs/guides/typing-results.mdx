@@ -394,7 +394,8 @@ All of these are type exports from `better-drizzle`:
 | `PayloadForArgs<Schema, Table, Args>` | the payload for a `select` / `include` arguments object |
 | `BetterRecord<Schema, Table>` | a full row |
 | `ExplainableResult<T>` | what read helpers return: a `Promise<T>` with [`.explain()`](/docs/querying/explain) |
-| `ThrowingResult<T>` | `T \| null` plus [`.throw()`](/docs/writing/throwing-results) |
+| `ThrowingResult<T>` | what `findFirst` / `findOne` / `findUnique` return: an explainable `T \| null` plus [`.throw()`](/docs/writing/throwing-results) |
+| `ThrowingWriteResult<T>` | what `update` / `delete` return: a `Promise<T \| null>` plus `.throw()`, without `.explain()` |
 | `BatchResult<T>` | `{ count; data? }` from batch writes |
 | `OffsetPaginationResult<T>` / `CursorPaginationResult<T>` | `paginate()` / `cursor()` results |
 | `BetterTableKey<Schema>` / `BetterRepositoryKey<Schema>` | valid table keys / keys accepted by `repository()` |

@@ -91,7 +91,7 @@ const {
 const { data: second } = await client.users.cursor({
 	limit: 2,
 	orderBy: [{ id: 'asc' }],
-	after: nextCursor as { id: number },
+	after: nextCursor, // { id: 2 }, or null when hasNext is false
 });
 ```
 

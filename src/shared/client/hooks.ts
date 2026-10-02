@@ -9,7 +9,7 @@ import type {
 	RuntimeContext,
 	TableRuntime,
 	ThrowFactory,
-	ThrowingResult,
+	ThrowingWriteResult,
 } from '../../types';
 import { BetterDrizzleError, BetterDrizzleErrorCode } from '../errors';
 import { getMeta } from './context';
@@ -327,7 +327,7 @@ export const executeOperation = async <
  * @param args      - The original operation arguments.
  * @param methodName - The delegate method name (e.g. `"findFirst"`).
  * @param tableName - The TypeScript table key.
- * @returns A `ThrowingResult<T>` promise with a `.throw()` method.
+ * @returns The same promise typed as `ThrowingWriteResult<T>`, with a `.throw()` method.
  */
 export const attachThrow = <
 	Schema extends AnySchema,
@@ -343,8 +343,8 @@ export const attachThrow = <
 	args: Args,
 	methodName: string,
 	tableName: string,
-): ThrowingResult<T> => {
-	const wrapped = promise as ThrowingResult<T>;
+): ThrowingWriteResult<T> => {
+	const wrapped = promise as ThrowingWriteResult<T>;
 
 	wrapped.throw = async (factory?: ThrowFactory) =>
 		throwIfMissing(
