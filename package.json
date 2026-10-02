@@ -221,5 +221,8 @@
 		"ata-validator": {
 			"optional": true
 		}
+	},
+	"engines": {
+		"node": ">=18"
 	}
 }
