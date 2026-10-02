@@ -75,8 +75,7 @@ The method also shapes the result:
 | `findFirst`, `findOne`, `findUnique`, `update`, `delete` | `Payload \| null`; `.throw()` resolves to `Payload` |
 | `create` | `Payload`, or `Payload \| null` with `skipDuplicates` |
 | `upsert` | `Payload` |
-| `createMany`, `upsertMany`, `updateEach` | `BatchResult<Payload>` (`{ count; data? }`) |
-| `updateMany`, `deleteMany` | `BatchResult<never>` (`{ count }`) |
+| `createMany`, `upsertMany`, `updateEach`, `updateMany`, `deleteMany` | `BatchResult<Payload>` (`{ count; data? }`) |
 | `count` / `exists` | `number` / `boolean` |
 | `paginate` | `OffsetPaginationResult<Payload>` |
 | `cursor` | `CursorPaginationResult<Payload>` |

@@ -45,7 +45,7 @@ export const client = better(db); // or better(db, { plugins, hooks, raw, locks,
 | `cursor` | read args + `limit`, `after` **or** `before` | `{ data, pagination: { hasNext, hasPrevious, nextCursor, previousCursor } }` |
 | `create` / `createMany` | `data`, `skipDuplicates`, `select`\|`include` | `Row` (`null` if skipped) / `{ count, data? }` |
 | `update` / `delete` | `where`, `data`, `select`\|`include` | `Row \| null`, `.throw()` |
-| `updateMany` / `deleteMany` | `where`, `data` | `{ count }` |
+| `updateMany` / `deleteMany` | `where`, `data` (update only), scalar `select?` | `{ count, data? }` (full or selected affected rows on PostgreSQL/SQLite; count only on MySQL) |
 | `updateEach` | `by` (column), `data[]`, `update: { col: (row) => value }` | `{ count, data? }`, one `UPDATE ... CASE` |
 | `upsert` | `where`, `create`, `update` | `Row` |
 | `upsertMany` | `data[]`, `target`, `update` (`'all'`, column list, object, or `(ctx) => ...`), `batchSize` | `{ count, data? }` |

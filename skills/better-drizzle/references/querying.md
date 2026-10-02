@@ -29,6 +29,8 @@ await client.posts.findMany({
 
 `where` also accepts a Drizzle `SQL` fragment: `where: sql\`${posts.score} > ${posts.minScore}\``.
 
+`contains` and `startsWith` escape `%`, `_`, and the SQL escape character as literal text, including insensitive/negated filters, JSONB paths, array elements, and prepared params. Use raw SQL for wildcard patterns.
+
 ## Projections and relations
 
 ```ts
@@ -56,6 +58,7 @@ await client.users.findUnique({
 });
 ```
 
+- Unknown `select` keys throw at runtime even when set to `false` or `undefined`, including nested projections.
 - The loader runs one query for the root plus one per relation node, never one per parent row. Nested `take`/`skip` are per parent.
 - `_count` is a correlated subquery in the same statement and works for one, many, and `.through()` relations.
 - Relations come only from `defineRelations`. A `.references()` foreign key alone is not a relation.

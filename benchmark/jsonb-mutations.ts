@@ -190,15 +190,12 @@ const rawUpdateMany = async (
 	ids: readonly number[],
 	patch: Record<string, unknown>,
 ) => {
-	const matched = await raw
-		.select({ count: count() })
-		.from(events)
-		.where(inArray(events.id, [...ids]));
-	await raw
+	const rows = await raw
 		.update(events)
 		.set({ metadata: patchExpression(patch) })
-		.where(inArray(events.id, [...ids]));
-	return { count: matched[0]?.count ?? 0 };
+		.where(inArray(events.id, [...ids]))
+		.returning();
+	return rows.length ? { count: rows.length, data: rows } : { count: 0 };
 };
 
 const scenarios: readonly Scenario[] = [
@@ -259,27 +256,27 @@ const scenarios: readonly Scenario[] = [
 	{
 		name: 'updateMany / profile refresh (3 paths, 32 rows)',
 		ids: batchIds,
-		result: 'count',
+		result: 'batch',
 		raw: () => rawUpdateMany(batchIds, profilePatch),
 		better: async () => {
 			const result = await db.events.updateMany({
 				data: { metadata: profilePatch },
 				where: { id: { in: [...batchIds] } },
 			});
-			return { count: result.count };
+			return result;
 		},
 	},
 	{
 		name: 'updateMany / nested audit creation (3 paths, 32 rows)',
 		ids: batchIds,
-		result: 'count',
+		result: 'batch',
 		raw: () => rawUpdateMany(batchIds, nestedPatch),
 		better: async () => {
 			const result = await db.events.updateMany({
 				data: { metadata: nestedPatch },
 				where: { id: { in: [...batchIds] } },
 			});
-			return { count: result.count };
+			return result;
 		},
 	},
 	{

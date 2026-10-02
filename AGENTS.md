@@ -188,14 +188,18 @@
     - Cache cascade dependencies and referenced columns are precomputed from native relations at setup, including inverse-only, transitive, and self references. `updateEach.by` is a Drizzle column instance, not a column key. Successful raw/commit observers and queued commit callbacks all run even when an earlier observer throws; the first error still propagates. No-op mutations skip automatic version writes, but explicit invalidation hints still apply.
     - `bun run bench:cache` measures cache costs with mitata and validates complete result parity first. Map stores isolate local overhead; set `REDIS_URL` for real Redis measurements. `CACHE_BENCH_VERIFY_ONLY=1` skips timings and `CACHE_BENCH_FILTER` selects scenarios. Bulk entity invalidation sends one Redis SET per targeted entity; cluster reads issue GET per key.
     - `src/plugins/soft-delete` writes ISO 8601 values for string-backed delete timestamp columns and `Date` values for Drizzle date columns; this preserves SQLite text-column compatibility while retaining native timestamp encoders
+- **Batch update/delete results**: `updateMany` and `deleteMany` return `BatchResult<Payload>` with full affected rows by default or optional scalar `select` on PostgreSQL/SQLite via native `RETURNING`; `data` is omitted when empty. MySQL remains count-only, and relation projections are rejected. Raw benchmark counterparts must return the same rows using native `RETURNING`, without a separate count query.
+- **Projection validation**: unknown `select` keys throw before SQL, even when set to `false` or `undefined`; nested and scalar write projections follow the same rule.
+- **Literal search filters**: `contains` and `startsWith` escape SQL `%`, `_`, and the escape character, including insensitive/negated filters, PostgreSQL JSONB/array variants, and prepared params. `endsWith` retains its previous behavior.
 - **Batch updateEach API**:
     - `updateEach` is native-first and performance-sensitive
     - it accepts `by`, `data`, `update`, optional `where`, optional scalar `select`, and `onEmpty`
     - it uses a single `UPDATE ... SET column = CASE ... END` style statement instead of userland loops
     - it rejects duplicate `by` values and relation selects should fail fast
 - **Batch upsert API**:
+    - `where` uses the normal structured filter or Drizzle SQL against the existing conflicting row on the update branch; it does not filter incoming inserts.
     - `upsertMany` is native-first and performance-sensitive
-    - it accepts `data`, explicit `target`, `update`, optional `select`, optional `batchSize`, and optional SQL `where`
+    - it accepts `data`, explicit `target`, `update`, optional `select`, optional `batchSize`, and optional `WhereArg` (`WhereInput | SQL`) `where`
     - it intentionally supports `select` but not relation `include`
     - unsupported dialect/feature combinations should fail fast instead of degrading to slow userland loops
     - MySQL uses `ON DUPLICATE KEY UPDATE` with `values(col)` for excluded values; because it fires on any unique key, `assertMysqlUpsertTarget` requires the target to equal the primary key or one unique key and rejects rows that set, or static defaults that fill, another unique key. `where` is rejected and `count` is the number of rows sent (MySQL reports 2 per updated row)

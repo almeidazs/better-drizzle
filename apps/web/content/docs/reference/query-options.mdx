@@ -188,10 +188,12 @@ Read args are only part of the API surface. The write methods add a few importan
 | Method | Extra args |
 | --- | --- |
 | `createMany` | `data[]`, `skipDuplicates?`, `select?`, `include?`, `meta?` |
-| `updateMany` | `where?`, `data`, `meta?` |
+| `updateMany` | `where?`, `data`, `select?`, `meta?` |
 | `updateEach` | `by`, `data[]`, `update`, `where?`, `select?`, `onEmpty?`, `meta?` |
-| `deleteMany` | `where?`, `meta?` |
+| `deleteMany` | `where?`, `select?`, `meta?` |
 | `upsertMany` | `data[]`, `target`, `update`, `select?`, `batchSize?`, `where?`, `meta?` |
+
+`updateMany` and `deleteMany` return `BatchResult<Payload>` (`{ count, data? }`). PostgreSQL and SQLite return complete affected rows by default, or the scalar fields requested by `select`, using native `RETURNING`. Empty results omit `data`. MySQL returns only `{ count }`. Relation projections are unsupported.
 
 ### `updateEach` details
 
@@ -275,4 +277,4 @@ await client.users.upsertMany({
 
 `target` is a single column name (`'email'`) or an array of column names (`['email']`). `batchSize` splits `data` into chunks and must be a positive integer, otherwise the call throws `OPERATION_ERROR`.
 
-`where` must be a Drizzle `SQL` fragment. It is not the same as the normal structured `where` filter used by reads and single-row writes.
+`where` accepts the same `WhereArg` as other operations: a structured filter or a Drizzle `SQL` fragment. It controls whether the existing conflicting row is updated; it does not filter incoming inserts. PostgreSQL and SQLite support it, while MySQL rejects it.

@@ -190,10 +190,10 @@ matrix, the failure modes, and the batch workaround.
 
 ## `updateMany`
 
-Updates every matching row and returns the affected count:
+Updates every matching row and returns `{ count, data? }`:
 
 ```ts tab="better-drizzle" tab-group="orm"
-const { count } = await client.users.updateMany({
+const { count, data } = await client.users.updateMany({
 	where: { active: true },
 	data: { active: false },
 }); // count: rows updated
@@ -206,10 +206,12 @@ const rows = await db
 	.update(users)
 	.set({ active: false })
 	.where(eq(users.active, true))
-	.returning({ id: users.id });
+	.returning();
 
 const count = rows.length;
 ```
+
+PostgreSQL and SQLite return complete updated rows in `data` by default using native `RETURNING`. Pass a scalar `select` to narrow those rows, for example `select: { id: true, active: true }`. Relation projections are unsupported. When no row matches, the result is `{ count: 0 }` with no `data`; MySQL always returns only `{ count }`.
 
 ## `updateEach`
 
@@ -485,10 +487,10 @@ const [deleted = null] = await db
 
 ## `deleteMany`
 
-Deletes every matching row and returns the affected count:
+Deletes every matching row and returns `{ count, data? }`:
 
 ```ts tab="better-drizzle" tab-group="orm"
-const { count } = await client.users.deleteMany({
+const { count, data } = await client.users.deleteMany({
 	where: { active: false },
 }); // count: rows deleted
 ```
@@ -499,10 +501,12 @@ import { eq } from 'drizzle-orm';
 const rows = await db
 	.delete(users)
 	.where(eq(users.active, false))
-	.returning({ id: users.id });
+	.returning();
 
 const count = rows.length;
 ```
+
+On PostgreSQL and SQLite, `data` contains the deleted rows, or the scalar fields requested by `select`, from native `RETURNING`. Empty results omit `data`. MySQL returns only `{ count }`. Relation projections are unsupported.
 
 ## `upsert`
 
@@ -540,6 +544,8 @@ const [user] = await db
 `upsert` is usually cleaner than "find, then branch, then write" when the behavior is genuinely upsert-shaped.
 
 ## `upsertMany`
+
+`where` accepts a structured filter or Drizzle `SQL` and controls whether the existing conflicting row is updated. It does not filter incoming inserts. PostgreSQL and SQLite support it; MySQL rejects it.
 
 For bulk create-or-update flows, use `upsertMany` instead of looping over `upsert()`:
 
@@ -594,7 +600,7 @@ const count = rows.length;
 - `target` is required: one column key (`'email'`) or an array of keys (`['tenantId', 'email']`)
 - `update` can be `'all'`, a column list, an object, or a function
 - `batchSize` chunks large inserts without changing the API. It must be a positive integer, otherwise the call throws `batchSize must be a positive integer.`
-- `where` is available for SQL-only conflict-update predicates (not on MySQL)
+- `where` accepts structured filters or SQL conflict-update predicates (not on MySQL)
 - on MySQL it compiles to `ON DUPLICATE KEY UPDATE`, which fires on any unique key, so `target` must be the primary key or a unique key and rows cannot set another unique key; `data` is never returned there
 - relation `include` is intentionally not supported
 

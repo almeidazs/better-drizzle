@@ -81,7 +81,7 @@ const createExtendedOperations = (
 					.insert(benchWrites)
 					.values(data)
 					.returning();
-				await context.raw
+				const deleted = await context.raw
 					.delete(benchWrites)
 					.where(
 						inArray(
@@ -90,16 +90,28 @@ const createExtendedOperations = (
 						),
 					)
 					.returning();
-				return normalizeRows(created);
+				return {
+					created: normalizeRows(created),
+					deleted: {
+						count: deleted.length,
+						data: normalizeRows(deleted),
+					},
+				};
 			}
 
 			const created = await betterClient(context).benchWrites.createMany({
 				data,
 			});
-			await betterClient(context).benchWrites.deleteMany({
+			const deleted = await betterClient(context).benchWrites.deleteMany({
 				where: { id: { in: data.map((row) => row.id) } },
 			});
-			return normalizeRows(created.data);
+			return {
+				created: normalizeRows(created.data),
+				deleted: {
+					count: deleted.count,
+					data: normalizeRows(deleted.data),
+				},
+			};
 		},
 		async nestedRelationPage() {
 			if (mode === 'raw') {
@@ -297,14 +309,14 @@ const createExtendedOperations = (
 					.where(
 						and(gte(benchWrites.id, 100), lte(benchWrites.id, 140)),
 					)
-					.returning({ id: benchWrites.id });
-				return { count: result.length };
+					.returning();
+				return { count: result.length, data: normalizeRows(result) };
 			}
 			const result = await betterClient(context).benchWrites.updateMany({
 				data: { payload },
 				where: { id: { gte: 100, lte: 140 } },
 			});
-			return { count: result.count };
+			return { count: result.count, data: normalizeRows(result.data) };
 		},
 		async upsertMany() {
 			updateIteration += 1;

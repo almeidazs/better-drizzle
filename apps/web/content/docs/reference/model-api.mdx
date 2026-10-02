@@ -32,12 +32,12 @@ Every read returns an explainable result: a lazy thenable that runs the read whe
 | `create` | `(args: { data, skipDuplicates?, select?, include?, meta? })` | `Row`, or `Row \| null` when `skipDuplicates` is set |
 | `createMany` | `(args: { data: Row[], skipDuplicates?, select?, include?, meta? })` | `BatchResult<Row>` |
 | `update` | `(args: { where, data, select?, include?, meta? })` | `ThrowingWriteResult<Row>` |
-| `updateMany` | `(args: { where?, data, meta? })` | `BatchResult<never>` |
+| `updateMany` | `(args: { where?, data, select?, meta? })` | `BatchResult<Payload>` |
 | `updateEach` | `(args: { by, data, update, where?, select?, onEmpty?, meta? })` | `BatchResult<Row>` |
 | `upsert` | `(args: { where, create, update, select?, include?, meta? })` | `Row` |
 | `upsertMany` | `(args: { data, target, update, select?, batchSize?, where?, meta? })` | `BatchResult<Row>` |
 | `delete` | `(args: { where, select?, include?, meta? })` | `ThrowingWriteResult<Row>` |
-| `deleteMany` | `(args: { where?, meta? })` | `BatchResult<never>` |
+| `deleteMany` | `(args: { where?, select?, meta? })` | `BatchResult<Payload>` |
 
 `ThrowingWriteResult<T>` is a plain `Promise<T | null>` with a `.throw()` method. Writes run as soon as they are called and expose neither `.explain()` nor `.prepare()`.
 
@@ -127,7 +127,7 @@ const result = await client.users.upsertMany({
 Constraints worth knowing:
 
 - `upsertMany` is native-only and intentionally fails fast on unsupported dialects/features
-- `where` is SQL-only and applies to the update side of the conflict path
+- `where` accepts a structured filter or Drizzle SQL and applies to the existing conflicting row on the update side of the conflict path
 - `select` is supported, but relation selects are not
 - `include` is intentionally not supported
 

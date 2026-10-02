@@ -51,7 +51,9 @@ await client.users.upsertMany({
 ```
 
 - `updateMany`/`deleteMany` with no condition are no-ops returning `{ count: 0 }`. Write `where: sql\`1 = 1\`` to target every row on purpose.
+- `updateMany`/`deleteMany` return full affected rows by default on PostgreSQL/SQLite via native `RETURNING`; scalar `select` narrows `data`, and relation projections are rejected. Empty results omit `data`. MySQL returns only `{ count }`.
 - `data` is returned only when the driver supports `RETURNING` (not MySQL).
+- `upsertMany.where` accepts structured filters or Drizzle `SQL`, applied to the existing conflicting row on the update branch; incoming inserts are unaffected.
 - `upsertMany` on MySQL (`ON DUPLICATE KEY UPDATE`): `target` must be the primary key or one unique key, rows cannot set another unique key, and `where` is rejected.
 - `updateEach` rejects duplicate `by` values and relation selects.
 

@@ -63,7 +63,7 @@ This suite is I/O bound: the cost is dominated by PostgreSQL planning, execution
 
 `bench:jsonb:mutations` uses a separate PostgreSQL table and validates both returned results and stored rows before timing. It covers full-document replacement plus `update`, `updateMany`, row-specific `updateEach`, `upsert`, and `upsertMany` path mutations, with profile refreshes and deeper preference/audit patches over several rows. The fixture includes SQL `NULL`, JSON `null`, scalar, array, and ordinary object roots so the raw Drizzle expressions and Better Drizzle mutations exercise the same root and intermediate-object normalization semantics.
 
-The raw side builds path updates with the same shared-prefix trie as the runtime, so both sides emit one `jsonb_set` per path-tree edge and normalize the same roots and ancestors. It also matches the repository operation's query count and result shape, including the count query used by `updateMany` and `updateEach`. These are real PostgreSQL mutation timings, useful for checking SQL and work parity. They are database-bound and should not be reported as wrapper-overhead claims.
+The raw side builds path updates with the same shared-prefix trie as the runtime, so both sides emit one `jsonb_set` per path-tree edge and normalize the same roots and ancestors. It also matches the repository operation's query count and result shape, including native `RETURNING` with full rows for `updateMany` and the count query used by `updateEach`. These are real PostgreSQL mutation timings, useful for checking SQL and work parity. They are database-bound and should not be reported as wrapper-overhead claims.
 
 ### Cache scope
 

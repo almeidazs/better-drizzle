@@ -120,7 +120,7 @@ await client.users.restore({ where: { id: 1 } });
 await client.users.restoreById(1);
 ```
 
-A soft `delete()` runs an `update` of the same `where` limited to live rows, then returns the updated row (or `null`), so it still has `.throw()`. A soft `deleteMany()` runs an `updateMany` and returns `{ count }` of the rows it marked. Deleting an already deleted row finds nothing and keeps the original timestamp.
+A soft `delete()` runs an `update` of the same `where` limited to live rows, then returns the updated row (or `null`), so it still has `.throw()`. A soft `deleteMany()` runs an `updateMany` and returns `{ count, data? }`: PostgreSQL and SQLite include the marked rows (or scalar `select` fields), while MySQL returns only the count. Empty results omit `data`. Deleting an already deleted row finds nothing and keeps the original timestamp.
 
 ## Behavior details
 
