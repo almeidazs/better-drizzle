@@ -32,6 +32,47 @@ describe('prepared statements', () => {
 		ctx.close();
 	});
 
+	test('escapes LIKE metacharacters on every prepared execution', async () => {
+		const names = [
+			'A%_!\\literal',
+			'Axy!\\literal',
+			'prefix A%_!\\literal',
+		];
+		await ctx.better.users.createMany({
+			data: names.map((name, index) => ({
+				name,
+				age: 30,
+				active: true,
+				email: `prepared-pattern-${index}@example.com`,
+			})),
+		});
+		for (const operator of ['contains', 'startsWith'] as const) {
+			const statement = ctx.better.users
+				.findMany({
+					orderBy: { id: 'asc' },
+					where: {
+						name: {
+							[operator]: param('value'),
+							mode: 'insensitive',
+						},
+					},
+				})
+				.prepare();
+			expect(
+				(await statement.execute({ value: 'a%_!\\' })).map(
+					(row) => row.name,
+				),
+			).toEqual(
+				operator === 'contains' ? [names[0], names[2]] : [names[0]],
+			);
+			expect(
+				(await statement.execute({ value: 'axy' })).map(
+					(row) => row.name,
+				),
+			).toEqual([names[1]]);
+		}
+	});
+
 	test('findUnique matches the regular read for every value', async () => {
 		const byEmail = ctx.better.users
 			.findUnique({ where: { email: param('email') } })

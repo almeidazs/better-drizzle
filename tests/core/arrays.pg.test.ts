@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
-import { defineRelations } from 'drizzle-orm';
+import { defineRelations, fillPlaceholders } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import {
 	customType,
@@ -14,7 +14,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { Client } from 'pg';
 
-import { better } from '../../src';
+import { better, param } from '../../src';
 import { compileUpdateMutations } from '../../src/shared/client/operations';
 
 test('quotes schema-qualified enum types in array addUnique casts', () => {
@@ -59,6 +59,29 @@ const tokens = pgTable('better_drizzle_array_tokens', {
 const relations = defineRelations({ tokens, users });
 const DATABASE_URL = process.env.DATABASE_URL;
 
+test('escapes literal array-element patterns and prepared values', () => {
+	const db = better(drizzle.mock({ relations }));
+	for (const operator of ['contains', 'startsWith'] as const)
+		for (const mode of ['default', 'insensitive'] as const)
+			for (const prepared of [false, true]) {
+				const predicate = db.users.$where({
+					tags: {
+						some: {
+							[operator]: prepared ? param('value') : 'A%_!\\',
+							mode,
+						},
+					},
+				});
+				const query = new PgDialect().sqlToQuery(predicate!);
+				expect(query.sql).toContain("escape '!'");
+				expect(
+					fillPlaceholders(query.params, { value: 'A%_!\\' }),
+				).toContain(
+					operator === 'contains' ? '%A!%!_!!\\%' : 'A!%!_!!\\%',
+				);
+			}
+});
+
 describe.skipIf(!DATABASE_URL)('PostgreSQL array filters', () => {
 	let client: Client;
 	let db: ReturnType<typeof better<typeof relations>>;
@@ -98,6 +121,50 @@ describe.skipIf(!DATABASE_URL)('PostgreSQL array filters', () => {
 		await client?.query('drop table if exists better_drizzle_array_users');
 		await client?.query('drop type if exists better_drizzle_array_role');
 		await client?.end();
+	});
+
+	test('matches literal array-element metacharacters in regular and prepared patterns', async () => {
+		const values = [
+			'A%_!\\literal',
+			'Axy!\\literal',
+			'prefix A%_!\\literal',
+		];
+		for (let index = 0; index < values.length; index++)
+			await client.query(
+				'insert into better_drizzle_array_users values ($1, array[]::uuid[], array[]::better_drizzle_array_role[], array[]::integer[], $2::text[])',
+				[100 + index, [values[index]]],
+			);
+		try {
+			for (const operator of ['contains', 'startsWith'] as const) {
+				const expected = operator === 'contains' ? [100, 102] : [100];
+				expect(
+					ids(
+						await db.users.findMany({
+							where: { tags: { some: { [operator]: 'A%_!\\' } } },
+						}),
+					),
+				).toEqual(expected);
+				const statement = db.users
+					.findMany({
+						where: {
+							tags: {
+								some: {
+									[operator]: param('value'),
+									mode: 'insensitive',
+								},
+							},
+						},
+					})
+					.prepare();
+				expect(
+					ids(await statement.execute({ value: 'a%_!\\' })),
+				).toEqual(expected);
+			}
+		} finally {
+			await client.query(
+				'delete from better_drizzle_array_users where id in (100, 101, 102)',
+			);
+		}
 	});
 
 	const ids = (rows: { id: number }[]) => rows.map((row) => row.id).sort();

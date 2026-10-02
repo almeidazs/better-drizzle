@@ -103,6 +103,8 @@ await db
 | `gt` / `gte`   | greater than / greater than or equal |
 | `not`          | negate a value or a nested filter    |
 
+`contains` and `startsWith` treat `%`, `_`, and the SQL escape character as literal search text. This applies to case-insensitive filters, nested `not`, PostgreSQL JSONB paths and array elements, and prepared params. Use a Drizzle `SQL` fragment when you need a wildcard pattern.
+
 ## Boolean filters
 
 ```ts tab="better-drizzle" tab-group="orm"

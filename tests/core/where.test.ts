@@ -24,6 +24,38 @@ afterEach(() => {
 	ctx.close();
 });
 
+test('contains and startsWith treat LIKE metacharacters literally', async () => {
+	const names = ['A%_!\\literal', 'Axy!\\literal', 'prefix A%_!\\literal'];
+	await ctx.better.users.createMany({
+		data: names.map((name, index) => ({
+			name,
+			age: 30,
+			active: true,
+			email: `pattern-${index}@example.com`,
+		})),
+	});
+	for (const mode of [undefined, 'insensitive'] as const) {
+		const value = mode ? 'a%_!\\' : 'A%_!\\';
+		for (const operator of ['contains', 'startsWith'] as const) {
+			const rows = await ctx.better.users.findMany({
+				orderBy: { id: 'asc' },
+				where: { name: { [operator]: value, mode } },
+			});
+			expect(rows.map((row) => row.name)).toEqual(
+				operator === 'contains' ? [names[0], names[2]] : [names[0]],
+			);
+		}
+	}
+	// endsWith intentionally retains SQL pattern behavior.
+	expect(
+		(
+			await ctx.better.users.findMany({
+				where: { name: { endsWith: '%' } },
+			})
+		).length,
+	).toBe(8);
+});
+
 describe('scalar where - equality', () => {
 	test('simple equality filter', async () => {
 		const result = await ctx.better.users.findMany({

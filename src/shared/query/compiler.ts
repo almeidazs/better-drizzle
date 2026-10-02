@@ -152,12 +152,19 @@ const compileListParam = (
 };
 
 const PATTERN_MODES = ['contains', 'startsWith', 'endsWith'] as const;
+const escapePattern = (value: string) => value.replace(/[!%_]/g, '!$&');
 // Pattern params are wrapped in JS when the statement executes, so the
 // database compares against a ready pattern instead of concatenating per row.
 const PATTERN_ENCODERS = {
-	contains: { mapToDriverValue: (value: unknown) => `%${value}%` },
+	contains: {
+		mapToDriverValue: (value: unknown) =>
+			`%${escapePattern(String(value))}%`,
+	},
 	endsWith: { mapToDriverValue: (value: unknown) => `%${value}` },
-	startsWith: { mapToDriverValue: (value: unknown) => `${value}%` },
+	startsWith: {
+		mapToDriverValue: (value: unknown) =>
+			`${escapePattern(String(value))}%`,
+	},
 };
 
 const patternParam = (
@@ -179,17 +186,19 @@ const compilePattern = (
 		typeof value !== 'string'
 			? patternParam(value, mode)
 			: mode === 'contains'
-				? `%${value}%`
+				? `%${escapePattern(value)}%`
 				: mode === 'startsWith'
-					? `${value}%`
+					? `${escapePattern(value)}%`
 					: `%${value}`;
 
-	if (!insensitive) return like(column, pattern);
 	// ILIKE is PostgreSQL-only; lowering both sides stays case-insensitive
 	// under any SQLite/MySQL collation.
-	return dialect && dialect !== 'pg'
-		? sql`lower(${column}) like lower(${pattern})`
-		: ilike(column, pattern);
+	const condition = !insensitive
+		? like(column, pattern)
+		: dialect && dialect !== 'pg'
+			? sql`lower(${column}) like lower(${pattern})`
+			: ilike(column, pattern);
+	return mode === 'endsWith' ? condition : sql`${condition} escape '!'`;
 };
 
 const compileScalarFilter = (
@@ -449,14 +458,15 @@ const compileArrayElementScalarFilter = (
 				? patternParam(entry, mode)
 				: bind(
 						mode === 'contains'
-							? `%${entry}%`
+							? `%${escapePattern(entry)}%`
 							: mode === 'startsWith'
-								? `${entry}%`
+								? `${escapePattern(entry)}%`
 								: `%${entry}`,
 					);
-		return insensitive
+		const condition = insensitive
 			? sql`${column} ilike ${value}`
 			: sql`${column} like ${value}`;
+		return mode === 'endsWith' ? condition : sql`${condition} escape '!'`;
 	};
 
 	if ('equals' in value)
@@ -741,7 +751,6 @@ const compileJsonPathFilter = (
 		conditions.push(
 			and(eq(jsonType, 'number'), gte(numeric, value.gte)) as SQL,
 		);
-	const pattern = value.mode === 'insensitive' ? ilike : like;
 	const text = textValue as unknown as AnyColumn;
 	for (const mode of PATTERN_MODES) {
 		const entry = value[mode];
@@ -749,15 +758,12 @@ const compileJsonPathFilter = (
 		conditions.push(
 			and(
 				eq(jsonType, 'string'),
-				pattern(
+				compilePattern(
 					text,
-					typeof entry !== 'string'
-						? patternParam(entry, mode)
-						: mode === 'contains'
-							? `%${entry}%`
-							: mode === 'startsWith'
-								? `${entry}%`
-								: `%${entry}`,
+					entry,
+					mode,
+					value.mode === 'insensitive',
+					'pg',
 				),
 			) as SQL,
 		);

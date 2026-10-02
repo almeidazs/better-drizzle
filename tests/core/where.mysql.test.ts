@@ -1,8 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
-import { sql } from 'drizzle-orm';
+import { defineRelations, fillPlaceholders, sql } from 'drizzle-orm';
+import { MySqlDialect, mysqlTable, varchar } from 'drizzle-orm/mysql-core';
+import { drizzle } from 'drizzle-orm/mysql2';
 
-import { param } from '../../src';
+import { better, param } from '../../src';
 import { createMysqlTestContext, type MysqlTestContext } from './setup.mysql';
 
 // The relation-filter fix in compiler.ts is dialect-agnostic, so the SQLite
@@ -13,6 +15,30 @@ import { createMysqlTestContext, type MysqlTestContext } from './setup.mysql';
 //   MYSQL_URL=mysql://root:root@127.0.0.1:3306/better_drizzle \
 //     bun test tests/core/where.mysql.test.ts
 const MYSQL_URL = process.env.MYSQL_URL;
+
+test('compiles literal MySQL patterns with an explicit escape character', () => {
+	const items = mysqlTable('pattern_items', {
+		name: varchar('name', { length: 255 }),
+	});
+	const db = better(drizzle.mock({ relations: defineRelations({ items }) }));
+	for (const operator of ['contains', 'startsWith'] as const)
+		for (const mode of [undefined, 'insensitive'] as const)
+			for (const prepared of [false, true]) {
+				const predicate = db.items.$where({
+					name: {
+						[operator]: prepared ? param('value') : 'A%_!\\',
+						mode,
+					},
+				});
+				const query = new MySqlDialect().sqlToQuery(predicate!);
+				expect(query.sql).toContain("escape '!'");
+				expect(
+					fillPlaceholders(query.params, { value: 'A%_!\\' }),
+				).toEqual([
+					operator === 'contains' ? '%A!%!_!!\\%' : 'A!%!_!!\\%',
+				]);
+			}
+});
 
 describe.skipIf(!MYSQL_URL)('relation where - Many (mysql)', () => {
 	let ctx: MysqlTestContext;
@@ -221,6 +247,52 @@ describe.skipIf(!MYSQL_URL)('insensitive string filters (mysql)', () => {
 			orderBy: { id: 'asc' },
 			where: { name: filter },
 		});
+
+	test('matches literal metacharacters in regular and prepared patterns', async () => {
+		const values = [
+			'A%_!\\literal',
+			'Axy!\\literal',
+			'prefix A%_!\\literal',
+		];
+		await ctx.better.users.createMany({
+			data: values.map((name, index) => ({
+				id: 100 + index,
+				name,
+				email: `literal-${index}@example.com`,
+				age: 30,
+				active: true,
+			})),
+		});
+		try {
+			for (const operator of ['contains', 'startsWith'] as const) {
+				const expected =
+					operator === 'contains'
+						? [values[0], values[2]]
+						: [values[0]];
+				expect(names(await find({ [operator]: 'A%_!\\' }))).toEqual(
+					expected,
+				);
+				const statement = ctx.better.users
+					.findMany({
+						orderBy: { id: 'asc' },
+						where: {
+							name: {
+								[operator]: param('value'),
+								mode: 'insensitive',
+							},
+						},
+					})
+					.prepare();
+				expect(
+					names(await statement.execute({ value: 'a%_!\\' })),
+				).toEqual(expected);
+			}
+		} finally {
+			await ctx.better.users.deleteMany({
+				where: { id: { in: [100, 101, 102] } },
+			});
+		}
+	});
 
 	test('contains, startsWith, and endsWith ignore case', async () => {
 		expect(await find({ contains: 'LI' })).toHaveLength(0);

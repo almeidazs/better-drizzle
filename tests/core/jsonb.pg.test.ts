@@ -1,14 +1,14 @@
 import { Database } from 'bun:sqlite';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
-import { defineRelations, sql } from 'drizzle-orm';
+import { defineRelations, fillPlaceholders, sql } from 'drizzle-orm';
 import { drizzle as drizzleSqlite } from 'drizzle-orm/bun-sqlite';
 import { drizzle as drizzleMysql } from 'drizzle-orm/mysql2';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { integer, json, jsonb, pgTable } from 'drizzle-orm/pg-core';
+import { integer, json, jsonb, PgDialect, pgTable } from 'drizzle-orm/pg-core';
 import { Client } from 'pg';
 
-import { BetterDrizzleErrorCode, better } from '../../src';
+import { BetterDrizzleErrorCode, better, param } from '../../src';
 
 type Metadata = {
 	profile: {
@@ -28,6 +28,29 @@ const events = pgTable('better_drizzle_jsonb_test_events', {
 });
 const relations = defineRelations({ events });
 const DATABASE_URL = process.env.DATABASE_URL;
+
+test('escapes literal JSONB patterns and prepared values', () => {
+	const db = better(drizzle.mock({ relations }));
+	for (const operator of ['contains', 'startsWith'] as const)
+		for (const mode of [undefined, 'insensitive'] as const)
+			for (const prepared of [false, true]) {
+				const predicate = db.events.$where({
+					metadata: {
+						'profile.name': {
+							[operator]: prepared ? param('value') : 'A%_!\\',
+							mode,
+						},
+					},
+				});
+				const query = new PgDialect().sqlToQuery(predicate!);
+				expect(query.sql).toContain("escape '!'");
+				expect(
+					fillPlaceholders(query.params, { value: 'A%_!\\' }),
+				).toContain(
+					operator === 'contains' ? '%A!%!_!!\\%' : 'A!%!_!!\\%',
+				);
+			}
+});
 
 describe.skipIf(!DATABASE_URL)('JSONB where (PostgreSQL)', () => {
 	let client: Client;
@@ -79,6 +102,59 @@ describe.skipIf(!DATABASE_URL)('JSONB where (PostgreSQL)', () => {
 			'drop table if exists better_drizzle_jsonb_test_events',
 		);
 		await client?.end();
+	});
+
+	test('matches literal JSONB metacharacters in regular and prepared patterns', async () => {
+		const names = [
+			'A%_!\\literal',
+			'Axy!\\literal',
+			'prefix A%_!\\literal',
+		];
+		for (let index = 0; index < names.length; index++)
+			await client.query(
+				'insert into better_drizzle_jsonb_test_events (id, metadata) values ($1, $2)',
+				[
+					20_000 + index,
+					JSON.stringify({ profile: { name: names[index] } }),
+				],
+			);
+		try {
+			for (const operator of ['contains', 'startsWith'] as const) {
+				const expected =
+					operator === 'contains' ? [20_000, 20_002] : [20_000];
+				const args = {
+					orderBy: { id: 'asc' } as const,
+					where: {
+						metadata: { 'profile.name': { [operator]: 'A%_!\\' } },
+					},
+				};
+				expect(
+					(await db.events.findMany(args)).map((row) => row.id),
+				).toEqual(expected);
+				const statement = db.events
+					.findMany({
+						orderBy: { id: 'asc' },
+						where: {
+							metadata: {
+								'profile.name': {
+									[operator]: param('value'),
+									mode: 'insensitive',
+								},
+							},
+						},
+					})
+					.prepare();
+				expect(
+					(await statement.execute({ value: 'a%_!\\' })).map(
+						(row) => row.id,
+					),
+				).toEqual(expected);
+			}
+		} finally {
+			await client.query(
+				'delete from better_drizzle_jsonb_test_events where id in (20000, 20001, 20002)',
+			);
+		}
 	});
 
 	test('filters 10,000 typed JSONB records by scalar paths', async () => {
