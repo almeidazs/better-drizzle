@@ -137,6 +137,64 @@ describe.skipIf(!DATABASE_URL)('Drizzle 1.x migration (PostgreSQL)', () => {
 		await pg?.end();
 	});
 
+	describe('single-row writes', () => {
+		beforeEach(async () => {
+			await pg.query(`
+				insert into better_drizzle_v1_accounts (id, email, name) values
+					(3, 'same1@example.com', 'Same'),
+					(4, 'same2@example.com', 'Same');
+			`);
+		});
+
+		test('update and delete touch one row when where matches several', async () => {
+			const updated = await client.accounts.update({
+				data: { name: 'Renamed' },
+				where: { name: 'Same' },
+			});
+			expect(updated?.name).toBe('Renamed');
+			expect(
+				await client.accounts.count({ where: { name: 'Same' } }),
+			).toBe(1);
+
+			const deleted = await client.accounts.delete({
+				where: { id: { in: [3, 4] } },
+			});
+			expect([3, 4]).toContain(deleted?.id ?? 0);
+			expect(
+				await client.accounts.count({ where: { id: { in: [3, 4] } } }),
+			).toBe(1);
+		});
+
+		test('tables without a primary key are restricted through ctid', async () => {
+			await pg.query(`
+				drop table if exists better_drizzle_v1_tags;
+				create table better_drizzle_v1_tags (label text not null, hits integer not null);
+				insert into better_drizzle_v1_tags values ('a', 0), ('a', 0), ('a', 0);
+			`);
+			const tags = pgTable('better_drizzle_v1_tags', {
+				hits: integer('hits').notNull(),
+				label: text('label').notNull(),
+			});
+			const tagClient = better(
+				drizzle({ client: pg, relations: defineRelations({ tags }) }),
+			);
+
+			try {
+				await tagClient.tags.update({
+					data: { hits: 1 },
+					where: { label: 'a' },
+				});
+				expect(await tagClient.tags.count({ where: { hits: 1 } })).toBe(
+					1,
+				);
+				await tagClient.tags.delete({ where: { label: 'a' } });
+				expect(await tagClient.tags.count()).toBe(2);
+			} finally {
+				await pg.query('drop table better_drizzle_v1_tags');
+			}
+		});
+	});
+
 	describe('driver errors', () => {
 		test('raw Drizzle wraps the pg error, helpers read its SQLSTATE', async () => {
 			const error = await captureError(() =>

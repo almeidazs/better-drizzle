@@ -153,6 +153,32 @@ describe.skipIf(!MYSQL_URL)('Drizzle 1.x migration (MySQL)', () => {
 		expect(created).toMatchObject({ id: 2, value: 1 });
 	});
 
+	test('update and delete touch one row when where matches several', async () => {
+		await connection.query(`
+			insert into better_drizzle_v1_members (id, email, name) values
+				(3, 'same1@example.com', 'Same'),
+				(4, 'same2@example.com', 'Same');
+		`);
+
+		const updated = await client.members.update({
+			data: { name: 'Moved' },
+			where: { name: 'Same' },
+		});
+		expect(updated).toMatchObject({ id: 3, name: 'Moved' });
+		expect(await client.members.count({ where: { name: 'Same' } })).toBe(1);
+
+		const deleted = await client.members.delete({
+			where: { id: { in: [3, 4] } },
+		});
+		expect(deleted).toMatchObject({ id: 3, name: 'Moved' });
+		expect(
+			await client.members.findMany({
+				select: { id: true },
+				where: { id: { in: [3, 4] } },
+			}),
+		).toEqual([{ id: 4 }]);
+	});
+
 	test('batch counts come from the mysql2 result tuple', async () => {
 		expect(
 			await client.members.updateMany({

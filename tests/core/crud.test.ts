@@ -1,8 +1,11 @@
+import { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
-import { sql } from 'drizzle-orm';
+import { defineRelations, sql } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
-import { BetterDrizzleErrorCode } from '../../src';
+import { BetterDrizzleErrorCode, better } from '../../src';
 import { createTestContext, type TestContext } from './setup';
 
 let ctx: TestContext;
@@ -395,6 +398,83 @@ describe('update', () => {
 				where: { id: 9999 },
 			}),
 		).rejects.toThrow('divide cannot be zero');
+	});
+});
+
+describe('single-row writes', () => {
+	test('update modifies only one row when where matches several', async () => {
+		const updated = await ctx.better.users.update({
+			data: { age: 77 },
+			where: { active: true },
+		});
+
+		expect(updated?.age).toBe(77);
+		expect(updated?.active).toBe(true);
+		expect(await ctx.better.users.count({ where: { age: 77 } })).toBe(1);
+	});
+
+	test('update re-reads the row it changed when data moves it out of where', async () => {
+		const updated = await ctx.better.users.update({
+			data: { active: false },
+			select: { active: true, id: true },
+			where: { active: true },
+		});
+
+		expect(updated?.active).toBe(false);
+		expect(await ctx.better.users.count({ where: { active: true } })).toBe(
+			2,
+		);
+	});
+
+	test('delete removes only one row when where matches several', async () => {
+		await ctx.raw.run(sql`PRAGMA foreign_keys = OFF`);
+		const deleted = await ctx.better.users.delete({
+			where: { active: false },
+		});
+
+		expect(deleted?.active).toBe(false);
+		expect(await ctx.better.users.count({ where: { active: false } })).toBe(
+			1,
+		);
+		expect(await ctx.better.users.count()).toBe(4);
+	});
+
+	test('upsert updates only the row it found', async () => {
+		await ctx.better.users.upsert({
+			create: {
+				active: true,
+				age: 1,
+				email: 'upsert-one@example.com',
+				id: 300,
+				name: 'Upsert',
+			},
+			update: { age: 66 },
+			where: { active: true },
+		});
+
+		expect(await ctx.better.users.count({ where: { age: 66 } })).toBe(1);
+	});
+
+	test('tables without a primary key are restricted through rowid', async () => {
+		const sqlite = new Database(':memory:');
+		sqlite.exec(`
+			CREATE TABLE tags (label TEXT NOT NULL, hits INTEGER NOT NULL);
+			INSERT INTO tags VALUES ('a', 0), ('a', 0), ('a', 0);
+		`);
+		const tags = sqliteTable('tags', {
+			hits: integer('hits').notNull(),
+			label: text('label').notNull(),
+		});
+		const db = better(
+			drizzle({ client: sqlite, relations: defineRelations({ tags }) }),
+		);
+
+		await db.tags.update({ data: { hits: 1 }, where: { label: 'a' } });
+		expect(await db.tags.count({ where: { hits: 1 } })).toBe(1);
+
+		await db.tags.delete({ where: { label: 'a' } });
+		expect(await db.tags.count()).toBe(2);
+		sqlite.close();
 	});
 });
 

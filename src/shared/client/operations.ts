@@ -1441,6 +1441,78 @@ const compileFastWhere = (runtime: TableRuntime, where: unknown) => {
 	return conditions.length ? and(...conditions) : undefined;
 };
 
+const isPinnedValue = (value: unknown) =>
+	value !== null &&
+	value !== undefined &&
+	(typeof value !== 'object' || value instanceof Date);
+
+// True when `where` holds an equality on the whole primary key or on a
+// single-column unique key, so the statement cannot touch more than one row.
+const pinsOneRow = (runtime: TableRuntime, where: unknown): boolean => {
+	if (!isSimpleRecord(where)) return false;
+	const fields = runtime.primaryKeyFields;
+	let pinned = fields.length > 0;
+	for (const field of fields)
+		if (!isPinnedValue(where[field])) {
+			pinned = false;
+			break;
+		}
+	if (pinned) return true;
+	for (const key in where)
+		if (runtime.columns[key]?.isUnique && isPinnedValue(where[key]))
+			return true;
+	// Any pinned conjunct pins the whole filter (e.g. soft delete's `AND` wrap).
+	const all = where.AND;
+	if (Array.isArray(all)) {
+		for (const item of all) if (pinsOneRow(runtime, item)) return true;
+		return false;
+	}
+	return all !== undefined && pinsOneRow(runtime, all);
+};
+
+type SingleRowBuilder = {
+	limit(limit: number): Promise<unknown>;
+	orderBy(...columns: unknown[]): SingleRowBuilder;
+};
+
+// MySQL: native `ORDER BY pk LIMIT 1`, matching `getSingleRowOrder` reads.
+const limitMysqlBuilder = (runtime: TableRuntime, builder: unknown) => {
+	const target = builder as SingleRowBuilder;
+	return (
+		runtime.primaryKey.length
+			? target.orderBy(...runtime.primaryKey)
+			: target
+	).limit(1);
+};
+
+const getSingleRowOrder = (runtime: TableRuntime) =>
+	runtime.primaryKeyFields.length
+		? runtime.primaryKeyFields.map((field) => ({ [field]: 'asc' }))
+		: undefined;
+
+// PostgreSQL/SQLite: `key IN (SELECT key ... WHERE predicate LIMIT 1)`, keyed
+// by the primary key, or rowid/ctid for tables without one.
+const restrictToOneRow = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	runtime: TableRuntime,
+	predicate: SQL,
+) => {
+	const keys: unknown[] = runtime.primaryKey.length
+		? runtime.primaryKey
+		: [sql.raw(context.dialect === 'sqlite' ? 'rowid' : 'ctid')];
+	const selection = Object.create(null) as Record<string, unknown>;
+	for (let index = 0; index < keys.length; index++)
+		selection[`k${index}`] = keys[index];
+	const subquery = context.db
+		.select(selection)
+		.from(runtime.table)
+		.where(predicate)
+		.limit(1);
+	return keys.length === 1
+		? sql`${keys[0]} in ${subquery}`
+		: sql`(${sql.join(keys as SQL[], sql`, `)}) in ${subquery}`;
+};
+
 const getPredicate = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	runtime: TableRuntime,
@@ -2484,23 +2556,32 @@ export const updateRecord = async <Schema extends AnySchema, Meta>(
 	);
 	const predicate = getPredicate(context, runtime, tableName, args.where);
 	if (!predicate) return null;
+	const pinned = pinsOneRow(runtime, args.where);
 
-	const builder = context.db.update(runtime.table).set(set).where(predicate);
-
-	if (typeof builder.returning === 'function') {
-		const rows = await builder.returning();
-		const updated = rows[0] ?? null;
+	if (context.dialect !== 'mysql') {
+		const rows = await context.db
+			.update(runtime.table)
+			.set(set)
+			.where(
+				pinned
+					? predicate
+					: restrictToOneRow(context, runtime, predicate),
+			)
+			.returning?.();
+		const updated = rows?.[0] ?? null;
 		if (!updated) return null;
 		if (!hasProjection(args)) return updated;
 		return reloadRecord(context, tableName, updated, args);
 	}
 
 	const existing = await findFirstRecord(context, tableName, {
+		orderBy: pinned ? undefined : getSingleRowOrder(runtime),
 		where: args.where,
-	});
+	} as QueryArgs<Schema, BetterTableKey<Schema>, Meta>);
 	if (!existing) return null;
 
-	await builder;
+	const builder = context.db.update(runtime.table).set(set).where(predicate);
+	await (pinned ? builder : limitMysqlBuilder(runtime, builder));
 	return reloadRecord(context, tableName, existing, args);
 };
 
@@ -2525,21 +2606,38 @@ export const deleteRecord = async <Schema extends AnySchema, Meta>(
 	const runtime = getTableRuntime(context, tableName as string);
 	const predicate = getPredicate(context, runtime, tableName, args.where);
 	if (!predicate) return null;
+	const pinned = pinsOneRow(runtime, args.where);
 
-	const builder = context.db.delete(runtime.table).where(predicate);
-
-	if (typeof builder.returning === 'function') {
-		const rows = await builder.returning();
-		const deleted = rows[0] ?? null;
+	if (context.dialect !== 'mysql') {
+		const rows = await context.db
+			.delete(runtime.table)
+			.where(
+				pinned
+					? predicate
+					: restrictToOneRow(context, runtime, predicate),
+			)
+			.returning?.();
+		const deleted = rows?.[0] ?? null;
 		if (!deleted) return null;
 		if (!hasProjection(args)) return deleted;
 		return reloadRecord(context, tableName, deleted, args);
 	}
 
-	const existing = await findFirstRecord(context, tableName, args);
+	const existing = await findFirstRecord(
+		context,
+		tableName,
+		(pinned
+			? args
+			: { ...args, orderBy: getSingleRowOrder(runtime) }) as QueryArgs<
+			Schema,
+			BetterTableKey<Schema>,
+			Meta
+		>,
+	);
 	if (!existing) return null;
 
-	await builder;
+	const builder = context.db.delete(runtime.table).where(predicate);
+	await (pinned ? builder : limitMysqlBuilder(runtime, builder));
 	return existing;
 };
 
@@ -2769,7 +2867,12 @@ export const upsertRecord = async <Schema extends AnySchema, Meta>(
 			include: args.include,
 			meta: args.meta,
 			select: args.select,
-			where: args.where,
+			where: (runtime.primaryKeyFields.length
+				? {
+						...getPrimaryKeyWhere(runtime, existing),
+						AND: [args.where],
+					}
+				: args.where) as WhereArg<Schema, BetterTableKey<Schema>>,
 		});
 
 	return createRecord(context, tableName, {

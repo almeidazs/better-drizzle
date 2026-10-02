@@ -325,6 +325,22 @@ describe('better-drizzle/soft-delete', () => {
 		ctx.close();
 	});
 
+	test('delete soft deletes only one row when where matches several', async () => {
+		const ctx = createContext();
+		const client = better(ctx.db, { plugins: [softDelete()] });
+		await client.records.create({ data: { id: 3, name: 'Alice' } });
+
+		const deleted = await client.records.delete({
+			where: { name: 'Alice' },
+		});
+
+		expect(deleted?.deletedAt).toBeInstanceOf(Date);
+		expect(await client.records.count({ where: { name: 'Alice' } })).toBe(
+			1,
+		);
+		ctx.close();
+	});
+
 	test('deleteMany soft deletes live rows only', async () => {
 		const ctx = createContext();
 		const client = better(ctx.db, { plugins: [softDelete()] });
