@@ -3,6 +3,7 @@
 	"pages": [
 		"---Start here---",
 		"index",
+		"changelog",
 		"getting-started",
 		"why",
 		"guides/migrating-from-drizzle",
