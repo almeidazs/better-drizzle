@@ -2456,7 +2456,10 @@ const upsertManyChunk = async <Schema extends AnySchema, Meta>(
 
 	const query = builder.onConflictDoUpdate({
 		set,
-		setWhere: args.where,
+		setWhere:
+			args.where === undefined
+				? undefined
+				: getPredicate(context, runtime, tableName, args.where),
 		target: getConflictTarget(targetColumns) ?? targetColumns,
 	});
 

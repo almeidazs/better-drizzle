@@ -894,6 +894,49 @@ describe('upsert', () => {
 });
 
 describe('upsertMany', () => {
+	test('compiles typed conflict predicates for each chunk and still inserts new rows', async () => {
+		const result = await ctx.better.users.upsertMany({
+			batchSize: 1,
+			data: [
+				{
+					id: 1,
+					email: 'alice@example.com',
+					name: 'Alice updated',
+					age: 99,
+					active: false,
+				},
+				{
+					id: 5,
+					email: 'eve@example.com',
+					name: 'Eve skipped',
+					age: 99,
+					active: true,
+				},
+				{
+					id: 301,
+					email: 'typed-new@example.com',
+					name: 'New row',
+					age: 19,
+					active: false,
+				},
+			],
+			target: 'email',
+			update: ['name'],
+			select: { id: true, name: true },
+			where: { AND: [{ active: true }, { age: { lt: 30 } }] },
+		});
+		expect(result).toEqual({
+			count: 2,
+			data: [
+				{ id: 1, name: 'Alice updated' },
+				{ id: 301, name: 'New row' },
+			],
+		});
+		expect(
+			await ctx.better.users.findUnique({ where: { id: 5 } }),
+		).toMatchObject({ name: 'Eve' });
+	});
+
 	test('upsertMany inserts and updates rows in one batch', async () => {
 		const result = await ctx.better.users.upsertMany({
 			data: [

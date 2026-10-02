@@ -884,8 +884,8 @@ export interface UpsertManyArgs<
 	select?: ScalarSelectInput<Schema, Name>;
 	/** Optional batch size for chunked native execution. */
 	batchSize?: number;
-	/** Optional SQL condition applied to the update side of the conflict path. Not supported on MySQL. */
-	where?: SQL;
+	/** Optional condition on the existing row applied to the conflict update path. Not supported on MySQL. */
+	where?: WhereArg<Schema, Name>;
 	/** Custom metadata forwarded to hooks. */
 	meta?: Meta;
 }

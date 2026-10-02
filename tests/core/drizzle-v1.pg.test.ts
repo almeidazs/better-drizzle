@@ -195,6 +195,43 @@ describe.skipIf(!DATABASE_URL)('Drizzle 1.x migration (PostgreSQL)', () => {
 		});
 	});
 
+	describe('batch writes', () => {
+		test('typed upsert predicates filter existing conflicts while new rows still insert', async () => {
+			const result = await client.accounts.upsertMany({
+				batchSize: 1,
+				data: [
+					{
+						id: 1,
+						email: 'alice@example.com',
+						name: 'Alice updated',
+					},
+					{ id: 2, email: 'bob@example.com', name: 'Bob skipped' },
+					{ id: 3, email: 'new@example.com', name: 'New account' },
+				],
+				target: 'email',
+				update: ['name'],
+				select: { id: true, name: true },
+				where: {
+					AND: [
+						{ id: { lt: 3 } },
+						{ metadata: { 'plan.tier': 'pro' } },
+					],
+				},
+			});
+			expect(result).toEqual({
+				count: 2,
+				data: [
+					{ id: 1, name: 'Alice updated' },
+					{ id: 3, name: 'New account' },
+				],
+			});
+			expect(
+				await client.accounts.findUnique({ where: { id: 2 } }),
+			).toMatchObject({ name: 'Bob' });
+		});
+
+	});
+
 	describe('driver errors', () => {
 		test('raw Drizzle wraps the pg error, helpers read its SQLSTATE', async () => {
 			const error = await captureError(() =>
