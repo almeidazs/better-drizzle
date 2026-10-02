@@ -1452,12 +1452,18 @@ const compileFastWhere = (runtime: TableRuntime, where: unknown) => {
 };
 
 // A `param()` placeholder counts: only prepared reads accept it.
-const isPinnedValue = (value: unknown) =>
-	value !== null &&
-	value !== undefined &&
-	(typeof value !== 'object' ||
+const isPinnedValue = (value: unknown): boolean => {
+	if (value === null || value === undefined) return false;
+	if (
+		typeof value !== 'object' ||
 		value instanceof Date ||
-		value instanceof Placeholder);
+		value instanceof Placeholder
+	)
+		return true;
+	// `{ equals: v }` is the same equality as `v`.
+	for (const key in value) if (key !== 'equals') return false;
+	return isPinnedValue((value as { equals?: unknown }).equals);
+};
 
 // True when `where` holds an equality on the whole primary key or on every
 // column of a unique key, so the statement cannot touch more than one row.

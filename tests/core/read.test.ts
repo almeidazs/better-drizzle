@@ -269,6 +269,20 @@ describe('findUnique', () => {
 				})
 			)?.name,
 		).toBe('Alice');
+		expect(
+			(
+				await ctx.better.users.findUnique({
+					where: { id: { equals: 2 } },
+				})
+			)?.name,
+		).toBe('Bob');
+		expect(
+			await Promise.resolve(
+				ctx.better.users.findUnique({
+					where: { id: { equals: 2, not: 3 } },
+				}),
+			).catch((error) => error.code),
+		).toBe(BetterDrizzleErrorCode.UniqueWhereRequired);
 	});
 
 	test('findUnique by composite unique key', async () => {
