@@ -272,6 +272,13 @@ observes at runtime:
   when the table declares no unique key besides the primary key. MySQL fires
   that clause on any unique key, so other tables use a read-then-write path
   instead of possibly updating a different row.
+- **Native `upsert` on unique keys.** A `where` that holds only the columns of
+  one unique key, with the same values in `create`, now runs one
+  `ON CONFLICT ... DO UPDATE` statement on PostgreSQL and SQLite (and
+  `ON DUPLICATE KEY UPDATE` on MySQL when that key is the only one that can
+  match). A `where` without the primary key no longer takes the primary key
+  path when `create` omits it too: it used to insert without checking
+  `where`, and now reads first.
 - **`update()` and `delete()` change at most one row.** In `0.2.x` they ran
   their `where` against every matching row and returned only the first. Now
   only one row changes, on every dialect: a `where` that pins the primary key

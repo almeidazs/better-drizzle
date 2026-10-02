@@ -193,6 +193,37 @@ describe.skipIf(!DATABASE_URL)('Drizzle 1.x migration (PostgreSQL)', () => {
 				await pg.query('drop table better_drizzle_v1_tags');
 			}
 		});
+
+		test('upsert by a unique column uses one ON CONFLICT statement', async () => {
+			const queries: string[] = [];
+			const logged = better(
+				drizzle({
+					client: pg,
+					logger: { logQuery: (query) => queries.push(query) },
+					relations,
+				}),
+			);
+
+			const updated = await logged.accounts.upsert({
+				create: { email: 'alice@example.com', id: 10, name: 'Ignored' },
+				update: { name: 'Alice Upserted' },
+				where: { email: 'alice@example.com' },
+			});
+			expect(updated).toMatchObject({ id: 1, name: 'Alice Upserted' });
+
+			const created = await logged.accounts.upsert({
+				create: { email: 'new@example.com', id: 11, name: 'New' },
+				select: { id: true, name: true },
+				update: { name: 'Ignored' },
+				where: { email: 'new@example.com' },
+			});
+			expect(created).toEqual({ id: 11, name: 'New' });
+			expect(
+				queries.filter((query) =>
+					query.includes('on conflict ("email") do update'),
+				),
+			).toHaveLength(2);
+		});
 	});
 
 	describe('batch writes', () => {

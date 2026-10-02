@@ -963,6 +963,151 @@ describe('upsert', () => {
 		expect(typed.title).toBe('Post Upserted');
 		expect(typed.author).toBeDefined();
 	});
+
+	describe('unique key conflicts', () => {
+		const setup = () => {
+			const sqlite = new Database(':memory:');
+			sqlite.exec(`
+				CREATE TABLE accounts (
+					id INTEGER PRIMARY KEY,
+					email TEXT NOT NULL UNIQUE,
+					tenant INTEGER NOT NULL,
+					slug TEXT NOT NULL,
+					name TEXT NOT NULL,
+					hits INTEGER NOT NULL,
+					UNIQUE (tenant, slug)
+				);
+				INSERT INTO accounts VALUES (1, 'a@x.com', 1, 'a', 'A', 0);
+			`);
+			const accounts = sqliteTable(
+				'accounts',
+				{
+					email: text('email').notNull().unique(),
+					hits: integer('hits').notNull(),
+					id: integer('id').primaryKey(),
+					name: text('name').notNull(),
+					slug: text('slug').notNull(),
+					tenant: integer('tenant').notNull(),
+				},
+				(t) => [unique().on(t.tenant, t.slug)],
+			);
+			const queries: string[] = [];
+			const db = better(
+				drizzle({
+					client: sqlite,
+					logger: { logQuery: (query) => queries.push(query) },
+					relations: defineRelations({ accounts }),
+				}),
+			);
+			return { db, queries, sqlite };
+		};
+
+		test('upsert by a unique column runs one native statement', async () => {
+			const { db, queries, sqlite } = setup();
+			const created = await db.accounts.upsert({
+				create: {
+					email: 'b@x.com',
+					hits: 0,
+					name: 'B',
+					slug: 'b',
+					tenant: 1,
+				},
+				update: { hits: { increment: 1 } },
+				where: { email: 'b@x.com' },
+			});
+			expect(created).toMatchObject({ email: 'b@x.com', hits: 0, id: 2 });
+
+			const updated = await db.accounts.upsert({
+				create: {
+					email: 'a@x.com',
+					hits: 0,
+					name: 'Ignored',
+					slug: 'z',
+					tenant: 9,
+				},
+				update: { hits: { increment: 1 } },
+				where: { email: 'a@x.com' },
+			});
+			expect(updated).toMatchObject({ hits: 1, id: 1, name: 'A' });
+			expect(queries).toHaveLength(2);
+			for (const query of queries)
+				expect(query).toContain(
+					'on conflict ("accounts"."email") do update',
+				);
+			sqlite.close();
+		});
+
+		test('upsert by a composite unique key runs one native statement', async () => {
+			const { db, queries, sqlite } = setup();
+			const updated = await db.accounts.upsert({
+				create: {
+					email: 'c@x.com',
+					hits: 0,
+					name: 'C',
+					slug: 'a',
+					tenant: 1,
+				},
+				update: { name: 'A2' },
+				select: { id: true, name: true },
+				where: { slug: 'a', tenant: 1 },
+			});
+			expect(updated).toEqual({ id: 1, name: 'A2' });
+			expect(queries[0]).toContain(
+				'on conflict ("accounts"."tenant", "accounts"."slug") do update',
+			);
+			expect(await db.accounts.count()).toBe(1);
+			sqlite.close();
+		});
+
+		test('create values that differ from where keep the read-then-write path', async () => {
+			const { db, queries, sqlite } = setup();
+			const updated = await db.accounts.upsert({
+				create: {
+					email: 'other@x.com',
+					hits: 0,
+					name: 'Other',
+					slug: 'o',
+					tenant: 1,
+				},
+				update: { hits: 5 },
+				where: { email: 'a@x.com' },
+			});
+			expect(updated).toMatchObject({ hits: 5, id: 1 });
+			expect(queries.some((q) => q.includes('on conflict'))).toBe(false);
+
+			const created = await db.accounts.upsert({
+				create: {
+					email: 'new@x.com',
+					hits: 0,
+					name: 'A',
+					slug: 'n',
+					tenant: 1,
+				},
+				update: { hits: 7 },
+				where: { name: 'Missing' },
+			});
+			expect(created).toMatchObject({ email: 'new@x.com', id: 2 });
+			sqlite.close();
+		});
+
+		test('a where without the primary key is not treated as a primary key conflict', async () => {
+			const { db, sqlite } = setup();
+			const updated = await db.accounts.upsert({
+				create: {
+					email: 'dup@x.com',
+					hits: 0,
+					name: 'A',
+					slug: 'd',
+					tenant: 1,
+				},
+				update: { hits: 3 },
+				where: { name: 'A' },
+			});
+			expect(updated).toMatchObject({ hits: 3, id: 1 });
+			expect(await db.accounts.count()).toBe(1);
+			sqlite.close();
+		});
+	});
 });
 
 describe('upsertMany', () => {

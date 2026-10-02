@@ -141,6 +141,7 @@
     - many-to-many comes only from native `.through()` relations (no junction inference); relations with a relation-level `where` or `one` relations through a junction are recorded as unsupported and throw when used
     - a `one` relation owns the foreign key (connect writes the source columns) unless its `from` columns are exactly the source primary key and its `to` columns are not the target primary key
     - batch mutation APIs intentionally remain scalar-only
+    - single-row `upsert` is native (`getConflictFields` in `operations.ts`) when `where` pins the primary key, or holds only one unique key's fields, to non-null values equal to `create`; MySQL also requires `isOnlyMysqlKey` (no other unique key; a unique key target needs `create` to leave the primary key unset). Other shapes read-then-write without a transaction: a plain transaction would not stop two concurrent inserts
 - **Row locks**:
     - read helpers built on `QueryArgs` (`findMany`, `findFirst`, `findOne`, `findUnique`, `paginate`, `cursor`) accept `lock`
     - `count`, `exists`, and write operations do not accept `lock`

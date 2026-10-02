@@ -687,6 +687,14 @@ export interface DeleteArgs<
  * Provides both the create and update payloads alongside a where clause
  * that determines whether to insert or update.
  *
+ * When `where` pins the primary key, or holds only the columns of one unique
+ * key, and `create` sets the same values, the upsert runs as one atomic
+ * statement (`ON CONFLICT ... DO UPDATE` on PostgreSQL and SQLite). On MySQL,
+ * `ON DUPLICATE KEY UPDATE` fires on any unique key, so it is used only when
+ * the target is the table's only unique key and, for a unique key target,
+ * the insert does not set the primary key. Other shapes read, then create or
+ * update, which can hit a unique violation under concurrent calls.
+ *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Name - The table key within the schema.
  * @typeParam Meta - Custom metadata type. Defaults to {@link BetterMeta}.

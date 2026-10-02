@@ -1264,29 +1264,62 @@ const hasProjection = (
 	args: { include?: unknown; select?: unknown } | undefined,
 ) => Boolean(args?.select || args?.include);
 
-const canUsePrimaryKeyConflict = (
-	runtime: TableRuntime,
-	where: unknown,
+const insertsWhere = (
+	fields: readonly string[],
+	where: Record<string, unknown>,
 	create: Record<string, unknown>,
 ) => {
-	if (!runtime.primaryKeyFields.length || !isSimpleRecord(where))
-		return false;
-
-	for (const field of runtime.primaryKeyFields)
-		if (where[field] !== create[field]) return false;
-
+	for (const field of fields) {
+		const value = where[field];
+		if (value == null || value !== create[field]) return false;
+	}
 	return true;
 };
 
-const hasOtherMysqlUniqueKey = (runtime: TableRuntime) => {
+// The key whose conflict hits the row `where` finds: the primary key when
+// `where` sets it to the `create` values, else a unique key that `where`
+// alone pins to the `create` values.
+const getConflictFields = (
+	runtime: TableRuntime,
+	where: unknown,
+	create: Record<string, unknown>,
+): readonly string[] | undefined => {
+	if (!isSimpleRecord(where)) return;
+	const primaryKey = runtime.primaryKeyFields;
+	if (primaryKey.length && insertsWhere(primaryKey, where, create))
+		return primaryKey;
+
+	let size = 0;
+	let first = '';
+	for (const key in where) if (size++ === 0) first = key;
+	if (size === 1 && runtime.columns[first]?.isUnique) {
+		const value = where[first];
+		if (value != null && value === create[first]) return [first];
+	}
+	for (const key of runtime.uniqueKeys)
+		if (key.length === size && insertsWhere(key, where, create)) return key;
+};
+
+// ON DUPLICATE KEY UPDATE fires on any unique key: the conflict key must be
+// the only one that can match, so a unique key target also needs a primary
+// key that the insert neither sets nor fills with a static default.
+const isOnlyMysqlKey = (
+	runtime: TableRuntime,
+	fields: readonly string[],
+	create: Record<string, unknown>,
+) => {
 	const config = getMysqlTableConfig(runtime.table as never);
+	let count = config.uniqueConstraints.length;
 	for (const column of config.columns)
-		if (column.isUnique && !runtime.primaryKey.includes(column))
-			return true;
-	return (
-		config.uniqueConstraints.length > 0 ||
-		config.indexes.some((index) => index.config.unique)
-	);
+		if (column.isUnique && !runtime.primaryKey.includes(column)) count++;
+	for (const index of config.indexes) if (index.config.unique) count++;
+	if (fields === runtime.primaryKeyFields) return count === 0;
+	if (count !== 1) return false;
+	for (const column of runtime.primaryKey)
+		if (column.default !== undefined) return false;
+	for (const field of runtime.primaryKeyFields)
+		if (create[field] !== undefined) return false;
+	return true;
 };
 
 /**
@@ -1350,11 +1383,6 @@ const assertMysqlUpsertTarget = (
 		}
 	}
 };
-
-const getPrimaryKeyTarget = (runtime: TableRuntime) =>
-	runtime.primaryKeyFields
-		.map((field) => runtime.columns[field])
-		.filter(Boolean);
 
 const hasRelationSelection = (
 	runtime: TableRuntime,
@@ -2934,13 +2962,20 @@ export const upsertRecord = async <Schema extends AnySchema, Meta>(
 		insertBuilder as { onDuplicateKeyUpdate?: unknown }
 	).onDuplicateKeyUpdate;
 
+	const conflictFields =
+		typeof insertBuilder.onConflictDoUpdate === 'function' ||
+		typeof duplicateKeyUpdate === 'function'
+			? getConflictFields(runtime, args.where, createData)
+			: undefined;
+
 	if (
-		(typeof insertBuilder.onConflictDoUpdate === 'function' ||
-			typeof duplicateKeyUpdate === 'function') &&
-		canUsePrimaryKeyConflict(runtime, args.where, createData) &&
-		(context.dialect !== 'mysql' || !hasOtherMysqlUniqueKey(runtime))
+		conflictFields &&
+		(context.dialect !== 'mysql' ||
+			isOnlyMysqlKey(runtime, conflictFields, createData))
 	) {
-		const target = getPrimaryKeyTarget(runtime);
+		const target = conflictFields
+			.map((field) => runtime.columns[field])
+			.filter(Boolean);
 		const conflictTarget = target.length === 1 ? target[0] : target;
 		if (!conflictTarget)
 			return createRecord(context, tableName, {
@@ -2978,7 +3013,14 @@ export const upsertRecord = async <Schema extends AnySchema, Meta>(
 		}
 
 		await builder;
-		return reloadRecord(context, tableName, createData, args);
+		return reloadRecord(
+			context,
+			tableName,
+			conflictFields === runtime.primaryKeyFields
+				? createData
+				: (args.where as Record<string, unknown>),
+			args,
+		);
 	}
 
 	const existing = await findFirstRecord(context, tableName, {

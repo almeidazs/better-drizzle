@@ -543,6 +543,8 @@ const [user] = await db
 
 `upsert` is usually cleaner than "find, then branch, then write" when the behavior is genuinely upsert-shaped.
 
+When `where` pins the primary key, or holds only the columns of one unique key (a unique column, constraint, or non-partial unique index), and `create` sets the same values, `upsert` runs one atomic statement: `INSERT ... ON CONFLICT (those columns) DO UPDATE` on PostgreSQL and SQLite. MySQL's `ON DUPLICATE KEY UPDATE` fires on any unique key, so there it is used only when the target is the table's only unique key, and a unique key target also needs an insert that leaves the primary key to auto-increment. Every other shape reads first, then creates or updates; that path is not atomic, so concurrent calls can hit a unique violation.
+
 ## `upsertMany`
 
 `where` accepts a structured filter or Drizzle `SQL` and controls whether the existing conflicting row is updated. It does not filter incoming inserts. PostgreSQL and SQLite support it; MySQL rejects it.

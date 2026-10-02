@@ -154,6 +154,62 @@ describe.skipIf(!MYSQL_URL)('Drizzle 1.x migration (MySQL)', () => {
 		expect(created).toMatchObject({ id: 2, value: 1 });
 	});
 
+	test('upsert by the only unique key next to an auto-increment id is native', async () => {
+		const queries: string[] = [];
+		const logged = better(
+			drizzle({
+				client: connection,
+				logger: { logQuery: (query) => queries.push(query) },
+				mode: 'default',
+				relations,
+			}),
+		);
+
+		const updated = await logged.tags.upsert({
+			create: { label: 'Ignored', slug: 'orm' },
+			update: { label: 'Object Relational' },
+			where: { slug: 'orm' },
+		});
+		expect(updated).toMatchObject({
+			label: 'Object Relational',
+			slug: 'orm',
+		});
+
+		const created = await logged.tags.upsert({
+			create: { label: 'SQL', slug: 'sql' },
+			update: { label: 'Ignored' },
+			where: { slug: 'sql' },
+		});
+		expect(created).toMatchObject({ label: 'SQL', slug: 'sql' });
+		expect(
+			queries.filter((query) =>
+				query.includes('on duplicate key update'),
+			),
+		).toHaveLength(2);
+	});
+
+	test('upsert by a unique key keeps the fallback when the insert sets the primary key', async () => {
+		const queries: string[] = [];
+		const logged = better(
+			drizzle({
+				client: connection,
+				logger: { logQuery: (query) => queries.push(query) },
+				mode: 'default',
+				relations,
+			}),
+		);
+
+		const updated = await logged.members.upsert({
+			create: { email: 'alice@example.com', id: 9, name: 'Ignored' },
+			update: { name: 'Alicia' },
+			where: { email: 'alice@example.com' },
+		});
+		expect(updated).toMatchObject({ id: 1, name: 'Alicia' });
+		expect(
+			queries.some((query) => query.includes('on duplicate key update')),
+		).toBe(false);
+	});
+
 	test('update and delete touch one row when where matches several', async () => {
 		await connection.query(`
 			insert into better_drizzle_v1_members (id, email, name) values
