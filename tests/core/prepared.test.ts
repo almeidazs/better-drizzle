@@ -351,7 +351,7 @@ describe('prepared statements', () => {
 			}),
 		);
 		expect(await rejectCode(fixedSize.execute({ page: 0 }))).toBe(
-			BetterDrizzleErrorCode.OperationError,
+			BetterDrizzleErrorCode.InvalidArgs,
 		);
 	});
 
@@ -377,7 +377,7 @@ describe('prepared statements', () => {
 		}
 		expect(
 			await rejectCode(next.execute({ after: null as never, limit: 2 })),
-		).toBe(BetterDrizzleErrorCode.OperationError);
+		).toBe(BetterDrizzleErrorCode.InvalidArgs);
 	});
 
 	test('cursor with a composite order and filters', async () => {

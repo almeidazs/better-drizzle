@@ -68,13 +68,15 @@ export enum BetterDrizzleErrorCode {
 	ArrayMutationUnsupported = 'ARRAY_MUTATION_UNSUPPORTED',
 	/** A lifecycle hook threw an error. */
 	HookError = 'HOOK_ERROR',
+	/** The caller passed invalid operation arguments (bad shape, conflicting options, unknown fields, invalid values). */
+	InvalidArgs = 'INVALID_ARGS',
 	/** Row locking is not supported for the current dialect or query shape. */
 	LockNotSupported = 'LOCK_NOT_SUPPORTED',
 	/** Row locking is only allowed inside a transaction. */
 	LockRequiresTransaction = 'LOCK_REQUIRES_TRANSACTION',
 	/** Row locking failed because the lock could not be acquired in time. */
 	LockTimeout = 'LOCK_TIMEOUT',
-	/** An operation (CRUD, query, transaction) failed. */
+	/** An operation (CRUD, query, transaction) failed for a reason other than invalid arguments. */
 	OperationError = 'OPERATION_ERROR',
 	/** A prepared statement was executed without a value for one of its params. */
 	PreparedParamMissing = 'PREPARED_PARAM_MISSING',
@@ -188,6 +190,7 @@ const getDefaultStatus = (code: BetterDrizzleErrorCode) => {
 	switch (code) {
 		case BetterDrizzleErrorCode.ResultNotFound:
 			return 404;
+		case BetterDrizzleErrorCode.InvalidArgs:
 		case BetterDrizzleErrorCode.PreparedParamMissing:
 		case BetterDrizzleErrorCode.PreparedParamUnknown:
 		case BetterDrizzleErrorCode.PreparedUnsupported:

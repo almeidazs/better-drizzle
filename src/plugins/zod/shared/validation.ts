@@ -55,7 +55,7 @@ export const parseOrThrow = <Schema extends ZodTypeAny>(
 	if (result.success) return result.data;
 
 	throw new BetterDrizzleError({
-		code: BetterDrizzleErrorCode.OperationError,
+		code: BetterDrizzleErrorCode.InvalidArgs,
 		details: {
 			issues: formatZodError(result.error),
 			pluginId: 'better-drizzle/zod',

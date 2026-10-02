@@ -142,7 +142,7 @@ const arrayMutationError = (
 	details?: Record<string, unknown>,
 ) =>
 	new BetterDrizzleError({
-		code: BetterDrizzleErrorCode.OperationError,
+		code: BetterDrizzleErrorCode.InvalidArgs,
 		column,
 		details,
 		message,
@@ -352,7 +352,7 @@ const jsonbMutationError = (
 	details?: Record<string, unknown>,
 ) =>
 	new BetterDrizzleError({
-		code: BetterDrizzleErrorCode.OperationError,
+		code: BetterDrizzleErrorCode.InvalidArgs,
 		column,
 		details,
 		message,
@@ -599,7 +599,7 @@ const numericMutationError = (
 	message: string,
 ) =>
 	new BetterDrizzleError({
-		code: BetterDrizzleErrorCode.OperationError,
+		code: BetterDrizzleErrorCode.InvalidArgs,
 		column,
 		message,
 		operation,
@@ -760,7 +760,7 @@ const getSkipDuplicateTargetColumns = (
 		}
 
 		throw new BetterDrizzleError({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 			details: { target },
 			message: `Invalid skipDuplicates target "${target}" for table "${runtime.dbName}"`,
 			operation: 'create',
@@ -797,7 +797,7 @@ const getTargetColumns = <Schema extends AnySchema, Meta>(
 	const targets = Array.isArray(target) ? [...target] : [target];
 	if (!targets.length)
 		throw new BetterDrizzleError({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 			message: 'upsertMany requires at least one target column.',
 			operation: 'upsertMany',
 			table: runtime.dbName,
@@ -813,7 +813,7 @@ const getTargetColumns = <Schema extends AnySchema, Meta>(
 		}
 
 		throw new BetterDrizzleError({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 			details: { target: targetName },
 			message: `Invalid upsertMany target "${targetName}" for table "${runtime.dbName}"`,
 			operation: 'upsertMany',
@@ -863,7 +863,7 @@ const validateUpsertManyUpdateObject = (
 ) => {
 	if (!isPlainUpdateObject(update))
 		throw new BetterDrizzleError({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 			message: 'upsertMany update must resolve to an object.',
 			operation: 'upsertMany',
 			table: runtime.dbName,
@@ -877,7 +877,7 @@ const validateUpsertManyUpdateObject = (
 		const column = runtime.columns[key];
 		if (!column)
 			throw new BetterDrizzleError({
-				code: BetterDrizzleErrorCode.OperationError,
+				code: BetterDrizzleErrorCode.InvalidArgs,
 				details: { column: key },
 				message: `Invalid upsertMany update column "${key}" for table "${runtime.dbName}"`,
 				operation: 'upsertMany',
@@ -919,7 +919,7 @@ const buildUpsertManySet = <Schema extends AnySchema, Meta>(
 			const column = runtime.columns[key];
 			if (!column)
 				throw new BetterDrizzleError({
-					code: BetterDrizzleErrorCode.OperationError,
+					code: BetterDrizzleErrorCode.InvalidArgs,
 					details: { column: key },
 					message: `Invalid upsertMany update column "${key}" for table "${runtime.dbName}"`,
 					operation: 'upsertMany',
@@ -952,7 +952,7 @@ const getReturningSelection = (
 	if (!select) return;
 	if (hasRelationSelection(runtime, select))
 		throw new BetterDrizzleError({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 			message: `${operation} does not support relation selects.`,
 			operation,
 			table: runtime.dbName,
@@ -973,7 +973,7 @@ const getColumnKeyByInstance = (
 		if (runtime.columns[key]?.name === column.name) return key;
 
 	throw new BetterDrizzleError({
-		code: BetterDrizzleErrorCode.OperationError,
+		code: BetterDrizzleErrorCode.InvalidArgs,
 		details: { column: column.name },
 		message: `Invalid ${operation} "by" column for table "${runtime.dbName}"`,
 		operation,
@@ -1010,7 +1010,7 @@ const getUpdateEachRows = <Schema extends AnySchema, Meta>(
 	if (!args.data.length) {
 		if (args.onEmpty === 'throw')
 			throw new BetterDrizzleError({
-				code: BetterDrizzleErrorCode.OperationError,
+				code: BetterDrizzleErrorCode.InvalidArgs,
 				message: 'updateEach requires at least one input row.',
 				operation: 'updateEach',
 				table: runtime.dbName,
@@ -1029,7 +1029,7 @@ const getUpdateEachRows = <Schema extends AnySchema, Meta>(
 
 		if (byValue === undefined)
 			throw new BetterDrizzleError({
-				code: BetterDrizzleErrorCode.OperationError,
+				code: BetterDrizzleErrorCode.InvalidArgs,
 				details: { by: byKey, index },
 				message: `updateEach row at index ${index} is missing "${byKey}".`,
 				operation: 'updateEach',
@@ -1038,7 +1038,7 @@ const getUpdateEachRows = <Schema extends AnySchema, Meta>(
 
 		if (seen.has(byValue))
 			throw new BetterDrizzleError({
-				code: BetterDrizzleErrorCode.OperationError,
+				code: BetterDrizzleErrorCode.InvalidArgs,
 				details: { by: byKey, value: byValue },
 				message: `updateEach received duplicate "${byKey}" values.`,
 				operation: 'updateEach',
@@ -1072,7 +1072,7 @@ const buildUpdateEachSet = <Schema extends AnySchema, Meta>(
 		const column = runtime.columns[key];
 		if (!column)
 			throw new BetterDrizzleError({
-				code: BetterDrizzleErrorCode.OperationError,
+				code: BetterDrizzleErrorCode.InvalidArgs,
 				details: { column: key },
 				message: `Invalid updateEach update column "${key}" for table "${runtime.dbName}"`,
 				operation: 'updateEach',
@@ -1085,7 +1085,7 @@ const buildUpdateEachSet = <Schema extends AnySchema, Meta>(
 			const nextValue = resolve(row as never);
 			if (nextValue === undefined)
 				throw new BetterDrizzleError({
-					code: BetterDrizzleErrorCode.OperationError,
+					code: BetterDrizzleErrorCode.InvalidArgs,
 					details: { column: key, index },
 					message: `updateEach "${key}" resolver returned undefined at row ${index}.`,
 					operation: 'updateEach',
@@ -1163,7 +1163,7 @@ const buildUpdateEachSet = <Schema extends AnySchema, Meta>(
 
 	if (!hasColumns)
 		throw new BetterDrizzleError({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 			message: 'updateEach update must affect at least one column.',
 			operation: 'updateEach',
 			table: runtime.dbName,
@@ -1349,7 +1349,7 @@ const assertMysqlUpsertTarget = (
 		key.every((column) => targetColumns.includes(column as AnyColumn));
 	const fail = (message: string, details?: Record<string, unknown>) => {
 		throw new BetterDrizzleError({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 			details: {
 				target: targetColumns.map((column) => column.name),
 				...details,
@@ -1421,7 +1421,7 @@ const getDirectSelection = (
 				!runtime.relationNames.has(key)
 			)
 				throw new BetterDrizzleError({
-					code: BetterDrizzleErrorCode.OperationError,
+					code: BetterDrizzleErrorCode.InvalidArgs,
 					details: { field: key },
 					message: `Unknown relation or column "${key}" on "${runtime.dbName}".`,
 					operation: 'relation',
@@ -1666,7 +1666,7 @@ const resolveLockTables = <Schema extends AnySchema, Meta>(
 
 		if (!tableRuntime)
 			throw new BetterDrizzleError({
-				code: BetterDrizzleErrorCode.OperationError,
+				code: BetterDrizzleErrorCode.InvalidArgs,
 				details: { target },
 				message: `Invalid lock table "${target}" for table "${runtime.dbName}"`,
 				operation,
@@ -1725,7 +1725,7 @@ const resolveReadLock = <Schema extends AnySchema, Meta>(
 
 	if (normalized.noWait && normalized.skipLocked)
 		throw new BetterDrizzleError({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 			details: { lock },
 			message: 'lock cannot enable both noWait and skipLocked.',
 			operation,
@@ -2452,7 +2452,7 @@ const upsertManyChunk = async <Schema extends AnySchema, Meta>(
 
 	if (!Object.keys(set).length)
 		throw new BetterDrizzleError({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 			details: { target: args.target, update: args.update },
 			message: 'upsertMany update must affect at least one column.',
 			operation: 'upsertMany',
@@ -3135,7 +3135,7 @@ const getCursorToken = (
 	for (const field of fields) {
 		if (!(field in row))
 			throw new BetterDrizzleError({
-				code: BetterDrizzleErrorCode.OperationError,
+				code: BetterDrizzleErrorCode.InvalidArgs,
 				details: { cursorField: field },
 				message: `Cursor field "${field}" must be selected when using cursor pagination on table "${tableName}"`,
 				operation,
@@ -3262,7 +3262,7 @@ const hasCursorPage = async <Schema extends AnySchema, Meta>(
 	const result = buildCursorPaginationQuery(args, 1);
 	if ('error' in result)
 		throw new BetterDrizzleError({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 			message:
 				result.error === 'AMBIGUOUS_CURSOR'
 					? 'cursor() accepts either before or after, but not both.'
@@ -3410,7 +3410,7 @@ export const buildCursorPage = <Schema extends AnySchema, Meta>(
 
 	if ('error' in built)
 		throw new BetterDrizzleError({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 			message:
 				built.error === 'AMBIGUOUS_CURSOR'
 					? 'cursor() accepts either before or after, but not both.'

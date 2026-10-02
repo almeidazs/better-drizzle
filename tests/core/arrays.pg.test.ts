@@ -466,7 +466,7 @@ describe.skipIf(!DATABASE_URL)('PostgreSQL array filters', () => {
 				where: { id: 1 },
 			}),
 		).rejects.toMatchObject({
-			code: 'OPERATION_ERROR',
+			code: 'INVALID_ARGS',
 			message:
 				'PostgreSQL array mutations must specify exactly one operation.',
 		});
@@ -478,7 +478,7 @@ describe.skipIf(!DATABASE_URL)('PostgreSQL array filters', () => {
 				db.users.findMany({ where: { scores: { some: {} } } } as never),
 			),
 		).rejects.toMatchObject({
-			code: 'OPERATION_ERROR',
+			code: 'INVALID_ARGS',
 			message:
 				'Array some predicate must be a non-empty scalar filter object.',
 		});
@@ -489,7 +489,7 @@ describe.skipIf(!DATABASE_URL)('PostgreSQL array filters', () => {
 				} as never),
 			),
 		).rejects.toMatchObject({
-			code: 'OPERATION_ERROR',
+			code: 'INVALID_ARGS',
 			message:
 				'Array some predicate cannot compare against a NULL array element.',
 		});

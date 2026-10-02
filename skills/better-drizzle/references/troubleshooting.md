@@ -32,7 +32,8 @@ try {
 | `REPOSITORY_NOT_FOUND` | `repository(name)` matched no table key or table name |
 | `AFTER_COMMIT_OUTSIDE_TRANSACTION` | `afterCommit` called on the root client |
 | `PLUGIN_*` | plugin config invalid at `better()` time |
-| `OPERATION_ERROR` (500) | invalid input or a wrapped failure; read `message` and `cause` |
+| `INVALID_ARGS` (400) | invalid call arguments (shape, conflicting options, unknown field, bad value); read `message` and `details` |
+| `OPERATION_ERROR` (500) | other operation failures or a wrapped non-library error; read `message` and `cause` |
 
 ## Messages and fixes
 

@@ -249,7 +249,7 @@ const prepareCount = <Schema extends AnySchema, Meta>(
 
 const pageError = (runtime: TableRuntime, page: unknown, skip: unknown) =>
 	new BetterDrizzleError({
-		code: BetterDrizzleErrorCode.OperationError,
+		code: BetterDrizzleErrorCode.InvalidArgs,
 		details: { page, skip },
 		message:
 			skip === undefined
@@ -446,7 +446,7 @@ const prepareCursor = <Schema extends AnySchema, Meta>(
 				Array.isArray(token)
 			)
 				throw new BetterDrizzleError({
-					code: BetterDrizzleErrorCode.OperationError,
+					code: BetterDrizzleErrorCode.InvalidArgs,
 					details: { param: cursorName },
 					message: `cursor() ${cursorArgs.after ? 'after' : 'before'} must be a cursor object.`,
 					operation: 'cursor',

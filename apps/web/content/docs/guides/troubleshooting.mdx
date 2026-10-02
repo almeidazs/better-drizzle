@@ -42,7 +42,7 @@ const client = better(db);
 
 ### A relation does not appear in `include` or `select`
 
-**Message:** `Unknown relation or column "posts" on "users".` (code `OPERATION_ERROR`), or the key is simply missing from the TypeScript autocomplete.
+**Message:** `Unknown relation or column "posts" on "users".` (code `INVALID_ARGS`), or the key is simply missing from the TypeScript autocomplete.
 
 **Why:** better-drizzle reads relations from the `defineRelations(...)` config passed to `drizzle()`. A foreign key alone (`.references(...)`) is not a relation, and a relation that is not declared in that config is invisible.
 
@@ -143,7 +143,7 @@ Row locks are PostgreSQL and MySQL only, and only on read queries. The message t
 | `lock.tables is only supported on PostgreSQL.` | `tables` targets `FOR UPDATE OF ...` | drop `tables` on MySQL |
 | `The current Drizzle select builder does not support row locks.` | the Drizzle select builder has no `.for()` | upgrade Drizzle or use a driver whose builder supports it |
 
-Setting `noWait` and `skipLocked` together throws `lock cannot enable both noWait and skipLocked.` (code `OPERATION_ERROR`). `count`, `exists`, and writes do not accept `lock`.
+Setting `noWait` and `skipLocked` together throws `lock cannot enable both noWait and skipLocked.` (code `INVALID_ARGS`). `count`, `exists`, and writes do not accept `lock`.
 
 ### `LOCK_REQUIRES_TRANSACTION`
 
@@ -296,7 +296,7 @@ See the [rules plugin](/docs/plugins/rules).
 | `cursor() after must be a cursor object.` / `cursor() before must be a cursor object.` | pass the object returned as `nextCursor` / `previousCursor`, such as `{ id: 42 }`, not a bare value |
 | `Cursor field "id" must be selected when using cursor pagination on table "users"` | include every `orderBy` / cursor column in `select` |
 
-All three use code `OPERATION_ERROR`. See [pagination](/docs/querying/pagination).
+All three use code `INVALID_ARGS`. See [pagination](/docs/querying/pagination).
 
 ### `RESULT_NOT_FOUND`
 

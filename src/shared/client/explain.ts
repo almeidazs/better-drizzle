@@ -431,7 +431,7 @@ const buildQueryList = async <
 
 			if ('error' in built)
 				throw new BetterDrizzleError({
-					code: BetterDrizzleErrorCode.OperationError,
+					code: BetterDrizzleErrorCode.InvalidArgs,
 					message:
 						built.error === 'AMBIGUOUS_CURSOR'
 							? 'cursor() accepts either before or after, but not both.'

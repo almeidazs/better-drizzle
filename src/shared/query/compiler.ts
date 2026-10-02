@@ -356,7 +356,7 @@ type ArrayElementQuantifier = 'none' | 'some' | 'every';
 
 const arrayElementPredicateError = (quantifier: ArrayElementQuantifier) =>
 	new BetterDrizzleError({
-		code: BetterDrizzleErrorCode.OperationError,
+		code: BetterDrizzleErrorCode.InvalidArgs,
 		message: `Array ${quantifier} predicate must be a non-empty scalar filter object.`,
 	});
 
@@ -382,7 +382,7 @@ const validateArrayElementPredicate = (
 			}
 			if (!Array.isArray(entry) || entry.some((item) => item == null))
 				throw new BetterDrizzleError({
-					code: BetterDrizzleErrorCode.OperationError,
+					code: BetterDrizzleErrorCode.InvalidArgs,
 					message: `Array ${quantifier} predicate cannot compare against a NULL array element.`,
 				});
 			predicates += 1;
@@ -397,7 +397,7 @@ const validateArrayElementPredicate = (
 		if (key === 'not') {
 			if (entry == null)
 				throw new BetterDrizzleError({
-					code: BetterDrizzleErrorCode.OperationError,
+					code: BetterDrizzleErrorCode.InvalidArgs,
 					message: `Array ${quantifier} predicate cannot compare against a NULL array element.`,
 				});
 			if (isScalarFilter(entry))
@@ -414,7 +414,7 @@ const validateArrayElementPredicate = (
 		) {
 			if (entry == null)
 				throw new BetterDrizzleError({
-					code: BetterDrizzleErrorCode.OperationError,
+					code: BetterDrizzleErrorCode.InvalidArgs,
 					message: `Array ${quantifier} predicate cannot compare against a NULL array element.`,
 				});
 			predicates += 1;
@@ -1275,7 +1275,7 @@ export const cursorParam = (
 					const field = value[key];
 					if (field === null || field === undefined)
 						throw new BetterDrizzleError({
-							code: BetterDrizzleErrorCode.OperationError,
+							code: BetterDrizzleErrorCode.InvalidArgs,
 							details: { cursorField: key },
 							message: `Prepared cursor "${cursor.name}" must include a non-null "${key}" for table "${runtime.dbName}".`,
 							operation: 'cursor',
@@ -1349,7 +1349,7 @@ export const compileCursorWhere = <Schema extends AnySchema, Meta>(
 				if (!column) continue;
 				if (!(key in values) || values[key] === undefined)
 					throw new BetterDrizzleError({
-						code: BetterDrizzleErrorCode.OperationError,
+						code: BetterDrizzleErrorCode.InvalidArgs,
 						details: { cursorField: key },
 						message: `Cursor must include orderBy field "${key}" for table "${context.runtime.dbName}".`,
 						operation: 'cursor',
@@ -1500,7 +1500,7 @@ export const buildOffsetPaginationQuery = <Schema extends AnySchema, Meta>(
 		(args.skip !== undefined || !Number.isInteger(page) || page < 1)
 	)
 		throw new BetterDrizzleError({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 			details: { page, skip: args.skip },
 			message:
 				args.skip === undefined

@@ -198,7 +198,7 @@ describe('create', () => {
 				skipDuplicates: ['missing'] as unknown as ['email'],
 			}),
 		).rejects.toMatchObject({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 		});
 	});
 });
@@ -1430,7 +1430,7 @@ describe('upsertMany', () => {
 				update: 'all',
 			}),
 		).rejects.toMatchObject({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 		});
 	});
 
@@ -1450,7 +1450,7 @@ describe('upsertMany', () => {
 				update: ['missing'] as never,
 			}),
 		).rejects.toMatchObject({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 		});
 	});
 });

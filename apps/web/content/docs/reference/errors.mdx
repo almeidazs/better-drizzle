@@ -211,7 +211,8 @@ try {
 | Database | `ARRAY_QUERY_UNSUPPORTED` | 400 | A native array filter was used on a dialect other than PostgreSQL. |
 | Database | `ARRAY_MUTATION_UNSUPPORTED` | 400 | A native array mutation (`append`, `prepend`, `remove`, `replace`, `addUnique`) was used on a dialect other than PostgreSQL. |
 | Operations | `UNIQUE_WHERE_REQUIRED` | 400 | A `findUnique` `where` does not pin one row by its primary key or a unique key (for example `{ id: undefined }`). |
-| Operations | `OPERATION_ERROR` | 500 | An operation received invalid input or failed, for example an invalid `batchSize` or a bad cursor. |
+| Operations | `INVALID_ARGS` | 400 | The call's arguments are invalid: a bad shape, conflicting options (`page` with `skip`, `before` with `after`, `select` with `include`), an unknown column or relation, or an invalid value such as a non-positive `batchSize`, a non-finite atomic operand, or overlapping JSONB paths. Thrown before any SQL. |
+| Operations | `OPERATION_ERROR` | 500 | An operation failed for another reason, for example a relation selector matching no row or several rows, a feature the dialect does not support without a more specific code, or a non-library error wrapped by a hook or transaction. |
 | Operations | `UNKNOWN` | 500 | An uncategorized error. |
 | Prepared statements | `PREPARED_PARAM_MISSING` | 400 | `execute()` received no value for a `param()`. |
 | Prepared statements | `PREPARED_PARAM_UNKNOWN` | 400 | `execute()` received a value for a name the statement does not use. |

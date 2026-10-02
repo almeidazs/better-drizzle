@@ -321,7 +321,7 @@ describe('row locks', () => {
 				}),
 			),
 		).rejects.toMatchObject({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 			details: {
 				target: 'missing_table',
 			},
@@ -490,7 +490,7 @@ describe('row locks', () => {
 				}),
 			),
 		).rejects.toMatchObject({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 		});
 	});
 

@@ -153,7 +153,7 @@ await client.users.create({
 
 ### Validation errors
 
-A failed parse throws a `BetterDrizzleError` with code `OPERATION_ERROR`, `table` set to the schema key, and a message such as `Zod validation failed for create payload on "users".` The Zod issues are in `details`:
+A failed parse throws a `BetterDrizzleError` with code `INVALID_ARGS` (status 400), `table` set to the schema key, and a message such as `Zod validation failed for create payload on "users".` The Zod issues are in `details`:
 
 ```ts
 {

@@ -310,7 +310,7 @@ const { statements } = await findUserByEmail.explain({
 | `PREPARED_PARAM_UNKNOWN` | `execute()` received a value for a name the statement does not use. |
 | `PREPARED_UNSUPPORTED` | `.prepare()` met a shape that cannot be prepared: a list param outside PostgreSQL, or a param inside a relation's `include` / `select` args. |
 
-Invalid pagination values reject with `OPERATION_ERROR`, as in the regular
+Invalid pagination values reject with `INVALID_ARGS`, as in the regular
 read. A `null` value binds SQL `NULL`, which never equals anything; filter on
 `null` with a literal (`{ deletedAt: null }`) instead.
 

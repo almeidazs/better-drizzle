@@ -616,7 +616,7 @@ await db
 - Every shorthand key must contain a dot. Use `{ json: { nickname: 'Ada' } }` for a top-level key. The wrapper must be the only key and contain at least one path. Untyped JSONB columns accept open path names and JSON-encodable values.
 - Paths address object keys, not array indexes. JSON objects and arrays are valid **values** at a path. A dot always separates path segments, including inside the `{ json: ... }` wrapper; literal keys containing a dot have no structured mutation syntax. A top-level `json` key holding a plain object is reserved for the wrapper.
 - Missing object ancestors are created. SQL `NULL` and non-object JSONB roots become `{}`; non-object intermediate values are replaced by `{}`. Existing object keys outside the assigned paths are preserved.
-- Mixing dotted and plain keys, overlapping ancestor and descendant paths, empty wrappers, nested `undefined`, and values that cannot be encoded as JSON throw `OPERATION_ERROR`. PostgreSQL alone supports path mutations; other dialects throw `JSONB_MUTATION_UNSUPPORTED`. Full-document replacement still works wherever the underlying column supports it.
+- Mixing dotted and plain keys, overlapping ancestor and descendant paths, empty wrappers, nested `undefined`, and values that cannot be encoded as JSON throw `INVALID_ARGS`. PostgreSQL alone supports path mutations; other dialects throw `JSONB_MUTATION_UNSUPPORTED`. Full-document replacement still works wherever the underlying column supports it.
 
 There are no structured path operators for deleting a key, merging an object, incrementing a number, or modifying array elements. `null` writes JSON `null` rather than deleting a key. For those operations, pass a Drizzle `sql` expression as the entire column update value.
 

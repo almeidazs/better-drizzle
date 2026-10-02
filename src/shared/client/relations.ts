@@ -97,7 +97,7 @@ const getCountSelection = (
 	const count = include._count;
 	if (!isSimpleRecord(count) || !isSimpleRecord(count.select))
 		throw new BetterDrizzleError({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 			message: '_count must contain a non-empty select object.',
 			operation: 'relation',
 			table: runtime.dbName,
@@ -109,7 +109,7 @@ const getCountSelection = (
 		hasSelection = true;
 		if (!runtime.relationNames.has(relationName))
 			throw new BetterDrizzleError({
-				code: BetterDrizzleErrorCode.OperationError,
+				code: BetterDrizzleErrorCode.InvalidArgs,
 				details: { relation: relationName },
 				message: `Unknown relation "${relationName}" in _count on "${runtime.dbName}".`,
 				operation: 'relation',
@@ -122,7 +122,7 @@ const getCountSelection = (
 			Object.keys(value).some((key) => key !== 'where')
 		)
 			throw new BetterDrizzleError({
-				code: BetterDrizzleErrorCode.OperationError,
+				code: BetterDrizzleErrorCode.InvalidArgs,
 				details: { relation: relationName },
 				message: `_count relation "${relationName}" must be true or contain only where.`,
 				operation: 'relation',
@@ -132,7 +132,7 @@ const getCountSelection = (
 
 	if (!hasSelection)
 		throw new BetterDrizzleError({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 			message: '_count.select must include at least one relation.',
 			operation: 'relation',
 			table: runtime.dbName,
@@ -147,7 +147,7 @@ const getRelationSource = (
 ) => {
 	if (args?.include && args.select)
 		throw new BetterDrizzleError({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 			message:
 				'select and include cannot be used at the same query level.',
 			operation: 'relation',
@@ -178,7 +178,7 @@ const getRelationSource = (
 		}
 		if (!include && Object.hasOwn(runtime.columns, key)) continue;
 		throw new BetterDrizzleError({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 			details: { field: key },
 			message: `Unknown relation or column "${key}" on "${runtime.dbName}".`,
 			operation: 'relation',
@@ -787,9 +787,10 @@ const relationError = (
 	relation: string,
 	message: string,
 	details?: Record<string, unknown>,
+	code = BetterDrizzleErrorCode.InvalidArgs,
 ) =>
 	new BetterDrizzleError({
-		code: BetterDrizzleErrorCode.OperationError,
+		code,
 		details: { relation, ...details },
 		message,
 		operation: 'relationWrite',
@@ -841,6 +842,7 @@ const resolveSelector = async <Schema extends AnySchema, Meta>(
 				? 'Relation selector matched more than one record.'
 				: 'Relation selector did not match a record.',
 			{ matches: rows.length, selector },
+			BetterDrizzleErrorCode.OperationError,
 		);
 	return rows[0] as Record<string, unknown>;
 };
@@ -1047,6 +1049,8 @@ const updateResolvedTarget = async <Schema extends AnySchema, Meta>(
 			runtime,
 			'unknown',
 			'Related records require a primary key for relation writes.',
+			undefined,
+			BetterDrizzleErrorCode.OperationError,
 		);
 	await context.db.update(runtime.table).set(data).where(where);
 };
