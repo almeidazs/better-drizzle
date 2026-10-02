@@ -260,6 +260,9 @@ export type SortConfig = {
  */
 export type QueryMode = 'default' | 'insensitive';
 
+/** A literal value or a prepared statement `param()` standing in for it. */
+export type Bindable<T> = T | import('./prepared').PreparedParam<string, T>;
+
 /**
  * Filter operators for string columns. Supports equality, membership,
  * pattern matching, and case-insensitive mode.
@@ -279,21 +282,21 @@ export type QueryMode = 'default' | 'insensitive';
  */
 export type StringFilter<T> = {
 	/** Exact match. */
-	equals?: T;
+	equals?: Bindable<T>;
 	/** Match any value in the array. */
-	in?: T[];
+	in?: Bindable<T[]>;
 	/** Match none of the values in the array. */
-	notIn?: T[];
+	notIn?: Bindable<T[]>;
 	/** Substring match. */
-	contains?: string;
+	contains?: Bindable<string>;
 	/** Prefix match. */
-	startsWith?: string;
+	startsWith?: Bindable<string>;
 	/** Suffix match. */
-	endsWith?: string;
+	endsWith?: Bindable<string>;
 	/** Case sensitivity mode. */
 	mode?: QueryMode;
 	/** Negation filter. */
-	not?: T | Omit<StringFilter<T>, 'not'>;
+	not?: Bindable<T> | Omit<StringFilter<T>, 'not'>;
 };
 
 /**
@@ -315,21 +318,21 @@ export type StringFilter<T> = {
  */
 export type ComparableFilter<T> = {
 	/** Exact match. */
-	equals?: T;
+	equals?: Bindable<T>;
 	/** Match any value in the array. */
-	in?: T[];
+	in?: Bindable<T[]>;
 	/** Match none of the values in the array. */
-	notIn?: T[];
+	notIn?: Bindable<T[]>;
 	/** Less than. */
-	lt?: T;
+	lt?: Bindable<T>;
 	/** Less than or equal. */
-	lte?: T;
+	lte?: Bindable<T>;
 	/** Greater than. */
-	gt?: T;
+	gt?: Bindable<T>;
 	/** Greater than or equal. */
-	gte?: T;
+	gte?: Bindable<T>;
 	/** Negation filter. */
-	not?: T | Omit<ComparableFilter<T>, 'not'>;
+	not?: Bindable<T> | Omit<ComparableFilter<T>, 'not'>;
 };
 
 /**
@@ -346,9 +349,9 @@ export type ComparableFilter<T> = {
  */
 export type BooleanFilter<T> = {
 	/** Exact match. */
-	equals?: T;
+	equals?: Bindable<T>;
 	/** Negation filter. */
-	not?: T | Omit<BooleanFilter<T>, 'not'>;
+	not?: Bindable<T> | Omit<BooleanFilter<T>, 'not'>;
 };
 
 /**
@@ -379,8 +382,8 @@ export type ScalarFilter<T> =
 			: NonNullish<T> extends boolean
 				? BooleanFilter<T>
 				: {
-						equals?: T;
-						not?: T | { equals?: T };
+						equals?: Bindable<T>;
+						not?: Bindable<T> | { equals?: Bindable<T> };
 					};
 
 /**
@@ -402,7 +405,7 @@ export type ScalarFilter<T> =
  * ```
  */
 export type ScalarWhereField<T> =
-	| T
+	| Bindable<T>
 	| ScalarFilter<T>
 	| (null extends T ? null : never);
 
@@ -415,15 +418,15 @@ type ArrayValue<T> = Exclude<ArrayElement<T>, null>;
 
 /** Filter operators for native PostgreSQL array columns. */
 export type ArrayFilter<T> = {
-	equals?: T;
-	has?: ArrayValue<T>;
-	hasEvery?: readonly ArrayValue<T>[];
-	hasNone?: readonly ArrayValue<T>[];
-	hasSome?: readonly ArrayValue<T>[];
-	containedBy?: readonly ArrayValue<T>[];
+	equals?: Bindable<T>;
+	has?: Bindable<ArrayValue<T>>;
+	hasEvery?: Bindable<readonly ArrayValue<T>[]>;
+	hasNone?: Bindable<readonly ArrayValue<T>[]>;
+	hasSome?: Bindable<readonly ArrayValue<T>[]>;
+	containedBy?: Bindable<readonly ArrayValue<T>[]>;
 	isEmpty?: boolean;
-	length?: number | ComparableFilter<number>;
-	not?: T | Omit<ArrayFilter<T>, 'not'>;
+	length?: Bindable<number> | ComparableFilter<number>;
+	not?: Bindable<T> | Omit<ArrayFilter<T>, 'not'>;
 	none?: ScalarFilter<ArrayValue<T>>;
 	some?: ScalarFilter<ArrayValue<T>>;
 	every?: ScalarFilter<ArrayValue<T>>;
@@ -431,7 +434,7 @@ export type ArrayFilter<T> = {
 
 /** Accepted where value for a native PostgreSQL array column. */
 export type ArrayWhereField<T> =
-	| NonNullish<T>
+	| Bindable<NonNullish<T>>
 	// `length` would let a bare string match the all-optional filter shape.
 	| (ArrayFilter<T> & { charAt?: never })
 	| (null extends T ? null : never);
@@ -502,7 +505,7 @@ export type JsonScalarPath<T, Prefix extends string = ''> =
 					}[Extract<keyof NonNullish<T>, string>]
 				: never;
 
-type JsonPathValue<
+export type JsonPathValue<
 	T,
 	Path extends string,
 > = Path extends `${infer Key}.${infer Rest}`
@@ -523,6 +526,7 @@ export type JsonWhereInput<T> =
 			};
 
 type JsonDottedPathValue =
+	| import('./prepared').PreparedParam
 	| string
 	| number
 	| bigint

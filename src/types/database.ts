@@ -110,11 +110,11 @@ export interface OffsetPaginationOptions<
 	Columns extends Record<string, unknown>,
 > {
 	/** Maximum number of rows to return per page. */
-	limit?: number;
+	limit?: import('./utils').Bindable<number>;
 	/** Rows per page; an alias of `limit`. */
-	perPage?: number;
+	perPage?: import('./utils').Bindable<number>;
 	/** 1-based page number; computes `skip`, so it cannot be combined with it. */
-	page?: number;
+	page?: import('./utils').Bindable<number>;
 	/** Sort order for the result set. */
 	orderBy?: OrderBy<Columns>;
 }
@@ -129,7 +129,7 @@ export interface CursorPaginationOptions<
 	Columns extends Record<string, unknown>,
 > {
 	/** Maximum number of rows to return per page. */
-	limit?: number;
+	limit?: import('./utils').Bindable<number>;
 	/** Sort order for the result set. */
 	orderBy?: OrderBy<Columns>;
 	/** Cursor token pointing after which rows should be returned. */
