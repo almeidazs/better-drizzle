@@ -408,25 +408,6 @@ export const ata = <
 
 export default ata;
 
-export { stripUnknownColumns };
-export { createAtaSchemasRegistry } from './shared/registry';
-export { checkResidue, columnToSchema } from './shared/column';
-export { createRowValidator } from './shared/row';
-export { createWhereSchema, whereDefinitions } from './shared/where';
-export {
-	createCountArgsSchema,
-	createCursorArgsSchema,
-	createCursorSchema,
-	createDeleteArgsSchema,
-	createIncludeSchema,
-	createLockSchema,
-	createOrderBySchema,
-	createPaginationArgsSchema,
-	createQueryArgsSchema,
-	createSelectSchema,
-} from './shared/query';
-export { DEFAULT_VALIDATE, shouldValidate } from './shared/validation';
-
 export type {
 	AtaCompiledSchema,
 	AtaPluginOptions,
