@@ -866,6 +866,26 @@ describe('better-drizzle/zod - query arg validation', () => {
 			),
 		).rejects.toThrow('Zod validation failed for cursor args');
 
+		await expect(
+			Promise.resolve(
+				ctx.client.users.cursor({
+					after: 'eyJpZCI6Mn0' as never,
+					limit: 2,
+					orderBy: [{ id: 'asc' }],
+				}),
+			),
+		).rejects.toThrow('Zod validation failed for cursor args');
+
+		expect(
+			(
+				await ctx.client.users.cursor({
+					before: null,
+					limit: 2,
+					orderBy: [{ id: 'asc' }],
+				})
+			).data.length,
+		).toBe(2);
+
 		const page = await ctx.client.users.cursor({
 			after: { id: 2 },
 			limit: 2,

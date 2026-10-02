@@ -11,6 +11,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 import {
+	createCursorArgsSchema,
 	createCursorSchema,
 	createOrderBySchema,
 	createQueryArgsSchema,
@@ -179,5 +180,16 @@ describe('createQueryArgsSchema', () => {
 		expect(ok({ where: { id: { gt: 3 } } })).toBe(true);
 		expect(ok({ where: { id: { gt: 'three' } } })).toBe(false);
 		expect(ok({ where: { nope: 1 } })).toBe(false);
+	});
+});
+
+describe('createCursorArgsSchema', () => {
+	const ok = check(createCursorArgsSchema(columns, relations));
+
+	test('after and before take a cursor object or null, never a string', () => {
+		expect(ok({ after: { id: 1 } })).toBe(true);
+		expect(ok({ before: null })).toBe(true);
+		expect(ok({ after: 'eyJpZCI6MX0' })).toBe(false);
+		expect(ok({ before: 'eyJpZCI6MX0' })).toBe(false);
 	});
 });

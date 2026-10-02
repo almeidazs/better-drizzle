@@ -230,14 +230,8 @@ export const createZodSchemasRegistry = <Schema extends AnySchema>(
 
 	const getCursorArgsWithMetaSchema = (entry: TableSchemaEntry) =>
 		z.object({
-			after: z
-				.union([getCursorInputSchema(entry), z.string()])
-				.nullable()
-				.optional(),
-			before: z
-				.union([getCursorInputSchema(entry), z.string()])
-				.nullable()
-				.optional(),
+			after: getCursorInputSchema(entry).nullable().optional(),
+			before: getCursorInputSchema(entry).nullable().optional(),
 			include: getIncludeSchema(entry).optional(),
 			limit: z.number().int().optional(),
 			lock: zodLockSchema.optional(),
