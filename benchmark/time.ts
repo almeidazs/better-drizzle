@@ -18,6 +18,8 @@ import {
 	betterRelationGraph,
 	betterSimpleTransaction,
 	betterUpdateAndLoad,
+	createBetterPreparedScenarios,
+	createRawPreparedScenarios,
 	rawActiveCount,
 	rawAtomicUpdateAndLoad,
 	rawComplexJoinFlat,
@@ -104,6 +106,28 @@ group('api parity: reads', () => {
 			do_not_optimize(await rawComplexRelationFilter(rawContext)));
 		bench('better: complex relation filter', async () =>
 			do_not_optimize(await betterComplexJoinEquivalent(betterContext)));
+	});
+});
+
+const rawPrepared = createRawPreparedScenarios(rawContext);
+const betterPrepared = createBetterPreparedScenarios(betterContext);
+
+group('api parity: prepared reads', () => {
+	summary(() => {
+		for (const scenario of [
+			'pointLookup',
+			'filteredList',
+			'activeCount',
+			'offsetPaginate',
+			'cursorPaginate',
+		] as const) {
+			bench(`drizzle prepared: ${scenario}`, async () =>
+				do_not_optimize(await rawPrepared[scenario]()));
+			bench(`better prepared: ${scenario}`, async () =>
+				do_not_optimize(await betterPrepared[scenario]()));
+		}
+		bench('better unprepared: pointLookup', async () =>
+			do_not_optimize(await betterPointLookup(betterContext)));
 	});
 });
 

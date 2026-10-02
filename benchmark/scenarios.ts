@@ -12,7 +12,7 @@ import {
 	sql,
 } from 'drizzle-orm';
 
-import { OrderType } from '../src';
+import { OrderType, param } from '../src';
 import {
 	benchWrites,
 	comments,
@@ -734,3 +734,173 @@ export const betterReadOnlyTransaction = async (context: BenchmarkContext) =>
 
 		return { benchWrite, user };
 	});
+
+/**
+ * Prepared statements: both sides compile once and execute with new values.
+ * Drizzle uses `sql.placeholder()` + `.prepare()`; better-drizzle uses
+ * `param()` + `.prepare()` and returns the same shapes as the reads above.
+ */
+export const createRawPreparedScenarios = (context: BenchmarkContext) => {
+	const lookup = context.raw
+		.select()
+		.from(users)
+		.where(eq(users.id, sql.placeholder('id')))
+		.limit(1)
+		.prepare();
+	const filtered = context.raw
+		.select()
+		.from(users)
+		.where(
+			and(
+				eq(users.active, sql.placeholder('active')),
+				gte(users.age, sql.placeholder('age')),
+				like(users.email, sql.placeholder('email')),
+			),
+		)
+		.orderBy(desc(users.age), asc(users.id))
+		.limit(25)
+		.prepare();
+	const activeCount = context.raw
+		.select({ count: count() })
+		.from(users)
+		.where(
+			and(
+				eq(users.active, sql.placeholder('active')),
+				gte(users.age, sql.placeholder('age')),
+			),
+		)
+		.prepare();
+	const page = context.raw
+		.select()
+		.from(users)
+		.orderBy(asc(users.id))
+		.limit(sql.placeholder('limit'))
+		.offset(sql.placeholder('skip'))
+		.prepare();
+	const total = context.raw.select({ count: count() }).from(users).prepare();
+	const cursorPage = context.raw
+		.select({
+			...userColumns,
+			__hasPrevious:
+				sql`exists (select 1 from ${users} as prior where prior.id <= ${sql.placeholder('after')})`.mapWith(
+					Boolean,
+				),
+		})
+		.from(users)
+		.where(gt(users.id, sql.placeholder('after')))
+		.orderBy(asc(users.id))
+		.limit(26)
+		.prepare();
+	const anyUser = context.raw
+		.select({ id: users.id })
+		.from(users)
+		.limit(1)
+		.prepare();
+
+	return {
+		activeCount: async () =>
+			Number(
+				(await activeCount.all({ active: true, age: 30 }))[0]?.count ??
+					0,
+			),
+		cursorPaginate: async () => {
+			const data = await cursorPage.all({
+				after: context.ids.cursorAfterId,
+			});
+			const hasPrevious = data.length
+				? data[0].__hasPrevious
+				: (await anyUser.all()).length > 0;
+			for (const row of data)
+				delete (row as Partial<typeof row>).__hasPrevious;
+			const visible = data.slice(0, 25);
+
+			return {
+				data: visible,
+				pagination: {
+					type: 'cursor' as const,
+					hasNext: data.length > 25,
+					hasPrevious,
+					nextCursor:
+						data.length > 25
+							? { id: visible[visible.length - 1]?.id }
+							: null,
+					previousCursor:
+						hasPrevious && visible.length
+							? { id: visible[0]?.id }
+							: null,
+				},
+			};
+		},
+		filteredList: async () =>
+			filtered.all({ active: true, age: 30, email: '%@example.com' }),
+		offsetPaginate: async () => {
+			const [data, rows] = await Promise.all([
+				page.all({ limit: 25, skip: 80 }),
+				total.all(),
+			]);
+			const count = Number(rows[0]?.count ?? 0);
+
+			return {
+				data,
+				pagination: {
+					type: 'offset' as const,
+					page: 4,
+					perPage: 25,
+					total: count,
+					pageCount: Math.ceil(count / 25),
+					hasNext: 80 + data.length < count,
+					hasPrevious: true,
+				},
+			};
+		},
+		pointLookup: async () =>
+			(await lookup.all({ id: context.ids.userLookupId }))[0] ?? null,
+	};
+};
+
+export const createBetterPreparedScenarios = (context: BenchmarkContext) => {
+	const db = betterClient(context);
+	const lookup = db.users
+		.findFirst({ take: 1, where: { id: param('id') } })
+		.prepare();
+	const filtered = db.users
+		.findMany({
+			orderBy: [{ age: 'desc' }, { id: 'asc' }],
+			take: 25,
+			where: {
+				active: param('active'),
+				age: { gte: param('age') },
+				email: { endsWith: param('email') },
+			},
+		})
+		.prepare();
+	const activeCount = db.users
+		.count({
+			where: { active: param('active'), age: { gte: param('age') } },
+		})
+		.prepare();
+	const page = db.users
+		.paginate({
+			limit: param('limit'),
+			orderBy: [{ id: OrderType.Asc }],
+			skip: param('skip'),
+		})
+		.prepare();
+	const cursorPage = db.users
+		.cursor({
+			after: param('after'),
+			limit: 25,
+			orderBy: [{ id: OrderType.Asc }],
+		})
+		.prepare();
+
+	return {
+		activeCount: () => activeCount.execute({ active: true, age: 30 }),
+		cursorPaginate: () =>
+			cursorPage.execute({ after: { id: context.ids.cursorAfterId } }),
+		filteredList: () =>
+			filtered.execute({ active: true, age: 30, email: '@example.com' }),
+		offsetPaginate: () => page.execute({ limit: 25, skip: 80 }),
+		pointLookup: () => lookup.execute({ id: context.ids.userLookupId }),
+	};
+};

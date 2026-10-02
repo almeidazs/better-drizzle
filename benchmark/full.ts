@@ -19,6 +19,8 @@ import {
 	betterRelationGraph,
 	betterSimpleOrder,
 	betterSimpleTransaction,
+	createBetterPreparedScenarios,
+	createRawPreparedScenarios,
 	rawActiveCount,
 	rawAtomicUpdateAndLoad,
 	rawComplexRelationFilter,
@@ -340,7 +342,30 @@ const createExtendedOperations = (
 const readPairs = (raw: BenchmarkContext, better: BenchmarkContext) => {
 	const rawExtended = createExtendedOperations(raw, 'raw');
 	const betterExtended = createExtendedOperations(better, 'better');
+	const rawPrepared = createRawPreparedScenarios(raw);
+	const betterPrepared = createBetterPreparedScenarios(better);
 	return [
+		[
+			'prepared point lookup',
+			rawPrepared.pointLookup,
+			betterPrepared.pointLookup,
+		],
+		[
+			'prepared filtered list',
+			rawPrepared.filteredList,
+			betterPrepared.filteredList,
+		],
+		['prepared count', rawPrepared.activeCount, betterPrepared.activeCount],
+		[
+			'prepared offset pagination',
+			rawPrepared.offsetPaginate,
+			betterPrepared.offsetPaginate,
+		],
+		[
+			'prepared cursor pagination',
+			rawPrepared.cursorPaginate,
+			betterPrepared.cursorPaginate,
+		],
 		[
 			'point lookup',
 			() => rawPointLookup(raw),
