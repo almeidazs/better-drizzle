@@ -13,6 +13,95 @@ afterEach(() => {
 });
 
 describe('select - scalar fields', () => {
+	test('rejects unknown keys even when false', async () => {
+		for (const unknown of ['unknown', 'toString', 'constructor'])
+			for (const value of [true, false])
+				await expect(
+					Promise.resolve(
+						ctx.better.users.findMany({
+							select: { id: true, [unknown]: value },
+						} as never),
+					),
+				).rejects.toThrow(`Unknown relation or column "${unknown}"`);
+	});
+
+	test('rejects unknown nested keys even without matching rows', async () => {
+		for (const id of [5, 999])
+			await expect(
+				Promise.resolve(
+					ctx.better.users.findMany({
+						where: { id },
+						include: { posts: { select: { unknown: false } } },
+					} as never),
+				),
+			).rejects.toThrow('Unknown relation or column "unknown"');
+	});
+
+	test('rejects unknown write projections before changing rows', async () => {
+		const select = { id: true, unknown: false };
+		const original = await ctx.better.users.findMany({
+			orderBy: { id: 'asc' },
+		});
+		const data = {
+			active: true,
+			age: 25,
+			email: 'new@example.com',
+			id: 100,
+			name: 'New',
+		};
+		const writes = [
+			() => ctx.better.users.create({ data, select } as never),
+			() =>
+				ctx.better.users.createMany({ data: [data], select } as never),
+			() =>
+				ctx.better.users.update({
+					data: { name: 'Changed' },
+					select,
+					where: { id: 1 },
+				} as never),
+			() =>
+				ctx.better.users.delete({ select, where: { id: 1 } } as never),
+			() =>
+				ctx.better.users.upsert({
+					create: data,
+					update: { name: 'Changed' },
+					select,
+					where: { id: 1 },
+				} as never),
+			() =>
+				ctx.better.users.upsertMany({
+					data: [data],
+					target: 'id',
+					update: 'all',
+					select,
+				} as never),
+		];
+		for (const write of writes) {
+			await expect(Promise.resolve().then(write)).rejects.toThrow(
+				'Unknown relation or column "unknown"',
+			);
+			expect(
+				await ctx.better.users.findMany({ orderBy: { id: 'asc' } }),
+			).toEqual(original);
+		}
+	});
+
+	test('rejects invalid nested write projections before insertion', async () => {
+		await expect(
+			ctx.better.users.create({
+				data: {
+					active: true,
+					age: 25,
+					email: 'new@example.com',
+					id: 100,
+					name: 'New',
+				},
+				include: { posts: { select: { unknown: true } } },
+			} as never),
+		).rejects.toThrow('Unknown relation or column "unknown"');
+		expect(await ctx.better.users.count()).toBe(5);
+	});
+
 	test('select specific columns', async () => {
 		const result = await ctx.better.users.findMany({
 			select: { id: true, name: true },

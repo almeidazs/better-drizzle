@@ -68,6 +68,7 @@ import {
 	prepareRelationalRead,
 	prepareRelationWrite,
 	splitRelationData,
+	validateProjection,
 } from './relations';
 
 type ResolvedSkipDuplicates = {
@@ -1387,12 +1388,21 @@ const getDirectSelection = (
 
 	if (select)
 		for (const key in select) {
+			if (
+				!Object.hasOwn(runtime.columns, key) &&
+				!runtime.relationNames.has(key)
+			)
+				throw new BetterDrizzleError({
+					code: BetterDrizzleErrorCode.OperationError,
+					details: { field: key },
+					message: `Unknown relation or column "${key}" on "${runtime.dbName}".`,
+					operation: 'relation',
+					table: runtime.dbName,
+				});
 			if (select[key] !== true || runtime.relationNames.has(key))
 				continue;
 
 			const column = runtime.columns[key];
-			if (!column) continue;
-
 			selection[key] = column;
 			hasSelection = true;
 		}
@@ -2280,6 +2290,7 @@ export const createRecord = async <Schema extends AnySchema, Meta>(
 	args: CreateArgs<Schema, BetterTableKey<Schema>, Meta>,
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
+	if (hasProjection(args)) validateProjection(context, runtime, args);
 	const relational = hasRelationWrites(runtime, args.data);
 	const prepared = relational
 		? await prepareRelationWrite(
@@ -2356,6 +2367,7 @@ export const createManyRecords = async <Schema extends AnySchema, Meta>(
 	args: CreateManyArgs<Schema, BetterTableKey<Schema>, Meta>,
 ): Promise<BatchResult<Record<string, unknown>>> => {
 	const runtime = getTableRuntime(context, tableName as string);
+	if (hasProjection(args)) validateProjection(context, runtime, args);
 	const { builder, skipDuplicates } = applyInsertOnConflict(
 		context,
 		runtime,
@@ -2481,7 +2493,13 @@ export const upsertManyRecords = async <Schema extends AnySchema, Meta>(
 	tableName: BetterTableKey<Schema>,
 	args: UpsertManyArgs<Schema, BetterTableKey<Schema>, Meta>,
 ): Promise<BatchResult<Record<string, unknown>>> => {
-	if (!args.data.length) return { count: 0 };
+	if (!args.data.length) {
+		getReturningSelection(
+			getTableRuntime(context, tableName as string),
+			args.select as Record<string, unknown> | undefined,
+		);
+		return { count: 0 };
+	}
 
 	const batchSize = getBatchSize(args.batchSize);
 	if (!batchSize || args.data.length <= batchSize)
@@ -2531,6 +2549,7 @@ export const updateRecord = async <Schema extends AnySchema, Meta>(
 	args: UpdateArgs<Schema, BetterTableKey<Schema>, Meta>,
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
+	if (hasProjection(args)) validateProjection(context, runtime, args);
 	if (hasRelationWrites(runtime, args.data)) {
 		const scalar = splitRelationData(
 			runtime,
@@ -2662,6 +2681,7 @@ export const deleteRecord = async <Schema extends AnySchema, Meta>(
 	args: DeleteArgs<Schema, BetterTableKey<Schema>, Meta>,
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
+	if (hasProjection(args)) validateProjection(context, runtime, args);
 	const predicate = getPredicate(context, runtime, tableName, args.where);
 	if (!predicate) return null;
 	const pinned = pinsOneRow(runtime, args.where);
@@ -2759,6 +2779,11 @@ export const updateEachRecords = async <Schema extends AnySchema, Meta>(
 	args: UpdateEachArgs<Schema, BetterTableKey<Schema>, Meta>,
 ): Promise<BatchResult<Record<string, unknown>>> => {
 	const runtime = getTableRuntime(context, tableName as string);
+	const selection = getReturningSelection(
+		runtime,
+		args.select as Record<string, unknown> | undefined,
+		'updateEach',
+	);
 	const rows = getUpdateEachRows(runtime, args);
 	if (!rows) return { count: 0 };
 
@@ -2773,11 +2798,6 @@ export const updateEachRecords = async <Schema extends AnySchema, Meta>(
 	const set = buildUpdateEachSet(context, runtime, rows.byKey, args);
 	const affectedCount = await countRows(context, tableName, where);
 	if (affectedCount === 0) return { count: 0 };
-	const selection = getReturningSelection(
-		runtime,
-		args.select as Record<string, unknown> | undefined,
-		'updateEach',
-	);
 	const builder = context.db.update(runtime.table).set(set).where(predicate);
 
 	if (selection && typeof builder.returning === 'function') {
@@ -2846,6 +2866,7 @@ export const upsertRecord = async <Schema extends AnySchema, Meta>(
 	args: UpsertArgs<Schema, BetterTableKey<Schema>, Meta>,
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
+	if (hasProjection(args)) validateProjection(context, runtime, args);
 	if (
 		hasRelationWrites(runtime, args.create) ||
 		hasRelationWrites(runtime, args.update)

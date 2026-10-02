@@ -176,7 +176,7 @@ const getRelationSource = (
 			hasRelations = true;
 			continue;
 		}
-		if (!include && runtime.columns[key]) continue;
+		if (!include && Object.hasOwn(runtime.columns, key)) continue;
 		throw new BetterDrizzleError({
 			code: BetterDrizzleErrorCode.OperationError,
 			details: { field: key },
@@ -203,6 +203,26 @@ const addRequiredColumns = (
 	}
 };
 
+export const validateProjection = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	runtime: TableRuntime,
+	args?: { include?: unknown; select?: unknown },
+) => {
+	const source = getRelationSource(runtime, args);
+	if (source)
+		for (const key in source) {
+			const relation = runtime.relations[key];
+			const nested = source[key];
+			if (!relation || !isSimpleRecord(nested)) continue;
+			validateProjection(
+				context,
+				getTableRuntime(context, relation.tableName),
+				nested,
+			);
+		}
+	return source;
+};
+
 export const prepareRelationalRead = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
@@ -210,7 +230,7 @@ export const prepareRelationalRead = <Schema extends AnySchema, Meta>(
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
 	const counts = getCountSelection(runtime, args);
-	const source = getRelationSource(runtime, args);
+	const source = validateProjection(context, runtime, args);
 	if (!source) return;
 
 	const select = args?.select as Record<string, unknown> | undefined;

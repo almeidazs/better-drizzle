@@ -52,6 +52,8 @@ const rows = await db
 	.from(posts);
 ```
 
+Unknown `select` keys throw at runtime, including keys set to `false` or `undefined`. This also applies to nested projections. Use only declared columns and relations. Batch write projections (`updateMany`, `deleteMany`, `updateEach`, `upsertMany`) accept scalar columns only.
+
 Reach for `select` when:
 
 - you want to reduce payload size
