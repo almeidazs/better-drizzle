@@ -424,7 +424,9 @@ const buildQueryList = async <
 				args as CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
 			);
 			const limit =
-				Math.abs(cursorArgs.limit ?? cursorArgs.take ?? 10) || 10;
+				Math.abs(
+					(cursorArgs.limit ?? cursorArgs.take ?? 10) as number,
+				) || 10;
 			const built = buildCursorPaginationQuery(cursorArgs, limit + 1);
 
 			if ('error' in built)

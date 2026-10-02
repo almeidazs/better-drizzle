@@ -171,6 +171,23 @@ const user = await client.users.findUnique({ where: { id } }).throw();
 //    ^? User
 ```
 
+## Prepared statements that keep the types
+
+Define the read once with `param()`, then execute it with new values. Each param takes its type from the column or option it stands in for, and the result keeps the read's shape.
+
+```ts
+import { param } from 'better-drizzle';
+
+const findUserByEmail = client.users
+	.findUnique({ where: { email: param('email') } })
+	.prepare('users.by-email');
+
+const user = await findUserByEmail.execute({ email: 'user@example.com' });
+//    ^? User | null       execute({ email: 1 }) is a type error
+```
+
+Every read can be prepared, including `paginate()` and `cursor()`. Plugin transforms, before hooks, and `beforeQuery` run once at prepare time; `afterQuery`, intercepts (including the cache plugin), and plugin after hooks run on every execution. See [prepared statements](https://better-drizzle.com/docs/querying/prepared-statements).
+
 ## JSONB that the compiler understands
 
 Declare the shape with Drizzle's `$type<T>()` and every scalar leaf becomes a typed dot path. PostgreSQL.
@@ -267,6 +284,7 @@ Measured against raw Drizzle doing the same work and returning the same shape - 
 
 - **9.1× faster relation loading** (10.24 ms → 1.12 ms), and the gap widens with the number of parent rows
 - every other read within **~9%**, writes within **~5%**
+- **prepared reads within ~4%** of Drizzle's own prepared statements, and 1.5–3.1× faster than the same read unprepared
 - **zero runtime dependencies**
 
 Relation loading wins because the batched loader issues one query per relation node instead of the per-row work the equivalent hand-written code ends up doing. Numbers are SQLite in-memory to isolate wrapper overhead from I/O; reproduce them with `bun run bench:report`.

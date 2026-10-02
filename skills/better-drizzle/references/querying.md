@@ -141,3 +141,19 @@ where: {
 ```
 
 Operators: `has`, `hasEvery`, `hasSome`, `hasNone`, `containedBy`, `isEmpty`, `length`, `equals`, `some`/`every`/`none`. Outside PostgreSQL they throw `ARRAY_QUERY_UNSUPPORTED`.
+
+## Prepared statements
+
+```ts
+import { param } from 'better-drizzle';
+
+const byEmail = db.users.findUnique({ where: { email: param('email') } }).prepare('users.by-email');
+await byEmail.execute({ email: 'a@example.com' }); // .throw() works on single-row reads
+```
+
+- Every read (`findUnique`, `findFirst`, `findOne`, `findMany`, `count`, `exists`, `paginate`, `cursor`) has `.prepare(name?)`. Writes cannot be prepared.
+- `param()` replaces values: equality, operators, `not`, pattern operators, `take`/`skip`, `page`/`perPage`/`limit`, `after`/`before`/`cursor`. `in`/`notIn` params, array filters, and JSONB paths are PostgreSQL-only.
+- Plugins (transforms, soft delete, rules) and `beforeQuery` run once at prepare time; `afterQuery`, intercepts, and the cache run per execution. Prepare a separate statement per plugin state or tenant.
+- Relations load per execution; params inside relation `include`/`select` args throw `PREPARED_UNSUPPORTED`.
+- A statement is bound to the client it was prepared on: prepare on `tx` to run inside a transaction.
+- Prepare once (module scope or service construction), not per request.

@@ -465,11 +465,11 @@ export interface QueryArgs<
 	/** Sort order for the result set. */
 	orderBy?: OrderByInput<Schema, Name>;
 	/** Maximum number of rows to return (use a negative value to reverse ordering). */
-	take?: number;
+	take?: import('./utils').Bindable<number>;
 	/** Number of rows to skip from the start of the result set. */
-	skip?: number;
+	skip?: import('./utils').Bindable<number>;
 	/** Cursor position for cursor-based pagination. */
-	cursor?: CursorInput<Schema, Name>;
+	cursor?: import('./utils').Bindable<CursorInput<Schema, Name>>;
 	/** Row locking clause for supported dialects and query shapes. */
 	lock?: LockOption<Schema>;
 	/** Custom metadata forwarded to hooks. */
@@ -565,9 +565,9 @@ export type CursorArgs<
 		'after' | 'before'
 	> & {
 		/** Cursor object (e.g. a previous `nextCursor`) to page forward from. */
-		after?: CursorInput<Schema, Name>;
+		after?: import('./utils').Bindable<CursorInput<Schema, Name>>;
 		/** Cursor object (e.g. a previous `previousCursor`) to page backward from. */
-		before?: CursorInput<Schema, Name>;
+		before?: import('./utils').Bindable<CursorInput<Schema, Name>>;
 	};
 
 type RelationPayloadFromArg<

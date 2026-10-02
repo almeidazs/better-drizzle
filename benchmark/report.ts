@@ -33,6 +33,8 @@ import {
 	rawSimpleOrder,
 	rawSimpleTransaction,
 	rawUpdateAndLoad,
+	createBetterPreparedScenarios,
+	createRawPreparedScenarios,
 } from './scenarios';
 import { type BenchmarkContext, createBenchmarkContext } from './setup';
 
@@ -77,6 +79,25 @@ const TRANSACTIONS: readonly Pair[] = [
 	],
 ];
 
+// Prepared statements are created once per context, so this list is built
+// from the context it is measured against.
+const PREPARED = (context: BenchmarkContext): readonly Pair[] => {
+	const raw = createRawPreparedScenarios(context);
+	const better = createBetterPreparedScenarios(context);
+	return [
+		['Point lookup', raw.pointLookup, better.pointLookup],
+		['Filtered list', raw.filteredList, better.filteredList],
+		['Active count', raw.activeCount, better.activeCount],
+		['Offset pagination', raw.offsetPaginate, better.offsetPaginate],
+		['Cursor pagination', raw.cursorPaginate, better.cursorPaginate],
+	];
+};
+
+type Pairs = readonly Pair[] | ((context: BenchmarkContext) => readonly Pair[]);
+
+const pairsFor = (pairs: Pairs, context: BenchmarkContext) =>
+	typeof pairs === 'function' ? pairs(context) : pairs;
+
 const SAMPLES = Number(Bun.env.BENCH_SAMPLES ?? 7);
 
 const median = (values: readonly number[]) => {
@@ -106,12 +127,15 @@ type Measurement = {
 	ratio: number;
 };
 
-const measurePairs = async (pairs: readonly Pair[]): Promise<Measurement[]> => {
+const measurePairs = async (pairs: Pairs): Promise<Measurement[]> => {
 	const context = createBenchmarkContext();
 	const results: Measurement[] = [];
 
 	try {
-		for (const [name, rawOperation, betterOperation] of pairs) {
+		for (const [name, rawOperation, betterOperation] of pairsFor(
+			pairs,
+			context,
+		)) {
 			const rawSamples: number[] = [];
 			const betterSamples: number[] = [];
 
@@ -142,10 +166,13 @@ const measurePairs = async (pairs: readonly Pair[]): Promise<Measurement[]> => {
 	return results;
 };
 
-const verifyParity = async (pairs: readonly Pair[]) => {
+const verifyParity = async (pairs: Pairs) => {
 	const context = createBenchmarkContext();
 	try {
-		for (const [name, rawOperation, betterOperation] of pairs) {
+		for (const [name, rawOperation, betterOperation] of pairsFor(
+			pairs,
+			context,
+		)) {
 			if (name.includes('transaction') || name.includes('Create'))
 				continue;
 			deepStrictEqual(
@@ -188,9 +215,11 @@ const table = (title: string, rows: readonly Measurement[]) => {
 };
 
 await verifyParity(READS);
+await verifyParity(PREPARED);
 console.error('Report parity validation passed.');
 
 const reads = await measurePairs(READS);
+const prepared = await measurePairs(PREPARED);
 const writes = await measurePairs(WRITES);
 const transactions = await measurePairs(TRANSACTIONS);
 
@@ -200,6 +229,7 @@ console.log(
 		`<!-- mitata p50, ${SAMPLES} interleaved samples, median of samples -->`,
 		'',
 		table('Reads', reads),
+		table('Prepared reads', prepared),
 		table('Writes', writes),
 		table('Transactions', transactions),
 	].join('\n'),

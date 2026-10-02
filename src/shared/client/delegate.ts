@@ -1,13 +1,11 @@
 import type {
 	AfterCreateHookContext,
 	AfterDeleteHookContext,
-	AfterQueryHookContext,
 	AfterUpdateHookContext,
 	AnyPlugin,
 	AnySchema,
 	BeforeCreateHookContext,
 	BeforeDeleteHookContext,
-	BeforeQueryHookContext,
 	BeforeUpdateHookContext,
 	BetterDrizzleModelDelegate,
 	BetterTableKey,
@@ -38,6 +36,7 @@ import {
 	attachThrow,
 	buildHookContext,
 	executeOperation,
+	throwIfMissing,
 } from './hooks';
 import {
 	createManyRecords,
@@ -67,7 +66,10 @@ import {
 	shouldRunPlugins,
 	skipPluginsState,
 } from './plugins';
+import { type PreparedReadKind, fillParams, prepareRead } from './prepared';
 import { hasRelationWrites } from './relations';
+
+const EMPTY_VALUES = Object.freeze({}) as Record<string, unknown>;
 
 /**
  * Creates a model delegate for a single table. The delegate exposes all
@@ -170,19 +172,8 @@ export const createModelDelegate = <
 			});
 	};
 
-	const runOperation = <Args, Result>({
-		action,
-		args,
-		afterHookName,
-		afterPayload,
-		beforeHookName,
-		beforePayload,
-		compiled,
-		kind,
-		operation,
-	}: {
+	type Spec<Args, Result> = {
 		action: string;
-		args: Args;
 		afterHookName?:
 			| 'afterCreate'
 			| 'afterDelete'
@@ -217,56 +208,33 @@ export const createModelDelegate = <
 			| 'upsert'
 			| 'upsertMany';
 		operation: (operationArgs: Args) => Promise<Result>;
-	}): Promise<Result> => {
-		assertTransactionNotAborted();
+	};
 
-		if (!shouldApplyPlugins || !hasPluginWork(context, kind))
-			return executeOperation({
-				action,
-				args,
-				afterHookName,
-				afterPayload: afterPayload
-					? (result) => afterPayload(result, args)
-					: undefined,
-				beforeHookName,
-				beforePayload: beforePayload
-					? () => beforePayload(args)
-					: undefined,
-				context,
-				operation: () => operation(args),
-				runtime,
-				tableName: name,
-			});
-
-		return (async () => {
-			assertTransactionNotAborted();
-
-			const pipeline = await runPluginPipeline(
-				context,
-				runtime,
-				tableName,
-				kind,
-				args as never,
-				state,
-				delegate,
-			);
-			const operationArgs = pipeline.args as Args;
+	/**
+	 * Runs an operation whose args already went through the plugin pipeline:
+	 * client hooks, intercepts, then plugin after hooks.
+	 */
+	const runResolved = <Args, Result>(
+		spec: Spec<Args, Result>,
+		operationArgs: Args,
+		execute: () => Promise<Result>,
+		beforeHook: boolean,
+		params?: Record<string, unknown>,
+	): Promise<Result> =>
+		(async () => {
+			const { afterPayload, beforePayload, kind } = spec;
 			const interception: InterceptState | undefined = context.plugins
 				.byKind[kind].hasIntercepts
 				? { annotations: undefined, skipAfterHooks: false }
 				: undefined;
-			const execute = () =>
-				pipeline.hasOverride
-					? Promise.resolve(pipeline.overrideResult as Result)
-					: operation(operationArgs);
 			const result = await executeOperation({
-				action,
+				action: spec.action,
 				args: operationArgs,
-				afterHookName,
+				afterHookName: spec.afterHookName,
 				afterPayload: afterPayload
-					? (value) => afterPayload(value, operationArgs)
+					? (value: Result) => afterPayload(value, operationArgs)
 					: undefined,
-				beforeHookName,
+				beforeHookName: beforeHook ? spec.beforeHookName : undefined,
 				beforePayload: beforePayload
 					? () => beforePayload(operationArgs)
 					: undefined,
@@ -284,6 +252,7 @@ export const createModelDelegate = <
 								delegate,
 								execute,
 								interception,
+								params,
 							)
 					: execute,
 				runtime,
@@ -300,13 +269,63 @@ export const createModelDelegate = <
 					state,
 					delegate,
 					result,
-					compiled?.(operationArgs),
+					spec.compiled?.(operationArgs),
 					interception?.annotations,
 				);
 
 			assertTransactionNotAborted();
 
 			return result;
+		})();
+
+	const runOperation = <Args, Result>(
+		spec: Spec<Args, Result>,
+		args: Args,
+	): Promise<Result> => {
+		assertTransactionNotAborted();
+
+		if (!shouldApplyPlugins || !hasPluginWork(context, spec.kind)) {
+			const { afterPayload, beforePayload } = spec;
+			return executeOperation({
+				action: spec.action,
+				args,
+				afterHookName: spec.afterHookName,
+				afterPayload: afterPayload
+					? (result: Result) => afterPayload(result, args)
+					: undefined,
+				beforeHookName: spec.beforeHookName,
+				beforePayload: beforePayload
+					? () => beforePayload(args)
+					: undefined,
+				context,
+				operation: () => spec.operation(args),
+				runtime,
+				tableName: name,
+			});
+		}
+
+		return (async () => {
+			assertTransactionNotAborted();
+
+			const pipeline = await runPluginPipeline(
+				context,
+				runtime,
+				tableName,
+				spec.kind,
+				args as never,
+				state,
+				delegate,
+			);
+			const operationArgs = pipeline.args as Args;
+
+			return runResolved(
+				spec,
+				operationArgs,
+				pipeline.hasOverride
+					? () => Promise.resolve(pipeline.overrideResult as Result)
+					: () => spec.operation(operationArgs),
+				true,
+			);
 		})();
 	};
 
@@ -330,19 +349,273 @@ export const createModelDelegate = <
 		return pipeline.args as Args;
 	};
 
+	type ReadSpec = Spec<Record<string, unknown>, unknown> & {
+		kind: PreparedReadKind;
+	};
+
+	const readSpec = (
+		kind: PreparedReadKind,
+		operation: (operationArgs: Record<string, unknown>) => Promise<unknown>,
+		field?: 'row' | 'rows',
+	): ReadSpec => ({
+		action: kind,
+		afterHookName: 'afterQuery',
+		afterPayload: field
+			? (result, resolvedArgs) => ({
+					...hookContext(kind, resolvedArgs),
+					result,
+					[field]: result,
+				})
+			: (result, resolvedArgs) => ({
+					...hookContext(kind, resolvedArgs),
+					result,
+				}),
+		beforeHookName: 'beforeQuery',
+		beforePayload: (resolvedArgs) => hookContext(kind, resolvedArgs),
+		kind,
+		operation,
+	});
+
+	const readOperation = (
+		kind: PreparedReadKind,
+	): ((resolvedArgs: Record<string, unknown>) => Promise<unknown>) => {
+		if (kind === 'count')
+			return (resolvedArgs) =>
+				countRows(
+					context,
+					tableName,
+					resolvedArgs.where as never,
+					resolvedArgs.cursor as never,
+				);
+		if (kind === 'cursor')
+			return (resolvedArgs) =>
+				cursorRecords(context, tableName, resolvedArgs as never);
+		if (kind === 'exists')
+			return (resolvedArgs) =>
+				existsRecord(context, tableName, resolvedArgs);
+		if (kind === 'findMany')
+			return (resolvedArgs) =>
+				findManyRecords(context, tableName, resolvedArgs);
+		if (kind === 'paginate')
+			return (resolvedArgs) =>
+				paginateRecords(context, tableName, resolvedArgs as never);
+		return (resolvedArgs) =>
+			findFirstRecord(context, tableName, resolvedArgs);
+	};
+
+	// Built on first use: every bound client (including each transaction)
+	// creates delegates for all tables, and most never run every read kind.
+	const reads = Object.create(null) as Partial<
+		Record<PreparedReadKind, ReadSpec>
+	>;
+	const read = (kind: PreparedReadKind) =>
+		reads[kind] ??
+		(reads[kind] = readSpec(
+			kind,
+			readOperation(kind),
+			kind === 'findMany'
+				? 'rows'
+				: kind === 'findFirst' ||
+					  kind === 'findOne' ||
+					  kind === 'findUnique'
+					? 'row'
+					: undefined,
+		));
+
+	type Plan = {
+		args: Record<string, unknown>;
+		check: (values: Record<string, unknown>) => void;
+		run: (values: Record<string, unknown>) => Promise<unknown>;
+	};
+
+	/**
+	 * Compiles a read into a prepared statement. The plugin pipeline and the
+	 * client before hook run once here; when either is async, the statement
+	 * waits for them on its first execution.
+	 */
+	const prepare = (
+		source: unknown,
+		args: unknown,
+		statementName?: string,
+	) => {
+		const spec = source as ReadSpec;
+		const { kind } = spec;
+		const plugins = shouldApplyPlugins && hasPluginWork(context, kind);
+		const hooks = context.options.hooks;
+		const bare = !plugins && !hooks?.afterQuery && !context.hasOnError;
+		const single =
+			kind === 'findFirst' || kind === 'findOne' || kind === 'findUnique';
+		const build = (
+			operationArgs: Record<string, unknown>,
+			override?: { value: unknown },
+		): Plan => {
+			const plan = prepareRead(
+				context,
+				tableName,
+				kind,
+				operationArgs,
+				statementName,
+			);
+			return {
+				args: operationArgs,
+				check: plan.check,
+				run: override
+					? async (values) => {
+							plan.check(values);
+							return override.value;
+						}
+					: plan.run,
+			};
+		};
+
+		assertTransactionNotAborted();
+
+		let plan: Plan | undefined;
+		const pending =
+			!plugins && !hooks?.beforeQuery
+				? undefined
+				: (async () => {
+						const pipeline = plugins
+							? await runPluginPipeline(
+									context,
+									runtime,
+									tableName,
+									kind,
+									args as never,
+									state,
+									delegate,
+								)
+							: undefined;
+						const operationArgs = (pipeline?.args ??
+							args) as Record<string, unknown>;
+						if (hooks?.beforeQuery)
+							await executeOperation({
+								action: kind,
+								args: operationArgs,
+								beforeHookName: 'beforeQuery',
+								beforePayload: () =>
+									spec.beforePayload?.(operationArgs),
+								context,
+								operation: () => Promise.resolve(undefined),
+								runtime,
+								tableName: name,
+							});
+						plan = build(
+							operationArgs,
+							pipeline?.hasOverride
+								? { value: pipeline.overrideResult }
+								: undefined,
+						);
+						return plan;
+					})();
+		if (pending) pending.catch(() => undefined);
+		else plan = build(args as Record<string, unknown>);
+
+		const run = (
+			current: Plan,
+			values: Record<string, unknown> | undefined,
+			options: { meta?: unknown } | undefined,
+		) => {
+			try {
+				assertTransactionNotAborted();
+			} catch (error) {
+				return Promise.reject(error);
+			}
+			const input = values ?? EMPTY_VALUES;
+			if (bare) return current.run(input);
+			const operationArgs =
+				options?.meta === undefined
+					? current.args
+					: {
+							...current.args,
+							meta: {
+								...(current.args.meta as object | undefined),
+								...(options.meta as object),
+							},
+						};
+			const execute = () => current.run(input);
+			if (!plugins)
+				return executeOperation({
+					action: kind,
+					args: operationArgs,
+					afterHookName: 'afterQuery',
+					afterPayload: (result: unknown) =>
+						spec.afterPayload?.(result, operationArgs),
+					context,
+					operation: execute,
+					runtime,
+					tableName: name,
+				});
+			return runResolved(spec, operationArgs, execute, false, input);
+		};
+
+		// Shared by every execution: `this` is the promise `execute()` returned.
+		function throwMissing(this: Promise<unknown>, factory?: () => unknown) {
+			return this.then((result) =>
+				throwIfMissing(
+					result,
+					factory,
+					context,
+					runtime,
+					kind,
+					args,
+					kind,
+					name,
+				),
+			);
+		}
+
+		const execute = (
+			values?: Record<string, unknown>,
+			options?: { meta?: unknown },
+		) => {
+			const result = plan
+				? run(plan, values, options)
+				: (pending as Promise<Plan>).then((current) =>
+						run(current, values, options),
+					);
+			if (single) (result as { throw?: unknown }).throw = throwMissing;
+			return result;
+		};
+
+		return {
+			execute,
+			async explain(
+				values?: Record<string, unknown>,
+				options?: Parameters<typeof explainOperation>[4],
+			) {
+				const current = plan ?? (await (pending as Promise<Plan>));
+				current.check(values ?? EMPTY_VALUES);
+				return explainOperation(
+					context,
+					tableName,
+					kind,
+					fillParams(current.args, values ?? EMPTY_VALUES),
+					options,
+				);
+			},
+			name: statementName,
+		};
+	};
+
 	const withExplain = <Args, Result>(
 		operationThunk: () => Promise<Result>,
 		operation: ExplainOperation,
 		args: Args,
 	) =>
-		attachExplain(operationThunk, async (options) =>
-			explainOperation(
-				context,
-				tableName,
-				operation,
-				await resolveExplainArgs(operation, args),
-				options,
-			),
+		attachExplain(
+			operationThunk,
+			async (options) =>
+				explainOperation(
+					context,
+					tableName,
+					operation,
+					await resolveExplainArgs(operation, args),
+					options,
+				),
+			prepare,
+			read(operation),
+			args,
 		);
 
 	return Object.assign(delegate, {
@@ -353,40 +626,10 @@ export const createModelDelegate = <
 				'count'
 			>,
 		) => {
-			const operationArgs =
-				args ??
-				({} as OperationArgsWithPlugins<
-					CountArgs<Schema, BetterTableKey<Schema>, Meta>,
-					Plugins,
-					'count'
-				>);
+			const operationArgs = args ?? ({} as Record<string, unknown>);
 
 			return withExplain(
-				() =>
-					runOperation({
-						action: 'count',
-						args: operationArgs,
-						afterHookName: 'afterQuery',
-						afterPayload: (result, resolvedArgs) =>
-							({
-								...hookContext('count', resolvedArgs),
-								result,
-							}) as AfterQueryHookContext<Schema, Meta, Plugins>,
-						beforeHookName: 'beforeQuery',
-						beforePayload: (resolvedArgs) =>
-							hookContext(
-								'count',
-								resolvedArgs,
-							) as BeforeQueryHookContext<Schema, Meta, Plugins>,
-						kind: 'count',
-						operation: (resolvedArgs) =>
-							countRows(
-								context,
-								tableName,
-								resolvedArgs.where,
-								resolvedArgs.cursor,
-							),
-					}),
+				() => runOperation(read('count'), operationArgs),
 				'count',
 				operationArgs,
 			);
@@ -398,35 +641,10 @@ export const createModelDelegate = <
 				'exists'
 			>,
 		) => {
-			const operationArgs =
-				args ??
-				({} as OperationArgsWithPlugins<
-					ExistsArgs<Schema, BetterTableKey<Schema>, Meta>,
-					Plugins,
-					'exists'
-				>);
+			const operationArgs = args ?? ({} as Record<string, unknown>);
 
 			return withExplain(
-				() =>
-					runOperation({
-						action: 'exists',
-						args: operationArgs,
-						afterHookName: 'afterQuery',
-						afterPayload: (result, resolvedArgs) =>
-							({
-								...hookContext('exists', resolvedArgs),
-								result,
-							}) as AfterQueryHookContext<Schema, Meta, Plugins>,
-						beforeHookName: 'beforeQuery',
-						beforePayload: (resolvedArgs) =>
-							hookContext(
-								'exists',
-								resolvedArgs,
-							) as BeforeQueryHookContext<Schema, Meta, Plugins>,
-						kind: 'exists',
-						operation: (resolvedArgs) =>
-							existsRecord(context, tableName, resolvedArgs),
-					}),
+				() => runOperation(read('exists'), operationArgs),
 				'exists',
 				operationArgs,
 			);
@@ -438,25 +656,27 @@ export const createModelDelegate = <
 				'createMany'
 			>,
 		) =>
-			runOperation({
-				action: 'createMany',
+			runOperation(
+				{
+					action: 'createMany',
+					afterHookName: 'afterCreate',
+					afterPayload: (result, resolvedArgs) =>
+						({
+							...hookContext('createMany', resolvedArgs),
+							result,
+						}) as AfterCreateHookContext<Schema, Meta, Plugins>,
+					beforeHookName: 'beforeCreate',
+					beforePayload: (resolvedArgs) =>
+						hookContext(
+							'createMany',
+							resolvedArgs,
+						) as BeforeCreateHookContext<Schema, Meta, Plugins>,
+					kind: 'createMany',
+					operation: (resolvedArgs) =>
+						createManyRecords(context, tableName, resolvedArgs),
+				},
 				args,
-				afterHookName: 'afterCreate',
-				afterPayload: (result, resolvedArgs) =>
-					({
-						...hookContext('createMany', resolvedArgs),
-						result,
-					}) as AfterCreateHookContext<Schema, Meta, Plugins>,
-				beforeHookName: 'beforeCreate',
-				beforePayload: (resolvedArgs) =>
-					hookContext(
-						'createMany',
-						resolvedArgs,
-					) as BeforeCreateHookContext<Schema, Meta, Plugins>,
-				kind: 'createMany',
-				operation: (resolvedArgs) =>
-					createManyRecords(context, tableName, resolvedArgs),
-			}),
+			),
 		findMany: (
 			args?: OperationArgsWithPlugins<
 				QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
@@ -464,36 +684,10 @@ export const createModelDelegate = <
 				'findMany'
 			>,
 		) => {
-			const operationArgs =
-				args ??
-				({} as OperationArgsWithPlugins<
-					QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
-					Plugins,
-					'findMany'
-				>);
+			const operationArgs = args ?? ({} as Record<string, unknown>);
 
 			return withExplain(
-				() =>
-					runOperation({
-						action: 'findMany',
-						args: operationArgs,
-						afterHookName: 'afterQuery',
-						afterPayload: (result, resolvedArgs) =>
-							({
-								...hookContext('findMany', resolvedArgs),
-								result,
-								rows: result,
-							}) as AfterQueryHookContext<Schema, Meta, Plugins>,
-						beforeHookName: 'beforeQuery',
-						beforePayload: (resolvedArgs) =>
-							hookContext(
-								'findMany',
-								resolvedArgs,
-							) as BeforeQueryHookContext<Schema, Meta, Plugins>,
-						kind: 'findMany',
-						operation: (resolvedArgs) =>
-							findManyRecords(context, tableName, resolvedArgs),
-					}),
+				() => runOperation(read('findMany'), operationArgs),
 				'findMany',
 				operationArgs,
 			);
@@ -505,59 +699,14 @@ export const createModelDelegate = <
 				'findFirst'
 			>,
 		) => {
-			const operationArgs =
-				args ??
-				({} as OperationArgsWithPlugins<
-					QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
-					Plugins,
-					'findFirst'
-				>);
+			const operationArgs = args ?? ({} as Record<string, unknown>);
 
 			return attachThrow(
 				withExplain(
-					() =>
-						runOperation<
-							OperationArgsWithPlugins<
-								QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
-								Plugins,
-								'findFirst'
-							>,
-							Record<string, unknown> | null
-						>({
-							action: 'findFirst',
-							args: operationArgs,
-							afterHookName: 'afterQuery',
-							afterPayload: (result, resolvedArgs) =>
-								({
-									...hookContext('findFirst', resolvedArgs),
-									result,
-									row: result,
-								}) as AfterQueryHookContext<
-									Schema,
-									Meta,
-									Plugins
-								>,
-							beforeHookName: 'beforeQuery',
-							beforePayload: (resolvedArgs) =>
-								hookContext(
-									'findFirst',
-									resolvedArgs,
-								) as BeforeQueryHookContext<
-									Schema,
-									Meta,
-									Plugins
-								>,
-							kind: 'findFirst',
-							operation: (resolvedArgs) =>
-								findFirstRecord(
-									context,
-									tableName,
-									resolvedArgs,
-								),
-						}),
+					() => runOperation(read('findFirst'), operationArgs),
 					'findFirst',
 					operationArgs,
-				),
+				) as Promise<Record<string, unknown> | null>,
 				context,
 				runtime,
 				'findFirst',
@@ -573,59 +722,14 @@ export const createModelDelegate = <
 				'findOne'
 			>,
 		) => {
-			const operationArgs =
-				args ??
-				({} as OperationArgsWithPlugins<
-					QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
-					Plugins,
-					'findOne'
-				>);
+			const operationArgs = args ?? ({} as Record<string, unknown>);
 
 			return attachThrow(
 				withExplain(
-					() =>
-						runOperation<
-							OperationArgsWithPlugins<
-								QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
-								Plugins,
-								'findOne'
-							>,
-							Record<string, unknown> | null
-						>({
-							action: 'findOne',
-							args: operationArgs,
-							afterHookName: 'afterQuery',
-							afterPayload: (result, resolvedArgs) =>
-								({
-									...hookContext('findOne', resolvedArgs),
-									result,
-									row: result,
-								}) as AfterQueryHookContext<
-									Schema,
-									Meta,
-									Plugins
-								>,
-							beforeHookName: 'beforeQuery',
-							beforePayload: (resolvedArgs) =>
-								hookContext(
-									'findOne',
-									resolvedArgs,
-								) as BeforeQueryHookContext<
-									Schema,
-									Meta,
-									Plugins
-								>,
-							kind: 'findOne',
-							operation: (resolvedArgs) =>
-								findFirstRecord(
-									context,
-									tableName,
-									resolvedArgs,
-								),
-						}),
+					() => runOperation(read('findOne'), operationArgs),
 					'findOne',
 					operationArgs,
-				),
+				) as Promise<Record<string, unknown> | null>,
 				context,
 				runtime,
 				'findOne',
@@ -644,48 +748,13 @@ export const createModelDelegate = <
 			attachThrow(
 				withExplain(
 					() =>
-						runOperation<
-							OperationArgsWithPlugins<
-								QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
-								Plugins,
-								'findUnique'
-							>,
-							Record<string, unknown> | null
-						>({
-							action: 'findUnique',
-							args,
-							afterHookName: 'afterQuery',
-							afterPayload: (result, resolvedArgs) =>
-								({
-									...hookContext('findUnique', resolvedArgs),
-									result,
-									row: result,
-								}) as AfterQueryHookContext<
-									Schema,
-									Meta,
-									Plugins
-								>,
-							beforeHookName: 'beforeQuery',
-							beforePayload: (resolvedArgs) =>
-								hookContext(
-									'findUnique',
-									resolvedArgs,
-								) as BeforeQueryHookContext<
-									Schema,
-									Meta,
-									Plugins
-								>,
-							kind: 'findUnique',
-							operation: (resolvedArgs) =>
-								findFirstRecord(
-									context,
-									tableName,
-									resolvedArgs,
-								),
-						}),
+						runOperation(
+							read('findUnique'),
+							args as Record<string, unknown>,
+						),
 					'findUnique',
 					args,
-				),
+				) as Promise<Record<string, unknown> | null>,
 				context,
 				runtime,
 				'findUnique',
@@ -701,26 +770,28 @@ export const createModelDelegate = <
 			>,
 		) =>
 			relationalWrite('create', args, [args.data], () =>
-				runOperation({
-					action: 'create',
+				runOperation(
+					{
+						action: 'create',
+						afterHookName: 'afterCreate',
+						afterPayload: (result, resolvedArgs) =>
+							({
+								...hookContext('create', resolvedArgs),
+								result,
+								row: result,
+							}) as AfterCreateHookContext<Schema, Meta, Plugins>,
+						beforeHookName: 'beforeCreate',
+						beforePayload: (resolvedArgs) =>
+							hookContext(
+								'create',
+								resolvedArgs,
+							) as BeforeCreateHookContext<Schema, Meta, Plugins>,
+						kind: 'create',
+						operation: (resolvedArgs) =>
+							createRecord(context, tableName, resolvedArgs),
+					},
 					args,
-					afterHookName: 'afterCreate',
-					afterPayload: (result, resolvedArgs) =>
-						({
-							...hookContext('create', resolvedArgs),
-							result,
-							row: result,
-						}) as AfterCreateHookContext<Schema, Meta, Plugins>,
-					beforeHookName: 'beforeCreate',
-					beforePayload: (resolvedArgs) =>
-						hookContext(
-							'create',
-							resolvedArgs,
-						) as BeforeCreateHookContext<Schema, Meta, Plugins>,
-					kind: 'create',
-					operation: (resolvedArgs) =>
-						createRecord(context, tableName, resolvedArgs),
-				}),
+				),
 			),
 		paginate: (
 			args: OperationArgsWithPlugins<
@@ -731,25 +802,10 @@ export const createModelDelegate = <
 		) =>
 			withExplain(
 				() =>
-					runOperation({
-						action: 'paginate',
-						args,
-						afterHookName: 'afterQuery',
-						afterPayload: (result, resolvedArgs) =>
-							({
-								...hookContext('paginate', resolvedArgs),
-								result,
-							}) as AfterQueryHookContext<Schema, Meta, Plugins>,
-						beforeHookName: 'beforeQuery',
-						beforePayload: (resolvedArgs) =>
-							hookContext(
-								'paginate',
-								resolvedArgs,
-							) as BeforeQueryHookContext<Schema, Meta, Plugins>,
-						kind: 'paginate',
-						operation: (resolvedArgs) =>
-							paginateRecords(context, tableName, resolvedArgs),
-					}),
+					runOperation(
+						read('paginate'),
+						args as Record<string, unknown>,
+					),
 				'paginate',
 				args,
 			),
@@ -762,25 +818,10 @@ export const createModelDelegate = <
 		) =>
 			withExplain(
 				() =>
-					runOperation({
-						action: 'cursor',
-						args,
-						afterHookName: 'afterQuery',
-						afterPayload: (result, resolvedArgs) =>
-							({
-								...hookContext('cursor', resolvedArgs),
-								result,
-							}) as AfterQueryHookContext<Schema, Meta, Plugins>,
-						beforeHookName: 'beforeQuery',
-						beforePayload: (resolvedArgs) =>
-							hookContext(
-								'cursor',
-								resolvedArgs,
-							) as BeforeQueryHookContext<Schema, Meta, Plugins>,
-						kind: 'cursor',
-						operation: (resolvedArgs) =>
-							cursorRecords(context, tableName, resolvedArgs),
-					}),
+					runOperation(
+						read('cursor'),
+						args as Record<string, unknown>,
+					),
 				'cursor',
 				args,
 			),
@@ -800,31 +841,41 @@ export const createModelDelegate = <
 							'update'
 						>,
 						Record<string, unknown> | null
-					>({
-						action: 'update',
+					>(
+						{
+							action: 'update',
+							afterHookName: 'afterUpdate',
+							afterPayload: (result, resolvedArgs) =>
+								({
+									...hookContext('update', resolvedArgs),
+									compiled: getCompiledUpdateSet(
+										resolvedArgs.data,
+									),
+									result,
+									row: result,
+								}) as AfterUpdateHookContext<
+									Schema,
+									Meta,
+									Plugins
+								>,
+							beforeHookName: 'beforeUpdate',
+							beforePayload: (resolvedArgs) =>
+								hookContext(
+									'update',
+									resolvedArgs,
+								) as BeforeUpdateHookContext<
+									Schema,
+									Meta,
+									Plugins
+								>,
+							kind: 'update',
+							compiled: (resolvedArgs) =>
+								getCompiledUpdateSet(resolvedArgs.data),
+							operation: (resolvedArgs) =>
+								updateRecord(context, tableName, resolvedArgs),
+						},
 						args,
-						afterHookName: 'afterUpdate',
-						afterPayload: (result, resolvedArgs) =>
-							({
-								...hookContext('update', resolvedArgs),
-								compiled: getCompiledUpdateSet(
-									resolvedArgs.data,
-								),
-								result,
-								row: result,
-							}) as AfterUpdateHookContext<Schema, Meta, Plugins>,
-						beforeHookName: 'beforeUpdate',
-						beforePayload: (resolvedArgs) =>
-							hookContext(
-								'update',
-								resolvedArgs,
-							) as BeforeUpdateHookContext<Schema, Meta, Plugins>,
-						kind: 'update',
-						compiled: (resolvedArgs) =>
-							getCompiledUpdateSet(resolvedArgs.data),
-						operation: (resolvedArgs) =>
-							updateRecord(context, tableName, resolvedArgs),
-					}),
+					),
 				),
 				context,
 				runtime,
@@ -840,28 +891,30 @@ export const createModelDelegate = <
 				'updateMany'
 			>,
 		) =>
-			runOperation({
-				action: 'updateMany',
+			runOperation(
+				{
+					action: 'updateMany',
+					afterHookName: 'afterUpdate',
+					afterPayload: (result, resolvedArgs) =>
+						({
+							...hookContext('updateMany', resolvedArgs),
+							compiled: getCompiledUpdateSet(resolvedArgs.data),
+							result,
+						}) as AfterUpdateHookContext<Schema, Meta, Plugins>,
+					beforeHookName: 'beforeUpdate',
+					beforePayload: (resolvedArgs) =>
+						hookContext(
+							'updateMany',
+							resolvedArgs,
+						) as BeforeUpdateHookContext<Schema, Meta, Plugins>,
+					kind: 'updateMany',
+					compiled: (resolvedArgs) =>
+						getCompiledUpdateSet(resolvedArgs.data),
+					operation: (resolvedArgs) =>
+						updateManyRecords(context, tableName, resolvedArgs),
+				},
 				args,
-				afterHookName: 'afterUpdate',
-				afterPayload: (result, resolvedArgs) =>
-					({
-						...hookContext('updateMany', resolvedArgs),
-						compiled: getCompiledUpdateSet(resolvedArgs.data),
-						result,
-					}) as AfterUpdateHookContext<Schema, Meta, Plugins>,
-				beforeHookName: 'beforeUpdate',
-				beforePayload: (resolvedArgs) =>
-					hookContext(
-						'updateMany',
-						resolvedArgs,
-					) as BeforeUpdateHookContext<Schema, Meta, Plugins>,
-				kind: 'updateMany',
-				compiled: (resolvedArgs) =>
-					getCompiledUpdateSet(resolvedArgs.data),
-				operation: (resolvedArgs) =>
-					updateManyRecords(context, tableName, resolvedArgs),
-			}),
+			),
 		updateEach: (
 			args: OperationArgsWithPlugins<
 				UpdateEachArgs<Schema, BetterTableKey<Schema>, Meta>,
@@ -869,28 +922,30 @@ export const createModelDelegate = <
 				'updateEach'
 			>,
 		) =>
-			runOperation({
-				action: 'updateEach',
+			runOperation(
+				{
+					action: 'updateEach',
+					afterHookName: 'afterUpdate',
+					afterPayload: (result, resolvedArgs) =>
+						({
+							...hookContext('updateEach', resolvedArgs),
+							compiled: getCompiledUpdateSet(resolvedArgs.update),
+							result,
+						}) as AfterUpdateHookContext<Schema, Meta, Plugins>,
+					beforeHookName: 'beforeUpdate',
+					beforePayload: (resolvedArgs) =>
+						hookContext(
+							'updateEach',
+							resolvedArgs,
+						) as BeforeUpdateHookContext<Schema, Meta, Plugins>,
+					kind: 'updateEach',
+					compiled: (resolvedArgs) =>
+						getCompiledUpdateSet(resolvedArgs.update),
+					operation: (resolvedArgs) =>
+						updateEachRecords(context, tableName, resolvedArgs),
+				},
 				args,
-				afterHookName: 'afterUpdate',
-				afterPayload: (result, resolvedArgs) =>
-					({
-						...hookContext('updateEach', resolvedArgs),
-						compiled: getCompiledUpdateSet(resolvedArgs.update),
-						result,
-					}) as AfterUpdateHookContext<Schema, Meta, Plugins>,
-				beforeHookName: 'beforeUpdate',
-				beforePayload: (resolvedArgs) =>
-					hookContext(
-						'updateEach',
-						resolvedArgs,
-					) as BeforeUpdateHookContext<Schema, Meta, Plugins>,
-				kind: 'updateEach',
-				compiled: (resolvedArgs) =>
-					getCompiledUpdateSet(resolvedArgs.update),
-				operation: (resolvedArgs) =>
-					updateEachRecords(context, tableName, resolvedArgs),
-			}),
+			),
 		delete: (
 			args: OperationArgsWithPlugins<
 				DeleteArgs<Schema, BetterTableKey<Schema>, Meta>,
@@ -906,26 +961,28 @@ export const createModelDelegate = <
 						'delete'
 					>,
 					Record<string, unknown> | null
-				>({
-					action: 'delete',
+				>(
+					{
+						action: 'delete',
+						afterHookName: 'afterDelete',
+						afterPayload: (result, resolvedArgs) =>
+							({
+								...hookContext('delete', resolvedArgs),
+								result,
+								row: result,
+							}) as AfterDeleteHookContext<Schema, Meta, Plugins>,
+						beforeHookName: 'beforeDelete',
+						beforePayload: (resolvedArgs) =>
+							hookContext(
+								'delete',
+								resolvedArgs,
+							) as BeforeDeleteHookContext<Schema, Meta, Plugins>,
+						kind: 'delete',
+						operation: (resolvedArgs) =>
+							deleteRecord(context, tableName, resolvedArgs),
+					},
 					args,
-					afterHookName: 'afterDelete',
-					afterPayload: (result, resolvedArgs) =>
-						({
-							...hookContext('delete', resolvedArgs),
-							result,
-							row: result,
-						}) as AfterDeleteHookContext<Schema, Meta, Plugins>,
-					beforeHookName: 'beforeDelete',
-					beforePayload: (resolvedArgs) =>
-						hookContext(
-							'delete',
-							resolvedArgs,
-						) as BeforeDeleteHookContext<Schema, Meta, Plugins>,
-					kind: 'delete',
-					operation: (resolvedArgs) =>
-						deleteRecord(context, tableName, resolvedArgs),
-				}),
+				),
 				context,
 				runtime,
 				'delete',
@@ -940,25 +997,27 @@ export const createModelDelegate = <
 				'deleteMany'
 			>,
 		) =>
-			runOperation({
-				action: 'deleteMany',
+			runOperation(
+				{
+					action: 'deleteMany',
+					afterHookName: 'afterDelete',
+					afterPayload: (result, resolvedArgs) =>
+						({
+							...hookContext('deleteMany', resolvedArgs),
+							result,
+						}) as AfterDeleteHookContext<Schema, Meta, Plugins>,
+					beforeHookName: 'beforeDelete',
+					beforePayload: (resolvedArgs) =>
+						hookContext(
+							'deleteMany',
+							resolvedArgs,
+						) as BeforeDeleteHookContext<Schema, Meta, Plugins>,
+					kind: 'deleteMany',
+					operation: (resolvedArgs) =>
+						deleteManyRecords(context, tableName, resolvedArgs),
+				},
 				args,
-				afterHookName: 'afterDelete',
-				afterPayload: (result, resolvedArgs) =>
-					({
-						...hookContext('deleteMany', resolvedArgs),
-						result,
-					}) as AfterDeleteHookContext<Schema, Meta, Plugins>,
-				beforeHookName: 'beforeDelete',
-				beforePayload: (resolvedArgs) =>
-					hookContext(
-						'deleteMany',
-						resolvedArgs,
-					) as BeforeDeleteHookContext<Schema, Meta, Plugins>,
-				kind: 'deleteMany',
-				operation: (resolvedArgs) =>
-					deleteManyRecords(context, tableName, resolvedArgs),
-			}),
+			),
 		upsert: (
 			args: OperationArgsWithPlugins<
 				UpsertArgs<Schema, BetterTableKey<Schema>, Meta>,
@@ -967,32 +1026,34 @@ export const createModelDelegate = <
 			>,
 		) =>
 			relationalWrite('upsert', args, [args.create, args.update], () =>
-				runOperation({
-					action: 'upsert',
+				runOperation(
+					{
+						action: 'upsert',
+						afterHookName: 'afterCreate',
+						afterPayload: (result, resolvedArgs) =>
+							({
+								...hookContext('upsert', resolvedArgs),
+								compiled:
+									getCompiledUpdateSet(resolvedArgs) ??
+									getCompiledUpdateSet(resolvedArgs.update),
+								result,
+								row: result,
+							}) as AfterCreateHookContext<Schema, Meta, Plugins>,
+						beforeHookName: 'beforeCreate',
+						beforePayload: (resolvedArgs) =>
+							hookContext(
+								'upsert',
+								resolvedArgs,
+							) as BeforeCreateHookContext<Schema, Meta, Plugins>,
+						kind: 'upsert',
+						compiled: (resolvedArgs) =>
+							getCompiledUpdateSet(resolvedArgs) ??
+							getCompiledUpdateSet(resolvedArgs.update),
+						operation: (resolvedArgs) =>
+							upsertRecord(context, tableName, resolvedArgs),
+					},
 					args,
-					afterHookName: 'afterCreate',
-					afterPayload: (result, resolvedArgs) =>
-						({
-							...hookContext('upsert', resolvedArgs),
-							compiled:
-								getCompiledUpdateSet(resolvedArgs) ??
-								getCompiledUpdateSet(resolvedArgs.update),
-							result,
-							row: result,
-						}) as AfterCreateHookContext<Schema, Meta, Plugins>,
-					beforeHookName: 'beforeCreate',
-					beforePayload: (resolvedArgs) =>
-						hookContext(
-							'upsert',
-							resolvedArgs,
-						) as BeforeCreateHookContext<Schema, Meta, Plugins>,
-					kind: 'upsert',
-					compiled: (resolvedArgs) =>
-						getCompiledUpdateSet(resolvedArgs) ??
-						getCompiledUpdateSet(resolvedArgs.update),
-					operation: (resolvedArgs) =>
-						upsertRecord(context, tableName, resolvedArgs),
-				}),
+				),
 			),
 		upsertMany: (
 			args: OperationArgsWithPlugins<
@@ -1001,26 +1062,29 @@ export const createModelDelegate = <
 				'upsertMany'
 			>,
 		) =>
-			runOperation({
-				action: 'upsertMany',
+			runOperation(
+				{
+					action: 'upsertMany',
+					afterHookName: 'afterCreate',
+					afterPayload: (result, resolvedArgs) =>
+						({
+							...hookContext('upsertMany', resolvedArgs),
+							compiled: getCompiledUpdateSet(resolvedArgs),
+							result,
+						}) as AfterCreateHookContext<Schema, Meta, Plugins>,
+					beforeHookName: 'beforeCreate',
+					beforePayload: (resolvedArgs) =>
+						hookContext(
+							'upsertMany',
+							resolvedArgs,
+						) as BeforeCreateHookContext<Schema, Meta, Plugins>,
+					kind: 'upsertMany',
+					compiled: (resolvedArgs) =>
+						getCompiledUpdateSet(resolvedArgs),
+					operation: (resolvedArgs) =>
+						upsertManyRecords(context, tableName, resolvedArgs),
+				},
 				args,
-				afterHookName: 'afterCreate',
-				afterPayload: (result, resolvedArgs) =>
-					({
-						...hookContext('upsertMany', resolvedArgs),
-						compiled: getCompiledUpdateSet(resolvedArgs),
-						result,
-					}) as AfterCreateHookContext<Schema, Meta, Plugins>,
-				beforeHookName: 'beforeCreate',
-				beforePayload: (resolvedArgs) =>
-					hookContext(
-						'upsertMany',
-						resolvedArgs,
-					) as BeforeCreateHookContext<Schema, Meta, Plugins>,
-				kind: 'upsertMany',
-				compiled: (resolvedArgs) => getCompiledUpdateSet(resolvedArgs),
-				operation: (resolvedArgs) =>
-					upsertManyRecords(context, tableName, resolvedArgs),
-			}),
+			),
 	});
 };

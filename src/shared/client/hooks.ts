@@ -17,6 +17,9 @@ import type { InterceptState } from './plugins';
 
 const HOOK_ERROR_REPORTED = Symbol('better-drizzle-hook-error-reported');
 
+/** Compiles a read; `source` identifies the read, `args` are its arguments. */
+type Preparer = (source: unknown, args: unknown, name?: string) => unknown;
+
 /**
  * Builds the context object passed to client hooks (beforeCreate, afterQuery, etc.).
  * Includes the database handle, schema, table metadata, operation args, and meta.
@@ -343,42 +346,69 @@ export const attachThrow = <
 ): ThrowingResult<T> => {
 	const wrapped = promise as ThrowingResult<T>;
 
-	wrapped.throw = async (factory?: ThrowFactory) => {
-		const result = await promise;
-
-		if (result !== null) return result as Exclude<T, null | undefined>;
-
-		const fallbackMessage = `No record found for ${methodName} on "${tableName}".`;
-		const produced = factory?.();
-		const error =
-			produced === undefined
-				? new BetterDrizzleError({
-						code: BetterDrizzleErrorCode.ResultNotFound,
-						message: fallbackMessage,
-						operation: methodName,
-						status: 404,
-						table: tableName,
-					})
-				: BetterDrizzleError.from(produced, {
-						code: BetterDrizzleErrorCode.ResultNotFound,
-						operation: methodName,
-						status: 404,
-						table: tableName,
-					});
-
-		await reportError(
+	wrapped.throw = async (factory?: ThrowFactory) =>
+		throwIfMissing(
+			await promise,
+			factory,
 			context,
 			runtime,
-			tableName,
 			action,
 			args,
-			error,
-			'operation',
-		);
-		throw error;
-	};
+			methodName,
+			tableName,
+		) as Exclude<T, null | undefined>;
 
 	return wrapped;
+};
+
+/**
+ * Returns `result`, or reports and throws `RESULT_NOT_FOUND` (or the
+ * factory's error) when it is `null`.
+ */
+export const throwIfMissing = async <
+	Schema extends AnySchema,
+	Meta,
+	Plugins extends readonly AnyPlugin[],
+>(
+	result: unknown,
+	factory: ThrowFactory | undefined,
+	context: RuntimeContext<Schema, Meta, Plugins>,
+	runtime: TableRuntime,
+	action: string,
+	args: unknown,
+	methodName: string,
+	tableName: string,
+) => {
+	if (result !== null) return result;
+
+	const fallbackMessage = `No record found for ${methodName} on "${tableName}".`;
+	const produced = factory?.();
+	const error =
+		produced === undefined
+			? new BetterDrizzleError({
+					code: BetterDrizzleErrorCode.ResultNotFound,
+					message: fallbackMessage,
+					operation: methodName,
+					status: 404,
+					table: tableName,
+				})
+			: BetterDrizzleError.from(produced, {
+					code: BetterDrizzleErrorCode.ResultNotFound,
+					operation: methodName,
+					status: 404,
+					table: tableName,
+				});
+
+	await reportError(
+		context,
+		runtime,
+		tableName,
+		action,
+		args,
+		error,
+		'operation',
+	);
+	throw error;
 };
 
 /**
@@ -392,14 +422,27 @@ export const attachThrow = <
 class ExplainableQuery<T> {
 	#operation: () => Promise<T>;
 	#promise: Promise<T> | undefined;
+	#prepare: Preparer | undefined;
+	#source: unknown;
+	#args: unknown;
 	explain: (options?: ExplainOptions) => Promise<ExplainResult>;
 
 	constructor(
 		operation: () => Promise<T>,
 		explain: (options?: ExplainOptions) => Promise<ExplainResult>,
+		prepare?: Preparer,
+		source?: unknown,
+		args?: unknown,
 	) {
 		this.#operation = operation;
 		this.explain = explain;
+		this.#prepare = prepare;
+		this.#source = source;
+		this.#args = args;
+	}
+
+	prepare(name?: string) {
+		return (this.#prepare as Preparer)(this.#source, this.#args, name);
 	}
 
 	#run() {
@@ -443,5 +486,14 @@ Object.setPrototypeOf(ExplainableQuery.prototype, Promise.prototype);
 export const attachExplain = <T>(
 	operation: () => Promise<T>,
 	explain: (options?: ExplainOptions) => Promise<ExplainResult>,
+	prepare?: Preparer,
+	source?: unknown,
+	args?: unknown,
 ) =>
-	new ExplainableQuery(operation, explain) as unknown as ExplainableResult<T>;
+	new ExplainableQuery(
+		operation,
+		explain,
+		prepare,
+		source,
+		args,
+	) as unknown as ExplainableResult<T>;

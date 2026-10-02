@@ -42,6 +42,22 @@ Per-operation latency at the **API-parity** level - raw Drizzle does the same wo
 | Offset pagination | 56.29 µs | 58.03 µs | +3.1% |
 | Cursor pagination | 53.25 µs | 55.94 µs | +5.0% |
 
+### Prepared reads
+
+Each pair prepares once and executes with new values: Drizzle with
+`sql.placeholder()` + `.prepare()`, better-drizzle with `param()` +
+`.prepare()`, both returning the same shape (including pagination metadata).
+These rows come from a later run of the same report than the tables around
+them, so compare the percentages rather than the microseconds.
+
+| Operation | Drizzle | better-drizzle | Overhead |
+| --- | --- | --- | --- |
+| Point lookup | 15.04 µs | 15.57 µs | +3.5% |
+| Filtered list | 115.41 µs | 118.17 µs | +2.4% |
+| Active count | 28.54 µs | 29.12 µs | +2.0% |
+| Offset pagination | 46.00 µs | 46.37 µs | +0.8% |
+| Cursor pagination | 48.81 µs | 49.44 µs | +1.3% |
+
 ### Writes
 
 | Operation | Drizzle | better-drizzle | Overhead |
@@ -73,6 +89,7 @@ Heap deltas are noisier than latency ratios, so these are the ranges observed ac
 ## How to read this
 
 - **Reads land within ~12% of raw Drizzle**, and most are within 9%. Point lookups, filtered lists, and existence checks add little overhead; explicit `NULLS LAST` is the highest at +11.3%.
+- **Prepared reads land within ~4% of Drizzle's own prepared statements.** In the same run, preparing a read cut its time by 1.5× to 3.1× compared with the regular read (point lookup 48.45 µs → 15.57 µs). See [prepared statements](/docs/querying/prepared-statements).
 - **Relation loading is the standout win.** The batched loader issues one query per relation node instead of the per-row work the equivalent raw code ends up doing, which is why the relation graph is ~9.5× faster rather than marginally slower. This gap grows with the number of parent rows.
 - **Cursor pagination is at parity.** A populated page ordered by one primary key computes exact navigation metadata with one indexed query; empty pages and more complex shapes keep a probe when they need one. Note that both sides resolve `hasPrevious` - the raw comparison does it with a correlated `exists` subquery rather than assuming it. An earlier revision of this suite let the raw side hardcode that value, which quietly compared one query against two. The manual data-only reference is still faster because it skips the navigation check entirely.
 - **Writes are within ~5%** at parity.

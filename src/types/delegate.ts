@@ -23,6 +23,12 @@ import type {
 	PluginState,
 } from './plugins';
 import type {
+	PreparableResult,
+	PreparedParamsFor,
+	PreparedSingleStatement,
+	PreparedStatement,
+} from './prepared';
+import type {
 	CursorArgs,
 	IncludeInput,
 	PaginationArgs,
@@ -292,6 +298,25 @@ export type ThrowingResult<T> = ExplainableResult<T | null> & {
 };
 
 export type { ExplainableResult, ExplainOptions, ExplainResult };
+
+/** A read result that can also be compiled with `.prepare()`. */
+export type PreparableRead<T, Meta, Args> = ExplainableResult<T> &
+	PreparableResult<PreparedStatement<T, PreparedParamsFor<Args>, Meta>>;
+
+/** A single-row read result that can also be compiled with `.prepare()`. */
+export type PreparableSingleRead<
+	Schema extends AnySchema,
+	Name extends TableKey<Schema>,
+	Meta,
+	Args,
+> = ThrowingResult<PayloadForArgs<Schema, Name, Args>> &
+	PreparableResult<
+		PreparedSingleStatement<
+			PayloadForArgs<Schema, Name, Args>,
+			PreparedParamsFor<Args>,
+			Meta
+		>
+	>;
 
 /**
  * Result returned by batch operations (`createMany`, `updateMany`, `deleteMany`).
@@ -1427,13 +1452,30 @@ export type BetterDrizzleModelDelegate<
 	 * });
 	 * ```
 	 */
-	count(
-		args?: OperationArgsWithPlugins<
+	count<
+		Args extends OperationArgsWithPlugins<
 			import('./query').CountArgs<Schema, Name, Meta>,
 			Plugins,
 			'count'
 		>,
-	): ExplainableResult<number>;
+	>(
+		args?: Args &
+			NoInfer<
+				OperationArgsWithPlugins<
+					import('./query').CountArgs<Schema, Name, Meta>,
+					Plugins,
+					'count'
+				> &
+					ArgsCheck<
+						Args,
+						OperationArgsWithPlugins<
+							import('./query').CountArgs<Schema, Name, Meta>,
+							Plugins,
+							'count'
+						>
+					>
+			>,
+	): PreparableRead<number, Meta, Args>;
 	/**
 	 * Returns `true` when at least one matching row exists.
 	 *
@@ -1449,13 +1491,30 @@ export type BetterDrizzleModelDelegate<
 	 * });
 	 * ```
 	 */
-	exists(
-		args?: OperationArgsWithPlugins<
+	exists<
+		Args extends OperationArgsWithPlugins<
 			import('./query').ExistsArgs<Schema, Name, Meta>,
 			Plugins,
 			'exists'
 		>,
-	): ExplainableResult<boolean>;
+	>(
+		args?: Args &
+			NoInfer<
+				OperationArgsWithPlugins<
+					import('./query').ExistsArgs<Schema, Name, Meta>,
+					Plugins,
+					'exists'
+				> &
+					ArgsCheck<
+						Args,
+						OperationArgsWithPlugins<
+							import('./query').ExistsArgs<Schema, Name, Meta>,
+							Plugins,
+							'exists'
+						>
+					>
+			>,
+	): PreparableRead<boolean, Meta, Args>;
 	/**
 	 * Inserts a single row and returns the created record.
 	 *
@@ -1737,7 +1796,7 @@ export type BetterDrizzleModelDelegate<
 						>
 					>
 			>,
-	): ExplainableResult<PayloadForArgs<Schema, Name, Args>[]>;
+	): PreparableRead<PayloadForArgs<Schema, Name, Args>[], Meta, Args>;
 	/**
 	 * Updates a single matching row and returns the updated record.
 	 *
@@ -1886,7 +1945,7 @@ export type BetterDrizzleModelDelegate<
 						>
 					>
 			>,
-	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	): PreparableSingleRead<Schema, Name, Meta, Args>;
 	/**
 	 * Returns the first matching row.
 	 *
@@ -1931,7 +1990,7 @@ export type BetterDrizzleModelDelegate<
 						>
 					>
 			>,
-	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	): PreparableSingleRead<Schema, Name, Meta, Args>;
 	/**
 	 * Returns exactly one matching row; throws if not found.
 	 *
@@ -1983,7 +2042,7 @@ export type BetterDrizzleModelDelegate<
 						>
 					>
 			>,
-	): ThrowingResult<PayloadForArgs<Schema, Name, Args>>;
+	): PreparableSingleRead<Schema, Name, Meta, Args>;
 	/**
 	 * Returns an offset-based paginated result set with page metadata.
 	 *
@@ -2024,8 +2083,10 @@ export type BetterDrizzleModelDelegate<
 						>
 					>
 			>,
-	): ExplainableResult<
-		OffsetPaginationResult<PayloadForArgs<Schema, Name, Args>>
+	): PreparableRead<
+		OffsetPaginationResult<PayloadForArgs<Schema, Name, Args>>,
+		Meta,
+		Args
 	>;
 	/**
 	 * Returns a cursor-based result set with navigation cursors.
@@ -2055,8 +2116,10 @@ export type BetterDrizzleModelDelegate<
 						>
 					>
 			>,
-	): ExplainableResult<
-		CursorPaginationResult<PayloadForArgs<Schema, Name, Args>>
+	): PreparableRead<
+		CursorPaginationResult<PayloadForArgs<Schema, Name, Args>>,
+		Meta,
+		Args
 	>;
 	/**
 	 * Deletes a single matching row and returns the deleted record.

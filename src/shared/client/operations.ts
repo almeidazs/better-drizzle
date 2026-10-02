@@ -9,6 +9,7 @@ import {
 	isNull,
 	lt,
 	lte,
+	Placeholder,
 	type SQL,
 	sql,
 } from 'drizzle-orm';
@@ -52,6 +53,7 @@ import {
 	compileOrderBy,
 	compileWhereInput,
 	countRows,
+	cursorParam,
 	getPgArrayDimensions,
 	getPgArrayElementColumn,
 	orderDirection,
@@ -1426,7 +1428,12 @@ const compileFastWhere = (runtime: TableRuntime, where: unknown) => {
 		if (value === undefined || runtime.relationNames.has(key)) return;
 
 		const column = runtime.columns[key];
-		if (!column || isSimpleRecord(value) || Array.isArray(value)) return;
+		if (!column || Array.isArray(value)) return;
+		if (isSimpleRecord(value)) {
+			if (!(value instanceof Placeholder)) return;
+			conditions.push(eq(column, sql.param(value, column)));
+			continue;
+		}
 
 		conditions.push(value === null ? isNull(column) : eq(column, value));
 	}
@@ -1471,7 +1478,8 @@ const buildReadState = <Schema extends AnySchema, Meta>(
 	);
 
 	return {
-		limit: args?.take === undefined ? undefined : Math.abs(args.take),
+		limit:
+			typeof args?.take === 'number' ? Math.abs(args.take) : args?.take,
 		offset: args?.skip,
 		orderBy: compileOrderBy(whereContext, args?.orderBy),
 		runtime,
@@ -1638,7 +1646,7 @@ const applyReadLock = (
 	);
 };
 
-const normalizeLockError = (
+export const normalizeLockError = (
 	error: unknown,
 	runtime: TableRuntime,
 	operation: string,
@@ -1839,7 +1847,10 @@ const buildJoinedOneRelationQuery = <Schema extends AnySchema, Meta>(
 
 	if (where) query = query.where(where);
 	if (orderBy?.length) query = query.orderBy(...orderBy);
-	if (args?.take !== undefined) query = query.limit(Math.abs(args.take));
+	if (args?.take !== undefined)
+		query = query.limit(
+			typeof args.take === 'number' ? Math.abs(args.take) : args.take,
+		);
 	if (args?.skip !== undefined) query = query.offset(args.skip);
 
 	return query;
@@ -2791,7 +2802,7 @@ export const paginateRecords = async <Schema extends AnySchema, Meta>(
 		findManyRecords(context, tableName, query, 'paginate'),
 		countRows(context, tableName, args.where),
 	]);
-	const skip = query.skip ?? 0;
+	const skip = query.skip as number;
 	const page = Math.floor(skip / take) + 1;
 	const pageCount = total === 0 ? 0 : Math.ceil(total / take);
 
@@ -2809,7 +2820,7 @@ export const paginateRecords = async <Schema extends AnySchema, Meta>(
 	};
 };
 
-const getCursorFields = <Schema extends AnySchema, Meta>(
+export const getCursorFields = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
 	args: CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
@@ -2879,14 +2890,15 @@ export const buildFastCursorQuery = <Schema extends AnySchema, Meta>(
 	const cursor = (args.after ?? args.before) as
 		| Record<string, unknown>
 		| undefined;
+	const prepared = cursor instanceof Placeholder;
 	if (
 		runtime.primaryKeyFields.length !== 1 ||
 		!field ||
 		!cursor ||
 		typeof cursor !== 'object' ||
 		Array.isArray(cursor) ||
-		Object.keys(cursor).length !== 1 ||
-		!(field in cursor) ||
+		(!prepared &&
+			(Object.keys(cursor).length !== 1 || !(field in cursor))) ||
 		args.skip !== undefined ||
 		args.lock ||
 		args.include ||
@@ -2929,7 +2941,9 @@ export const buildFastCursorQuery = <Schema extends AnySchema, Meta>(
 	if (args.where && !where) return;
 
 	const column = runtime.columns[field];
-	const value = cursor[field];
+	const value = prepared
+		? cursorParam(runtime, cursor as unknown as Placeholder, field)
+		: cursor[field];
 	const opposite =
 		(args.after && direction === 'asc') ||
 		(args.before && direction === 'desc')
@@ -3003,7 +3017,7 @@ const hasCursorPage = async <Schema extends AnySchema, Meta>(
 	return rows.length > 0;
 };
 
-const projectCursorProbe = <Schema extends AnySchema, Meta>(
+export const projectCursorProbe = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
 	query: QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
@@ -3115,15 +3129,15 @@ export const withDefaultCursorOrder = <Schema extends AnySchema, Meta>(
 	} as CursorArgs<Schema, BetterTableKey<Schema>, Meta>;
 };
 
-export const cursorRecords = async <Schema extends AnySchema, Meta>(
+/** Builds the data query of a cursor page; `take` is the page size plus one. */
+export const buildCursorPage = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
 	cursorArgs: CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
+	take: unknown,
 ) => {
 	const args = withDefaultCursorOrder(context, tableName, cursorArgs);
-	const limit = Math.abs(args.limit ?? args.take ?? 10) || 10;
-	const runtime = getTableRuntime(context, tableName as string);
-	const built = buildCursorPaginationQuery(args, limit + 1);
+	const built = buildCursorPaginationQuery(args, take as number);
 
 	if ('error' in built)
 		throw new BetterDrizzleError({
@@ -3135,7 +3149,7 @@ export const cursorRecords = async <Schema extends AnySchema, Meta>(
 						? 'cursor() before must be a cursor object.'
 						: 'cursor() after must be a cursor object.',
 			operation: 'cursor',
-			table: runtime.dbName,
+			table: getTableRuntime(context, tableName as string).dbName,
 		});
 
 	const queryArgs = built.query as QueryArgs<
@@ -3143,21 +3157,44 @@ export const cursorRecords = async <Schema extends AnySchema, Meta>(
 		BetterTableKey<Schema>,
 		Meta
 	>;
-	const fastQuery = buildFastCursorQuery(context, tableName, args, queryArgs);
-	const rows = (await (fastQuery ??
-		findManyRecords(context, tableName, queryArgs, 'cursor'))) as Record<
-		string,
-		unknown
-	>[];
+
+	return {
+		args,
+		direction: built.direction,
+		fastQuery: buildFastCursorQuery(context, tableName, args, queryArgs),
+		queryArgs,
+	};
+};
+
+type CursorPageProbe = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	args: CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
+	values?: Record<string, unknown>,
+) => Promise<boolean>;
+
+/** Turns the fetched rows of a cursor page into `{ data, pagination }`. */
+export const finishCursorPage = async <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	args: CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
+	direction: 'before' | 'forward',
+	rows: Record<string, unknown>[],
+	limit: number,
+	fast: boolean,
+	hasPage: CursorPageProbe = hasCursorPage,
+	values?: Record<string, unknown>,
+	cursorFields = getCursorFields(context, tableName, args),
+) => {
+	const runtime = getTableRuntime(context, tableName as string);
 	const hasOpposite =
-		fastQuery && rows.length
+		fast && rows.length
 			? Boolean(rows[0][CURSOR_OPPOSITE_FLAG])
 			: undefined;
-	if (fastQuery) for (const row of rows) delete row[CURSOR_OPPOSITE_FLAG];
+	if (fast) for (const row of rows) delete row[CURSOR_OPPOSITE_FLAG];
 	const hasOverflow = rows.length > limit;
 	const slice = hasOverflow ? rows.slice(0, limit) : rows;
-	const data = built.direction === 'before' ? [...slice].reverse() : slice;
-	const cursorFields = getCursorFields(context, tableName, args);
+	const data = direction === 'before' ? [...slice].reverse() : slice;
 	const firstRow = data[0] as Record<string, unknown> | undefined;
 	const lastRow = data[data.length - 1] as
 		| Record<string, unknown>
@@ -3183,27 +3220,37 @@ export const cursorRecords = async <Schema extends AnySchema, Meta>(
 		Meta
 	>['after'];
 	const hasPrevious =
-		built.direction === 'before'
+		direction === 'before'
 			? hasOverflow
 			: args.after
 				? (hasOpposite ??
-					(await hasCursorPage(context, tableName, {
-						...args,
-						after: undefined,
-						before: previousToken,
-						limit: 1,
-					})))
+					(await hasPage(
+						context,
+						tableName,
+						{
+							...args,
+							after: undefined,
+							before: previousToken,
+							limit: 1,
+						},
+						values,
+					)))
 				: false;
 	const hasNext =
-		built.direction === 'before'
+		direction === 'before'
 			? args.before
 				? (hasOpposite ??
-					(await hasCursorPage(context, tableName, {
-						...args,
-						before: undefined,
-						after: nextToken,
-						limit: 1,
-					})))
+					(await hasPage(
+						context,
+						tableName,
+						{
+							...args,
+							before: undefined,
+							after: nextToken,
+							limit: 1,
+						},
+						values,
+					)))
 				: false
 			: hasOverflow;
 
@@ -3217,4 +3264,31 @@ export const cursorRecords = async <Schema extends AnySchema, Meta>(
 			previousCursor: hasPrevious ? (previousToken ?? null) : null,
 		},
 	};
+};
+
+export const cursorRecords = async <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	tableName: BetterTableKey<Schema>,
+	cursorArgs: CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
+) => {
+	const limit =
+		Math.abs((cursorArgs.limit ?? cursorArgs.take ?? 10) as number) || 10;
+	const page = buildCursorPage(context, tableName, cursorArgs, limit + 1);
+	const rows = (await (page.fastQuery ??
+		findManyRecords(
+			context,
+			tableName,
+			page.queryArgs,
+			'cursor',
+		))) as Record<string, unknown>[];
+
+	return finishCursorPage(
+		context,
+		tableName,
+		page.args,
+		page.direction,
+		rows,
+		limit,
+		Boolean(page.fastQuery),
+	);
 };

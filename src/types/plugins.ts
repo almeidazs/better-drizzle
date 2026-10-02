@@ -475,6 +475,12 @@ export type PluginInterceptContext<
 	annotate(key: string, value: unknown): void;
 	/** Runs the next intercept, or the operation for the innermost one. */
 	next(): Promise<PluginOperationResultMap<Schema, Name, Meta>[Kind]>;
+	/**
+	 * Values of a prepared statement execution. `args` then hold `param()`
+	 * markers and are the same object on every execution of the statement.
+	 * `undefined` for regular calls.
+	 */
+	params?: Readonly<Record<string, unknown>>;
 	/** Skips client and plugin after hooks for this call. */
 	skipAfterHooks(): void;
 };

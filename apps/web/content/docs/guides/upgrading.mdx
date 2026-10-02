@@ -258,6 +258,12 @@ observes at runtime:
 
 ### Also new in 0.3.0
 
+- **[Prepared statements](/docs/querying/prepared-statements)**: mark values
+  with `param(name)`, call `.prepare(name?)` on `findUnique`, `findFirst`,
+  `findOne`, `findMany`, `count`, `exists`, `paginate`, or `cursor`, and run
+  it with `execute(values)`. Param and result types come from the read
+  (`PreparedParams` / `PreparedResult`). Plugins and `beforeQuery` run once
+  at prepare time; result hooks and intercepts run on every execution.
 - **[`better-drizzle/cache`](/docs/plugins/cache)** (experimental): versioned
   read caching with automatic invalidation and a Redis store at
   `better-drizzle/cache/redis`.

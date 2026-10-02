@@ -92,9 +92,9 @@ export type SelectQueryLike = SQL &
 		/** Perform a left join with another table. */
 		leftJoin(table: Table, on: unknown): SelectQueryLike;
 		/** Limit the number of returned rows. */
-		limit(limit: number): SelectQueryLike;
+		limit(limit: number | SQLWrapper): SelectQueryLike;
 		/** Skip a number of rows from the start. */
-		offset(offset: number): SelectQueryLike;
+		offset(offset: number | SQLWrapper): SelectQueryLike;
 		/** Sort the result set by one or more columns. */
 		orderBy(...values: unknown[]): SelectQueryLike;
 		/** Filter the result set with a WHERE clause. */

@@ -1,5 +1,5 @@
 import type { AnySchema, PluginModelInfo } from 'better-drizzle';
-import type { TablesRelationalConfig } from 'drizzle-orm';
+import { Placeholder, type TablesRelationalConfig } from 'drizzle-orm';
 
 import { canonicalize } from './serializer';
 
@@ -99,27 +99,34 @@ const isKeyValue = (value: unknown) =>
 	typeof value === 'number' ||
 	typeof value === 'bigint';
 
-const primaryKeyValue = (value: unknown): unknown => {
+const primaryKeyValue = (input: unknown, params?: MutableRecord): unknown => {
+	const value = input instanceof Placeholder ? params?.[input.name] : input;
 	if (isKeyValue(value)) return value;
 	if (!isRecord(value)) return;
 	const keys = Object.keys(value).filter((key) => value[key] !== undefined);
-	if (keys.length === 1 && keys[0] === 'equals' && isKeyValue(value.equals))
-		return value.equals;
+	if (keys.length !== 1 || keys[0] !== 'equals') return;
+	const equals =
+		value.equals instanceof Placeholder
+			? params?.[value.equals.name]
+			: value.equals;
+	if (isKeyValue(equals)) return equals;
 };
 
 /**
  * Returns the entity id a `where` pins, or `undefined` when it can match
  * more than one row. Top-level keys and `AND` members are conjunctions,
- * so any of them may carry the full primary key.
+ * so any of them may carry the full primary key. Prepared statement params
+ * resolve through `params`.
  */
 export const entityId = (
 	model: PluginModelInfo,
 	where: unknown,
+	params?: MutableRecord,
 ): string | undefined => {
 	if (!isRecord(where) || !model.primaryKey.length) return;
 	const values: unknown[] = [];
 	for (const field of model.primaryKey) {
-		const value = primaryKeyValue(where[field]);
+		const value = primaryKeyValue(where[field], params);
 		if (value === undefined) break;
 		values.push(value);
 	}
@@ -127,7 +134,7 @@ export const entityId = (
 
 	const and = where.AND;
 	for (const member of Array.isArray(and) ? and : [and]) {
-		const id = entityId(model, member);
+		const id = entityId(model, member, params);
 		if (id) return id;
 	}
 };
@@ -175,6 +182,7 @@ export const readDependencies = (
 		where?: unknown;
 	},
 	tags: readonly string[],
+	params?: MutableRecord,
 ): ReadDependencies => {
 	const found = new Map<string, boolean>();
 	const add = (key: string, emptyOnly = false) => {
@@ -245,7 +253,7 @@ export const readDependencies = (
 
 	add(keys.all);
 	add(keys.epoch(model.name));
-	const id = entityId(model, input.where);
+	const id = entityId(model, input.where, params);
 	if (id) {
 		add(keys.entity(model.name, id));
 		add(keys.rows(model.name), true);
