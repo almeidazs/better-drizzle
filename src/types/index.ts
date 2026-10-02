@@ -3,6 +3,7 @@ export * from './delegate';
 export * from './explain';
 export * from './hooks';
 export * from './plugins';
+export * from './prepared';
 export * from './query';
 export * from './raw';
 export * from './runtime';

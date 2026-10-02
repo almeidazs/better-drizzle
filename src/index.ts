@@ -21,6 +21,7 @@
  */
 
 export { better } from './shared/client/factory';
+export { param } from './shared/client/prepared';
 export * from './shared/errors';
 export * from './types';
 export { version } from './version';
