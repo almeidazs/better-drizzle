@@ -72,12 +72,14 @@ Every option is optional.
 | `createdAt` | `'createdAt'` | column set on insert |
 | `updatedAt` | `'updatedAt'` | column set on insert and update |
 | `mode` | `'app'` | `'app'` sets the columns in plugin hooks; `'database'` registers no hooks |
+| `now` | `() => new Date()` | clock for every value the plugin writes, called once per operation |
+| `models` | `{}` | per-model overrides keyed by table key: `{ createdAt?, updatedAt? }` or `false` |
 
 ## Modes
 
 ### `mode: 'app'`
 
-The plugin fills timestamp columns before the database call. Values are `Date` objects, or ISO 8601 strings when the column's Drizzle data type is a string (such as a SQLite `text` column). One `now` is used per call.
+The plugin fills timestamp columns before the database call. Values are `Date` objects, or ISO 8601 strings when the column's Drizzle data type is a string (such as a SQLite `text` column). The `now` clock is called once per operation, so every column and row in one write gets the same value.
 
 | Operation | Behavior |
 | --- | --- |
@@ -121,6 +123,39 @@ timestamps({
 	updatedAt: 'updated_at',
 });
 ```
+
+## Per-model overrides
+
+`models` is keyed by table key. An object replaces the column names for that model; `false` turns the plugin off for it. Other models keep the top-level options.
+
+```ts
+timestamps({
+	models: {
+		legacyOrders: { createdAt: 'created', updatedAt: 'modified' },
+		auditLog: false,
+	},
+});
+```
+
+A column named in `models` must exist on that model, or `better()` throws `PLUGIN_REQUIRED_COLUMN_MISSING`. Unknown model keys are ignored. Everything is resolved once when the client is created.
+
+## Fixed clock in tests
+
+`now` replaces `new Date()`. It runs once per write, so `createdAt` and `updatedAt` from one `create` are identical.
+
+```ts
+const fixed = new Date('2026-01-02T03:04:05.000Z');
+const client = better(db, { plugins: [timestamps({ now: () => fixed })] });
+
+const { createdAt, updatedAt } = await client.posts.create({
+	data: { title: 'Hello' },
+});
+
+expect(createdAt).toEqual(fixed);
+expect(updatedAt).toEqual(fixed);
+```
+
+Text-backed columns receive `fixed.toISOString()`.
 
 ## Behavior details
 

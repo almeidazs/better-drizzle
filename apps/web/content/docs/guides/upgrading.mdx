@@ -382,6 +382,9 @@ observes at runtime:
 - **[Plugin intercepts](/docs/plugins/writing-plugins#intercepts)**:
   `intercept(ctx)` wraps execution after transforms, so a plugin can serve a
   result without SQL or annotate after hooks.
+- **[Timestamps](/docs/plugins/timestamps)** `now` and `models` options: an
+  injectable clock for deterministic tests, and per-model column names or
+  `false` to turn the plugin off for a model.
 
 ### Not supported with Drizzle 1.x
 

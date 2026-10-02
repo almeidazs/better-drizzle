@@ -274,4 +274,263 @@ describe('better-drizzle/timestamps', () => {
 		sqlite.close();
 		ctx.close();
 	});
+
+	describe('now', () => {
+		const fixed = new Date('2026-01-02T03:04:05.000Z');
+		const now = () => fixed;
+
+		test('stamps creates with one exact value', async () => {
+			const ctx = createContext();
+			try {
+				const client = better(ctx.db, {
+					plugins: [timestamps({ now })],
+				});
+				const created = await client.records.create({
+					data: { id: 2, name: 'Bob' },
+				});
+				expect(created?.createdAt?.getTime()).toBe(fixed.getTime());
+				expect(created?.updatedAt?.getTime()).toBe(fixed.getTime());
+
+				const text = await client.textRecords.create({
+					data: { id: 1, name: 'Text' },
+				});
+				expect(text?.createdAt).toBe(fixed.toISOString());
+				expect(text?.updatedAt).toBe(fixed.toISOString());
+
+				const many = await client.records.createMany({
+					data: [
+						{ id: 3, name: 'Carol' },
+						{ id: 4, name: 'Dan' },
+					],
+				});
+				for (const row of many.data ?? []) {
+					expect(row.createdAt?.getTime()).toBe(fixed.getTime());
+					expect(row.updatedAt?.getTime()).toBe(fixed.getTime());
+				}
+			} finally {
+				ctx.close();
+			}
+		});
+
+		test('calls the clock once per write', async () => {
+			const ctx = createContext();
+			try {
+				let calls = 0;
+				const client = better(ctx.db, {
+					plugins: [
+						timestamps({
+							now: () => {
+								calls += 1;
+								return new Date(calls * 1000);
+							},
+						}),
+					],
+				});
+				const created = await client.records.create({
+					data: { id: 2, name: 'Bob' },
+				});
+				expect(calls).toBe(1);
+				expect(created?.createdAt?.getTime()).toBe(1000);
+				expect(created?.updatedAt?.getTime()).toBe(1000);
+			} finally {
+				ctx.close();
+			}
+		});
+
+		test('stamps updates and upserts with the clock', async () => {
+			const ctx = createContext();
+			try {
+				const client = better(ctx.db, {
+					plugins: [timestamps({ now })],
+				});
+				const time = fixed.getTime();
+
+				const updated = await client.records.update({
+					data: { name: 'Alice Updated' },
+					where: { id: 1 },
+				});
+				expect(updated?.updatedAt?.getTime()).toBe(time);
+
+				await client.records.create({ data: { id: 2, name: 'Bob' } });
+				const many = await client.records.updateMany({
+					data: { name: 'All' },
+					where: { id: { in: [1, 2] } },
+				});
+				expect(many.count).toBe(2);
+
+				const each = await client.records.updateEach({
+					by: schema.records.id,
+					data: [{ id: 1, name: 'One' }],
+					select: { id: true, updatedAt: true },
+					update: { name: (row) => row.name },
+				});
+				expect(each.data?.[0]?.updatedAt?.getTime()).toBe(time);
+
+				const upserted = await client.records.upsert({
+					create: { id: 3, name: 'Carol' },
+					update: { name: 'Carol Updated' },
+					where: { id: 3 },
+				});
+				expect(upserted?.createdAt?.getTime()).toBe(time);
+				expect(upserted?.updatedAt?.getTime()).toBe(time);
+
+				await client.records.upsertMany({
+					data: [
+						{ id: 1, name: 'Alice Again' },
+						{ id: 4, name: 'Dan' },
+					],
+					target: 'id',
+					update: 'all',
+				});
+				const rows = await client.records.findMany({
+					orderBy: { id: 'asc' },
+				});
+				expect(rows).toHaveLength(4);
+				for (const row of rows)
+					expect(row.updatedAt?.getTime()).toBe(time);
+				expect(rows[0]?.createdAt ?? null).toBeNull();
+				expect(rows[3]?.createdAt?.getTime()).toBe(time);
+			} finally {
+				ctx.close();
+			}
+		});
+	});
+
+	describe('models', () => {
+		const createCustomContext = () => {
+			const legacy = sqliteTable('timestamp_legacy_records', {
+				created: integer('created', { mode: 'timestamp' }),
+				createdAt: integer('created_at', { mode: 'timestamp' }),
+				id: integer('id').primaryKey(),
+				modified: integer('modified', { mode: 'timestamp' }),
+			});
+			const customSchema = { ...schema, legacy };
+			const sqlite = new Database(':memory:');
+			sqlite.exec(`
+				CREATE TABLE timestamp_records (
+					id INTEGER PRIMARY KEY NOT NULL,
+					name TEXT NOT NULL,
+					created_at INTEGER,
+					updated_at INTEGER
+				);
+				CREATE TABLE timestamp_basic_records (
+					id INTEGER PRIMARY KEY NOT NULL,
+					name TEXT NOT NULL
+				);
+				CREATE TABLE timestamp_text_records (
+					id INTEGER PRIMARY KEY NOT NULL,
+					name TEXT NOT NULL,
+					created_at TEXT,
+					updated_at TEXT
+				);
+				CREATE TABLE timestamp_legacy_records (
+					id INTEGER PRIMARY KEY NOT NULL,
+					created INTEGER,
+					created_at INTEGER,
+					modified INTEGER
+				);
+			`);
+			return {
+				close: () => sqlite.close(),
+				db: drizzle({
+					client: sqlite,
+					relations: defineRelations(customSchema),
+				}),
+			};
+		};
+
+		test('overrides column names per model', async () => {
+			const ctx = createCustomContext();
+			try {
+				const client = better(ctx.db, {
+					plugins: [
+						timestamps({
+							models: {
+								legacy: {
+									createdAt: 'created',
+									updatedAt: 'modified',
+								},
+							},
+						}),
+					],
+				});
+				const legacy = await client.legacy.create({ data: { id: 1 } });
+				expect(legacy?.created).toBeInstanceOf(Date);
+				expect(legacy?.modified).toBeInstanceOf(Date);
+				expect(legacy?.createdAt ?? null).toBeNull();
+
+				const record = await client.records.create({
+					data: { id: 1, name: 'Default' },
+				});
+				expect(record?.createdAt).toBeInstanceOf(Date);
+			} finally {
+				ctx.close();
+			}
+		});
+
+		test('disables a model with false', async () => {
+			const ctx = createCustomContext();
+			try {
+				const client = better(ctx.db, {
+					plugins: [timestamps({ models: { records: false } })],
+				});
+				const created = await client.records.create({
+					data: { id: 1, name: 'Off' },
+				});
+				expect(created?.createdAt ?? null).toBeNull();
+				expect(created?.updatedAt ?? null).toBeNull();
+
+				const updated = await client.records.update({
+					data: { name: 'Still off' },
+					where: { id: 1 },
+				});
+				expect(updated?.updatedAt ?? null).toBeNull();
+
+				const text = await client.textRecords.create({
+					data: { id: 1, name: 'On' },
+				});
+				expect(text?.createdAt).toMatch(/^\d{4}-/);
+			} finally {
+				ctx.close();
+			}
+		});
+
+		test('fails fast when an overridden column is missing', () => {
+			const ctx = createCustomContext();
+			try {
+				expect(() =>
+					better(ctx.db, {
+						plugins: [
+							timestamps({
+								models: { records: { updatedAt: 'modified' } },
+							}),
+						],
+					}),
+				).toThrow(
+					expect.objectContaining({
+						code: 'PLUGIN_REQUIRED_COLUMN_MISSING',
+						column: 'modified',
+						table: 'records',
+					}),
+				);
+			} finally {
+				ctx.close();
+			}
+		});
+
+		test('ignores unknown model keys', async () => {
+			const ctx = createCustomContext();
+			try {
+				const client = better(ctx.db, {
+					plugins: [timestamps({ models: { missing: false } })],
+				});
+				const created = await client.records.create({
+					data: { id: 1, name: 'Bob' },
+				});
+				expect(created?.createdAt).toBeInstanceOf(Date);
+			} finally {
+				ctx.close();
+			}
+		});
+	});
 });
