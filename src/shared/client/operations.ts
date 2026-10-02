@@ -1446,8 +1446,8 @@ const isPinnedValue = (value: unknown) =>
 	value !== undefined &&
 	(typeof value !== 'object' || value instanceof Date);
 
-// True when `where` holds an equality on the whole primary key or on a
-// single-column unique key, so the statement cannot touch more than one row.
+// True when `where` holds an equality on the whole primary key or on every
+// column of a unique key, so the statement cannot touch more than one row.
 const pinsOneRow = (runtime: TableRuntime, where: unknown): boolean => {
 	if (!isSimpleRecord(where)) return false;
 	const fields = runtime.primaryKeyFields;
@@ -1461,6 +1461,15 @@ const pinsOneRow = (runtime: TableRuntime, where: unknown): boolean => {
 	for (const key in where)
 		if (runtime.columns[key]?.isUnique && isPinnedValue(where[key]))
 			return true;
+	for (const key of runtime.uniqueKeys) {
+		pinned = true;
+		for (const field of key)
+			if (!isPinnedValue(where[field])) {
+				pinned = false;
+				break;
+			}
+		if (pinned) return true;
+	}
 	// Any pinned conjunct pins the whole filter (e.g. soft delete's `AND` wrap).
 	const all = where.AND;
 	if (Array.isArray(all)) {

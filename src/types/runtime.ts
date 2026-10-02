@@ -208,6 +208,8 @@ export type TableRuntime = {
 	table: Table;
 	/** The full relational config for this table. */
 	tableConfig: BetterRelationalConfig;
+	/** Unique keys (constraints and full unique indexes) as column keys. */
+	uniqueKeys: string[][];
 	/** Declared relations Better Drizzle cannot load, with the reason. */
 	unsupportedRelations: Record<string, string>;
 };

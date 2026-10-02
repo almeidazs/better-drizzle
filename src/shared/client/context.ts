@@ -96,8 +96,15 @@ const sameColumns = (left: readonly AnyColumn[], right: readonly AnyColumn[]) =>
 	left.length === right.length &&
 	left.every((column) => right.includes(column));
 
-const getPrimaryKey = (table: Table, columns: Record<string, AnyColumn>) => {
+const keyOf = (columns: Record<string, AnyColumn>, name: unknown) => {
+	for (const key in columns) if (columns[key]?.name === name) return key;
+};
+
+// Primary key columns plus every unique key (constraint or full, plain-column
+// unique index) as column keys. Expression and partial indexes are skipped.
+const getKeys = (table: Table, columns: Record<string, AnyColumn>) => {
 	const primaryKey: AnyColumn[] = [];
+	const uniqueKeys: string[][] = [];
 	for (const key in columns) {
 		const column = columns[key];
 		if (column?.primary) primaryKey.push(column);
@@ -109,27 +116,48 @@ const getPrimaryKey = (table: Table, columns: Record<string, AnyColumn>) => {
 			| ((columns: unknown) => Record<string, unknown> | unknown[])
 			| undefined
 	)?.(tableSymbols[ExtraConfigColumns]);
-	if (!extraConfig) return primaryKey;
+	if (!extraConfig) return { primaryKey, uniqueKeys };
 
 	for (const entry of Object.values(extraConfig)) {
 		const kind = (entry as { constructor?: Record<symbol, unknown> })
 			?.constructor?.[entityKind];
-		if (typeof kind !== 'string' || !kind.endsWith('PrimaryKeyBuilder'))
-			continue;
-		for (const column of (entry as { columns: { name: string }[] })
-			.columns) {
-			for (const key in columns) {
-				const candidate = columns[key];
-				if (candidate?.name === column.name) {
-					if (!primaryKey.includes(candidate))
-						primaryKey.push(candidate);
-					break;
-				}
+		if (typeof kind !== 'string') continue;
+		if (kind.endsWith('PrimaryKeyBuilder')) {
+			for (const column of (entry as { columns: { name: string }[] })
+				.columns) {
+				const candidate =
+					columns[keyOf(columns, column.name) as string];
+				if (candidate && !primaryKey.includes(candidate))
+					primaryKey.push(candidate);
 			}
+			continue;
 		}
+		let targets: { name?: unknown }[] | undefined;
+		if (kind.endsWith('UniqueConstraintBuilder'))
+			targets = (entry as { columns: { name?: unknown }[] }).columns;
+		else if (kind.endsWith('IndexBuilder')) {
+			const config = (
+				entry as {
+					config: {
+						columns: { name?: unknown }[];
+						unique: boolean;
+						where?: unknown;
+					};
+				}
+			).config;
+			if (config.unique && !config.where) targets = config.columns;
+		}
+		if (!targets?.length) continue;
+		const fields: string[] = [];
+		for (const target of targets) {
+			const field = keyOf(columns, target.name);
+			if (!field) break;
+			fields.push(field);
+		}
+		if (fields.length === targets.length) uniqueKeys.push(fields);
 	}
 
-	return primaryKey;
+	return { primaryKey, uniqueKeys };
 };
 
 const findRuntime = (tables: Record<string, TableRuntime>, name: string) => {
@@ -259,7 +287,7 @@ export const createRuntimeContext = <
 		if (!tableConfig || !isTable(table)) continue;
 
 		const columns = getColumns(table) as Record<string, AnyColumn>;
-		const primaryKey = getPrimaryKey(table, columns);
+		const { primaryKey, uniqueKeys } = getKeys(table, columns);
 		const dbName = getTableName(table);
 		const primaryKeyFields = primaryKey.map(
 			(column) =>
@@ -290,6 +318,7 @@ export const createRuntimeContext = <
 			relationNames: new Set(),
 			table,
 			tableConfig,
+			uniqueKeys,
 			unsupportedRelations: Object.create(null),
 		};
 		models[tableName] = model;

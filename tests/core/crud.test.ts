@@ -3,7 +3,13 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import { defineRelations, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
-import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import {
+	integer,
+	sqliteTable,
+	text,
+	unique,
+	uniqueIndex,
+} from 'drizzle-orm/sqlite-core';
 
 import { BetterDrizzleErrorCode, better } from '../../src';
 import { createTestContext, type TestContext } from './setup';
@@ -474,6 +480,84 @@ describe('single-row writes', () => {
 
 		await db.tags.delete({ where: { label: 'a' } });
 		expect(await db.tags.count()).toBe(2);
+		sqlite.close();
+	});
+
+	test('composite unique keys take the plain statement', async () => {
+		const sqlite = new Database(':memory:');
+		sqlite.exec(`
+			CREATE TABLE pages (
+				id INTEGER PRIMARY KEY,
+				tenant INTEGER NOT NULL,
+				slug TEXT NOT NULL,
+				owner INTEGER NOT NULL,
+				code TEXT NOT NULL,
+				hits INTEGER NOT NULL,
+				UNIQUE (tenant, slug)
+			);
+			CREATE UNIQUE INDEX pages_owner_code ON pages (owner, code);
+			INSERT INTO pages VALUES
+				(1, 1, 'a', 1, 'x', 0), (2, 1, 'b', 1, 'y', 0),
+				(3, 2, 'a', 2, 'x', 0), (4, 2, 'b', 2, 'y', 0);
+		`);
+		const pages = sqliteTable(
+			'pages',
+			{
+				code: text('code').notNull(),
+				hits: integer('hits').notNull(),
+				id: integer('id').primaryKey(),
+				owner: integer('owner').notNull(),
+				slug: text('slug').notNull(),
+				tenant: integer('tenant').notNull(),
+			},
+			(t) => [
+				unique().on(t.tenant, t.slug),
+				uniqueIndex('pages_owner_code').on(t.owner, t.code),
+			],
+		);
+		const queries: string[] = [];
+		const db = better(
+			drizzle({
+				client: sqlite,
+				logger: { logQuery: (query) => queries.push(query) },
+				relations: defineRelations({ pages }),
+			}),
+		);
+		const restricted = () => queries.some((q) => q.includes(' in (select'));
+
+		const updated = await db.pages.update({
+			data: { hits: 1 },
+			where: { slug: 'a', tenant: 2 },
+		});
+		expect(updated?.id).toBe(3);
+		expect(restricted()).toBe(false);
+
+		queries.length = 0;
+		await db.pages.update({
+			data: { hits: 2 },
+			where: { code: 'y', owner: 1 },
+		});
+		expect(restricted()).toBe(false);
+		expect(await db.pages.findUnique({ where: { id: 2 } })).toMatchObject({
+			hits: 2,
+		});
+
+		queries.length = 0;
+		await db.pages.update({ data: { hits: 5 }, where: { tenant: 1 } });
+		expect(restricted()).toBe(true);
+		expect(await db.pages.count({ where: { hits: 5 } })).toBe(1);
+
+		queries.length = 0;
+		const deleted = await db.pages.delete({
+			where: { code: 'x', owner: 2 },
+		});
+		expect(deleted?.id).toBe(3);
+		expect(restricted()).toBe(false);
+
+		queries.length = 0;
+		await db.pages.delete({ where: { owner: 1 } });
+		expect(restricted()).toBe(true);
+		expect(await db.pages.count()).toBe(2);
 		sqlite.close();
 	});
 });
