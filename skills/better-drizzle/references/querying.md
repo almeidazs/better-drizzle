@@ -8,7 +8,7 @@ A bare value means `equals`. `undefined` values are ignored: on reads, `{ where:
 
 | Column | Operators |
 | --- | --- |
-| string | `equals`, `in`, `notIn`, `contains`, `startsWith`, `endsWith`, `not`, `mode: 'insensitive'` (PostgreSQL `ILIKE` only) |
+| string | `equals`, `in`, `notIn`, `contains`, `startsWith`, `endsWith`, `not`, `mode: 'insensitive'` (patterns only: `ILIKE` on PostgreSQL, `lower(col) LIKE lower(?)` on SQLite/MySQL) |
 | number / bigint / Date | `equals`, `in`, `notIn`, `lt`, `lte`, `gt`, `gte`, `not` |
 | boolean | `equals`, `not` |
 | nullable | `null` or `{ not: null }` |
@@ -83,7 +83,7 @@ const first = await client.users.cursor({ orderBy: { id: 'asc' }, limit: 20 });
 const next = await client.users.cursor({
 	orderBy: { id: 'asc' },
 	limit: 20,
-	after: first.pagination.nextCursor!, // raw cursor object, e.g. { id: 20 }
+	after: first.pagination.nextCursor, // typed cursor object, e.g. { id: 20 }, or null
 });
 ```
 
@@ -126,7 +126,7 @@ where: { metadata: { 'profile.age': { gte: 18 }, 'profile.city': 'Lisbon' } }
 ```
 
 - Dotted keys are path filters only on PostgreSQL `jsonb` columns. On other JSON columns they are whole-document equality and match nothing.
-- The legacy `{ json: { 'a.b': ... } }` wrapper still works. It throws `JSONB_QUERY_UNSUPPORTED` outside PostgreSQL.
+- Root-level keys use the `{ json: { nickname: ... } }` wrapper (a dotless key directly on the column is document equality). The wrapper also takes dotted paths and throws `JSONB_QUERY_UNSUPPORTED` outside PostgreSQL.
 - `json` (not `jsonb`) columns throw on path filters, even though they type-check.
 - Containment and other operators: pass a Drizzle `sql` fragment.
 
