@@ -187,7 +187,7 @@ Read args are only part of the API surface. The write methods add a few importan
 
 | Method | Extra args |
 | --- | --- |
-| `createMany` | `data[]`, `skipDuplicates?`, `select?`, `include?`, `meta?` |
+| `createMany` | `data[]`, `skipDuplicates?`, `select?`, `include?`, `batchSize?`, `meta?` |
 | `updateMany` | `where?`, `data`, `select?`, `meta?` |
 | `updateEach` | `by`, `data[]`, `update`, `where?`, `select?`, `onEmpty?`, `meta?` |
 | `deleteMany` | `where?`, `select?`, `meta?` |
@@ -275,6 +275,6 @@ await client.users.upsertMany({
 - an explicit update object
 - a function receiving `{ excluded, sql, table }`
 
-`target` is a single column name (`'email'`) or an array of column names (`['email']`). `batchSize` splits `data` into chunks and must be a positive integer, otherwise the call throws `OPERATION_ERROR`.
+`target` is a single column name (`'email'`) or an array of column names (`['email']`). `batchSize` splits `data` into chunks and must be a positive integer, otherwise the call throws `INVALID_ARGS`.
 
 `where` accepts the same `WhereArg` as other operations: a structured filter or a Drizzle `SQL` fragment. It controls whether the existing conflicting row is updated; it does not filter incoming inserts. PostgreSQL and SQLite support it, while MySQL rejects it.

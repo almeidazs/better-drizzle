@@ -30,7 +30,7 @@ Every read returns an explainable result: a lazy thenable that runs the read whe
 | Method | Signature | Returns |
 | --- | --- | --- |
 | `create` | `(args: { data, skipDuplicates?, select?, include?, meta? })` | `Row`, or `Row \| null` when `skipDuplicates` is set |
-| `createMany` | `(args: { data: Row[], skipDuplicates?, select?, include?, meta? })` | `BatchResult<Row>` |
+| `createMany` | `(args: { data: Row[], skipDuplicates?, select?, include?, batchSize?, meta? })` | `BatchResult<Row>` |
 | `update` | `(args: { where, data, select?, include?, meta? })` | `ThrowingWriteResult<Row>` |
 | `updateMany` | `(args: { where?, data, select?, meta? })` | `BatchResult<Payload>` |
 | `updateEach` | `(args: { by, data, update, where?, select?, onEmpty?, meta? })` | `BatchResult<Row>` |

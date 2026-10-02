@@ -316,6 +316,13 @@ observes at runtime:
   from a hook or a nested call) instead of replacing it with
   `OPERATION_ERROR`. Check `catch` blocks that matched `OPERATION_ERROR` for
   those cases. See [errors](/docs/reference/errors#error-codes).
+- **Invalid arguments throw `INVALID_ARGS`.** Input validation failures, such
+  as unknown columns or relations, `select` with `include`, `page` with
+  `skip`, `before` with `after`, an invalid `batchSize`, duplicate `updateEach`
+  `by` values, malformed atomic, array, or JSONB mutations, relation command
+  errors, and Zod plugin parse failures, used `OPERATION_ERROR` (status 500).
+  They now use `INVALID_ARGS` (status 400). Update `catch` blocks that matched
+  `OPERATION_ERROR` for them. See [errors](/docs/reference/errors#error-codes).
 - **Success callbacks all run.** Every `afterCommit` callback, every
   `afterTransactionCommit` hook, and every plugin `afterRaw` hook now runs even
   when an earlier one throws; the first error is still rethrown. Previously
@@ -363,6 +370,8 @@ observes at runtime:
   See [reads](/docs/querying/reads#ordering-limit-and-offset).
 - **[`paginate()`](/docs/querying/pagination#offset-pagination)** accepts
   `page` and `perPage`.
+- **`createMany` `batchSize`**: splits large inserts into one statement per
+  chunk, like `upsertMany`. See [`createMany`](/docs/writing/crud#createmany).
 - **`upsertMany` on MySQL** through `ON DUPLICATE KEY UPDATE`. See
   [`upsertMany` details](/docs/reference/query-options#upsertmany-details).
 - **[Plugin intercepts](/docs/plugins/writing-plugins#intercepts)**:

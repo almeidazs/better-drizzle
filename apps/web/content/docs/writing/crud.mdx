@@ -90,6 +90,16 @@ const [maybeCreated = null] = await db
 
 With single-row `create`, a skipped insert returns `null`. With `createMany`, `count` only includes rows that were actually inserted.
 
+For large inputs, `batchSize` splits `data` into one `INSERT` per chunk so a single statement stays under driver parameter limits. `count` sums the inserted rows and `data` keeps input order. Hooks and plugins still run once per call. Chunks run one after another without an implicit transaction, the same as `upsertMany`; wrap the call in `db.transaction(...)` when all chunks must commit together. `batchSize` must be a positive integer.
+
+```ts
+const { count } = await client.users.createMany({
+	data: rows,
+	batchSize: 500,
+	skipDuplicates: true,
+});
+```
+
 ## `update`
 
 Updates at most one matching row. The result is nullable (the target may not exist) and also exposes [`.throw()`](/docs/writing/throwing-results).

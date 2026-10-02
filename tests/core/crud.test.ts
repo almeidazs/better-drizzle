@@ -314,6 +314,107 @@ describe('createMany', () => {
 		expect(result.count).toBe(1);
 		expect(result.data).toEqual([{ id: 213, name: 'Projected Inserted' }]);
 	});
+
+	const batchRows = (ids: number[]) =>
+		ids.map((id) => ({
+			id,
+			email: `batch-${id}@example.com`,
+			name: `Batch ${id}`,
+			age: 20,
+			active: true,
+		}));
+
+	const createLoggedClient = () => {
+		const inserts: string[] = [];
+		const actions: string[] = [];
+		const db = better(
+			drizzle({
+				client: ctx.sqlite,
+				logger: {
+					logQuery(query) {
+						if (query.startsWith('insert')) inserts.push(query);
+					},
+				},
+				relations: ctx.relations,
+			}),
+			{
+				hooks: {
+					afterCreate: (hook) => actions.push(`after:${hook.action}`),
+					beforeCreate: (hook) =>
+						actions.push(`before:${hook.action}`),
+				},
+			},
+		);
+		return { actions, db, inserts };
+	};
+
+	test('createMany splits rows with batchSize and keeps input order', async () => {
+		const { actions, db, inserts } = createLoggedClient();
+		const result = await db.users.createMany({
+			batchSize: 2,
+			data: batchRows([221, 222, 223, 224, 225]),
+			select: { id: true, name: true },
+		});
+
+		expect(inserts.length).toBe(3);
+		expect(actions).toEqual(['before:createMany', 'after:createMany']);
+		expect(result.count).toBe(5);
+		expect(result.data).toEqual(
+			[221, 222, 223, 224, 225].map((id) => ({
+				id,
+				name: `Batch ${id}`,
+			})),
+		);
+	});
+
+	test('createMany runs one statement when batchSize covers every row', async () => {
+		const { db, inserts } = createLoggedClient();
+		const result = await db.users.createMany({
+			batchSize: 3,
+			data: batchRows([226, 227, 228]),
+		});
+
+		expect(inserts.length).toBe(1);
+		expect(result.count).toBe(3);
+		expect(result.data?.map((row) => row.id)).toEqual([226, 227, 228]);
+	});
+
+	test('createMany counts only inserted rows across batches with skipDuplicates', async () => {
+		const { inserts, db } = createLoggedClient();
+		const [first, second, third] = batchRows([231, 232, 233]);
+		const result = await db.users.createMany({
+			batchSize: 2,
+			data: [
+				first,
+				{ ...second, email: 'diana@example.com' },
+				{ ...third, email: 'eve@example.com' },
+				batchRows([234])[0],
+			],
+			skipDuplicates: true,
+		});
+
+		expect(inserts.length).toBe(2);
+		expect(result.count).toBe(2);
+		expect(result.data?.map((row) => row.id)).toEqual([231, 234]);
+	});
+
+	test('createMany rejects invalid batchSize values like upsertMany', async () => {
+		for (const batchSize of [0, -1, 1.5, Number.NaN])
+			await expect(
+				Promise.resolve(
+					ctx.better.users.createMany({
+						batchSize,
+						data: batchRows([240]),
+					}),
+				),
+			).rejects.toMatchObject({
+				code: BetterDrizzleErrorCode.InvalidArgs,
+				details: { batchSize },
+				operation: 'createMany',
+			});
+
+		expect(await ctx.better.users.count({ where: { id: 240 } })).toBe(0);
+	});
 });
 
 describe('update', () => {

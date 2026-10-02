@@ -261,6 +261,31 @@ describe.skipIf(!DATABASE_URL)('Drizzle 1.x migration (PostgreSQL)', () => {
 			).toMatchObject({ name: 'Bob' });
 		});
 
+		test('createMany batchSize concatenates returned rows in input order', async () => {
+			expect(
+				await client.accounts.createMany({
+					batchSize: 2,
+					data: [
+						{ email: 'c@example.com', id: 10, name: 'C' },
+						{ email: 'alice@example.com', id: 11, name: 'Dup' },
+						{ email: 'd@example.com', id: 12, name: 'D' },
+						{ email: 'e@example.com', id: 13, name: 'E' },
+						{ email: 'f@example.com', id: 14, name: 'F' },
+					],
+					select: { id: true, name: true },
+					skipDuplicates: true,
+				}),
+			).toEqual({
+				count: 4,
+				data: [
+					{ id: 10, name: 'C' },
+					{ id: 12, name: 'D' },
+					{ id: 13, name: 'E' },
+					{ id: 14, name: 'F' },
+				],
+			});
+		});
+
 		test('updateMany returns complete changed rows and scalar projections', async () => {
 			const before = await client.accounts.findUnique({
 				where: { id: 2 },

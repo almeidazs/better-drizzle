@@ -295,6 +295,7 @@ export const createZodSchemasRegistry = <Schema extends AnySchema>(
 		getCreateManyArgsSchema(tableName) {
 			const entry = getEntry(tableName);
 			return z.object({
+				batchSize: z.number().int().positive().optional(),
 				data: z.array(entry.schemas.create),
 				include: getIncludeSchema(entry).optional(),
 				meta: z.unknown().optional(),

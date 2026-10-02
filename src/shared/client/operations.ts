@@ -776,17 +776,46 @@ const getConflictTarget = (columns: AnyColumn[] | undefined) => {
 	return columns.length === 1 ? columns[0] : columns;
 };
 
-const getBatchSize = (batchSize: number | undefined) => {
+const getBatchSize = (
+	batchSize: number | undefined,
+	operation: 'createMany' | 'upsertMany',
+) => {
 	if (batchSize === undefined) return;
 	if (!Number.isInteger(batchSize) || batchSize <= 0)
 		throw new BetterDrizzleError({
-			code: BetterDrizzleErrorCode.OperationError,
+			code: BetterDrizzleErrorCode.InvalidArgs,
 			details: { batchSize },
 			message: 'batchSize must be a positive integer.',
-			operation: 'upsertMany',
+			operation,
 		});
 
 	return batchSize;
+};
+
+// Batches run sequentially and are not wrapped in an implicit transaction.
+const runBatches = async <Args extends { data: readonly unknown[] }>(
+	args: Args,
+	batchSize: number,
+	run: (chunk: Args) => Promise<BatchResult<Record<string, unknown>>>,
+): Promise<BatchResult<Record<string, unknown>>> => {
+	let count = 0;
+	let data: Record<string, unknown>[] | undefined;
+
+	for (let start = 0; start < args.data.length; start += batchSize) {
+		const chunk = await run({
+			...args,
+			batchSize: undefined,
+			data: args.data.slice(start, start + batchSize),
+		});
+
+		count += chunk.count;
+		if (chunk.data?.length) {
+			if (!data) data = [];
+			data.push(...chunk.data);
+		}
+	}
+
+	return { count, data };
 };
 
 const getTargetColumns = <Schema extends AnySchema, Meta>(
@@ -2400,6 +2429,12 @@ export const createManyRecords = async <Schema extends AnySchema, Meta>(
 	tableName: BetterTableKey<Schema>,
 	args: CreateManyArgs<Schema, BetterTableKey<Schema>, Meta>,
 ): Promise<BatchResult<Record<string, unknown>>> => {
+	const batchSize = getBatchSize(args.batchSize, 'createMany');
+	if (batchSize && args.data.length > batchSize)
+		return runBatches(args, batchSize, (chunk) =>
+			createManyRecords(context, tableName, chunk),
+		);
+
 	const runtime = getTableRuntime(context, tableName as string);
 	if (hasProjection(args)) validateProjection(context, runtime, args);
 	const { builder, skipDuplicates } = applyInsertOnConflict(
@@ -2538,33 +2573,13 @@ export const upsertManyRecords = async <Schema extends AnySchema, Meta>(
 		return { count: 0 };
 	}
 
-	const batchSize = getBatchSize(args.batchSize);
+	const batchSize = getBatchSize(args.batchSize, 'upsertMany');
 	if (!batchSize || args.data.length <= batchSize)
 		return upsertManyChunk(context, tableName, args);
 
-	let count = 0;
-	let data: Record<string, unknown>[] | undefined;
-
-	for (let start = 0; start < args.data.length; start += batchSize) {
-		const chunk = await upsertManyChunk(
-			context,
-			tableName,
-			{
-				...args,
-				batchSize: undefined,
-				data: args.data.slice(start, start + batchSize),
-			},
-			args,
-		);
-
-		count += chunk.count;
-		if (chunk.data?.length) {
-			if (!data) data = [];
-			data.push(...chunk.data);
-		}
-	}
-
-	return { count, data };
+	return runBatches(args, batchSize, (chunk) =>
+		upsertManyChunk(context, tableName, chunk, args),
+	);
 };
 
 /**

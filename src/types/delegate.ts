@@ -493,6 +493,8 @@ export interface CreateManyArgs<
 	select?: SelectInput<Schema, Name>;
 	/** Optional relation-only projection for returned rows. */
 	include?: IncludeInput<Schema, Name>;
+	/** Optional batch size for chunked native execution. */
+	batchSize?: number;
 	/** Custom metadata forwarded to hooks. */
 	meta?: Meta;
 }
@@ -1629,13 +1631,15 @@ export type BetterDrizzleModelDelegate<
 			: PayloadForArgs<Schema, Name, Args>
 	>;
 	/**
-	 * Inserts multiple rows in a single statement.
+	 * Inserts multiple rows in a single statement, or one statement per
+	 * `batchSize` rows.
 	 *
 	 * Returns a `BatchResult` with `count` reflecting the number of rows
 	 * actually inserted. When `skipDuplicates` is enabled, skipped rows are not
 	 * counted.
 	 *
-	 * @param args - The array of row data and optional duplicate-skip/select options.
+	 * @param args - The array of row data and optional duplicate-skip/select/
+	 *   `batchSize` options.
 	 * @returns A promise resolving to `{ count, data? }`.
 	 *
 	 * @example

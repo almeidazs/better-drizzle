@@ -423,6 +423,23 @@ describe.skipIf(!MYSQL_URL)('Drizzle 1.x migration (MySQL)', () => {
 		).toEqual({ count: 2 });
 	});
 
+	test('createMany batchSize sums affected counts across batches', async () => {
+		expect(
+			await client.members.createMany({
+				batchSize: 2,
+				data: [
+					{ email: 'alice@example.com', id: 1, name: 'Dup' },
+					{ email: 'carol@example.com', id: 3, name: 'Carol' },
+					{ email: 'dave@example.com', id: 4, name: 'Dave' },
+					{ email: 'bob@example.com', id: 2, name: 'Dup' },
+					{ email: 'erin@example.com', id: 5, name: 'Erin' },
+				],
+				skipDuplicates: true,
+			}),
+		).toEqual({ count: 3 });
+		expect(await client.members.count()).toBe(5);
+	});
+
 	test('driver errors are wrapped, helpers read errno from the cause', async () => {
 		const error = await captureError(() =>
 			db.insert(members).values({
