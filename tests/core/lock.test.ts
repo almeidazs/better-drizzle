@@ -394,6 +394,23 @@ describe('row locks', () => {
 		});
 	});
 
+	test('rejects locks inside nested relation args', async () => {
+		const fake = createFakeDb('PgDialect');
+		const client = better(fake.db);
+
+		await expect(
+			Promise.resolve(
+				client.users.findMany({
+					// @ts-expect-error nested relation args do not accept row locks
+					include: { posts: { lock: 'update' } },
+				}),
+			),
+		).rejects.toMatchObject({
+			code: BetterDrizzleErrorCode.LockNotSupported,
+			message: 'Nested relation locks are not supported.',
+		});
+	});
+
 	test('rejects mysql-only unsupported lock modes', async () => {
 		const fake = createFakeDb('MySqlDialect');
 		const client = better(fake.db);

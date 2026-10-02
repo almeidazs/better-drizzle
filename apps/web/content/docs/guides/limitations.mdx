@@ -96,7 +96,7 @@ JSONB path filters and mutations, and native array filters and mutations, compil
 
 - on SQLite: `LOCK_NOT_SUPPORTED`
 - with general relation loading, meaning multiple `include` fields or a relation `select`: `LOCK_NOT_SUPPORTED`, "Row locks are only supported on read queries without general relation loading."
-- as a `lock` inside a nested relation: `LOCK_NOT_SUPPORTED`
+- as a `lock` inside nested relation args: a type error, and `LOCK_NOT_SUPPORTED` at runtime for untyped callers
 - `count`, `exists`, and writes do not accept `lock`
 
 A single `one` relation `include` on the root query, such as `include: { author: true }`, is supported. See [row locks](/docs/advanced/locks).

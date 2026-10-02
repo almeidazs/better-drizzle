@@ -165,7 +165,12 @@ type SelectRelationArg<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
 	RelationName extends RelationKeysFor<Schema, Name>,
-> = true | QueryArgs<Schema, RelatedNameFor<Schema, Name, RelationName>>;
+> =
+	| true
+	// Nested relation stages run as separate queries, so they cannot hold a row lock.
+	| (QueryArgs<Schema, RelatedNameFor<Schema, Name, RelationName>> & {
+			lock?: never;
+	  });
 
 type CountRelationArg<
 	Schema extends AnySchema,

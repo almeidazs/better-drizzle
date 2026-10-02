@@ -186,11 +186,27 @@ export const createZodSchemasRegistry = <Schema extends AnySchema>(
 	const getCursorInputSchema = (entry: TableSchemaEntry) =>
 		createCursorSchema(entry.schemas.select.shape, behavior);
 
+	// Nested relation stages run as separate queries and cannot hold a row lock.
+	const getNestedQuerySchema = (entry: TableSchemaEntry) => {
+		const schema = getQuerySchema(entry);
+		return 'lock' in schema.shape ? schema.omit({ lock: true }) : schema;
+	};
+
 	const getSelectSchema = (entry: TableSchemaEntry) =>
-		createSelectInputSchema(entry, getQuerySchema, behavior, registry);
+		createSelectInputSchema(
+			entry,
+			getNestedQuerySchema,
+			behavior,
+			registry,
+		);
 
 	const getIncludeSchema = (entry: TableSchemaEntry) =>
-		createIncludeInputSchema(entry, getQuerySchema, behavior, registry);
+		createIncludeInputSchema(
+			entry,
+			getNestedQuerySchema,
+			behavior,
+			registry,
+		);
 
 	const getQuerySchema = (entry: TableSchemaEntry) =>
 		createQueryArgsSchema(
