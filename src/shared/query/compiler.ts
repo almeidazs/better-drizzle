@@ -172,7 +172,8 @@ const compilePattern = (
 	column: AnyColumn,
 	value: string | Placeholder,
 	mode: 'contains' | 'startsWith' | 'endsWith',
-	insensitive?: boolean,
+	insensitive: boolean,
+	dialect: string | undefined,
 ) => {
 	const pattern =
 		typeof value !== 'string'
@@ -183,7 +184,12 @@ const compilePattern = (
 					? `${value}%`
 					: `%${value}`;
 
-	return insensitive ? ilike(column, pattern) : like(column, pattern);
+	if (!insensitive) return like(column, pattern);
+	// ILIKE is PostgreSQL-only; lowering both sides stays case-insensitive
+	// under any SQLite/MySQL collation.
+	return dialect && dialect !== 'pg'
+		? sql`lower(${column}) like lower(${pattern})`
+		: ilike(column, pattern);
 };
 
 const compileScalarFilter = (
@@ -225,7 +231,13 @@ const compileScalarFilter = (
 
 	if (isPatternValue(filter.contains))
 		conditions.push(
-			compilePattern(column, filter.contains, 'contains', insensitive),
+			compilePattern(
+				column,
+				filter.contains,
+				'contains',
+				insensitive,
+				dialect,
+			),
 		);
 
 	if (isPatternValue(filter.startsWith))
@@ -235,12 +247,19 @@ const compileScalarFilter = (
 				filter.startsWith,
 				'startsWith',
 				insensitive,
+				dialect,
 			),
 		);
 
 	if (isPatternValue(filter.endsWith))
 		conditions.push(
-			compilePattern(column, filter.endsWith, 'endsWith', insensitive),
+			compilePattern(
+				column,
+				filter.endsWith,
+				'endsWith',
+				insensitive,
+				dialect,
+			),
 		);
 
 	if ('not' in filter) {

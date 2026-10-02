@@ -125,6 +125,50 @@ describe('scalar where - string', () => {
 		});
 		expect(result.length).toBe(3);
 	});
+
+	test('insensitive mode compiles to lower() like lower()', () => {
+		const { users } = ctx.schema;
+		const query = ctx.raw
+			.select({ id: users.id })
+			.from(users)
+			.where(
+				ctx.better.users.$where({
+					name: { contains: 'LI', mode: 'insensitive' },
+				}),
+			)
+			.toSQL();
+
+		expect(query.sql).toContain('lower("test_users"."name") like lower(?)');
+		expect(query.sql).not.toContain('ilike');
+		expect(query.params).toEqual(['%LI%']);
+	});
+
+	test('insensitive mode ignores case under case_sensitive_like', async () => {
+		ctx.sqlite.exec('PRAGMA case_sensitive_like = ON');
+		const names = async (where: object) =>
+			(
+				await ctx.better.users.findMany({
+					orderBy: { id: 'asc' },
+					where: { name: { ...where, mode: 'insensitive' } },
+				})
+			).map((user) => user.name);
+
+		expect(
+			await ctx.better.users.findMany({
+				where: { name: { contains: 'LI' } },
+			}),
+		).toHaveLength(0);
+		expect(await names({ contains: 'LI' })).toEqual(['Alice', 'Charlie']);
+		expect(await names({ startsWith: 'a' })).toEqual(['Alice']);
+		expect(await names({ endsWith: 'E' })).toEqual([
+			'Alice',
+			'Charlie',
+			'Eve',
+		]);
+		expect(
+			await names({ not: { contains: 'LI', mode: 'insensitive' } }),
+		).toEqual(['Bob', 'Diana', 'Eve']);
+	});
 });
 
 describe('scalar where - negation', () => {

@@ -222,7 +222,7 @@ await client.posts.update({
 
 ## Case-insensitive search
 
-`contains` with `mode: 'insensitive'` covers simple search boxes:
+`contains` with `mode: 'insensitive'` covers simple search boxes on every dialect (`ILIKE` on PostgreSQL, `lower(column) LIKE lower(pattern)` on SQLite and MySQL):
 
 ```ts
 await client.users.findMany({

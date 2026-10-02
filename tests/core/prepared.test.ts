@@ -49,6 +49,28 @@ describe('prepared statements', () => {
 		).toBeNull();
 	});
 
+	test('case-insensitive LIKE params', async () => {
+		ctx.sqlite.exec('PRAGMA case_sensitive_like = ON');
+		const search = ctx.better.users
+			.findMany({
+				orderBy: { id: 'asc' },
+				where: {
+					email: { endsWith: param('domain'), mode: 'insensitive' },
+					name: { startsWith: param('prefix'), mode: 'insensitive' },
+				},
+			})
+			.prepare();
+
+		expect(
+			(await search.execute({ domain: 'EXAMPLE.COM', prefix: 'a' })).map(
+				(user) => user.name,
+			),
+		).toEqual(['Alice']);
+		expect(
+			await search.execute({ domain: 'EXAMPLE.COM', prefix: 'zz' }),
+		).toEqual([]);
+	});
+
 	test('execute().throw() rejects when no row matches', async () => {
 		const byId = ctx.better.users
 			.findFirst({ where: { id: param('id') } })

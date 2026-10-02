@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
+import { sql } from 'drizzle-orm';
+
+import { param } from '../../src';
 import { createMysqlTestContext, type MysqlTestContext } from './setup.mysql';
 
 // The relation-filter fix in compiler.ts is dialect-agnostic, so the SQLite
@@ -193,5 +196,59 @@ describe.skipIf(!MYSQL_URL)('relation where - Many (mysql)', () => {
 		expect(
 			await ctx.better.memberships.findUnique({ where: { id: 1 } }),
 		).toEqual(owner);
+	});
+});
+
+describe.skipIf(!MYSQL_URL)('insensitive string filters (mysql)', () => {
+	let ctx: MysqlTestContext;
+
+	const names = (rows: { name: string }[]) => rows.map((row) => row.name);
+
+	beforeAll(async () => {
+		ctx = await createMysqlTestContext(MYSQL_URL as string);
+		// A binary collation makes plain LIKE case-sensitive.
+		await ctx.raw.execute(
+			sql`ALTER TABLE test_users MODIFY name VARCHAR(255) NOT NULL COLLATE utf8mb4_bin`,
+		);
+	});
+
+	afterAll(async () => {
+		await ctx?.close();
+	});
+
+	const find = (filter: object) =>
+		ctx.better.users.findMany({
+			orderBy: { id: 'asc' },
+			where: { name: filter },
+		});
+
+	test('contains, startsWith, and endsWith ignore case', async () => {
+		expect(await find({ contains: 'LI' })).toHaveLength(0);
+		expect(
+			names(await find({ contains: 'LI', mode: 'insensitive' })),
+		).toEqual(['Alice', 'Charlie']);
+		expect(
+			names(await find({ startsWith: 'a', mode: 'insensitive' })),
+		).toEqual(['Alice']);
+		expect(
+			names(await find({ endsWith: 'E', mode: 'insensitive' })),
+		).toEqual(['Alice', 'Charlie', 'Eve']);
+	});
+
+	test('prepared LIKE params ignore case', async () => {
+		const search = ctx.better.users
+			.findMany({
+				orderBy: { id: 'asc' },
+				where: {
+					name: { contains: param('part'), mode: 'insensitive' },
+				},
+			})
+			.prepare();
+
+		expect(names(await search.execute({ part: 'LI' }))).toEqual([
+			'Alice',
+			'Charlie',
+		]);
+		expect(names(await search.execute({ part: 'bO' }))).toEqual(['Bob']);
 	});
 });

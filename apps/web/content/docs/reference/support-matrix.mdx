@@ -79,6 +79,17 @@ Relation loading and row locks are mutually exclusive by design - nested
 relation stages run as separate queries, so a root lock would not cover them.
 The combination fails fast instead of silently dropping the lock.
 
+## String filters
+
+| Capability | PostgreSQL | SQLite | MySQL |
+| --- | --- | --- | --- |
+| `contains`, `startsWith`, `endsWith` (`LIKE`) | Yes | Yes | Yes |
+| `mode: 'insensitive'` | `ILIKE` | `lower(col) LIKE lower(?)` | `lower(col) LIKE lower(?)` |
+
+Without `mode`, case sensitivity follows the dialect: SQLite `LIKE` ignores
+ASCII case by default, and MySQL follows the column collation. SQLite's
+`lower()` only folds ASCII letters unless the ICU extension is loaded.
+
 ## Query plans
 
 | Capability | PostgreSQL | SQLite | MySQL |
