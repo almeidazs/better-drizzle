@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import { Placeholder } from 'drizzle-orm';
+
 import type { CacheSerializer } from '../types';
 
 const TAG = '$bd';
@@ -138,6 +140,8 @@ function canonicalText(
 	}
 	if (value instanceof Date) return `D${value.getTime()}`;
 	if (value instanceof Uint8Array) return `B${toBase64(value)}`;
+	// A prepared statement param; its execution value is hashed separately.
+	if (value instanceof Placeholder) return `P${JSON.stringify(value.name)}`;
 	if (ancestors.includes(value))
 		throw new UncacheableValueError('cyclic value');
 	ancestors.push(value);

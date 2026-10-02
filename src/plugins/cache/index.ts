@@ -18,6 +18,7 @@ import {
 import { createReadSettings, type ReadSettings } from './shared/options';
 import {
 	byteLength,
+	canonicalizeQueryArgs,
 	canonicalizeRead,
 	defaultSerializer,
 	hash,
@@ -57,6 +58,7 @@ const IGNORED_ARGS = new Set(['cache', 'meta']);
 
 export const cache = (options: CacheOptions) => {
 	const { store } = options;
+	const preparedQueries = new WeakMap<object, string>();
 	const serializer = options.serializer ?? defaultSerializer;
 	const { maxSize, resolveRead, versionTtl } = createReadSettings(options);
 	const prefix = `${options.namespace ?? 'better-drizzle'}:${options.version ?? 1}:`;
@@ -151,6 +153,7 @@ export const cache = (options: CacheOptions) => {
 			args: MutableRecord;
 			kind: string;
 			meta: unknown;
+			params?: Readonly<MutableRecord>;
 			state: Readonly<MutableRecord>;
 			table: string;
 			transactionContext: MutableRecord | undefined;
@@ -158,26 +161,40 @@ export const cache = (options: CacheOptions) => {
 		settings: ReadSettings,
 	) => {
 		if (settings.key !== undefined) return customKey(settings.key);
-		const args = Object.create(null) as MutableRecord;
-		for (const key in context.args)
-			if (!IGNORED_ARGS.has(key)) args[key] = context.args[key];
+		const { params } = context;
+		// A prepared statement passes the same args on every execution, so
+		// their canonical text is computed once and joined with the values.
+		let query = params ? preparedQueries.get(context.args) : undefined;
 		try {
-			return `${prefix}q:${hash(
-				canonicalizeRead([
-					context.table,
-					context.kind,
-					args,
-					settings.tags,
-					settings.vary,
-					options.vary?.({
-						meta: context.meta,
-						model: context.table,
-						operation: context.kind,
-						state: context.state,
-						transactionContext: context.transactionContext,
-					}),
-				]),
-			)}`;
+			let args: MutableRecord | null = null;
+			if (query === undefined) {
+				args = Object.create(null) as MutableRecord;
+				for (const key in context.args)
+					if (!IGNORED_ARGS.has(key)) args[key] = context.args[key];
+				if (params) {
+					query = canonicalizeQueryArgs(args);
+					preparedQueries.set(context.args, query);
+					args = null;
+				}
+			}
+			const identity: unknown[] = [
+				context.table,
+				context.kind,
+				args,
+				settings.tags,
+				settings.vary,
+				options.vary?.({
+					meta: context.meta,
+					model: context.table,
+					operation: context.kind,
+					state: context.state,
+					transactionContext: context.transactionContext,
+				}),
+			];
+			if (query === undefined)
+				return `${prefix}q:${hash(canonicalizeRead(identity))}`;
+			identity.push(params);
+			return `${prefix}q:${hash(`${query}\n${canonicalizeRead(identity)}`)}`;
 		} catch (error) {
 			if (error instanceof UncacheableValueError) return;
 			throw error;
@@ -228,6 +245,7 @@ export const cache = (options: CacheOptions) => {
 			context.model,
 			context,
 			settings.tags,
+			context.params as MutableRecord | undefined,
 		);
 
 		if (settings.key !== undefined) {
@@ -460,6 +478,7 @@ type InterceptContext = {
 	meta: unknown;
 	model: PluginModelInfo;
 	next(): Promise<unknown>;
+	params?: Readonly<MutableRecord>;
 	schema: object;
 	select?: unknown;
 	skipAfterHooks(): void;
