@@ -11,7 +11,7 @@ import {
 	text,
 } from 'drizzle-orm/sqlite-core';
 
-import { better } from '../../src';
+import { better, param } from '../../src';
 import {
 	cache,
 	type CacheOptions,
@@ -612,6 +612,27 @@ export const defineCacheSuite = (
 			await client.users.findMany();
 
 			expect(statuses).toEqual(['miss', 'hit', undefined]);
+		});
+
+		test('prepared reads cache per value and invalidate by entity', async () => {
+			const { client, count } = createClient(createStore());
+			const byId = client.users
+				.findUnique({ cache: true, where: { id: param('id') } })
+				.prepare();
+			const read = (id: number) => () => byId.execute({ id });
+
+			expect(await count(read(1))).toBe(1);
+			expect(await count(read(1))).toBe(0);
+			expect(await count(read(2))).toBe(1);
+			expect((await byId.execute({ id: 1 }))?.name).toBe('Ada');
+
+			await client.users.update({
+				data: { name: 'Ada L.' },
+				where: { id: 1 },
+			});
+			expect(await count(read(1))).toBe(1);
+			expect(await count(read(2))).toBe(0);
+			expect((await byId.execute({ id: 1 }))?.name).toBe('Ada L.');
 		});
 
 		test('explain never reads or writes the cache', async () => {
