@@ -100,6 +100,108 @@ describe.skipIf(!DATABASE_URL)('prepared statements (pg)', () => {
 		expect(await byIds.execute({ ids: [], names: [] })).toEqual([]);
 	});
 
+	test('insensitive equals / in / notIn params', async () => {
+		const ids = (rows: { id: number }[]) => rows.map((row) => row.id);
+		expect(
+			ids(
+				await db.users.findMany({
+					orderBy: { id: 'asc' },
+					where: {
+						name: { in: ['ADA', 'linus'], mode: 'insensitive' },
+					},
+				}),
+			),
+		).toEqual([1, 3]);
+		expect(
+			ids(
+				await db.users.findMany({
+					where: { name: { equals: 'ADA' } },
+				}),
+			),
+		).toEqual([]);
+
+		const byName = db.users
+			.findMany({
+				orderBy: { id: 'asc' },
+				where: {
+					email: { notIn: param('emails'), mode: 'insensitive' },
+					name: { in: param('names'), mode: 'insensitive' },
+				},
+			})
+			.prepare();
+		expect(
+			ids(
+				await byName.execute({
+					emails: ['LINUS@EXAMPLE.COM'],
+					names: ['ada', 'LINUS', 'GRACE'],
+				}),
+			),
+		).toEqual([1, 2]);
+		expect(await byName.execute({ emails: [], names: [] })).toEqual([]);
+
+		const exact = db.users
+			.findFirst({
+				where: { name: { equals: param('name'), mode: 'insensitive' } },
+			})
+			.prepare();
+		expect((await exact.execute({ name: 'gRaCe' }))?.id).toBe(2);
+
+		const tagged = db.users
+			.findMany({
+				orderBy: { id: 'asc' },
+				where: {
+					tags: { some: { in: param('tags'), mode: 'insensitive' } },
+				},
+			})
+			.prepare();
+		expect(ids(await tagged.execute({ tags: ['NAVY', 'Math'] }))).toEqual([
+			1, 2,
+		]);
+		expect(
+			ids(
+				await db.users.findMany({
+					where: {
+						tags: {
+							some: { equals: 'KERNELS', mode: 'insensitive' },
+						},
+					},
+				}),
+			),
+		).toEqual([3]);
+
+		const city = db.users
+			.findMany({
+				orderBy: { id: 'asc' },
+				where: {
+					profile: {
+						json: {
+							city: { in: param('cities'), mode: 'insensitive' },
+						},
+					},
+				},
+			})
+			.prepare();
+		expect(
+			ids(await city.execute({ cities: ['LONDON', 'helsinki'] })),
+		).toEqual([1, 3]);
+		expect(
+			ids(
+				await db.users.findMany({
+					where: {
+						profile: {
+							json: {
+								city: {
+									equals: 'new york',
+									mode: 'insensitive',
+								},
+							},
+						},
+					},
+				}),
+			),
+		).toEqual([2]);
+	});
+
 	test('array filters and element predicates take params', async () => {
 		const tagged = db.users
 			.findMany({

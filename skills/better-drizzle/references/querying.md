@@ -8,7 +8,7 @@ A bare value means `equals`. `undefined` values are ignored: on reads, `{ where:
 
 | Column | Operators |
 | --- | --- |
-| string | `equals`, `in`, `notIn`, `contains`, `startsWith`, `endsWith`, `not`, `mode: 'insensitive'` (patterns only: `ILIKE` on PostgreSQL, `lower(col) LIKE lower(?)` on SQLite/MySQL) |
+| string | `equals`, `in`, `notIn`, `contains`, `startsWith`, `endsWith`, `not`, `mode: 'insensitive'` (patterns: `ILIKE` on PostgreSQL, `lower(col) LIKE lower(?)` on SQLite/MySQL; `equals`/`in`/`notIn`/scalar `not`: `lower(col) = lower(?)` on every dialect; a nested `not` object takes its own `mode`) |
 | number / bigint / Date | `equals`, `in`, `notIn`, `lt`, `lte`, `gt`, `gte`, `not` |
 | boolean | `equals`, `not` |
 | nullable | `null` or `{ not: null }` |

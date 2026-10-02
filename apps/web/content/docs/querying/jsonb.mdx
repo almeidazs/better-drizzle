@@ -113,7 +113,7 @@ await client.accounts.findMany({
 });
 ```
 
-String matching is case-sensitive by default. Add `mode: 'insensitive'` to switch `contains`, `startsWith`, and `endsWith` to `ILIKE`.
+String matching is case-sensitive by default. Add `mode: 'insensitive'` to switch `contains`, `startsWith`, and `endsWith` to `ILIKE`, and to compare `equals`, `in`, and `notIn` as `lower(value)`.
 
 ## Examples
 

@@ -95,7 +95,7 @@ Operators available inside `where`, by column type. A bare value means `equals`;
 | To-one relation | `is`, `isNot` |
 | To-many relation | `some`, `every`, `none` |
 
-`mode` is `'default'` (`LIKE`, case sensitivity follows the dialect) or `'insensitive'` (`ILIKE`, PostgreSQL only). See [filters](/docs/querying/filters) and [relations](/docs/querying/relations) for examples.
+`mode` is `'default'` (`LIKE` / `=`, case sensitivity follows the dialect) or `'insensitive'` (patterns use `ILIKE` on PostgreSQL and `lower(col) LIKE lower(?)` elsewhere; `equals`, `in`, `notIn`, and a scalar `not` compare `lower()` on both sides). See [filters](/docs/querying/filters) and [relations](/docs/querying/relations) for examples.
 
 ## Projections
 

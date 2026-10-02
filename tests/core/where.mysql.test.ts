@@ -307,6 +307,31 @@ describe.skipIf(!MYSQL_URL)('insensitive string filters (mysql)', () => {
 		).toEqual(['Alice', 'Charlie', 'Eve']);
 	});
 
+	test('equals, in, notIn, and scalar not ignore case', async () => {
+		expect(await find({ equals: 'ALICE' })).toHaveLength(0);
+		expect(
+			names(await find({ equals: 'ALICE', mode: 'insensitive' })),
+		).toEqual(['Alice']);
+		expect(
+			names(await find({ in: ['bob', 'EVE'], mode: 'insensitive' })),
+		).toEqual(['Bob', 'Eve']);
+		expect(
+			names(await find({ notIn: ['bob', 'EVE'], mode: 'insensitive' })),
+		).toEqual(['Alice', 'Charlie', 'Diana']);
+		expect(
+			names(await find({ not: 'alice', mode: 'insensitive' })),
+		).toEqual(['Bob', 'Charlie', 'Diana', 'Eve']);
+
+		const byName = ctx.better.users
+			.findMany({
+				where: { name: { equals: param('name'), mode: 'insensitive' } },
+			})
+			.prepare();
+		expect(names(await byName.execute({ name: 'cHaRlIe' }))).toEqual([
+			'Charlie',
+		]);
+	});
+
 	test('prepared LIKE params ignore case', async () => {
 		const search = ctx.better.users
 			.findMany({

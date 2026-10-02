@@ -201,6 +201,77 @@ describe('scalar where - string', () => {
 			await names({ not: { contains: 'LI', mode: 'insensitive' } }),
 		).toEqual(['Bob', 'Diana', 'Eve']);
 	});
+
+	test('insensitive mode applies to equals, in, notIn, and scalar not', async () => {
+		const names = async (where: object) =>
+			(
+				await ctx.better.users.findMany({
+					orderBy: { id: 'asc' },
+					where: { name: where },
+				})
+			).map((user) => user.name);
+
+		expect(await names({ equals: 'ALICE' })).toEqual([]);
+		expect(await names({ in: ['bob', 'EVE'] })).toEqual([]);
+		expect(await names({ equals: 'ALICE', mode: 'insensitive' })).toEqual([
+			'Alice',
+		]);
+		expect(
+			await names({ in: ['bob', 'EVE', 'nobody'], mode: 'insensitive' }),
+		).toEqual(['Bob', 'Eve']);
+		expect(
+			await names({ notIn: ['bob', 'EVE'], mode: 'insensitive' }),
+		).toEqual(['Alice', 'Charlie', 'Diana']);
+		expect(await names({ not: 'ALICE', mode: 'insensitive' })).toEqual([
+			'Bob',
+			'Charlie',
+			'Diana',
+			'Eve',
+		]);
+		expect(await names({ in: [], mode: 'insensitive' })).toEqual([]);
+		expect(await names({ notIn: [], mode: 'insensitive' })).toHaveLength(5);
+		// A nested not object still reads its own mode.
+		expect(
+			await names({ not: { equals: 'ALICE' }, mode: 'insensitive' }),
+		).toHaveLength(5);
+	});
+
+	test('insensitive equality compiles to lower() on both sides', () => {
+		const { users } = ctx.schema;
+		const query = ctx.raw
+			.select({ id: users.id })
+			.from(users)
+			.where(
+				ctx.better.users.$where({
+					email: { notIn: ['A@X.COM'], mode: 'insensitive' },
+					name: {
+						equals: 'ALICE',
+						in: ['ALICE', 'BOB'],
+						mode: 'insensitive',
+						not: 'EVE',
+					},
+				}),
+			)
+			.toSQL();
+
+		expect(query.sql).toContain('lower("test_users"."name") = lower(?)');
+		expect(query.sql).toContain(
+			'lower("test_users"."name") in (lower(?), lower(?))',
+		);
+		expect(query.sql).toContain(
+			'not (lower("test_users"."email") in (lower(?)))',
+		);
+		expect(query.sql).toContain(
+			'not (lower("test_users"."name") = lower(?))',
+		);
+		expect(query.params).toEqual([
+			'A@X.COM',
+			'ALICE',
+			'ALICE',
+			'BOB',
+			'EVE',
+		]);
+	});
 });
 
 describe('scalar where - negation', () => {

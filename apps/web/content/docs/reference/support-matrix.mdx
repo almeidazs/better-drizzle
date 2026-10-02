@@ -84,10 +84,14 @@ The combination fails fast instead of silently dropping the lock.
 | Capability | PostgreSQL | SQLite | MySQL |
 | --- | --- | --- | --- |
 | `contains`, `startsWith`, `endsWith` (`LIKE`) | Yes | Yes | Yes |
-| `mode: 'insensitive'` | `ILIKE` | `lower(col) LIKE lower(?)` | `lower(col) LIKE lower(?)` |
+| `mode: 'insensitive'` (patterns) | `ILIKE` | `lower(col) LIKE lower(?)` | `lower(col) LIKE lower(?)` |
+| `mode: 'insensitive'` (`equals`, `in`, `notIn`, scalar `not`) | `lower(col) = lower(?)` | `lower(col) = lower(?)` | `lower(col) = lower(?)` |
+| `in` / `notIn` with `param()` and `mode: 'insensitive'` | `lower(col) = any(select lower(v) from unnest($1::text[]) v)` | No (`PREPARED_UNSUPPORTED`) | No (`PREPARED_UNSUPPORTED`) |
 
 Without `mode`, case sensitivity follows the dialect: SQLite `LIKE` ignores
-ASCII case by default, and MySQL follows the column collation. SQLite's
+ASCII case by default, `=` compares case-sensitively, and MySQL follows the
+column collation. With `mode: 'insensitive'`, both sides are lowered in SQL,
+so case folding follows the database. SQLite's
 `lower()` only folds ASCII letters unless the ICU extension is loaded.
 
 ## Query plans

@@ -1,4 +1,4 @@
-import type { AnyColumn, SQL, Table } from 'drizzle-orm';
+import type { AnyColumn, SQL, SQLWrapper, Table } from 'drizzle-orm';
 import {
 	aliasedTable,
 	aliasedTableColumn,
@@ -121,6 +121,26 @@ const bind = (column: AnyColumn, value: unknown) =>
 		? sql.param(value, column)
 		: value;
 
+/** Binds a literal or `param()` through the column encoder. */
+const encode = (column: AnyColumn, value: unknown) =>
+	is(column, Column) ? sql.param(value, column) : value;
+
+// `mode: 'insensitive'` equality lowers both sides in SQL on every dialect, so
+// case folding follows the database rather than JS.
+const lowerEq = (left: unknown, right: unknown) =>
+	sql`lower(${left}) = lower(${right})`;
+
+const lowerIn = (column: AnyColumn, values: unknown[]) =>
+	values.length
+		? sql`lower(${column}) in (${sql.join(
+				values.map((value) => sql`lower(${encode(column, value)})`),
+				sql`, `,
+			)})`
+		: sql`false`;
+
+const lowerAny = (left: unknown, list: unknown) =>
+	sql`lower(${left}) = any(select lower(v) from unnest(${list}::text[]) v)`;
+
 /** Encodes a list param element by element for `= any($1)`. */
 const listEncoder = (column: AnyColumn) => {
 	const list = getPgArrayElementColumn(
@@ -142,13 +162,15 @@ const compileListParam = (
 	value: Placeholder,
 	dialect: string | undefined,
 	encoder: AnyColumn = column,
+	insensitive = false,
 ) => {
 	if (dialect !== 'pg')
 		throw preparedParamError(
 			'param() in "in" / "notIn" filters is only supported by PostgreSQL.',
 			dialect,
 		);
-	return sql`${column} = any(${sql.param(value, listEncoder(encoder))})`;
+	const list = sql.param(value, listEncoder(encoder));
+	return insensitive ? lowerAny(column, list) : sql`${column} = any(${list})`;
 };
 
 const PATTERN_MODES = ['contains', 'startsWith', 'endsWith'] as const;
@@ -212,21 +234,45 @@ const compileScalarFilter = (
 
 	const filter = value;
 	const conditions: SQL[] = [];
+	const insensitive = filter.mode === 'insensitive';
 
 	if ('equals' in filter)
 		conditions.push(
 			filter.equals === null
 				? isNull(column)
-				: eq(column, bind(column, filter.equals)),
+				: insensitive
+					? lowerEq(column, encode(column, filter.equals))
+					: eq(column, bind(column, filter.equals)),
 		);
 
-	if (Array.isArray(filter.in)) conditions.push(inArray(column, filter.in));
+	if (Array.isArray(filter.in))
+		conditions.push(
+			insensitive
+				? lowerIn(column, filter.in)
+				: inArray(column, filter.in),
+		);
 	else if (filter.in instanceof Placeholder)
-		conditions.push(compileListParam(column, filter.in, dialect));
+		conditions.push(
+			compileListParam(column, filter.in, dialect, column, insensitive),
+		);
 	if (Array.isArray(filter.notIn))
-		conditions.push(notInArray(column, filter.notIn));
+		conditions.push(
+			insensitive
+				? not(lowerIn(column, filter.notIn))
+				: notInArray(column, filter.notIn),
+		);
 	else if (filter.notIn instanceof Placeholder)
-		conditions.push(not(compileListParam(column, filter.notIn, dialect)));
+		conditions.push(
+			not(
+				compileListParam(
+					column,
+					filter.notIn,
+					dialect,
+					column,
+					insensitive,
+				),
+			),
+		);
 	if (filter.lt !== undefined)
 		conditions.push(lt(column, bind(column, filter.lt)));
 	if (filter.lte !== undefined)
@@ -235,8 +281,6 @@ const compileScalarFilter = (
 		conditions.push(gt(column, bind(column, filter.gt)));
 	if (filter.gte !== undefined)
 		conditions.push(gte(column, bind(column, filter.gte)));
-
-	const insensitive = filter.mode === 'insensitive';
 
 	if (isPatternValue(filter.contains))
 		conditions.push(
@@ -272,7 +316,10 @@ const compileScalarFilter = (
 		);
 
 	if ('not' in filter) {
-		const nested = compileScalarFilter(column, filter.not, dialect);
+		const nested =
+			insensitive && isPatternValue(filter.not)
+				? lowerEq(column, encode(column, filter.not))
+				: compileScalarFilter(column, filter.not, dialect);
 		if (nested) conditions.push(not(nested));
 	}
 
@@ -469,25 +516,41 @@ const compileArrayElementScalarFilter = (
 		return mode === 'endsWith' ? condition : sql`${condition} escape '!'`;
 	};
 
+	const insensitive = value.mode === 'insensitive';
+	const left = insensitive ? sql`lower(${column})` : column;
+	const right: (entry: unknown) => SQLWrapper = insensitive
+		? (entry) => sql`lower(${bind(entry)})`
+		: bind;
+
 	if ('equals' in value)
-		conditions.push(sql`${column} = ${bind(value.equals)}`);
+		conditions.push(sql`${left} = ${right(value.equals)}`);
 	if (Array.isArray(value.in))
 		conditions.push(
 			value.in.length
-				? sql`${column} in (${sql.join(value.in.map(bind), sql`, `)})`
+				? sql`${left} in (${sql.join(value.in.map(right), sql`, `)})`
 				: sql`false`,
 		);
 	else if (value.in instanceof Placeholder)
-		conditions.push(compileListParam(column, value.in, 'pg', encoder));
+		conditions.push(
+			compileListParam(column, value.in, 'pg', encoder, insensitive),
+		);
 	if (Array.isArray(value.notIn))
 		conditions.push(
 			value.notIn.length
-				? sql`${column} not in (${sql.join(value.notIn.map(bind), sql`, `)})`
+				? sql`${left} not in (${sql.join(value.notIn.map(right), sql`, `)})`
 				: sql`true`,
 		);
 	else if (value.notIn instanceof Placeholder)
 		conditions.push(
-			not(compileListParam(column, value.notIn, 'pg', encoder)),
+			not(
+				compileListParam(
+					column,
+					value.notIn,
+					'pg',
+					encoder,
+					insensitive,
+				),
+			),
 		);
 	if (value.lt !== undefined)
 		conditions.push(sql`${column} < ${bind(value.lt)}`);
@@ -498,7 +561,6 @@ const compileArrayElementScalarFilter = (
 	if (value.gte !== undefined)
 		conditions.push(sql`${column} >= ${bind(value.gte)}`);
 
-	const insensitive = value.mode === 'insensitive';
 	if (isPatternValue(value.contains))
 		conditions.push(pattern(value.contains, 'contains', insensitive));
 	if (isPatternValue(value.startsWith))
@@ -508,7 +570,7 @@ const compileArrayElementScalarFilter = (
 	if ('not' in value) {
 		const nested = isScalarFilter(value.not)
 			? compileArrayElementScalarFilter(column, encoder, value.not)
-			: sql`${column} = ${bind(value.not)}`;
+			: sql`${left} = ${right(value.not)}`;
 		if (nested) conditions.push(not(nested));
 	}
 
@@ -527,8 +589,10 @@ const compileArrayElementPredicate = (
 	const only = predicateKeys.length === 1 ? predicateKeys[0] : undefined;
 	const notNull = sql`${column} is not null`;
 	const elementEncoder = getPgArrayElementColumn(encoder);
+	const insensitive = filter.mode === 'insensitive';
 
 	if (
+		!insensitive &&
 		only === 'equals' &&
 		filter.equals !== null &&
 		filter.equals !== undefined
@@ -542,6 +606,7 @@ const compileArrayElementPredicate = (
 	}
 
 	if (
+		!insensitive &&
 		only === 'in' &&
 		(Array.isArray(filter.in) || filter.in instanceof Placeholder)
 	) {
@@ -670,12 +735,18 @@ const compileJsonPathFilter = (
 	const jsonValue = sql`${column} #> ${pathSql}`;
 	const textValue = sql`${column} #>> ${pathSql}`;
 	const jsonType = sql`jsonb_typeof(${jsonValue})`;
+	const insensitive = isPlainObject(value) && value.mode === 'insensitive';
 	const compare = (entry: unknown): SQL | undefined => {
 		if (entry instanceof Placeholder)
-			return sql`${jsonValue} = ${sql.param(entry, JSON_PARAM)}::jsonb`;
+			return insensitive
+				? and(eq(jsonType, 'string'), lowerEq(textValue, entry))
+				: sql`${jsonValue} = ${sql.param(entry, JSON_PARAM)}::jsonb`;
 		if (entry === null) return eq(jsonType, 'null');
 		if (typeof entry === 'string')
-			return and(eq(jsonType, 'string'), eq(textValue, entry));
+			return and(
+				eq(jsonType, 'string'),
+				insensitive ? lowerEq(textValue, entry) : eq(textValue, entry),
+			);
 		if (typeof entry === 'boolean')
 			return and(
 				eq(jsonType, 'boolean'),
@@ -703,7 +774,12 @@ const compileJsonPathFilter = (
 		}
 		if (strings.length)
 			branches.push(
-				and(eq(jsonType, 'string'), inArray(textValue, strings)) as SQL,
+				and(
+					eq(jsonType, 'string'),
+					insensitive
+						? lowerIn(textValue as unknown as AnyColumn, strings)
+						: inArray(textValue, strings),
+				) as SQL,
 			);
 		if (numbers.length)
 			branches.push(
@@ -719,7 +795,9 @@ const compileJsonPathFilter = (
 		return branches.length ? (or(...branches) as SQL) : sql`false`;
 	};
 	const anyParam = (entry: Placeholder) =>
-		sql`${jsonValue} = any(${sql.param(entry, JSON_LIST_PARAM)}::jsonb[])`;
+		insensitive
+			? (and(eq(jsonType, 'string'), lowerAny(textValue, entry)) as SQL)
+			: sql`${jsonValue} = any(${sql.param(entry, JSON_LIST_PARAM)}::jsonb[])`;
 	const isNumber = (entry: unknown) =>
 		typeof entry === 'number' || entry instanceof Placeholder;
 	if (!isScalarFilter(value)) return compare(value);
@@ -769,7 +847,10 @@ const compileJsonPathFilter = (
 		);
 	}
 	if ('not' in value) {
-		const nested = compileJsonPathFilter(column, path, value.not);
+		const nested =
+			insensitive && isPatternValue(value.not)
+				? compare(value.not)
+				: compileJsonPathFilter(column, path, value.not);
 		if (nested) conditions.push(not(nested));
 	}
 	return conditions.length ? and(...conditions) : undefined;

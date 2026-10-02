@@ -71,7 +71,7 @@ await db
 | `in` / `notIn`            | value is (not) in a list                        |
 | `contains`                | substring match                                 |
 | `startsWith` / `endsWith` | prefix / suffix match                           |
-| `mode`                    | `'insensitive'` makes `contains` / `startsWith` / `endsWith` ignore case (not `equals` / `in`; a nested `not` filter takes its own `mode`): `ILIKE` on PostgreSQL, `lower(column) LIKE lower(pattern)` on SQLite and MySQL; `'default'` compiles to `LIKE`, whose case sensitivity follows the dialect and collation |
+| `mode`                    | `'insensitive'` makes every string operator ignore case: `contains` / `startsWith` / `endsWith` use `ILIKE` on PostgreSQL and `lower(column) LIKE lower(pattern)` on SQLite and MySQL; `equals`, `in`, `notIn`, and a scalar `not` compare `lower(column)` with `lower(value)` on every dialect. A nested `not` filter takes its own `mode`. `'default'` compiles to `LIKE` / `=`, whose case sensitivity follows the dialect and collation |
 | `not`                     | negate a value or a nested filter               |
 
 ## Numeric and date filters

@@ -131,6 +131,29 @@ describe('prepared statements', () => {
 		).toEqual([]);
 	});
 
+	test('case-insensitive equality params', async () => {
+		const byName = ctx.better.users
+			.findMany({
+				where: {
+					name: {
+						equals: param('name'),
+						mode: 'insensitive',
+						not: param('excluded'),
+					},
+				},
+			})
+			.prepare();
+
+		expect(
+			(await byName.execute({ excluded: 'eve', name: 'ALICE' })).map(
+				(user) => user.name,
+			),
+		).toEqual(['Alice']);
+		expect(
+			await byName.execute({ excluded: 'alice', name: 'ALICE' }),
+		).toEqual([]);
+	});
+
 	test('execute().throw() rejects when no row matches', async () => {
 		const byId = ctx.better.users
 			.findFirst({ where: { id: param('id') } })

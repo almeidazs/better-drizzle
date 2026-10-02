@@ -268,6 +268,11 @@ observes at runtime:
   handling. There is no `ROLLBACK` on SQLite and no `afterRollback` or
   `onTransactionError` hook. The original error is rethrown as-is, and the
   data stays committed.
+- **`mode: 'insensitive'` on equality.** `equals`, `in`, `notIn`, and a
+  scalar `not` used to ignore `mode` and stayed case-sensitive. They now
+  compare `lower(column)` with `lower(value)` on every dialect, including
+  JSONB paths and array element predicates. A `param()` list in `in` /
+  `notIn` stays PostgreSQL-only.
 - **MySQL `upsert`.** The native `ON DUPLICATE KEY UPDATE` path is used only
   when the table declares no unique key besides the primary key. MySQL fires
   that clause on any unique key, so other tables use a read-then-write path
