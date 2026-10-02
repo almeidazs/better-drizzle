@@ -270,8 +270,11 @@ definePlugin({
 | `next()` | run the next intercept, or the operation for the innermost one |
 | `annotate(key, value)` | record a value that client and plugin after hooks receive in `annotations` |
 | `skipAfterHooks()` | skip client and plugin after hooks for this call |
+| `params` | the values of a [prepared statement](/docs/querying/prepared-statements) execution; `undefined` for regular calls |
 
 Intercepts run in plugin order, so the first plugin is the outermost. When a before hook returned an override, `next()` resolves to it without SQL. `.explain()` never runs intercepts. An intercept's return value becomes the result, so a skipped call must return the same shape the operation would.
+
+Before hooks and transforms run once when a read is prepared, while intercepts run on every `execute()`. During a prepared execution, `ctx.args` holds `param()` markers (Drizzle `Placeholder` instances) and is the same object on every execution, and `ctx.params` holds the values. An intercept that derives anything from the args, such as a cache key, must also account for `ctx.params`.
 
 ### Hook context
 

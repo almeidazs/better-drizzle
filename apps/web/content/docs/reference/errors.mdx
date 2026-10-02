@@ -212,6 +212,9 @@ try {
 | Database | `ARRAY_MUTATION_UNSUPPORTED` | 400 | A native array mutation (`append`, `prepend`, `remove`, `replace`, `addUnique`) was used on a dialect other than PostgreSQL. |
 | Operations | `OPERATION_ERROR` | 500 | An operation received invalid input or failed, for example an invalid `batchSize` or a bad cursor. |
 | Operations | `UNKNOWN` | 500 | An uncategorized error. |
+| Prepared statements | `PREPARED_PARAM_MISSING` | 400 | `execute()` received no value for a `param()`. |
+| Prepared statements | `PREPARED_PARAM_UNKNOWN` | 400 | `execute()` received a value for a name the statement does not use. |
+| Prepared statements | `PREPARED_UNSUPPORTED` | 400 | The read cannot be prepared: a list param outside PostgreSQL, or a param inside a relation's `include` / `select` args. |
 | Hooks | `HOOK_ERROR` | 500 | A lifecycle hook threw. |
 | Plugins | `PLUGIN_DIALECT_UNSUPPORTED` | 500 | A plugin does not support the current dialect. |
 | Plugins | `PLUGIN_DUPLICATE_ID` | 500 | Two plugins share the same `id`. |

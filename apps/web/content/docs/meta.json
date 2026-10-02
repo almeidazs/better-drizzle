@@ -26,6 +26,7 @@
 		"querying/jsonb",
 		"querying/arrays",
 		"querying/explain",
+		"querying/prepared-statements",
 		"advanced/raw-sql",
 		"---Customize---",
 		"advanced/hooks",

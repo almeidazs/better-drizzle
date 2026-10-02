@@ -1,0 +1,340 @@
+---
+title: Prepared Statements
+description: Compile a read once with param() and .prepare(), then execute it with new values.
+icon: Zap
+seoTitle: 'Prepared Statements for Drizzle ORM'
+seoDescription: 'Prepare Drizzle ORM reads once with param() and .prepare(), then execute them with new values while keeping typed params, results, hooks, and plugins.'
+---
+
+A prepared statement fixes the shape of a read once and runs it many times
+with new values. Mark each value with `param(name)`, call `.prepare()` on the
+read, and pass the values to `execute()`:
+
+```ts tab="better-drizzle" tab-group="orm"
+import { param, type PreparedParams, type PreparedResult } from 'better-drizzle';
+
+const findUserByEmail = client.users
+	.findUnique({ where: { email: param('email') } })
+	.prepare('users.by-email');
+
+const user = await findUserByEmail.execute({ email: 'user@example.com' });
+
+type Params = PreparedParams<typeof findUserByEmail>; // { email: string }
+type Result = PreparedResult<typeof findUserByEmail>; // User | null
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { eq, sql } from 'drizzle-orm';
+
+const findUserByEmail = db
+	.select()
+	.from(users)
+	.where(eq(users.email, sql.placeholder('email')))
+	.limit(1)
+	.prepare('users.by-email');
+
+const [user = null] = await findUserByEmail.execute({
+	email: 'user@example.com',
+});
+```
+
+At runtime `param()` is Drizzle's `sql.placeholder()`, so either works. Use
+`param()` to get typed values: `sql.placeholder()` types its value as `any`.
+`.prepare()` builds the SQL, runs the plugin pipeline and the client
+`beforeQuery` hook once, and creates the Drizzle prepared statement.
+`execute()` runs that statement and shapes the result exactly like the regular
+read. Each param's type comes from the position it is used in: a param
+compared with a `text` column is a `string`, a param in `take` is a
+`number`, and a wrong or missing value is a type error.
+
+## Which reads can be prepared
+
+Every read returns a result with `.prepare(name?)`:
+
+| Read | `execute()` resolves to |
+| --- | --- |
+| `findUnique`, `findFirst`, `findOne` | the row or `null`; chain `.throw()` to reject when nothing matches |
+| `findMany` | the rows |
+| `count` | a number |
+| `exists` | a boolean |
+| `paginate` | `{ data, pagination }` with offset metadata |
+| `cursor` | `{ data, pagination }` with cursor metadata |
+
+Writes cannot be prepared.
+
+```ts
+const findPost = client.posts
+	.findFirst({ where: { id: param('id') } })
+	.prepare();
+
+const post = await findPost.execute({ id: 42 }).throw();
+```
+
+A statement without params executes without values:
+
+```ts
+const listAdmins = client.users
+	.findMany({ where: { role: 'admin' } })
+	.prepare();
+
+const admins = await listAdmins.execute();
+```
+
+## Where params can go
+
+`param()` takes the place of a value, never of a key or an operator:
+
+| Position | Example | Dialects |
+| --- | --- | --- |
+| Direct equality | `{ email: param('email') }` | all |
+| Scalar operators | `{ age: { gte: param('min'), lt: param('max') } }` | all |
+| `not` | `{ role: { not: param('role') } }` | all |
+| Pattern operators | `{ name: { startsWith: param('prefix') } }` | all |
+| `in` / `notIn` | `{ id: { in: param('ids') } }`, value `number[]` | PostgreSQL |
+| Combinators | `{ OR: [{ name: param('name') }, { email: param('email') }] }` | all |
+| Relation filters | `{ posts: { some: { score: { gte: param('score') } } } }` | all |
+| `include._count` filters | `{ _count: { select: { posts: { where: { published: param('p') } } } } }` | all |
+| Array filters | `{ tags: { has: param('tag') } }`, `hasSome`, `some`, ... | PostgreSQL |
+| JSONB paths | `{ profile: { 'address.city': param('city') } }` | PostgreSQL |
+| `take` / `skip` | `{ take: param('take'), skip: param('skip') }` | all |
+| `page` / `perPage` / `limit` | `paginate({ page: param('page'), perPage: 20 })` | all |
+| Cursors | `cursor({ after: param('after') })`, `findMany({ cursor: param('cursor') })` | all |
+
+Pattern params take the bare search text: `{ contains: param('q') }` binds
+`%value%`, built when the statement executes, so the database compares against
+a ready pattern. As in regular reads, `%` and `_` inside the value are not
+escaped. `in` / `notIn` params bind one array (`column = any($1)`); the other
+dialects cannot bind an array, so `.prepare()` fails with
+`PREPARED_UNSUPPORTED` there.
+
+Keep a `take` / `skip` param at zero or above. It is not validated: a regular
+read reverses the order for a negative `take`, but a prepared statement fixes
+its order when it is prepared. SQLite treats a negative `LIMIT` as no limit,
+and PostgreSQL rejects it.
+
+## Pagination
+
+`paginate()` accepts params for `page`, `perPage` (or `limit` / `take`), and
+`skip`. `execute()` validates `page` and computes the offset, then runs the
+page and the total as two prepared statements:
+
+```ts tab="better-drizzle" tab-group="orm"
+const listPosts = client.posts
+	.paginate({
+		orderBy: { createdAt: 'desc' },
+		page: param('page'),
+		perPage: 20,
+		where: { published: true },
+	})
+	.prepare();
+
+const {
+	data,
+	pagination: { total, hasNext },
+} = await listPosts.execute({ page: 3 });
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { count, desc, eq, sql } from 'drizzle-orm';
+
+const pageOfPosts = db
+	.select()
+	.from(posts)
+	.where(eq(posts.published, true))
+	.orderBy(desc(posts.createdAt))
+	.limit(20)
+	.offset(sql.placeholder('offset'))
+	.prepare('posts.page');
+const countPosts = db
+	.select({ total: count() })
+	.from(posts)
+	.where(eq(posts.published, true))
+	.prepare('posts.page:count');
+
+const page = 3;
+const [data, [{ total }]] = await Promise.all([
+	pageOfPosts.execute({ offset: (page - 1) * 20 }),
+	countPosts.execute(),
+]);
+const hasNext = (page - 1) * 20 + data.length < total;
+```
+
+`cursor()` accepts a param for `after` or `before` and for `limit`. The param
+takes the whole cursor object, such as a previous `nextCursor`:
+
+```ts
+const firstPage = client.posts
+	.cursor({ limit: 20, orderBy: { id: 'asc' } })
+	.prepare();
+
+const nextPage = client.posts
+	.cursor({ after: param('after'), limit: 20, orderBy: { id: 'asc' } })
+	.prepare();
+
+const {
+	pagination: { nextCursor },
+} = await firstPage.execute();
+
+if (nextCursor) await nextPage.execute({ after: nextCursor });
+```
+
+A statement either has a cursor or does not, so the first page and the
+following pages are two statements. A prepared cursor needs a non-null value
+for every `orderBy` field, so page over nullable keys with the regular
+`cursor()`. When the cursor is a param and there is no `orderBy`, the
+statement orders by the primary key. The probes that resolve `hasPrevious` /
+`hasNext` are prepared too.
+
+## Relations
+
+`include` and relation `select` work in prepared reads. The root query is
+prepared, and each relation level still loads with its own query on every
+execution, because those queries depend on the root rows. Params therefore
+cannot appear inside a relation's `include` / `select` args, and `.prepare()`
+fails with `PREPARED_UNSUPPORTED` when they do. Relation filters in `where`
+and `include._count` filters compile into the root query, so they accept
+params.
+
+```ts
+const findAuthor = client.users
+	.findUnique({
+		include: { posts: { orderBy: { createdAt: 'desc' }, take: 5 } },
+		where: { id: param('id') },
+	})
+	.prepare();
+```
+
+## Hooks, plugins, and metadata
+
+`.prepare()` runs everything that shapes the query, once. `execute()` runs
+everything that observes or serves a result, every time:
+
+| Runs once, in `.prepare()` | Runs on every `execute()` |
+| --- | --- |
+| plugin `transform`s and plugin before hooks | plugin `intercept`s (they receive the values in `ctx.params`) |
+| the client `beforeQuery` hook | the client `afterQuery` hook |
+| SQL compilation and the Drizzle `prepare()` | plugin after hooks and `onError` |
+
+Plugins that rewrite a read, such as [`softDelete()`](/docs/plugins/soft-delete)
+filters and tenant filters from transforms, apply when the statement is
+prepared. A statement keeps the shape it was prepared with, so prepare a
+separate statement per plugin state (`$withState(...)`, `$withoutPlugins()`)
+or per tenant when a transform depends on request data.
+[Rules](/docs/plugins/rules) and query validation (`better-drizzle/zod`,
+`better-drizzle/ata`) also run at prepare time and see `param()` markers
+instead of values:
+
+- Rules that check values cannot see a param. `maxLimit` does not limit a
+  `take: param('take')`, and `requireExplicitLimit` / `noUnboundedFindMany`
+  treat it as unbounded. Bound such values yourself before `execute()`.
+- Query-args validation rejects the markers. Pass `validate: false` to a
+  prepared read when the Zod or ATA plugin validates reads.
+
+If a plugin before hook returns a result instead of letting the read run, that
+result is captured at prepare time, and every `execute()` returns it.
+
+Without a `beforeQuery` hook or plugin work for the read, `.prepare()` builds
+the statement synchronously and throws setup errors such as
+`PREPARED_UNSUPPORTED` right away. Otherwise `.prepare()` defers those steps
+to the first `execute()`, even when they are synchronous, and a setup error
+rejects every `execute()` call.
+
+`meta` given to the read is captured at prepare time. Pass per-execution
+metadata as the second argument; it is merged over the captured `meta` and
+reaches `afterQuery`, intercepts, and plugin after hooks:
+
+```ts
+await findUserByEmail.execute(
+	{ email: 'user@example.com' },
+	{ meta: { requestId } },
+);
+```
+
+The [cache plugin](/docs/plugins/cache) keys prepared reads by the statement
+plus its values. A param in a primary-key `where` still produces an entity
+dependency, so an update to one row does not invalidate the cached results of
+other ids.
+
+## Transactions
+
+A statement belongs to the client it was prepared on, like a Drizzle prepared
+statement. One prepared on the root client runs outside any transaction; to
+run inside `transaction()`, prepare it on `tx`:
+
+```ts
+await client.transaction(async (tx) => {
+	const findBalance = tx.accounts
+		.findUnique({ lock: 'update', where: { id: param('id') } })
+		.prepare();
+
+	const from = await findBalance.execute({ id: fromId }).throw();
+	const to = await findBalance.execute({ id: toId }).throw();
+	// ...
+});
+```
+
+Do not keep a statement prepared on `tx` after the callback returns: it is
+bound to the finished transaction's session.
+
+## Statement names
+
+With node-postgres the name becomes the server-side prepared statement name,
+and without one Drizzle derives a name from the SQL. postgres-js manages its
+own statement names. Reads that run more than one
+statement name the others after it: `paginate` adds `name:count`, and `cursor`
+adds `name:probe` and `name:probe-all`. A name must identify one SQL text, so
+do not reuse a name for a different query. MySQL and SQLite ignore the name.
+
+Prepare statements once, for example at module scope or when a service is
+created, and reuse them. Preparing inside a request handler repeats the work
+the statement is meant to save.
+
+## Explain
+
+`explain(values, options?)` checks `values` like `execute()`, compiles the read
+with the values inlined, and returns its [query plan](/docs/querying/explain).
+The plan can differ from the prepared statement's generic plan: an `in` param
+becomes an `IN (...)` list, for example.
+
+```ts
+const { statements } = await findUserByEmail.explain({
+	email: 'user@example.com',
+});
+```
+
+## Errors
+
+| Code | When |
+| --- | --- |
+| `PREPARED_PARAM_MISSING` | `execute()` received no value (or `undefined`) for a param. |
+| `PREPARED_PARAM_UNKNOWN` | `execute()` received a value for a name the statement does not use. |
+| `PREPARED_UNSUPPORTED` | `.prepare()` met a shape that cannot be prepared: a list param outside PostgreSQL, or a param inside a relation's `include` / `select` args. |
+
+Invalid pagination values reject with `OPERATION_ERROR`, as in the regular
+read. A `null` value binds SQL `NULL`, which never equals anything; filter on
+`null` with a literal (`{ deletedAt: null }`) instead.
+
+## Performance
+
+A prepared read skips argument compilation, plugin transforms, and SQL
+generation on every call. On PostgreSQL with node-postgres it also reuses the
+server-side plan. `execute()` checks the values against the param names, runs
+the Drizzle statement, and shapes the result.
+
+From one `bun run bench:report` run on SQLite in-memory (absolute timings
+depend on the machine; compare the ratios):
+
+| Read | Regular read | Prepared | Drizzle prepared |
+| --- | --- | --- | --- |
+| Point lookup | 48.45 µs | 15.57 µs | 15.04 µs |
+| Filtered list | 172.43 µs | 118.17 µs | 115.41 µs |
+| Active count | 51.71 µs | 29.12 µs | 28.54 µs |
+| Offset pagination | 82.75 µs | 46.37 µs | 46.00 µs |
+| Cursor pagination | 88.39 µs | 49.44 µs | 48.81 µs |
+
+Prepared reads stay within ~4% of the equivalent Drizzle prepared statement.
+The gain over a regular read is largest when compilation dominates, as in
+short point lookups, and smallest when the database does most of the work.
+Reproduce with `bun run bench:report`; `bun run bench:verify` checks that
+both sides return the same result first. See
+[benchmarks](/docs/performance/benchmarks).

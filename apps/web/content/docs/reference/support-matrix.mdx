@@ -90,6 +90,17 @@ SQLite uses `EXPLAIN QUERY PLAN`; MySQL uses the best available `EXPLAIN`
 form. Unsupported flags are reported back under `ignoredOptions` rather than
 silently dropped.
 
+## Prepared statements
+
+| Capability | PostgreSQL | SQLite | MySQL |
+| --- | --- | --- | --- |
+| `param()` + `.prepare()` on every read helper | Yes | Yes | Yes |
+| named server-side statements (`.prepare(name)`) | Yes | name ignored | name ignored |
+| `in` / `notIn` params | Yes | `PREPARED_UNSUPPORTED` | `PREPARED_UNSUPPORTED` |
+| params in array filters and JSONB paths | Yes | N/A | N/A |
+
+See [prepared statements](/docs/querying/prepared-statements).
+
 ## JSONB filters and mutations
 
 | Capability | PostgreSQL | SQLite | MySQL |
