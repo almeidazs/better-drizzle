@@ -10,8 +10,13 @@ permissions:
     id-token: write
 
 jobs:
+    ci:
+        name: CI
+        uses: ./.github/workflows/ci.yml
+
     publish:
         name: Publish package to npm
+        needs: ci
         runs-on: ubuntu-latest
         env:
             NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -84,7 +89,7 @@ jobs:
               id: published
               shell: bash
               run: |
-                  package_name="${{ steps.release.outputs.package_name }}"
+                  package_name="$(node -p "require('./package.json').name")"
                   version="${{ steps.release.outputs.version }}"
 
                   if npm view "${package_name}@${version}" version >/dev/null 2>&1; then
