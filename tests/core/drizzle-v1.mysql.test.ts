@@ -246,7 +246,9 @@ describe.skipIf(!MYSQL_URL)('Drizzle 1.x migration (MySQL)', () => {
 		});
 		expect(updated).toMatchObject({ id: 3, name: 'Moved' });
 		expect(await client.members.count({ where: { name: 'Same' } })).toBe(1);
-		expect(queries.some((query) => / for update$/.test(query))).toBe(true);
+		expect(queries.some((query) => query.endsWith(' for update'))).toBe(
+			true,
+		);
 		expect(
 			queries.some((query) =>
 				/^update .* where .*`id` = \?$/.test(query),
@@ -266,7 +268,9 @@ describe.skipIf(!MYSQL_URL)('Drizzle 1.x migration (MySQL)', () => {
 			where: { id: { in: [3, 4] } },
 		});
 		expect(deleted).toEqual({ email: 'same1@example.com', id: 3 });
-		expect(queries.some((query) => / for update$/.test(query))).toBe(true);
+		expect(queries.some((query) => query.endsWith(' for update'))).toBe(
+			true,
+		);
 		expect(
 			queries.some((query) =>
 				/^delete from .* where .*`id` = \?$/.test(query),
@@ -331,7 +335,9 @@ describe.skipIf(!MYSQL_URL)('Drizzle 1.x migration (MySQL)', () => {
 				where: { email: 'bob@example.com' },
 			}),
 		).toMatchObject({ id: 2 });
-		expect(queries.some((query) => / for update$/.test(query))).toBe(false);
+		expect(queries.some((query) => query.endsWith(' for update'))).toBe(
+			false,
+		);
 		expect(calls).toContain('client:afterUpdate:false');
 		expect(calls).toContain('client:afterDelete:false');
 	});

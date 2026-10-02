@@ -299,28 +299,6 @@ export const createModelDelegate = <
 	let deleteSpec:
 		| Spec<DeleteOperationArgs, Record<string, unknown> | null>
 		| undefined;
-	// Built once per delegate on first use; transactions create delegates eagerly.
-	const getDeleteSpec = () =>
-		(deleteSpec ??= {
-			action: 'delete',
-			afterHookName: 'afterDelete',
-			afterPayload: (result, resolvedArgs) =>
-				({
-					...hookContext('delete', resolvedArgs),
-					result,
-					row: result,
-				}) as AfterDeleteHookContext<Schema, Meta, Plugins>,
-			beforeHookName: 'beforeDelete',
-			beforePayload: (resolvedArgs) =>
-				hookContext('delete', resolvedArgs) as BeforeDeleteHookContext<
-					Schema,
-					Meta,
-					Plugins
-				>,
-			kind: 'delete',
-			operation: (resolvedArgs) =>
-				deleteRecord(context, tableName, resolvedArgs),
-		});
 	const runOperation = <Args, Result>(
 		spec: Spec<Args, Result>,
 		args: Args,
@@ -1011,25 +989,46 @@ export const createModelDelegate = <
 				Plugins,
 				'delete'
 			>,
-		) =>
-			attachThrow(
+		) => {
+			// Built on first use; transactions create delegates eagerly.
+			const spec = (deleteSpec ??= {
+				action: 'delete',
+				afterHookName: 'afterDelete',
+				afterPayload: (result, resolvedArgs) =>
+					({
+						...hookContext('delete', resolvedArgs),
+						result,
+						row: result,
+					}) as AfterDeleteHookContext<Schema, Meta, Plugins>,
+				beforeHookName: 'beforeDelete',
+				beforePayload: (resolvedArgs) =>
+					hookContext(
+						'delete',
+						resolvedArgs,
+					) as BeforeDeleteHookContext<Schema, Meta, Plugins>,
+				kind: 'delete',
+				operation: (resolvedArgs) =>
+					deleteRecord(context, tableName, resolvedArgs),
+			});
+			return attachThrow(
 				!context.transaction &&
 					needsLockedSingleRowWrite(context, runtime, args.where)
 					? relationalWrite(
 							'delete',
 							args,
 							[],
-							() => runOperation(getDeleteSpec(), args),
+							() => runOperation(spec, args),
 							args.where,
 						)
-					: runOperation(getDeleteSpec(), args),
+					: runOperation(spec, args),
 				context,
 				runtime,
 				'delete',
 				args,
 				'delete',
 				name,
-			),
+			);
+		},
 		deleteMany: (
 			args: OperationArgsWithPlugins<
 				DeleteManyArgs<Schema, BetterTableKey<Schema>, Meta>,
