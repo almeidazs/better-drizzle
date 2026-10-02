@@ -32,7 +32,7 @@ logs, but the value is always the package version.
 
 ## What is considered stable in `0.3.x`
 
-- the package entrypoints listed in `exports` (`.`, `/ata`, `/plugins`, `/eslint`, `/rules`, `/soft-delete`, `/timestamps`, `/zod`)
+- the package entrypoints listed in `exports` (`.`, `/plugins`, `/eslint`, `/rules`, `/soft-delete`, `/timestamps`, `/zod`); `/ata` and `/cache` are experimental (below)
 - documented delegate methods and their result shapes
 - documented client methods
 - documented option names on `better()`, on each operation, and on official plugins
@@ -49,6 +49,11 @@ logs, but the value is always the package version.
   entries to be discarded after an upgrade. The plugin is built on
   `intercept`, which is part of the stable plugin API above; only the cache
   plugin itself is experimental.
+- `better-drizzle/ata`: JSON Schema validation built on
+  [ata-validator](https://ata-validator.com), intended as a faster alternative
+  to `better-drizzle/zod`. Option names, the `$ata` API, and the generated
+  schemas can change in a **patch** release. Pin an exact version if you
+  depend on it.
 
 Experimental entrypoints are not covered by the semver policy below until
 they move to the stable list.

@@ -273,6 +273,8 @@ That gets you runtime guardrails, automatic timestamps, soft deletes with `resto
 
 Pair `better-drizzle/eslint` with the runtime rules to catch the statically-checkable subset in your editor.
 
+`better-drizzle/ata` (experimental) validates the same operations against compiled JSON Schema, as a faster alternative to the Zod plugin. See [ata](https://better-drizzle.com/docs/plugins/ata).
+
 > [!WARNING]
 > `better-drizzle/cache` is experimental in `0.3.x`: its options, `$cache` API, store interface, and entry format can change in a patch release.
 
@@ -305,6 +307,8 @@ Full tables, methodology, and the cases where the wrapper costs you: [benchmarks
 ## There is more
 
 [`.explain()`](https://better-drizzle.com/docs/querying/explain) on any read without running it · [`updateEach`](https://better-drizzle.com/docs/writing/crud) for per-row batch updates in one statement · [`upsertMany`](https://better-drizzle.com/docs/writing/crud) · [`$withContext`](https://better-drizzle.com/docs/guides/multi-tenancy) for request-scoped metadata · [`extends()`](https://better-drizzle.com/docs/guides/client-extensions) for your own helpers · [raw SQL](https://better-drizzle.com/docs/advanced/raw-sql) with its own hooks · [lifecycle hooks](https://better-drizzle.com/docs/advanced/hooks) for auditing and tracing.
+
+[Atomic updates](https://better-drizzle.com/docs/writing/atomic-updates) (`increment`, `decrement`, `multiply`, `divide`, `toggle`) · typed [PostgreSQL array](https://better-drizzle.com/docs/querying/arrays) filters and mutations.
 
 ## AI agents
 

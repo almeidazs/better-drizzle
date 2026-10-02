@@ -31,6 +31,21 @@ await client.posts.findMany({
 
 `contains` and `startsWith` escape `%`, `_`, and the SQL escape character as literal text, including insensitive/negated filters, JSONB paths, array elements, and prepared params. Use raw SQL for wildcard patterns.
 
+### Reusing a filter in raw Drizzle: `$where()`
+
+`client.<table>.$where(where)` compiles the same typed `where` as `findMany` (logical operators and relation filters included) into a Drizzle `SQL` condition, for raw `db.select()` queries, joins, and subqueries. It runs nothing.
+
+```ts
+const rows = await db
+	.select()
+	.from(posts)
+	.innerJoin(users, eq(posts.userId, users.id))
+	.where(and(client.users.$where({ active: true }), client.posts.$where({ score: { gt: 10 } })));
+```
+
+- An empty `where` returns `undefined` (Drizzle treats it as no filter).
+- It is pure compilation: plugin filters (soft-delete visibility, tenant scopes) are **not** applied; add them yourself.
+
 ## Projections and relations
 
 ```ts

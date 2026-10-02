@@ -338,8 +338,9 @@ observes at runtime:
 - **[`better-drizzle/cache`](/docs/plugins/cache)** (experimental): versioned
   read caching with automatic invalidation and a Redis store at
   `better-drizzle/cache/redis`.
-- **[`better-drizzle/ata`](/docs/plugins/ata)**: JSON Schema validation of
-  operation inputs and results. The entrypoint exports `ata` (default and
+- **[`better-drizzle/ata`](/docs/plugins/ata)** (experimental): JSON Schema
+  validation of operation inputs and results, built on ata-validator and
+  intended as a faster alternative to `better-drizzle/zod`. The entrypoint exports `ata` (default and
   named), its types, and `version`; the registry, column, row, `where`, and
   query-schema builders it uses internally are not exported.
 - **[`$where()`](/docs/querying/filters#reusing-a-filter-in-raw-drizzle)**:

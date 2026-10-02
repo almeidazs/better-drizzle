@@ -8,7 +8,14 @@ seoDescription: 'Generate JSON Schema from your Drizzle ORM schema for create, u
 
 `better-drizzle/ata` describes each table as [JSON Schema](https://json-schema.org/) and compiles those schemas with [ata](https://ata-validator.com) to validate payloads, query args, and results through plugin hooks.
 
-It sits alongside `better-drizzle/zod` rather than replacing it. Pick this one when you want the description of a table to be data you can move around: the same object that validates a payload can be served to an HTTP layer, written to a file, or used to generate types, because a JSON Schema is a plain object and not a validator's internal representation.
+It is intended as a faster alternative to `better-drizzle/zod`: each table's JSON Schema is compiled once into a validator. Pick it when validation cost matters, or when you want the description of a table to be data you can move around: the same object that validates a payload can be served to an HTTP layer, written to a file, or used to generate types, because a JSON Schema is a plain object and not a validator's internal representation.
+
+<Callout type="warn" title="Experimental">
+	The ata plugin is experimental in `0.3.x`. Its options, `$ata` API, and
+	generated schemas can change in a patch release. Pin an exact version if
+	you depend on it. See
+	[stability](/docs/reference/stability#experimental-in-03x).
+</Callout>
 
 ## Install
 

@@ -49,6 +49,8 @@ export const client = better(db); // or better(db, { plugins, hooks, raw, locks,
 | `updateEach` | `by` (column), `data[]`, `update: { col: (row) => value }` | `{ count, data? }`, one `UPDATE ... CASE` |
 | `upsert` | `where`, `create`, `update` | `Row` |
 | `upsertMany` | `data[]`, `target`, `update` (`'all'`, column list, object, or `(ctx) => ...`), `batchSize` | `{ count, data? }` |
+| `$where` | a typed `where` | Drizzle `SQL \| undefined` for raw `db.select()`/joins; no plugin filters |
+| read`.prepare(name?)` | values marked with `param(name)` from `better-drizzle` | prepared statement; `.execute(values)` (reads only) |
 
 Every call accepts `meta`. Client: `transaction`, `$withContext(meta)`, `$raw`, `$executeRaw`, `$rawUnsafe`, `repository(name)`, `extends(...)`. Delegates: `$withoutPlugins()`, `$withState(state)`.
 
