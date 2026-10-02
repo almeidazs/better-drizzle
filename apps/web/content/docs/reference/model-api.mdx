@@ -15,7 +15,7 @@ A model delegate is what you get from `client.users`, `client.posts`, or `client
 | `findMany` | `(args?: QueryArgs)` | `Row[]` |
 | `findFirst` | `(args?: QueryArgs)` | `ThrowingResult<Row>` |
 | `findOne` | `(args?: QueryArgs)` | `ThrowingResult<Row>` (alias of `findFirst`) |
-| `findUnique` | `(args: QueryArgs)` | `ThrowingResult<Row>` |
+| `findUnique` | `(args: QueryArgs)`, `where` must pin one row by a primary or unique key | `ThrowingResult<Row>` |
 | `count` | `(args?: CountArgs)` | `number` |
 | `exists` | `(args?: ExistsArgs)` | `boolean` |
 | `paginate` | `(args: PaginationArgs)` | `OffsetPaginationResult<Row>` |

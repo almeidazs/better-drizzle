@@ -76,11 +76,14 @@ const userId: number | undefined = session.userId; // undefined here
 await client.users.findMany({ where: { id: userId } });
 // every user
 
-await client.users.findUnique({ where: { id: userId } });
+await client.users.findFirst({ where: { id: userId } });
 // some row of the table, not null
+
+await client.users.findUnique({ where: { id: userId } });
+// throws UNIQUE_WHERE_REQUIRED: the where no longer pins one row
 ```
 
-`findUnique`, `findFirst`, and `findOne` all return the first matching row, and with no condition any row matches. Check identifiers before you query:
+`findFirst` and `findOne` return the first matching row, and with no condition any row matches. `findUnique` refuses a `where` that does not pin one row by a primary or unique key, so a missing identifier throws instead. Check identifiers before you query:
 
 ```ts
 if (userId === undefined) throw new Error('Not signed in');

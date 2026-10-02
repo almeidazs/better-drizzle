@@ -49,6 +49,25 @@ describe('prepared statements', () => {
 		).toBeNull();
 	});
 
+	test('findUnique by a primary key param; unpinned where fails at prepare', async () => {
+		const byId = ctx.better.users
+			.findUnique({ where: { id: param('id') } })
+			.prepare();
+
+		expect((await byId.execute({ id: 2 }))?.name).toBe('Bob');
+		expect(await byId.execute({ id: 99 })).toBeNull();
+		try {
+			ctx.better.users
+				.findUnique({ where: { name: param('name') } })
+				.prepare();
+			throw new Error('Expected prepare() to throw.');
+		} catch (error) {
+			expect((error as BetterDrizzleError).code).toBe(
+				BetterDrizzleErrorCode.UniqueWhereRequired,
+			);
+		}
+	});
+
 	test('case-insensitive LIKE params', async () => {
 		ctx.sqlite.exec('PRAGMA case_sensitive_like = ON');
 		const search = ctx.better.users

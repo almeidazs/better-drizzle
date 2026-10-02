@@ -57,7 +57,7 @@ For example, `orderBy: { lastSeenAt: { direction: 'desc', nulls: 'last' } }` put
 
 `count` and `exists` accept only `where`, `cursor`, and `meta`.
 
-`findUnique` is the strictest of the read helpers semantically, but it still accepts the same query-argument shape as the other reads. The main difference is intent: use it when the `where` clause targets a unique lookup.
+`findUnique` accepts the same query-argument shape as the other reads, but its `where` must pin one row: an equality on every primary key column, on a unique column, or on every column of a composite unique key. Otherwise it throws `UNIQUE_WHERE_REQUIRED` before any SQL runs. See [reads](/docs/querying/reads#findunique).
 
 ## Row locks
 

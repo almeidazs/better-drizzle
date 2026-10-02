@@ -442,6 +442,9 @@ export const createModelDelegate = <
 		if (kind === 'paginate')
 			return (resolvedArgs) =>
 				paginateRecords(context, tableName, resolvedArgs as never);
+		if (kind === 'findUnique')
+			return (resolvedArgs) =>
+				findFirstRecord(context, tableName, resolvedArgs, kind);
 		return (resolvedArgs) =>
 			findFirstRecord(context, tableName, resolvedArgs);
 	};

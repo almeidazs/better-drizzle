@@ -86,7 +86,7 @@ const [user = null] = await db
 
 ## `findUnique`
 
-Reads best when the lookup is driven by a unique field such as `email` or a slug.
+Looks up one row by a key. `where` must pin a single row with an equality on every primary key column, on a column declared `.unique()`, or on every column of a composite `unique()` / `uniqueIndex()`. Other filters may sit next to the key, and a key inside `AND` counts.
 
 ```ts tab="better-drizzle" tab-group="orm"
 const user = await client.users.findUnique({
@@ -103,6 +103,8 @@ const [user = null] = await db
 	.where(eq(users.email, 'alice@example.com'))
 	.limit(1);
 ```
+
+Any other `where` throws `UNIQUE_WHERE_REQUIRED` before any SQL runs, including from `.explain()` and `.prepare()`. An `undefined` value does not pin, so `findUnique({ where: { id: undefined } })` throws instead of returning an arbitrary row. A `param()` counts as a value in prepared statements. Use `findFirst` for lookups by non-unique columns.
 
 ## `count` and `exists`
 

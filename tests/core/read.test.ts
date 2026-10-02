@@ -1,8 +1,28 @@
+import { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
-import { sql } from 'drizzle-orm';
+import { defineRelations, sql } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import {
+	integer,
+	sqliteTable,
+	text,
+	unique,
+	uniqueIndex,
+} from 'drizzle-orm/sqlite-core';
 
+import { BetterDrizzleError, BetterDrizzleErrorCode, better } from '../../src';
 import { createTestContext, type TestContext } from './setup';
+
+const rejectCode = async (read: PromiseLike<unknown>) => {
+	try {
+		await read;
+	} catch (error) {
+		expect(error).toBeInstanceOf(BetterDrizzleError);
+		return (error as BetterDrizzleError).code;
+	}
+	throw new Error('Expected a rejection.');
+};
 
 let ctx: TestContext;
 
@@ -236,6 +256,98 @@ describe('findUnique', () => {
 		const typed = result as unknown as UserWithPosts;
 		expect(typed.posts).toBeDefined();
 		expect(typed.posts.length).toBe(2);
+	});
+
+	test('findUnique by primary key', async () => {
+		expect(
+			(await ctx.better.users.findUnique({ where: { id: 2 } }))?.name,
+		).toBe('Bob');
+		expect(
+			(
+				await ctx.better.users.findUnique({
+					where: { AND: [{ active: true }, { id: 1 }] },
+				})
+			)?.name,
+		).toBe('Alice');
+	});
+
+	test('findUnique by composite unique key', async () => {
+		const sqlite = new Database(':memory:');
+		sqlite.exec(`
+			CREATE TABLE pages (
+				id INTEGER PRIMARY KEY, tenant INTEGER NOT NULL, slug TEXT NOT NULL,
+				owner INTEGER NOT NULL, code TEXT NOT NULL,
+				UNIQUE (tenant, slug), UNIQUE (owner, code)
+			);
+			INSERT INTO pages VALUES (1, 1, 'a', 1, 'x'), (2, 1, 'b', 2, 'x');
+		`);
+		const pages = sqliteTable(
+			'pages',
+			{
+				code: text('code').notNull(),
+				id: integer('id').primaryKey(),
+				owner: integer('owner').notNull(),
+				slug: text('slug').notNull(),
+				tenant: integer('tenant').notNull(),
+			},
+			(t) => [
+				unique().on(t.tenant, t.slug),
+				uniqueIndex('pages_owner_code').on(t.owner, t.code),
+			],
+		);
+		const db = better(
+			drizzle({ client: sqlite, relations: defineRelations({ pages }) }),
+		);
+
+		expect(
+			(await db.pages.findUnique({ where: { slug: 'b', tenant: 1 } }))
+				?.id,
+		).toBe(2);
+		expect(
+			(await db.pages.findUnique({ where: { code: 'x', owner: 1 } }))?.id,
+		).toBe(1);
+		expect(
+			await rejectCode(db.pages.findUnique({ where: { tenant: 1 } })),
+		).toBe(BetterDrizzleErrorCode.UniqueWhereRequired);
+		sqlite.close();
+	});
+
+	test('findUnique rejects a where that does not pin one row', async () => {
+		const queries: string[] = [];
+		const db = better(
+			drizzle({
+				client: ctx.sqlite,
+				logger: { logQuery: (query) => queries.push(query) },
+				relations: ctx.relations,
+			}),
+		);
+		for (const where of [
+			{ id: undefined },
+			{ email: undefined },
+			{ active: true },
+			{ id: { in: [1, 2] } },
+			{ OR: [{ id: 1 }, { id: 2 }] },
+			{},
+		])
+			expect(
+				await rejectCode(
+					db.users.findUnique({ where: where as never }),
+				),
+			).toBe(BetterDrizzleErrorCode.UniqueWhereRequired);
+		expect(
+			await rejectCode(
+				db.users.findUnique({
+					include: { posts: true },
+					where: { active: true },
+				}),
+			),
+		).toBe(BetterDrizzleErrorCode.UniqueWhereRequired);
+		expect(
+			await rejectCode(
+				db.users.findUnique({ where: { id: undefined } }).explain(),
+			),
+		).toBe(BetterDrizzleErrorCode.UniqueWhereRequired);
+		expect(queries).toEqual([]);
 	});
 });
 

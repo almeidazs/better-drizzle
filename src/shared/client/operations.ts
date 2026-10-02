@@ -1441,10 +1441,13 @@ const compileFastWhere = (runtime: TableRuntime, where: unknown) => {
 	return conditions.length ? and(...conditions) : undefined;
 };
 
+// A `param()` placeholder counts: only prepared reads accept it.
 const isPinnedValue = (value: unknown) =>
 	value !== null &&
 	value !== undefined &&
-	(typeof value !== 'object' || value instanceof Date);
+	(typeof value !== 'object' ||
+		value instanceof Date ||
+		value instanceof Placeholder);
 
 // True when `where` holds an equality on the whole primary key or on every
 // column of a unique key, so the statement cannot touch more than one row.
@@ -1477,6 +1480,17 @@ const pinsOneRow = (runtime: TableRuntime, where: unknown): boolean => {
 		return false;
 	}
 	return all !== undefined && pinsOneRow(runtime, all);
+};
+
+const assertUniqueWhere = (runtime: TableRuntime, where: unknown) => {
+	if (pinsOneRow(runtime, where)) return;
+	throw new BetterDrizzleError({
+		code: BetterDrizzleErrorCode.UniqueWhereRequired,
+		details: { where },
+		message: `findUnique on "${runtime.dbName}" needs a where that pins one row: equality on the whole primary key or on every column of a unique key.`,
+		operation: 'findUnique',
+		table: runtime.dbName,
+	});
 };
 
 type SingleRowBuilder = {
@@ -2055,6 +2069,11 @@ export const findFirstRecord = async <Schema extends AnySchema, Meta>(
 ): Promise<Record<string, unknown> | null> => {
 	const relational = prepareRelationalRead(context, tableName, args);
 	if (relational && !args?.lock) {
+		if (operation === 'findUnique')
+			assertUniqueWhere(
+				getTableRuntime(context, tableName as string),
+				args?.where,
+			);
 		const rows = await findManyRecords(context, tableName, {
 			...args,
 			take: args?.take ?? 1,
@@ -2085,6 +2104,7 @@ export const buildFindFirstQuery = <Schema extends AnySchema, Meta>(
 	operation = 'findFirst',
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
+	if (operation === 'findUnique') assertUniqueWhere(runtime, args?.where);
 	const relational = prepareRelationalRead(context, tableName, args);
 	if (relational && !args?.lock)
 		return buildDirectReadQuery(context, tableName, {

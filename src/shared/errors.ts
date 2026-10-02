@@ -130,6 +130,8 @@ export enum BetterDrizzleErrorCode {
 	TransactionTimeout = 'TRANSACTION_TIMEOUT',
 	/** A transaction option is not supported by the current dialect. */
 	TransactionUnsupportedOption = 'TRANSACTION_UNSUPPORTED_OPTION',
+	/** A `findUnique` `where` does not pin one row by a primary or unique key. */
+	UniqueWhereRequired = 'UNIQUE_WHERE_REQUIRED',
 	/** An unknown or uncategorised error occurred. */
 	Unknown = 'UNKNOWN',
 }
@@ -200,6 +202,7 @@ const getDefaultStatus = (code: BetterDrizzleErrorCode) => {
 		case BetterDrizzleErrorCode.ArrayQueryUnsupported:
 		case BetterDrizzleErrorCode.ArrayMutationUnsupported:
 		case BetterDrizzleErrorCode.TransactionUnsupportedOption:
+		case BetterDrizzleErrorCode.UniqueWhereRequired:
 			return 400;
 		case BetterDrizzleErrorCode.LockTimeout:
 		case BetterDrizzleErrorCode.TransactionRollback:

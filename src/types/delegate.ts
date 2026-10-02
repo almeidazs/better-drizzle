@@ -2031,10 +2031,12 @@ export type BetterDrizzleModelDelegate<
 	/**
 	 * Returns the row matching `where`, or `null` when none matches.
 	 *
-	 * Runs the same query as `findFirst` but requires `args`. It does not
-	 * check that `where` targets a unique key or that only one row matches;
-	 * the first matching row is returned. Returns a `ThrowingResult` – call
-	 * `.throw()` to throw when no row is found.
+	 * `where` must pin one row: equality on every primary key column, on a
+	 * unique column, or on every column of a composite unique key (a
+	 * `param()` counts). Otherwise it throws `UNIQUE_WHERE_REQUIRED` before
+	 * any SQL, including for `.prepare()` and `.explain()`; an `undefined`
+	 * value does not pin. Returns a `ThrowingResult` – call `.throw()` to
+	 * throw when no row is found.
 	 *
 	 * @param args - Filter, projection, ordering, and cursor arguments.
 	 * @returns A throwing-aware promise resolving to the matching row or `null`.

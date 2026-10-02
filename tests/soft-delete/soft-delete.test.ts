@@ -283,6 +283,14 @@ describe('better-drizzle/soft-delete', () => {
 				where: { id: 2 },
 			}),
 		).toMatchObject({ id: 2 });
+		expect(
+			await client.records.findUnique({ where: { id: 1 } }),
+		).toMatchObject({ id: 1 });
+		expect(
+			await Promise.resolve(
+				client.records.findUnique({ where: { id: undefined } }),
+			).catch((error) => error.code),
+		).toBe('UNIQUE_WHERE_REQUIRED');
 
 		const page = await client.records.paginate({ limit: 10 });
 		expect(page.data.map((row) => row.id)).toEqual([1]);
