@@ -76,6 +76,12 @@ export enum BetterDrizzleErrorCode {
 	LockTimeout = 'LOCK_TIMEOUT',
 	/** An operation (CRUD, query, transaction) failed. */
 	OperationError = 'OPERATION_ERROR',
+	/** A prepared statement was executed without a value for one of its params. */
+	PreparedParamMissing = 'PREPARED_PARAM_MISSING',
+	/** A prepared statement was executed with a value for an unknown param. */
+	PreparedParamUnknown = 'PREPARED_PARAM_UNKNOWN',
+	/** The query shape or dialect cannot be prepared. */
+	PreparedUnsupported = 'PREPARED_UNSUPPORTED',
 	/** A plugin does not support the current SQL dialect. */
 	PluginDialectUnsupported = 'PLUGIN_DIALECT_UNSUPPORTED',
 	/** Two plugins share the same `id`. */
@@ -180,6 +186,9 @@ const getDefaultStatus = (code: BetterDrizzleErrorCode) => {
 	switch (code) {
 		case BetterDrizzleErrorCode.ResultNotFound:
 			return 404;
+		case BetterDrizzleErrorCode.PreparedParamMissing:
+		case BetterDrizzleErrorCode.PreparedParamUnknown:
+		case BetterDrizzleErrorCode.PreparedUnsupported:
 		case BetterDrizzleErrorCode.RawCommentRequired:
 		case BetterDrizzleErrorCode.RawInvalidQuery:
 		case BetterDrizzleErrorCode.RawUnsafePlaceholderMismatch:
