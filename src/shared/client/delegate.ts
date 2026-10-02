@@ -9,6 +9,7 @@ import type {
 	BeforeUpdateHookContext,
 	BetterDrizzleModelDelegate,
 	BetterTableKey,
+	CompilableWhere,
 	CountArgs,
 	CreateArgs,
 	CreateManyArgs,
@@ -28,7 +29,7 @@ import type {
 	UpsertManyArgs,
 } from '../../types';
 import { BetterDrizzleError, BetterDrizzleErrorCode } from '../errors';
-import { countRows } from '../query';
+import { compileWhereInput, countRows } from '../query';
 import { getTableRuntime } from './context';
 import { explainOperation } from './explain';
 import {
@@ -154,6 +155,12 @@ export const createModelDelegate = <
 				context,
 				tableName,
 				mergePluginState(state, skipPluginsState()),
+			);
+		},
+		$where(where?: CompilableWhere) {
+			return compileWhereInput(
+				{ ...context, runtime, tableName: name },
+				where,
 			);
 		},
 	} as BetterDrizzleModelDelegate<

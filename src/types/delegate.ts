@@ -1436,6 +1436,23 @@ export type BetterDrizzleModelDelegate<
 		ModelExtension
 	>;
 	/**
+	 * Compiles a typed `where` into a Drizzle `SQL` condition so it can be
+	 * reused in raw Drizzle queries, joins, and subqueries.
+	 *
+	 * Pure compilation: plugin filters (for example soft-delete visibility)
+	 * are not applied. Returns `undefined` for an empty `where`, which Drizzle
+	 * treats as no filter.
+	 *
+	 * @param where - The same `where` accepted by `findMany`.
+	 * @returns The compiled condition, or `undefined` when there is no filter.
+	 *
+	 * @example
+	 * ```ts
+	 * const rows = await db.select().from(users).where(client.users.$where({ id }));
+	 * ```
+	 */
+	$where(where?: WhereArg<Schema, Name>): SQL | undefined;
+	/**
 	 * Counts the number of matching rows.
 	 *
 	 * @param args - Optional filter and cursor arguments.

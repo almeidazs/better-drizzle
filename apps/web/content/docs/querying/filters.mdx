@@ -247,3 +247,44 @@ const [user = null] = await db
 ```
 
 Anything that produces a Drizzle `SQL` / `SQLWrapper` is accepted, so you keep the full expressive power of Drizzle for the cases that need it.
+
+## Reusing a filter in raw Drizzle
+
+`$where()` goes the other way: it compiles a typed `where` into a Drizzle `SQL` condition, so the same filter works in raw queries, joins, and subqueries.
+
+```ts tab="better-drizzle" tab-group="orm"
+import { and, eq } from 'drizzle-orm';
+import { users, posts } from './schema';
+
+const rows = await db
+	.select()
+	.from(posts)
+	.innerJoin(users, eq(posts.userId, users.id))
+	.where(
+		and(
+			client.users.$where({ OR: [{ age: { gte: 18 } }, { active: true }] }),
+			client.posts.$where({ published: true, score: { gt: 10 } }),
+		),
+	);
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { and, eq, gt, gte, or } from 'drizzle-orm';
+import { users, posts } from './schema';
+
+const rows = await db
+	.select()
+	.from(posts)
+	.innerJoin(users, eq(posts.userId, users.id))
+	.where(
+		and(
+			or(gte(users.age, 18), eq(users.active, true)),
+			eq(posts.published, true),
+			gt(posts.score, 10),
+		),
+	);
+```
+
+- It takes the same `where` as `findMany`, including logical operators and relation filters.
+- An empty `where` returns `undefined`, which Drizzle treats as no filter.
+- It is pure compilation: plugin filters such as the soft-delete visibility rule are **not** applied. Add them yourself when you need them.
