@@ -15,6 +15,7 @@ import mysql from 'mysql2/promise';
 import {
 	BetterDrizzleError,
 	better,
+	definePlugin,
 	getDatabaseErrorInfo,
 	isUniqueViolation,
 } from '../../src';
@@ -177,6 +178,162 @@ describe.skipIf(!MYSQL_URL)('Drizzle 1.x migration (MySQL)', () => {
 				where: { id: { in: [3, 4] } },
 			}),
 		).toEqual([{ id: 4 }]);
+	});
+
+	const createTrackedClient = () => {
+		const queries: string[] = [];
+		const calls: string[] = [];
+		const tracked = better(
+			drizzle({
+				client: connection,
+				logger: { logQuery: (query) => queries.push(query) },
+				mode: 'default',
+				relations,
+			}),
+			{
+				hooks: {
+					afterDelete: (ctx) => {
+						calls.push(`client:afterDelete:${ctx.isInTransaction}`);
+					},
+					afterUpdate: (ctx) => {
+						calls.push(`client:afterUpdate:${ctx.isInTransaction}`);
+					},
+					beforeDelete: () => {
+						calls.push('client:beforeDelete');
+					},
+					beforeUpdate: () => {
+						calls.push('client:beforeUpdate');
+					},
+				},
+				plugins: [
+					definePlugin({
+						hooks: {
+							afterDelete: () => {
+								calls.push('plugin:afterDelete');
+							},
+							afterUpdate: () => {
+								calls.push('plugin:afterUpdate');
+							},
+							beforeDelete: () => {
+								calls.push('plugin:beforeDelete');
+							},
+							beforeUpdate: () => {
+								calls.push('plugin:beforeUpdate');
+							},
+						},
+						id: 'track-writes',
+					}),
+				],
+			},
+		);
+		return { calls, queries, tracked };
+	};
+
+	const seedSame = () =>
+		connection.query(`
+			insert into better_drizzle_v1_members (id, email, name) values
+				(3, 'same1@example.com', 'Same'),
+				(4, 'same2@example.com', 'Same');
+		`);
+
+	test('non-pinned update and delete lock the row and write by primary key', async () => {
+		await seedSame();
+		const { calls, queries, tracked } = createTrackedClient();
+
+		const updated = await tracked.members.update({
+			data: { name: 'Moved' },
+			where: { name: 'Same' },
+		});
+		expect(updated).toMatchObject({ id: 3, name: 'Moved' });
+		expect(await client.members.count({ where: { name: 'Same' } })).toBe(1);
+		expect(queries.some((query) => / for update$/.test(query))).toBe(true);
+		expect(
+			queries.some((query) =>
+				/^update .* where .*`id` = \?$/.test(query),
+			),
+		).toBe(true);
+		expect(calls).toEqual([
+			'plugin:beforeUpdate',
+			'client:beforeUpdate',
+			'client:afterUpdate:true',
+			'plugin:afterUpdate',
+		]);
+
+		calls.length = 0;
+		queries.length = 0;
+		const deleted = await tracked.members.delete({
+			select: { email: true, id: true },
+			where: { id: { in: [3, 4] } },
+		});
+		expect(deleted).toEqual({ email: 'same1@example.com', id: 3 });
+		expect(queries.some((query) => / for update$/.test(query))).toBe(true);
+		expect(
+			queries.some((query) =>
+				/^delete from .* where .*`id` = \?$/.test(query),
+			),
+		).toBe(true);
+		expect(calls).toEqual([
+			'plugin:beforeDelete',
+			'client:beforeDelete',
+			'client:afterDelete:true',
+			'plugin:afterDelete',
+		]);
+		expect(
+			await client.members.findMany({
+				select: { id: true },
+				where: { id: { in: [3, 4] } },
+			}),
+		).toEqual([{ id: 4 }]);
+	});
+
+	test('non-pinned update and delete reuse an active transaction', async () => {
+		await seedSame();
+		const { calls, tracked } = createTrackedClient();
+
+		const [updated, deleted] = await tracked.transaction(async (tx) => [
+			await tx.members.update({
+				data: { name: 'Moved' },
+				where: { name: 'Same' },
+			}),
+			await tx.members.delete({ where: { name: 'Same' } }),
+		]);
+		expect(updated).toMatchObject({ id: 3, name: 'Moved' });
+		expect(deleted).toMatchObject({ id: 4, name: 'Same' });
+		expect(calls).toEqual([
+			'plugin:beforeUpdate',
+			'client:beforeUpdate',
+			'client:afterUpdate:true',
+			'plugin:afterUpdate',
+			'plugin:beforeDelete',
+			'client:beforeDelete',
+			'client:afterDelete:true',
+			'plugin:afterDelete',
+		]);
+		expect(
+			await client.members.findMany({
+				select: { id: true, name: true },
+				where: { id: { in: [3, 4] } },
+			}),
+		).toEqual([{ id: 3, name: 'Moved' }]);
+	});
+
+	test('pinned update and delete stay outside a transaction', async () => {
+		const { calls, queries, tracked } = createTrackedClient();
+
+		expect(
+			await tracked.members.update({
+				data: { name: 'Alicia' },
+				where: { id: 1 },
+			}),
+		).toMatchObject({ id: 1, name: 'Alicia' });
+		expect(
+			await tracked.members.delete({
+				where: { email: 'bob@example.com' },
+			}),
+		).toMatchObject({ id: 2 });
+		expect(queries.some((query) => / for update$/.test(query))).toBe(false);
+		expect(calls).toContain('client:afterUpdate:false');
+		expect(calls).toContain('client:afterDelete:false');
 	});
 
 	test('batch counts come from the mysql2 result tuple', async () => {

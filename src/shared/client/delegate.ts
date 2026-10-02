@@ -55,6 +55,7 @@ import {
 	upsertManyRecords,
 	upsertRecord,
 	getCompiledUpdateSet,
+	needsLockedSingleRowWrite,
 } from './operations';
 import {
 	type InterceptState,
@@ -114,14 +115,19 @@ export const createModelDelegate = <
 	};
 	const shouldApplyPlugins = shouldRunPlugins(context.hasPlugins, state);
 	const relationalWrite = <Args, Result>(
-		method: 'create' | 'update' | 'upsert',
+		method: 'create' | 'delete' | 'update' | 'upsert',
 		args: Args,
 		data: readonly unknown[],
 		run: () => Promise<Result>,
+		where?: unknown,
 	) => {
 		if (
 			context.transaction ||
-			!data.some((value) => hasRelationWrites(runtime, value))
+			(!data.some((value) => hasRelationWrites(runtime, value)) &&
+				!(
+					(method === 'update' || method === 'delete') &&
+					needsLockedSingleRowWrite(context, runtime, where)
+				))
 		)
 			return run();
 		const client = context.client as Record<string, unknown>;
@@ -285,6 +291,36 @@ export const createModelDelegate = <
 			return result;
 		})();
 
+	type DeleteOperationArgs = OperationArgsWithPlugins<
+		DeleteArgs<Schema, BetterTableKey<Schema>, Meta>,
+		Plugins,
+		'delete'
+	>;
+	let deleteSpec:
+		| Spec<DeleteOperationArgs, Record<string, unknown> | null>
+		| undefined;
+	// Built once per delegate on first use; transactions create delegates eagerly.
+	const getDeleteSpec = () =>
+		(deleteSpec ??= {
+			action: 'delete',
+			afterHookName: 'afterDelete',
+			afterPayload: (result, resolvedArgs) =>
+				({
+					...hookContext('delete', resolvedArgs),
+					result,
+					row: result,
+				}) as AfterDeleteHookContext<Schema, Meta, Plugins>,
+			beforeHookName: 'beforeDelete',
+			beforePayload: (resolvedArgs) =>
+				hookContext('delete', resolvedArgs) as BeforeDeleteHookContext<
+					Schema,
+					Meta,
+					Plugins
+				>,
+			kind: 'delete',
+			operation: (resolvedArgs) =>
+				deleteRecord(context, tableName, resolvedArgs),
+		});
 	const runOperation = <Args, Result>(
 		spec: Spec<Args, Result>,
 		args: Args,
@@ -840,49 +876,62 @@ export const createModelDelegate = <
 			>,
 		) =>
 			attachThrow(
-				relationalWrite('update', args, [args.data], () =>
-					runOperation<
-						OperationArgsWithPlugins<
-							UpdateArgs<Schema, BetterTableKey<Schema>, Meta>,
-							Plugins,
-							'update'
-						>,
-						Record<string, unknown> | null
-					>(
-						{
-							action: 'update',
-							afterHookName: 'afterUpdate',
-							afterPayload: (result, resolvedArgs) =>
-								({
-									...hookContext('update', resolvedArgs),
-									compiled: getCompiledUpdateSet(
-										resolvedArgs.data,
+				relationalWrite(
+					'update',
+					args,
+					[args.data],
+					() =>
+						runOperation<
+							OperationArgsWithPlugins<
+								UpdateArgs<
+									Schema,
+									BetterTableKey<Schema>,
+									Meta
+								>,
+								Plugins,
+								'update'
+							>,
+							Record<string, unknown> | null
+						>(
+							{
+								action: 'update',
+								afterHookName: 'afterUpdate',
+								afterPayload: (result, resolvedArgs) =>
+									({
+										...hookContext('update', resolvedArgs),
+										compiled: getCompiledUpdateSet(
+											resolvedArgs.data,
+										),
+										result,
+										row: result,
+									}) as AfterUpdateHookContext<
+										Schema,
+										Meta,
+										Plugins
+									>,
+								beforeHookName: 'beforeUpdate',
+								beforePayload: (resolvedArgs) =>
+									hookContext(
+										'update',
+										resolvedArgs,
+									) as BeforeUpdateHookContext<
+										Schema,
+										Meta,
+										Plugins
+									>,
+								kind: 'update',
+								compiled: (resolvedArgs) =>
+									getCompiledUpdateSet(resolvedArgs.data),
+								operation: (resolvedArgs) =>
+									updateRecord(
+										context,
+										tableName,
+										resolvedArgs,
 									),
-									result,
-									row: result,
-								}) as AfterUpdateHookContext<
-									Schema,
-									Meta,
-									Plugins
-								>,
-							beforeHookName: 'beforeUpdate',
-							beforePayload: (resolvedArgs) =>
-								hookContext(
-									'update',
-									resolvedArgs,
-								) as BeforeUpdateHookContext<
-									Schema,
-									Meta,
-									Plugins
-								>,
-							kind: 'update',
-							compiled: (resolvedArgs) =>
-								getCompiledUpdateSet(resolvedArgs.data),
-							operation: (resolvedArgs) =>
-								updateRecord(context, tableName, resolvedArgs),
-						},
-						args,
-					),
+							},
+							args,
+						),
+					args.where,
 				),
 				context,
 				runtime,
@@ -961,35 +1010,16 @@ export const createModelDelegate = <
 			>,
 		) =>
 			attachThrow(
-				runOperation<
-					OperationArgsWithPlugins<
-						DeleteArgs<Schema, BetterTableKey<Schema>, Meta>,
-						Plugins,
-						'delete'
-					>,
-					Record<string, unknown> | null
-				>(
-					{
-						action: 'delete',
-						afterHookName: 'afterDelete',
-						afterPayload: (result, resolvedArgs) =>
-							({
-								...hookContext('delete', resolvedArgs),
-								result,
-								row: result,
-							}) as AfterDeleteHookContext<Schema, Meta, Plugins>,
-						beforeHookName: 'beforeDelete',
-						beforePayload: (resolvedArgs) =>
-							hookContext(
-								'delete',
-								resolvedArgs,
-							) as BeforeDeleteHookContext<Schema, Meta, Plugins>,
-						kind: 'delete',
-						operation: (resolvedArgs) =>
-							deleteRecord(context, tableName, resolvedArgs),
-					},
-					args,
-				),
+				!context.transaction &&
+					needsLockedSingleRowWrite(context, runtime, args.where)
+					? relationalWrite(
+							'delete',
+							args,
+							[],
+							() => runOperation(getDeleteSpec(), args),
+							args.where,
+						)
+					: runOperation(getDeleteSpec(), args),
 				context,
 				runtime,
 				'delete',

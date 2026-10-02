@@ -1494,6 +1494,17 @@ const limitMysqlBuilder = (runtime: TableRuntime, builder: unknown) => {
 	).limit(1);
 };
 
+// MySQL has no RETURNING, so an update/delete whose where does not pin one row
+// reads, locks, and writes that row inside a transaction (implicit if needed).
+export const needsLockedSingleRowWrite = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	runtime: TableRuntime,
+	where: unknown,
+) =>
+	context.dialect === 'mysql' &&
+	runtime.primaryKey.length > 0 &&
+	!pinsOneRow(runtime, where);
+
 const getSingleRowOrder = (runtime: TableRuntime) =>
 	runtime.primaryKeyFields.length
 		? runtime.primaryKeyFields.map((field) => ({ [field]: 'asc' }))
@@ -2583,14 +2594,32 @@ export const updateRecord = async <Schema extends AnySchema, Meta>(
 		return reloadRecord(context, tableName, updated, args);
 	}
 
+	// Tables without a primary key keep `ORDER BY ... LIMIT 1`, unlocked.
+	const locked =
+		!pinned &&
+		runtime.primaryKey.length > 0 &&
+		Boolean(context.transaction);
 	const existing = await findFirstRecord(context, tableName, {
+		lock: locked ? 'update' : undefined,
 		orderBy: pinned ? undefined : getSingleRowOrder(runtime),
 		where: args.where,
 	} as QueryArgs<Schema, BetterTableKey<Schema>, Meta>);
 	if (!existing) return null;
 
-	const builder = context.db.update(runtime.table).set(set).where(predicate);
-	await (pinned ? builder : limitMysqlBuilder(runtime, builder));
+	const builder = context.db
+		.update(runtime.table)
+		.set(set)
+		.where(
+			locked
+				? getPredicate(
+						context,
+						runtime,
+						tableName,
+						getPrimaryKeyWhere(runtime, existing),
+					)
+				: predicate,
+		);
+	await (pinned || locked ? builder : limitMysqlBuilder(runtime, builder));
 	return reloadRecord(context, tableName, existing, args);
 };
 
@@ -2630,6 +2659,26 @@ export const deleteRecord = async <Schema extends AnySchema, Meta>(
 		if (!deleted) return null;
 		if (!hasProjection(args)) return deleted;
 		return reloadRecord(context, tableName, deleted, args);
+	}
+
+	if (!pinned && runtime.primaryKey.length && context.transaction) {
+		const locked = await findFirstRecord(context, tableName, {
+			lock: 'update',
+			orderBy: getSingleRowOrder(runtime),
+			where: args.where,
+		} as QueryArgs<Schema, BetterTableKey<Schema>, Meta>);
+		if (!locked) return null;
+		const primaryWhere = getPrimaryKeyWhere(runtime, locked);
+		const existing = hasProjection(args)
+			? await findFirstRecord(context, tableName, {
+					...args,
+					where: primaryWhere,
+				} as QueryArgs<Schema, BetterTableKey<Schema>, Meta>)
+			: locked;
+		await context.db
+			.delete(runtime.table)
+			.where(getPredicate(context, runtime, tableName, primaryWhere));
+		return existing;
 	}
 
 	const existing = await findFirstRecord(
