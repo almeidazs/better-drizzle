@@ -304,6 +304,7 @@ export const createZodSchemasRegistry = <Schema extends AnySchema>(
 			const entry = getEntry(tableName);
 			return z.object({
 				meta: z.unknown().optional(),
+				select: getSelectSchema(entry).optional(),
 				validate: z.boolean().optional(),
 				where: entry.schemas.where.optional(),
 			});

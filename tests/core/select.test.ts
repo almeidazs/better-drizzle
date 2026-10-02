@@ -75,6 +75,17 @@ describe('select - scalar fields', () => {
 					update: 'all',
 					select,
 				} as never),
+			() =>
+				ctx.better.users.updateMany({
+					data: { name: 'Changed' },
+					select,
+					where: { id: 1 },
+				} as never),
+			() =>
+				ctx.better.users.deleteMany({
+					select,
+					where: { id: 1 },
+				} as never),
 		];
 		for (const write of writes) {
 			await expect(Promise.resolve().then(write)).rejects.toThrow(

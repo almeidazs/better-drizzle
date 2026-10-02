@@ -214,6 +214,7 @@ export const softDelete = (options: SoftDeleteOptions = {}) => {
 
 				if (context.kind === 'deleteMany')
 					return context.client.$withoutPlugins().updateMany({
+						select: context.select,
 						data,
 						meta: context.meta,
 						where,

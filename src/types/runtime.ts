@@ -75,7 +75,9 @@ export type UpdateBuilderLike = Promise<unknown> & {
  */
 export type DeleteBuilderLike = Promise<unknown> & {
 	/** Append a RETURNING clause to the delete statement. */
-	returning?: () => Promise<Record<string, unknown>[]>;
+	returning?: (
+		fields?: Record<string, unknown>,
+	) => Promise<Record<string, unknown>[]>;
 };
 
 /**

@@ -349,6 +349,18 @@ describe('better-drizzle/soft-delete', () => {
 		ctx.close();
 	});
 
+	test('deleteMany forwards the scalar projection to its soft update', async () => {
+		const ctx = createContext();
+		const client = better(ctx.db, { plugins: [softDelete()] });
+		const result = await client.records.deleteMany({
+			select: { id: true, deletedAt: true },
+			where: { id: { in: [1, 2] } },
+		});
+		expect(result.count).toBe(1);
+		expect(result.data).toEqual([{ id: 1, deletedAt: expect.any(Date) }]);
+		ctx.close();
+	});
+
 	test('deleteMany soft deletes live rows only', async () => {
 		const ctx = createContext();
 		const client = better(ctx.db, { plugins: [softDelete()] });

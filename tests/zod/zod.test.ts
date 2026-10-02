@@ -965,12 +965,14 @@ describe('better-drizzle/zod - delete validation', () => {
 		await ctx.raw.run(sql`PRAGMA foreign_keys = ON`);
 
 		const deleted = await ctx.client.users.deleteMany({
+			select: { id: true },
 			where: {
 				active: false,
 			},
 		});
 
 		expect(deleted.count).toBe(2);
+		expect(deleted.data).toEqual([{ id: 3 }, { id: 5 }]);
 		ctx.close();
 	});
 });

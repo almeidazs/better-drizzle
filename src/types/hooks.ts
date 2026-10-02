@@ -228,21 +228,19 @@ type UpdateHookResultForAction<
 	Meta,
 	Plugins extends readonly AnyPlugin[],
 	Action extends UpdateHookAction,
-> = Action extends 'updateMany'
-	? BatchResult<never>
-	: Action extends 'updateEach'
-		? BatchResult<
-				PayloadForArgs<
-					Schema,
-					Name,
-					UpdateHookArgsForAction<Schema, Name, Meta, Plugins, Action>
-				>
-			>
-		: PayloadForArgs<
+> = Action extends 'updateMany' | 'updateEach'
+	? BatchResult<
+			PayloadForArgs<
 				Schema,
 				Name,
 				UpdateHookArgsForAction<Schema, Name, Meta, Plugins, Action>
-			> | null;
+			>
+		>
+	: PayloadForArgs<
+			Schema,
+			Name,
+			UpdateHookArgsForAction<Schema, Name, Meta, Plugins, Action>
+		> | null;
 
 type DeleteHookArgsForAction<
 	Schema extends AnySchema,
@@ -269,7 +267,13 @@ type DeleteHookResultForAction<
 	Plugins extends readonly AnyPlugin[],
 	Action extends DeleteHookAction,
 > = Action extends 'deleteMany'
-	? BatchResult<never>
+	? BatchResult<
+			PayloadForArgs<
+				Schema,
+				Name,
+				DeleteHookArgsForAction<Schema, Name, Meta, Plugins, Action>
+			>
+		>
 	: PayloadForArgs<
 			Schema,
 			Name,

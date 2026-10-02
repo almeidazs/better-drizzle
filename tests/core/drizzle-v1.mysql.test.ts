@@ -346,9 +346,10 @@ describe.skipIf(!MYSQL_URL)('Drizzle 1.x migration (MySQL)', () => {
 		expect(
 			await client.members.updateMany({
 				data: { name: 'Renamed' },
+				select: { id: true },
 				where: { id: { in: [1, 2] } },
 			}),
-		).toMatchObject({ count: 2 });
+		).toEqual({ count: 2 });
 		expect(
 			await client.members.createMany({
 				data: [
@@ -360,9 +361,10 @@ describe.skipIf(!MYSQL_URL)('Drizzle 1.x migration (MySQL)', () => {
 		).toMatchObject({ count: 1 });
 		expect(
 			await client.members.deleteMany({
+				select: { id: true },
 				where: { id: { in: [2, 4, 99] } },
 			}),
-		).toMatchObject({ count: 2 });
+		).toEqual({ count: 2 });
 	});
 
 	test('driver errors are wrapped, helpers read errno from the cause', async () => {
@@ -462,6 +464,18 @@ describe.skipIf(!MYSQL_URL)('Drizzle 1.x migration (MySQL)', () => {
 		expect((withWhere as Error).message).toBe(
 			'upsertMany where is not supported on MySQL.',
 		);
+		const withTypedWhere = await captureError(() =>
+			client.counters.upsertMany({
+				data: [{ id: 1, value: 1 }],
+				target: ['id'],
+				update: ['value'],
+				where: { value: { gt: 0 } },
+			}),
+		);
+		expect((withTypedWhere as Error).message).toBe(
+			'upsertMany where is not supported on MySQL.',
+		);
+
 		expect(
 			await client.members.findUnique({ where: { id: 1 } }),
 		).toMatchObject({ name: 'Alice' });

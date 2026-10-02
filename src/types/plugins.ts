@@ -256,7 +256,7 @@ type PluginOperationResultMap<
 	create: unknown;
 	createMany: BatchResult<unknown>;
 	delete: unknown;
-	deleteMany: BatchResult<never>;
+	deleteMany: BatchResult<unknown>;
 	exists: boolean;
 	findFirst: unknown;
 	findMany: unknown[];
@@ -266,7 +266,7 @@ type PluginOperationResultMap<
 	paginate: unknown;
 	update: unknown;
 	updateEach: BatchResult<unknown>;
-	updateMany: BatchResult<never>;
+	updateMany: BatchResult<unknown>;
 	upsert: unknown;
 	upsertMany: BatchResult<unknown>;
 };

@@ -267,6 +267,40 @@ describe('hooks - create', () => {
 });
 
 describe('hooks - update', () => {
+	test('batch after hooks receive the returned rows and scalar projection', async () => {
+		const sqlite = new Database(':memory:');
+		sqlite.exec(createTablesSql);
+		sqlite.exec(
+			"INSERT INTO hook_users VALUES (1, 'a@test.com', 'A', 20, 1)",
+		);
+		const observed: unknown[] = [];
+		const client = better(drizzle({ client: sqlite, relations }), {
+			hooks: {
+				afterUpdate(ctx) {
+					if (ctx.action === 'updateMany') observed.push(ctx.result);
+				},
+				afterDelete(ctx) {
+					if (ctx.action === 'deleteMany') observed.push(ctx.result);
+				},
+			},
+		});
+		const updated = await client.users.updateMany({
+			data: { name: 'Updated' },
+			select: { id: true, name: true },
+			where: { id: 1 },
+		});
+		const deleted = await client.users.deleteMany({
+			select: { id: true, name: true },
+			where: { id: 1 },
+		});
+		expect(observed).toEqual([updated, deleted]);
+		expect(observed).toEqual([
+			{ count: 1, data: [{ id: 1, name: 'Updated' }] },
+			{ count: 1, data: [{ id: 1, name: 'Updated' }] },
+		]);
+		sqlite.close();
+	});
+
 	test('afterUpdate receives compiled atomic expressions', async () => {
 		const sqlite = new Database(':memory:');
 		sqlite.exec(

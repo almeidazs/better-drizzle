@@ -2743,9 +2743,8 @@ export const deleteRecord = async <Schema extends AnySchema, Meta>(
 };
 
 /**
- * Updates all records matching the where-clause. First counts the
- * affected rows, then performs the update. Returns a `BatchResult`
- * with the count of updated rows.
+ * Updates all records matching the where-clause and returns the affected
+ * rows when the driver supports RETURNING.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Meta   - Custom metadata type.
@@ -2758,8 +2757,13 @@ export const updateManyRecords = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
 	args: UpdateManyArgs<Schema, BetterTableKey<Schema>, Meta>,
-): Promise<BatchResult<never>> => {
+): Promise<BatchResult<Record<string, unknown>>> => {
 	const runtime = getTableRuntime(context, tableName as string);
+	const selection = getReturningSelection(
+		runtime,
+		args.select as Record<string, unknown> | undefined,
+		'updateMany',
+	);
 	const set = compileUpdateMutations(
 		runtime,
 		context.dialect,
@@ -2769,9 +2773,13 @@ export const updateManyRecords = async <Schema extends AnySchema, Meta>(
 	const predicate = getPredicate(context, runtime, tableName, args.where);
 	if (!predicate) return { count: 0 };
 
+	const builder = context.db.update(runtime.table).set(set).where(predicate);
+	if (typeof builder.returning === 'function') {
+		const data = await builder.returning(selection);
+		return { count: data.length, data: data.length ? data : undefined };
+	}
 	const affectedCount = await countRows(context, tableName, args.where);
-	if (affectedCount > 0)
-		await context.db.update(runtime.table).set(set).where(predicate);
+	if (affectedCount > 0) await builder;
 
 	return { count: affectedCount };
 };
@@ -2823,9 +2831,8 @@ export const updateEachRecords = async <Schema extends AnySchema, Meta>(
 };
 
 /**
- * Deletes all records matching the where-clause. First counts the
- * affected rows, then performs the delete. Returns a `BatchResult`
- * with the count of deleted rows.
+ * Deletes all records matching the where-clause and returns the deleted
+ * rows when the driver supports RETURNING.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Meta   - Custom metadata type.
@@ -2838,14 +2845,23 @@ export const deleteManyRecords = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
 	args?: DeleteManyArgs<Schema, BetterTableKey<Schema>, Meta>,
-): Promise<BatchResult<never>> => {
+): Promise<BatchResult<Record<string, unknown>>> => {
 	const runtime = getTableRuntime(context, tableName as string);
+	const selection = getReturningSelection(
+		runtime,
+		args?.select as Record<string, unknown> | undefined,
+		'deleteMany',
+	);
 	const predicate = getPredicate(context, runtime, tableName, args?.where);
 	if (!predicate) return { count: 0 };
 
+	const builder = context.db.delete(runtime.table).where(predicate);
+	if (typeof builder.returning === 'function') {
+		const data = await builder.returning(selection);
+		return { count: data.length, data: data.length ? data : undefined };
+	}
 	const affectedCount = await countRows(context, tableName, args?.where);
-	if (affectedCount > 0)
-		await context.db.delete(runtime.table).where(predicate);
+	if (affectedCount > 0) await builder;
 
 	return { count: affectedCount };
 };

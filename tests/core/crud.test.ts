@@ -563,6 +563,45 @@ describe('single-row writes', () => {
 });
 
 describe('updateMany', () => {
+	test('returns complete updated rows even when the update changes the predicate', async () => {
+		const before = await ctx.better.users.findMany({
+			where: { active: true },
+		});
+		const result = await ctx.better.users.updateMany({
+			data: { active: false },
+			where: { active: true },
+		});
+		expect(result.count).toBe(before.length);
+		expect(result.data).toEqual(
+			before.map((row) => ({ ...row, active: false })),
+		);
+	});
+
+	test('returns only selected updated columns', async () => {
+		const result = await ctx.better.users.updateMany({
+			data: { name: 'Batch renamed' },
+			select: { id: true, name: true },
+			where: { id: { in: [1, 2] } },
+		});
+		expect(result).toEqual({
+			count: 2,
+			data: [
+				{ id: 1, name: 'Batch renamed' },
+				{ id: 2, name: 'Batch renamed' },
+			],
+		});
+	});
+
+	test('an empty predicate remains a no-op with a projection', async () => {
+		expect(
+			await ctx.better.users.updateMany({
+				data: { active: false },
+				select: { id: true },
+				where: {},
+			}),
+		).toEqual({ count: 0 });
+	});
+
 	test('updates multiple matching records', async () => {
 		const result = await ctx.better.users.updateMany({
 			data: { active: false },
@@ -766,6 +805,39 @@ describe('delete', () => {
 });
 
 describe('deleteMany', () => {
+	test('returns the complete deleted rows', async () => {
+		await ctx.raw.run(sql`PRAGMA foreign_keys = OFF`);
+		const before = await ctx.better.users.findMany({
+			where: { active: false },
+		});
+		const result = await ctx.better.users.deleteMany({
+			where: { active: false },
+		});
+		expect(result).toEqual({ count: before.length, data: before });
+		expect(
+			await ctx.better.users.findMany({ where: { active: false } }),
+		).toEqual([]);
+	});
+
+	test('returns only selected deleted columns', async () => {
+		await ctx.raw.run(sql`PRAGMA foreign_keys = OFF`);
+		expect(
+			await ctx.better.users.deleteMany({
+				select: { id: true, name: true },
+				where: { id: 1 },
+			}),
+		).toEqual({ count: 1, data: [{ id: 1, name: 'Alice' }] });
+	});
+
+	test('an empty predicate remains a no-op with a projection', async () => {
+		expect(
+			await ctx.better.users.deleteMany({
+				select: { id: true },
+				where: {},
+			}),
+		).toEqual({ count: 0 });
+	});
+
 	test('deletes multiple matching records', async () => {
 		await ctx.raw.run(sql`PRAGMA foreign_keys = OFF`);
 		await ctx.raw.run(sql`DELETE FROM test_comments`);
@@ -1237,3 +1309,31 @@ describe('upsertMany', () => {
 		});
 	});
 });
+
+const assertBatchProjectionTypes = async (client: typeof ctx.better) => {
+	const updated = await client.users.updateMany({
+		data: { name: 'Typed' },
+		select: { id: true },
+		where: { id: 1 },
+	});
+	const deleted = await client.users.deleteMany({
+		select: { id: true },
+		where: { id: 1 },
+	});
+	const updatedId: number | undefined = updated.data?.[0]?.id;
+	const deletedId: number | undefined = deleted.data?.[0]?.id;
+	// @ts-expect-error Scalar projections omit unselected columns.
+	const omittedUpdateName = updated.data?.[0]?.name;
+	// @ts-expect-error Scalar projections omit unselected columns.
+	const omittedDeleteName = deleted.data?.[0]?.name;
+	// @ts-expect-error Batch writes do not load relation projections.
+	client.users.updateMany({
+		data: { name: 'Typed' },
+		select: { posts: true },
+		where: { id: 1 },
+	});
+	// @ts-expect-error Batch writes do not load relation projections.
+	client.users.deleteMany({ select: { posts: true }, where: { id: 1 } });
+	return [updatedId, deletedId, omittedUpdateName, omittedDeleteName];
+};
+void assertBatchProjectionTypes;

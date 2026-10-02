@@ -230,6 +230,42 @@ describe.skipIf(!DATABASE_URL)('Drizzle 1.x migration (PostgreSQL)', () => {
 			).toMatchObject({ name: 'Bob' });
 		});
 
+		test('updateMany returns complete changed rows and scalar projections', async () => {
+			const before = await client.accounts.findUnique({
+				where: { id: 2 },
+			});
+			expect(
+				await client.accounts.updateMany({
+					data: { name: 'Renamed' },
+					where: { name: 'Bob' },
+				}),
+			).toEqual({ count: 1, data: [{ ...before, name: 'Renamed' }] });
+			expect(
+				await client.accounts.updateMany({
+					data: { name: 'Projected' },
+					select: { id: true, name: true },
+					where: { id: 2 },
+				}),
+			).toEqual({ count: 1, data: [{ id: 2, name: 'Projected' }] });
+		});
+
+		test('deleteMany returns deleted preimages and scalar projections', async () => {
+			const before = await client.accounts.findUnique({
+				where: { id: 2 },
+			});
+			expect(
+				await client.accounts.deleteMany({ where: { id: 2 } }),
+			).toEqual({ count: 1, data: [before] });
+			expect(
+				await client.invoices.deleteMany({
+					select: { id: true, amount: true },
+					where: { id: 1 },
+				}),
+			).toEqual({ count: 1, data: [{ id: 1, amount: 100 }] });
+			expect(
+				await client.accounts.findUnique({ where: { id: 2 } }),
+			).toBeNull();
+		});
 	});
 
 	describe('driver errors', () => {

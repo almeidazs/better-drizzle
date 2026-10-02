@@ -521,6 +521,8 @@ export interface UpdateManyArgs<
 	where?: WhereArg<Schema, Name>;
 	/** Partial column values to apply to every matched row. */
 	data: UpdateScalarDataInput<Schema, Name>;
+	/** Optional scalar projection for returned rows. */
+	select?: ScalarSelectInput<Schema, Name>;
 	/** Custom metadata forwarded to hooks. */
 	meta?: Meta;
 }
@@ -644,6 +646,8 @@ export interface DeleteManyArgs<
 > {
 	/** Filter for the rows to delete. When omitted or it compiles to no condition (`{}`, only `undefined` values), nothing is deleted and `count` is `0`. */
 	where?: WhereArg<Schema, Name>;
+	/** Optional scalar projection for returned rows. */
+	select?: ScalarSelectInput<Schema, Name>;
 	/** Custom metadata forwarded to hooks. */
 	meta?: Meta;
 }
@@ -1893,7 +1897,7 @@ export type BetterDrizzleModelDelegate<
 			>,
 	): ThrowingWriteResult<PayloadForArgs<Schema, Name, Args>>;
 	/**
-	 * Updates all matching rows and returns the affected count.
+	 * Updates all matching rows and returns the affected count and rows when supported.
 	 *
 	 * A `where` that is omitted or compiles to no condition is a no-op that
 	 * resolves to `{ count: 0 }`.
@@ -1901,7 +1905,7 @@ export type BetterDrizzleModelDelegate<
 	 * Drizzle directly.
 	 *
 	 * @param args - Filter and partial data.
-	 * @returns A promise resolving to `{ count }` with the number of affected rows.
+	 * @returns A promise resolving to `{ count, data? }` with the affected rows.
 	 *
 	 * @example
 	 * ```ts
@@ -1912,13 +1916,30 @@ export type BetterDrizzleModelDelegate<
 	 * console.log(result.count);
 	 * ```
 	 */
-	updateMany(
-		args: OperationArgsWithPlugins<
+	updateMany<
+		Args extends OperationArgsWithPlugins<
 			UpdateManyArgs<Schema, Name, Meta>,
 			Plugins,
 			'updateMany'
 		>,
-	): Promise<BatchResult<never>>;
+	>(
+		args: Args &
+			NoInfer<
+				OperationArgsWithPlugins<
+					UpdateManyArgs<Schema, Name, Meta>,
+					Plugins,
+					'updateMany'
+				> &
+					ArgsCheck<
+						Args,
+						OperationArgsWithPlugins<
+							UpdateManyArgs<Schema, Name, Meta>,
+							Plugins,
+							'updateMany'
+						>
+					>
+			>,
+	): Promise<BatchResult<PayloadForArgs<Schema, Name, Args>>>;
 	/**
 	 * Updates multiple rows with different values in one statement.
 	 *
@@ -2237,13 +2258,13 @@ export type BetterDrizzleModelDelegate<
 			>,
 	): ThrowingWriteResult<PayloadForArgs<Schema, Name, Args>>;
 	/**
-	 * Deletes all matching rows and returns the affected count.
+	 * Deletes all matching rows and returns the affected count and rows when supported.
 	 *
 	 * A `where` that is omitted or compiles to no condition (for example
 	 * `deleteMany({})`) is a no-op that resolves to `{ count: 0 }`.
 	 *
 	 * @param args - Filter for the rows to delete.
-	 * @returns A promise resolving to `{ count }` with the number of deleted rows.
+	 * @returns A promise resolving to `{ count, data? }` with the deleted rows.
 	 *
 	 * @example
 	 * ```ts
@@ -2253,13 +2274,30 @@ export type BetterDrizzleModelDelegate<
 	 * console.log(result.count);
 	 * ```
 	 */
-	deleteMany(
-		args: OperationArgsWithPlugins<
+	deleteMany<
+		Args extends OperationArgsWithPlugins<
 			DeleteManyArgs<Schema, Name, Meta>,
 			Plugins,
 			'deleteMany'
 		>,
-	): Promise<BatchResult<never>>;
+	>(
+		args: Args &
+			NoInfer<
+				OperationArgsWithPlugins<
+					DeleteManyArgs<Schema, Name, Meta>,
+					Plugins,
+					'deleteMany'
+				> &
+					ArgsCheck<
+						Args,
+						OperationArgsWithPlugins<
+							DeleteManyArgs<Schema, Name, Meta>,
+							Plugins,
+							'deleteMany'
+						>
+					>
+			>,
+	): Promise<BatchResult<PayloadForArgs<Schema, Name, Args>>>;
 } & ModelExtension;
 
 /**
