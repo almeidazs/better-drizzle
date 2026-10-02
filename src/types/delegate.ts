@@ -1966,7 +1966,22 @@ export type BetterDrizzleModelDelegate<
 			'updateEach'
 		>,
 	>(
-		args: Args,
+		args: Args &
+			NoInfer<
+				OperationArgsWithPlugins<
+					UpdateEachArgs<Schema, Name, Meta, Row>,
+					Plugins,
+					'updateEach'
+				> &
+					ArgsCheck<
+						Args,
+						OperationArgsWithPlugins<
+							UpdateEachArgs<Schema, Name, Meta, Row>,
+							Plugins,
+							'updateEach'
+						>
+					>
+			>,
 	): Promise<BatchResult<PayloadForArgs<Schema, Name, Args>>>;
 	/**
 	 * Returns the first matching row (alias for {@link findFirst}).

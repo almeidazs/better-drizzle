@@ -1479,6 +1479,29 @@ const assertBatchProjectionTypes = async (client: typeof ctx.better) => {
 	});
 	// @ts-expect-error Batch writes do not load relation projections.
 	client.users.deleteMany({ select: { posts: true }, where: { id: 1 } });
-	return [updatedId, deletedId, omittedUpdateName, omittedDeleteName];
+	const each = await client.users.updateEach({
+		by: ctx.schema.users.id,
+		data: [{ id: 1, name: 'Typed' }],
+		select: { id: true },
+		update: { name: (row) => row.name as string },
+	});
+	const eachId: number | undefined = each.data?.[0]?.id;
+	// @ts-expect-error Scalar projections omit unselected columns.
+	const omittedEachName = each.data?.[0]?.name;
+	client.users.updateEach({
+		by: ctx.schema.users.id,
+		data: [{ id: 1 }],
+		// @ts-expect-error Unknown options are rejected.
+		selct: { id: true },
+		update: { name: () => 'Typed' },
+	});
+	return [
+		updatedId,
+		deletedId,
+		omittedUpdateName,
+		omittedDeleteName,
+		eachId,
+		omittedEachName,
+	];
 };
 void assertBatchProjectionTypes;
