@@ -1092,10 +1092,12 @@ export const runPluginIntercepts = <
 	>,
 	operation: () => Promise<Result>,
 	interception: InterceptState,
+	params?: Readonly<Record<string, unknown>>,
 ): Promise<Result> => {
 	const { intercepts } = getBucket(context, kind);
 	const input = {
 		...createOperationInput(context, runtime, tableName, kind, args, state),
+		params,
 		annotate(key: string, value: unknown) {
 			interception.annotations ??= Object.create(null) as Record<
 				string,
