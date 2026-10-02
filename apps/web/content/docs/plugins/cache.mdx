@@ -335,6 +335,86 @@ Per-call `cache` objects accept:
 | `refresh` | skip the stored value, run the query, and store the fresh result |
 | `afterHooks` | run after hooks on a hit; overrides `afterHooksOnHit` |
 
+## Custom stores
+
+`store` takes any object that implements `CacheStore`. `redis()` is one; you can write your own for another key-value service, or an in-process store for tests. The interface is part of the experimental surface and can change in a patch release.
+
+```ts
+import type { CacheStore, CacheStoreEntry } from 'better-drizzle/cache';
+
+interface CacheStore {
+	get(keys: readonly string[]): Promise<ReadonlyArray<string | null>>;
+	set(entries: readonly CacheStoreEntry[]): Promise<void>;
+	delete(keys: readonly string[]): Promise<void>;
+}
+
+type CacheStoreEntry = { key: string; ttl: number; value: string };
+```
+
+| Method | Called for | Must |
+| --- | --- | --- |
+| `get(keys)` | every cached read, once, with the entry key followed by its dependency version keys | resolve to one value per key, in the same order, with `null` for a missing or expired key. Return values exactly as stored. |
+| `set(entries)` | storing a result, initializing missing versions before SQL, and replacing versions after writes, `$cache.invalidate()`, and `$cache.clear()` | write each `value` under its `key`, overwriting any previous value, and expire it after `ttl` seconds. |
+| `delete(keys)` | `$cache.invalidate({ keys })`, to remove custom-key entries | remove the keys. Keys that do not exist are not an error. |
+
+What the plugin relies on:
+
+- **TTLs are whole seconds.** `ttl` is always a positive integer: durations are converted to seconds and rounded up. Entry TTLs never exceed `versionTtl`, and version keys are written with `versionTtl`.
+- **Values are opaque strings.** Each entry is a JSON header with its versions followed by the serialized result. Store and return it unchanged; the size is bounded by `maxSize`.
+- **No cross-key atomicity.** A batch passed to `set` does not have to be written atomically, and the plugin never asks for a transaction or compare-and-set. Each key does need its value and TTL written in one step (like `SET key value EX ttl`), so a key never exists without an expiry. Version values are random tokens, so concurrent writers to the same key need no coordination: the last one wins.
+- **Eviction is safe.** The store may drop any key at any time. A missing entry is a miss, and a missing version gets a fresh token before the query runs, so eviction never revives a stale entry.
+- **One shared store per deployment.** Invalidations reach other app instances only through the store. A store that lives in process memory only sees writes made by its own process.
+- **Failures reject.** Throw or return a rejected promise when an operation fails; do not swallow errors. The plugin wraps the failure as a `CACHE_STORE_ERROR`: during reads and writes it reaches `onError` and the call falls back to the database, while `$cache.invalidate()` and `$cache.clear()` throw it. A store that hides a failed `set` can hide a failed invalidation.
+
+A minimal in-process store, suitable for tests or a single process:
+
+```ts
+import { better } from 'better-drizzle';
+import { cache, type CacheStore } from 'better-drizzle/cache';
+
+const entries = new Map<string, { expiresAt: number; value: string }>();
+
+export const memory: CacheStore = {
+	async get(keys) {
+		const now = Date.now();
+		
+		return keys.map((key) => {
+			const entry = entries.get(key);
+			
+			if (!entry) return null;
+			
+			if (entry.expiresAt <= now) {
+				entries.delete(key);
+				
+				return null;
+			}
+			
+			return entry.value;
+		});
+	},
+	async set(items) {
+		const now = Date.now();
+		
+		for (const { key, ttl, value } of items)
+			entries.set(key, { expiresAt: now + ttl * 1000, value });
+	},
+	async delete(keys) {
+		for (const key of keys) entries.delete(key);
+	},
+};
+
+const client = better(db, { plugins: [cache({ store: memory, ttl: '5m' })] });
+```
+
+### The Redis store
+
+`redis(options)` returns a `CacheStore`. `RedisStoreOptions` takes exactly one of:
+
+- `client`: a `RedisClientLike`, which is any object with Bun's `send(command, args)`, ioredis' `call(command, ...args)`, or node-redis' `sendCommand(args)`. Any other object throws `CACHE_INVALID_OPTIONS`.
+- `command`: a function that runs one command given as a string array, such as `['SET', key, value, 'EX', '60']`, and resolves to its reply.
+
+plus an optional `cluster` flag (detected for ioredis `Cluster` clients). `get` sends one `MGET`, or one `GET` per key in cluster mode; `set` sends one `SET key value EX ttl` per entry, concurrently; `delete` sends one `DEL`, or one per key in cluster mode. Replies other than `null` are converted to strings. The store never opens or closes connections.
+
 ## Operating it
 
 - **Observing hits.** Client and plugin after hooks receive `annotations.cache` as `'hit'`, `'miss'`, or `'bypass'`. Reads that were never cache candidates carry no annotation. Log it from `afterQuery` to measure the hit rate per model and operation. To skip after hooks on hits, pass `afterHooksOnHit: false`, or `cache: { afterHooks: false }` on a call.

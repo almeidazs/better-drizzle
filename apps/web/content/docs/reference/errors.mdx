@@ -210,6 +210,7 @@ try {
 | Database | `JSONB_MUTATION_UNSUPPORTED` | 400 | A JSONB path mutation (dotted path or `{ json }` wrapper) was used on a dialect other than PostgreSQL. |
 | Database | `ARRAY_QUERY_UNSUPPORTED` | 400 | A native array filter was used on a dialect other than PostgreSQL. |
 | Database | `ARRAY_MUTATION_UNSUPPORTED` | 400 | A native array mutation (`append`, `prepend`, `remove`, `replace`, `addUnique`) was used on a dialect other than PostgreSQL. |
+| Operations | `UNIQUE_WHERE_REQUIRED` | 400 | A `findUnique` `where` does not pin one row by its primary key or a unique key (for example `{ id: undefined }`). |
 | Operations | `OPERATION_ERROR` | 500 | An operation received invalid input or failed, for example an invalid `batchSize` or a bad cursor. |
 | Operations | `UNKNOWN` | 500 | An uncategorized error. |
 | Prepared statements | `PREPARED_PARAM_MISSING` | 400 | `execute()` received no value for a `param()`. |
@@ -222,6 +223,10 @@ try {
 | Plugins | `PLUGIN_OPERATION_ARG_CONFLICT` | 500 | Two plugins add the same operation arg field. |
 | Plugins | `PLUGIN_REQUIRED_COLUMN_MISSING` | 500 | A model lacks a column a plugin requires. |
 | Plugins | `PLUGIN_REQUIRED_COLUMN_TYPE` | 500 | A required column exists with a different Drizzle type. |
+| Cache | `CACHE_INVALID_OPTIONS` | 500 | Thrown by `cache()` when `store` or `ttl` is missing, a duration is not a positive number of seconds or a `'30s'` / `'5m'` / `'1h'` / `'1d'` string, a `ttl` or `negativeTtl` (plugin, model, or per call) exceeds `versionTtl`, or `maxSize` is not a positive finite number. A per-call TTL is checked when the read runs. `redis()` throws it for a client without `send`, `call`, or `sendCommand`. |
+| Cache | `CACHE_STORE_ERROR` | 500 | The store's `get`, `set`, or `delete` failed. Thrown by `$cache.invalidate()` and `$cache.clear()`. During reads and writes it is only passed to `onError` (`details.stage`: `read`, `write`, or `invalidate`); the read falls back to the database and the write still succeeds. |
+| Cache | `CACHE_SERIALIZATION_ERROR` | 500 | A result could not be serialized, or a stored entry could not be deserialized. Never thrown: passed to `onError` (`details.stage`: `serialize` or `deserialize`); the result is returned uncached, or the read runs the query. |
+| Cache | `CACHE_VALUE_TOO_LARGE` | 500 | A serialized entry is larger than `maxSize`. Never thrown: passed to `onError` with `details.size` and `details.maxSize`; the result is returned but not stored. |
 | Raw SQL | `RAW_DISABLED` | 500 | Raw SQL is disabled with `raw.enabled: false`. |
 | Raw SQL | `RAW_UNSAFE_DISABLED` | 500 | `$rawUnsafe()` was called without `raw.allowUnsafe: true`. |
 | Raw SQL | `RAW_COMMENT_REQUIRED` | 400 | `raw.requireComment` is on and the call has no `options.comment`. |

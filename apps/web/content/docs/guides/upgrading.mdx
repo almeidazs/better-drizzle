@@ -36,8 +36,9 @@ a `schema` option.
 | Plugin / hook `ctx.schema` | the schema module | the relations config |
 | Driver errors | thrown as-is | wrapped in `DrizzleQueryError`, driver error on `cause` |
 
-The delegate API has not changed: every method, argument, and result shape
-works as before. That covers `findMany`, `cursor`, `upsertMany`,
+The delegate API keeps its methods, arguments, and result shapes, apart from
+the [type changes](#7-typecheck) and
+[behavior changes](#behavior-changes-to-review) listed below. That covers `findMany`, `cursor`, `upsertMany`,
 `include._count`, `connect` / `set`, locks, `$withContext`, raw SQL,
 transactions, and every plugin option. The migration touches the lines that
 build the client and the type annotations that name the schema.
@@ -199,6 +200,22 @@ rejected at the top level and inside `where`, `data`, `create`, `update`,
 `include` at the same level. Previously TypeScript let them through. A typo such as `{ where: { emial: '...' } }` is now a compile error.
 When a check fails, remove the key or fix its name.
 
+Other type changes the typecheck surfaces:
+
+- **`OrderType` was removed** from `better-drizzle` and `better-drizzle/zod`.
+  Write `'asc'` / `'desc'` instead of `OrderType.Asc` / `OrderType.Desc`.
+- **`cursor()` `after` / `before` accept only a cursor object or `null`.**
+  String cursors are a type error; the runtime already rejected them.
+  `nextCursor` and `previousCursor` are now typed as that cursor object (or
+  `null`), so you can pass them straight back without a cast. See
+  [cursor pagination](/docs/querying/pagination#cursor-pagination).
+- **`create({ skipDuplicates })` is typed nullable.** When `skipDuplicates` is
+  set (and not `false`), the result type includes `null`, matching the runtime
+  result for a skipped insert. Handle the `null` case.
+- **`update()` and `delete()` return `ThrowingWriteResult`.** The type no
+  longer exposes `.explain()`, which writes never supported at runtime.
+  `.throw()` is unchanged.
+
 ### Breaking plugin API changes
 
 - **`better-drizzle/rules`: `mergeRules` was removed.** Use
@@ -255,6 +272,53 @@ observes at runtime:
   when the table declares no unique key besides the primary key. MySQL fires
   that clause on any unique key, so other tables use a read-then-write path
   instead of possibly updating a different row.
+- **`update()` and `delete()` change at most one row.** In `0.2.x` they ran
+  their `where` against every matching row and returned only the first. Now
+  only one row changes, on every dialect: a `where` that pins the primary key
+  or a unique key runs as a plain statement, and any other `where` is limited
+  to one row (a `LIMIT 1` subquery on PostgreSQL and SQLite; on MySQL, a
+  `SELECT ... FOR UPDATE` and a write by primary key in the active or an
+  implicit transaction). Code that relied on `update` / `delete` touching
+  several rows must use `updateMany` / `deleteMany`. The `upsert`
+  read-then-write path also updates the row it found. See
+  [update](/docs/writing/crud#update) and [delete](/docs/writing/crud#delete).
+- **`cursor()` without `orderBy` pages by primary key ascending.** Before, the
+  default direction depended on the call (descending, or ascending with
+  `before`), so the first page and later pages could walk different orders.
+  Pass an explicit `orderBy` to keep a descending order. See
+  [cursor pagination](/docs/querying/pagination#cursor-pagination).
+- **Zod and ATA cursor schemas reject string cursors.** `$zod` and `$ata`
+  cursor args schemas accept only the cursor object or `null`, matching the
+  types, so a string `after` / `before` fails validation instead of reaching
+  the runtime.
+- **Zod and ATA type numeric "number mode" columns as `number`.**
+  `numeric(..., { mode: 'number' })` and `decimal(..., { mode: 'number' })`
+  columns validate as numbers, not strings. Columns in the default string mode
+  still validate as strings. See [zod](/docs/plugins/zod) and
+  [ata](/docs/plugins/ata).
+- **`mode: 'insensitive'` works on SQLite and MySQL.** It compiled to `ILIKE`
+  everywhere, which is a syntax error outside PostgreSQL. SQLite and MySQL now
+  compile to `lower(column) LIKE lower(pattern)`; PostgreSQL keeps `ILIKE`.
+  See [string filters](/docs/querying/filters#string-filters).
+- **Raw SQL rules also check `$executeRaw`.** `requireRawComment`,
+  `requireRawTimeout`, `noRawMutation`, and `noRawWithoutTransaction` used to
+  check only `$raw`. Existing `$executeRaw` calls can now report violations.
+  See [rules](/docs/plugins/rules#raw-sql).
+- **Library error codes are kept.** Operation, raw, and transaction wrappers
+  keep the `code` of a `BetterDrizzleError` thrown inside them (for example
+  from a hook or a nested call) instead of replacing it with
+  `OPERATION_ERROR`. Check `catch` blocks that matched `OPERATION_ERROR` for
+  those cases. See [errors](/docs/reference/errors#error-codes).
+- **Success callbacks all run.** Every `afterCommit` callback, every
+  `afterTransactionCommit` hook, and every plugin `afterRaw` hook now runs even
+  when an earlier one throws; the first error is still rethrown. Previously
+  the first failure skipped the rest.
+- **`findUnique` requires a unique `where`.** The `where` must pin one row:
+  an equality on every primary key column, on a unique column, or on every
+  column of a composite unique key (a `param()` counts). Any other `where`,
+  including one where an `undefined` value dropped the key, such as
+  `{ id: undefined }`, throws `UNIQUE_WHERE_REQUIRED` before any SQL. Use
+  `findFirst` for lookups by non-unique columns.
 
 ### Also new in 0.3.0
 
@@ -268,7 +332,12 @@ observes at runtime:
   read caching with automatic invalidation and a Redis store at
   `better-drizzle/cache/redis`.
 - **[`better-drizzle/ata`](/docs/plugins/ata)**: JSON Schema validation of
-  operation inputs and results.
+  operation inputs and results. The entrypoint exports `ata` (default and
+  named), its types, and `version`; the registry, column, row, `where`, and
+  query-schema builders it uses internally are not exported.
+- **[`$where()`](/docs/querying/filters#reusing-a-filter-in-raw-drizzle)**:
+  every delegate compiles a typed `where` into a Drizzle `SQL` condition, so
+  the same filter works in raw `db.select()` queries, joins, and subqueries.
 - **[Atomic updates](/docs/writing/atomic-updates)**: `increment`,
   `decrement`, `multiply`, `divide`, and `set` on number columns, and
   `toggle` on boolean columns.
@@ -276,7 +345,9 @@ observes at runtime:
   `some` / `every` / `none` element predicates, and `append`, `prepend`,
   `remove`, `replace`, and `addUnique` mutations.
 - **[JSONB paths](/docs/querying/jsonb)**: dotted path filters such as
-  `{ metadata: { 'profile.age': { gte: 18 } } }`, and
+  `{ metadata: { 'profile.age': { gte: 18 } } }`, `in` / `notIn` on
+  string and number paths, `mode: 'insensitive'` on string paths
+  ([examples](/docs/querying/jsonb#lists-and-case-insensitive-matching)), and
   [path mutations](/docs/querying/jsonb#jsonb-path-mutations) in `update`,
   `updateMany`, `updateEach`, `upsert`, and `upsertMany` that compile to
   `jsonb_set(...)`.
@@ -307,6 +378,15 @@ with Drizzle's own `db.query` API on the same `db`. See
   `ModelExtensionTypeResolver`. Generic function resolvers still work, but
   with Drizzle 1.x types they can hit `Type instantiation is excessively deep`
   (TS2589). See [writing plugins](/docs/plugins/writing-plugins).
+- `config.requires.columns` now enforces `optional` and `type`. An `optional`
+  column may be missing (it used to fail bootstrap anyway), and a `type` that
+  does not match the column fails bootstrap with
+  `PLUGIN_REQUIRED_COLUMN_TYPE`; `type` used to be informational. See
+  [setup and fail-fast requirements](/docs/plugins/writing-plugins#setup-and-fail-fast-requirements).
+- Plugins can add typed raw SQL options by augmenting the
+  `RawOptionsExtensions` interface of `better-drizzle`. Raw hooks receive
+  unknown options unchanged in `rawOptions`; the cache plugin's
+  `cache: { invalidate }` raw option uses this.
 - `better-drizzle/zod` needs a Zod version with Zod 4-compatible schema types.
   The peer range is `^3.25.0 || ^4.0.0`.
 

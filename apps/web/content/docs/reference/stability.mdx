@@ -37,6 +37,7 @@ logs, but the value is always the package version.
 - documented client methods
 - documented option names on `better()`, on each operation, and on official plugins
 - the plugin authoring API: `definePlugin`, hooks, transforms, extensions, and `operationArgs`
+- plugin operation intercepts: `intercept(ctx)` with `next()`, `annotate()`, `skipAfterHooks()`, and `params`, plus the `annotations` after hooks receive (see [intercepts](/docs/plugins/writing-plugins#intercepts))
 - the published [support matrix](/docs/reference/support-matrix) for PostgreSQL, SQLite, and MySQL
 
 ## Experimental in `0.3.x`
@@ -45,7 +46,9 @@ logs, but the value is always the package version.
   per-call `cache` arguments, `$cache` methods, the store interface, and the
   stored entry format can change in a **patch** release while the plugin
   matures. Pin an exact version if you depend on it, and expect cached
-  entries to be discarded after an upgrade.
+  entries to be discarded after an upgrade. The plugin is built on
+  `intercept`, which is part of the stable plugin API above; only the cache
+  plugin itself is experimental.
 
 Experimental entrypoints are not covered by the semver policy below until
 they move to the stable list.
