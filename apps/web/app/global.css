@@ -172,6 +172,11 @@ body {
 	--fd-docs-row-2: var(--fd-docs-row-1) !important;
 }
 
+/* Search lives in the docs header; drop Fumadocs' duplicate in the sidebar and drawer. */
+aside [data-search-full] {
+	display: none;
+}
+
 [data-toc-popover] {
 	transition: top 200ms;
 }
