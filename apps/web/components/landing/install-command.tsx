@@ -5,9 +5,9 @@ import { Check, Copy } from 'lucide-react';
 import { useState } from 'react';
 
 const MANAGERS = {
-	npm: 'npm install better-drizzle drizzle-orm',
-	pnpm: 'pnpm add better-drizzle drizzle-orm',
-	bun: 'bun add better-drizzle drizzle-orm',
+	npm: 'npm i better-drizzle drizzle-orm@1.0.0-rc.4',
+	pnpm: 'pnpm add better-drizzle drizzle-orm@1.0.0-rc.4',
+	bun: 'bun add better-drizzle drizzle-orm@1.0.0-rc.4',
 } as const;
 
 type Manager = keyof typeof MANAGERS;
@@ -28,7 +28,7 @@ export function InstallCommand() {
 	}
 
 	return (
-		<div className="border-fd-border bg-fd-card/60 flex w-full max-w-md items-center gap-2 rounded-xl border px-3 py-2 font-mono text-sm backdrop-blur">
+		<div className="border-fd-border bg-fd-card/60 inline-flex max-w-full items-center gap-2 rounded-xl border px-3 py-2 font-mono text-sm backdrop-blur">
 			<div className="border-fd-border flex items-center gap-1 border-r pr-2">
 				{(Object.keys(MANAGERS) as Manager[]).map((key) => (
 					<button
@@ -46,7 +46,7 @@ export function InstallCommand() {
 					</button>
 				))}
 			</div>
-			<code className="text-fd-foreground flex-1 truncate">
+			<code className="text-fd-foreground min-w-0 overflow-x-auto whitespace-nowrap">
 				<span className="text-fd-muted-foreground select-none">$ </span>
 				{command}
 			</code>

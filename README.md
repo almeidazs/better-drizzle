@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/almeidazs/better-drizzle/main/assets/logo.png" alt="better-drizzle" width="520" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/almeidazs/better-drizzle/main/assets/logo.png" />
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/almeidazs/better-drizzle/main/assets/logo-light.png" />
+    <img src="https://raw.githubusercontent.com/almeidazs/better-drizzle/main/assets/logo-card.png" alt="better-drizzle" width="520" />
+  </picture>
 </p>
 
 <br/>

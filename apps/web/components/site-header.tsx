@@ -103,11 +103,50 @@ function useGithubStars() {
 	return stars;
 }
 
+function useHideOnScrollDown() {
+	const [hidden, setHidden] = useState(false);
+
+	useEffect(() => {
+		let lastY = window.scrollY;
+
+		const onScroll = () => {
+			const y = window.scrollY;
+			if (Math.abs(y - lastY) < 4) return;
+			setHidden(y > lastY && y > 56);
+			lastY = y;
+		};
+
+		window.addEventListener('scroll', onScroll, { passive: true });
+		return () => window.removeEventListener('scroll', onScroll);
+	}, []);
+
+	return hidden;
+}
+
+function ReleaseBanner() {
+	return (
+		<Link
+			href="/docs/guides/upgrading"
+			className="border-fd-border/70 text-fd-muted-foreground hover:text-fd-foreground block border-b px-4 py-2 text-center text-xs transition-colors sm:text-sm"
+		>
+			better-drizzle 0.3 now runs on Drizzle ORM 1.0 RC. Read the upgrade
+			guide
+		</Link>
+	);
+}
+
 function HeaderShell({ right }: { right?: React.ReactNode }) {
 	const stars = useGithubStars();
+	const hidden = useHideOnScrollDown();
 
 	return (
-		<header className="border-fd-border/70 bg-fd-background/80 sticky top-0 z-40 min-w-0 border-b backdrop-blur-lg">
+		<header
+			className={cn(
+				'border-fd-border/70 bg-fd-background/80 sticky top-0 z-40 min-w-0 border-b backdrop-blur-lg transition-transform duration-200',
+				hidden && '-translate-y-full',
+			)}
+		>
+			<ReleaseBanner />
 			<div className="mx-auto flex h-14 max-w-6xl min-w-0 items-center gap-3 px-4 sm:px-6">
 				<Link href="/" className="shrink-0">
 					<Logo className="w-28 sm:w-32" />
@@ -147,26 +186,6 @@ export function HomeSiteHeader() {
 			}
 		/>
 	);
-}
-
-function useHideOnScrollDown() {
-	const [hidden, setHidden] = useState(false);
-
-	useEffect(() => {
-		let lastY = window.scrollY;
-
-		const onScroll = () => {
-			const y = window.scrollY;
-			if (Math.abs(y - lastY) < 4) return;
-			setHidden(y > lastY && y > 56);
-			lastY = y;
-		};
-
-		window.addEventListener('scroll', onScroll, { passive: true });
-		return () => window.removeEventListener('scroll', onScroll);
-	}, []);
-
-	return hidden;
 }
 
 export function DocsSiteHeader() {

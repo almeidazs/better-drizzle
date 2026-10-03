@@ -1,24 +1,30 @@
+import { cn } from 'cnfast';
 import {
 	ArrowRight,
+	Bot,
 	Blocks,
 	BookOpenText,
+	Calculator,
 	Filter,
-	GitBranch,
-	Layers,
-	Lock,
-	ScanSearch,
+	Gauge,
+	GitMerge,
+	Network,
+	Plus,
+	RefreshCw,
+	SearchCheck,
 	ShieldCheck,
-	Terminal,
+	Zap,
 } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { FaDiscord, FaGithub } from 'react-icons/fa';
-import { SiPostgresql } from 'react-icons/si';
+import { SiMysql, SiPostgresql, SiSqlite } from 'react-icons/si';
 
 import { JsonLd } from '@/components/json-ld';
-import { CodeWindow } from '@/components/landing/code-window';
-import { SponsorHeart } from '@/components/landing/database-logos';
+import { DocsCode, DocsCodeTabs } from '@/components/landing/docs-code';
+import { Faq } from '@/components/landing/faq';
 import { InstallCommand } from '@/components/landing/install-command';
+import { Testimonials } from '@/components/landing/testimonials';
 import { Logo } from '@/components/logo';
 import {
 	GITHUB_URL,
@@ -29,138 +35,288 @@ import {
 	SITE_URL,
 } from '@/lib/seo';
 
-const HERO_CODE = `import { better } from 'better-drizzle';
+const FOOTER_LINKS = [
+	{
+		title: 'Documentation',
+		links: [
+			{ href: '/docs/getting-started', label: 'Get Started' },
+			{ href: '/docs/why', label: 'Why better-drizzle' },
+			{
+				href: '/docs/guides/migrating-from-drizzle',
+				label: 'Migrating from Drizzle',
+			},
+			{ href: '/docs/reference/model-api', label: 'API Reference' },
+			{ href: '/docs/performance/benchmarks', label: 'Benchmarks' },
+		],
+	},
+	{
+		title: 'Guides',
+		links: [
+			{ href: '/docs/querying/relations', label: 'Relations' },
+			{ href: '/docs/querying/pagination', label: 'Pagination' },
+			{ href: '/docs/advanced/transactions', label: 'Transactions' },
+			{ href: '/docs/plugins/writing-plugins', label: 'Writing Plugins' },
+			{ href: '/docs/ai', label: 'AI & Agent Skills' },
+		],
+	},
+	{
+		title: 'Project',
+		links: [
+			{ href: '/docs/changelog', label: 'Changelog' },
+			{ href: '/docs/guides/upgrading', label: 'Upgrading to 0.3' },
+			{ href: `${GITHUB_URL}/issues`, label: 'Report an Issue' },
+			{ href: NPM_URL, label: 'npm' },
+			{ href: 'https://github.com/sponsors/almeidazs', label: 'Sponsor' },
+		],
+	},
+];
 
-const client = better(db); // db = drizzle({ connection, relations })
+const HERO_CODE = `const client = better(db); // your drizzle({ relations }) instance
 
+// relation filters, nested includes, and counts - typed end to end
 const authors = await client.users.findMany({
-  where: {
-    active: true,
-    posts: { some: { published: true } },
-  },
+  where: { posts: { some: { published: true } } },
   include: {
-    _count: { select: { posts: { where: { published: true } } } },
-    posts: {
-      where: { published: true },
-      orderBy: [{ score: 'desc' }],
-      take: 3,
-    },
+    posts: { orderBy: { createdAt: 'desc' }, take: 3 },
+    _count: { select: { posts: true } },
   },
-  take: 20,
 });
 
+authors[0].posts[0].title; // string
 authors[0]._count.posts; // number
-authors[0].posts[0].title; // string`;
 
-const RAW_CODE = `import { and, desc, eq } from 'drizzle-orm';
+// relation writes run in one transaction
+await client.posts.create({
+  data: { title: 'Hello', author: { connect: { id: 1 } } },
+});`;
 
-const rows = await db
-  .select({
-    id: posts.id,
-    title: posts.title,
-    author: { id: users.id, name: users.name },
-  })
-  .from(posts)
-  .innerJoin(users, eq(posts.authorId, users.id))
-  .where(and(eq(posts.published, true), eq(users.active, true)))
-  .orderBy(desc(posts.id))
-  .limit(20);`;
+const RAW_CODE = `import { and, count, desc, eq, getColumns, sql } from 'drizzle-orm';
 
-const BETTER_CODE = `const rows = await client.posts.findMany({
+const where = and(eq(posts.published, true), eq(users.active, true));
+
+const [data, [{ total }]] = await Promise.all([
+  db
+    .select({
+      ...getColumns(posts),
+      author: { name: users.name },
+      _count: {
+        comments: sql<number>\`(
+          select count(*) from \${comments}
+          where \${comments.postId} = \${posts.id}
+        )\`.mapWith(Number),
+      },
+    })
+    .from(posts)
+    .innerJoin(users, eq(users.id, posts.authorId))
+    .where(where)
+    .orderBy(desc(posts.createdAt))
+    .limit(20)
+    .offset(20),
+  db
+    .select({ total: count() })
+    .from(posts)
+    .innerJoin(users, eq(users.id, posts.authorId))
+    .where(where),
+]);
+
+const pageCount = Math.ceil(total / 20);
+const pagination = {
+  page: 2,
+  perPage: 20,
+  total,
+  pageCount,
+  hasNext: 2 < pageCount,
+  hasPrevious: true,
+};`;
+
+const BETTER_CODE = `const { data, pagination } = await client.posts.paginate({
   where: {
     published: true,
     author: { is: { active: true } },
   },
-  select: {
-    id: true,
-    title: true,
-    author: { select: { id: true, name: true } },
+  include: {
+    author: { select: { name: true } },
+    _count: { select: { comments: true } },
   },
-  orderBy: [{ id: 'desc' }],
-  take: 20,
+  orderBy: { createdAt: 'desc' },
+  page: 2,
+  perPage: 20,
 });`;
 
-const PLUGINS_CODE = `// one package - every plugin is a subpath export
-import { better } from 'better-drizzle';
-import { recommended, rules } from 'better-drizzle/rules';
-import { softDelete } from 'better-drizzle/soft-delete';
-import { timestamps } from 'better-drizzle/timestamps';
-import { zod } from 'better-drizzle/zod';
-
-const client = better(db, {
-  plugins: [
-    rules(recommended({ noRawUnsafe: true })),
-    zod({ validate: { create: true, update: true } }),
-    timestamps(),
-    softDelete({
-      column: 'deletedAt',
-      defaults: { visibility: 'without' },
-    }),
-  ],
+const CACHE_TABS = [
+	{
+		label: 'better-drizzle',
+		code: `const client = better(db, {
+  plugins: [cache({ store: redis({ client: new Redis() }), ttl: '5m' })],
 });
 
-await client.users.delete({
-  where: { id: 1 },
-  mode: 'soft',
-}); // typed plugin arg
+const feed = await client.posts.paginate({
+  where: { published: true },
+  include: { author: true },
+  page: 1,
+  perPage: 20,
+  cache: true, // Redis after the first call
+});
 
-await client.users.findMany({ deleted: 'only' }); // typed filter
-await client.users.restore({ where: { id: 1 } }); // plugin method
-client.users.$zod.create; // generated Zod schema`;
+await client.posts.update({ where: { id }, data: { title } });
+await client.users.update({ where: { id: authorId }, data: { name } });
+// both writes invalidate the cached feed - no keys to track`,
+	},
+	{
+		label: 'Drizzle',
+		code: `const key = 'feed:published:page:1';
+const cached = await redis.get(key);
+
+const feed = cached
+  ? JSON.parse(cached) // Dates come back as strings
+  : await loadFeed({ page: 1, perPage: 20 });
+
+if (!cached) await redis.set(key, JSON.stringify(feed), 'EX', 300);
+
+await db.update(posts).set({ title }).where(eq(posts.id, id));
+await redis.del(key); // and every other page, count, and list of posts
+
+await db.update(users).set({ name }).where(eq(users.id, authorId));
+// and every cached feed that shows this author`,
+	},
+];
+
+const PLUGINS = [
+	{
+		name: 'Soft delete',
+		body: 'delete() sets deletedAt. Reads skip deleted rows.',
+		href: '/docs/plugins/soft-delete',
+	},
+	{
+		name: 'Timestamps',
+		body: 'createdAt and updatedAt filled on every write.',
+		href: '/docs/plugins/timestamps',
+	},
+	{
+		name: 'Zod',
+		body: 'A schema per table, checked before each write.',
+		href: '/docs/plugins/zod',
+	},
+	{
+		name: 'Cache',
+		body: 'Cached reads, cleared when the rows change. Experimental.',
+		href: '/docs/plugins/cache',
+	},
+	{
+		name: 'Rules',
+		body: 'Stop unbounded reads and unsafe writes at runtime.',
+		href: '/docs/plugins/rules',
+	},
+	{
+		name: 'ESLint',
+		body: 'The same rules, flagged in your editor.',
+		href: '/docs/plugins/eslint',
+	},
+];
 
 const FEATURES = [
 	{
+		icon: Network,
+		title: 'Relations without N+1',
+		href: '/docs/querying/relations',
+		body: "Nested include and select load any depth with one query per relation node, per-parent take/skip, and _count totals in the same SQL. About 9x faster than Drizzle's own relational queries.",
+	},
+	{
 		icon: Filter,
-		title: 'Typed nested filters',
-		body: 'Query across relations with some / every / none / is - inferred from your Drizzle relations, no subqueries by hand. Typed JSONB path filters on PostgreSQL.',
+		title: 'Filter through relations',
+		href: '/docs/querying/filters',
+		body: 'posts: { some: { published: true } } - some, every, none, and is, typed from your Drizzle relations. JSONB paths and array operators on PostgreSQL. No subqueries by hand.',
 	},
 	{
-		icon: Layers,
-		title: 'Batched relation loading',
-		body: 'Nested include and select run one query per relation node - no N+1, no cartesian blowup. Project relation totals with _count without an extra round-trip.',
+		icon: GitMerge,
+		title: 'Nested writes',
+		href: '/docs/writing/relation-writes',
+		body: 'connect, disconnect, and set relations inside create, update, and upsert, many-to-many included. The whole write runs in one transaction automatically.',
 	},
 	{
-		icon: GitBranch,
-		title: 'Relational writes',
-		body: 'connect, disconnect, and exclusive set on create and update. Many-to-many works through `.through()` relations, and the whole write runs in one implicit transaction.',
+		icon: Zap,
+		title: 'Bulk writes in one statement',
+		href: '/docs/writing/crud',
+		body: 'upsertMany as one native upsert, updateEach as a single UPDATE ... CASE, createMany with skipDuplicates and batching. No loops sending one query per row.',
+	},
+	{
+		icon: Calculator,
+		title: 'Atomic updates',
+		href: '/docs/writing/atomic-updates',
+		body: 'increment, decrement, multiply, and toggle without reading first. Append to PostgreSQL arrays or set one JSONB path with jsonb_set, all typed.',
 	},
 	{
 		icon: BookOpenText,
-		title: 'One pagination shape',
-		body: 'Use paginate() for offset pages and cursor() for feed-style navigation. Both return { data, pagination } without rebuilding metadata by hand.',
+		title: 'Pagination, done',
+		href: '/docs/querying/pagination',
+		body: 'paginate() returns total, pageCount, hasNext; cursor() returns next and previous cursors for feeds. Same { data, pagination } shape for both, no metadata math by hand.',
 	},
 	{
-		icon: ScanSearch,
-		title: 'Query plans, inline',
-		body: 'Every read helper is a thenable with .explain(). Get a structured, cross-dialect plan - including deferred relation stages - without running the query twice.',
+		icon: Gauge,
+		title: 'Prepared reads',
+		href: '/docs/querying/prepared-statements',
+		body: 'Mark values with param() and call .prepare() on any read. Plugins and hooks set up once, then every execute() reuses the same statement with new values.',
 	},
 	{
-		icon: Lock,
-		title: 'Row locks',
-		body: 'lock, skipLocked, and noWait on PostgreSQL and MySQL, with an opt-in guard that rejects locked reads outside a transaction.',
+		icon: RefreshCw,
+		title: 'Transactions that hold up',
+		href: '/docs/advanced/transactions',
+		body: 'Nested savepoints, afterCommit / afterRollback callbacks, and automatic retries on deadlocks and serialization failures.',
 	},
 	{
 		icon: Blocks,
-		title: 'First-class plugins',
-		body: 'Rules, Zod, ATA, timestamps, and soft delete ship in the box - with transforms, lifecycle hooks, and typed operation args you can add yourself.',
+		title: 'Plugins in the box',
+		href: '/docs/plugins/overview',
+		body: 'Soft delete, timestamps, Zod schemas, an experimental read cache, and runtime guardrails ship in the same package. Write your own with typed args and hooks.',
+	},
+];
+
+const DATABASES = [
+	{
+		icon: SiPostgresql,
+		iconClassName: 'text-[#336791] dark:text-[#6b9bd1]',
+		name: 'PostgreSQL',
+		body: 'The full API, plus typed JSONB path filters and updates, native array operators, ILIKE, and row locks.',
+		href: '/docs/querying/jsonb',
+	},
+	{
+		icon: SiMysql,
+		iconClassName: 'text-[#00758F] dark:text-[#5fb3c9]',
+		name: 'MySQL',
+		body: 'The full repository API, with native ON DUPLICATE KEY upserts and row locks. Batch writes return counts.',
+		href: '/docs/reference/support-matrix',
+	},
+	{
+		icon: SiSqlite,
+		iconClassName: 'text-[#0F80CC] dark:text-[#4ea8e6]',
+		name: 'SQLite',
+		body: 'The full API with RETURNING. A fast fit for local development, tests, and in-memory databases.',
+		href: '/docs/getting-started',
+	},
+];
+
+const AGENT_POINTS = [
+	{
+		icon: Bot,
+		title: 'Skill pack in the repo',
+		body: 'SKILL.md plus focused references for querying, writes, plugins, and troubleshooting, loaded only when a task needs them.',
 	},
 	{
 		icon: ShieldCheck,
-		title: 'Guardrails, static and runtime',
-		body: 'better-drizzle/eslint catches what a linter can see; better-drizzle/rules enforces the rest at runtime - raw SQL, destructive writes, unbounded reads.',
+		title: 'Zero scripts, zero network',
+		body: 'Plain Markdown. No install commands, no remote fetches, and explicit rules against prompt injection from your codebase.',
 	},
 	{
-		icon: Terminal,
-		title: 'Raw SQL, when you want it',
-		body: '$raw, $executeRaw, and guarded $rawUnsafe are first-class, with their own hooks. Drop to SQL only when it genuinely reads better.',
+		icon: SearchCheck,
+		title: 'Guardrails that catch mistakes',
+		body: 'The ESLint plugin flags unbounded reads and unsafe writes in the editor, and the rules plugin enforces them at runtime.',
 	},
 ];
 
 const STATS = [
-	{ value: '9.1×', label: 'faster relation loading at parity' },
-	{ value: '< 9%', label: 'read latency overhead at parity' },
-	{ value: '< 5%', label: 'write overhead at parity' },
-	{ value: '0', label: 'codegen or build steps' },
+	{ value: '~5%', label: 'Median read overhead' },
+	{ value: '< 5%', label: 'Write overhead' },
+	{ value: '0', label: 'Codegen steps' },
 ];
 
 const STRUCTURED_DATA = {
@@ -196,89 +352,93 @@ export default function HomePage() {
 			<JsonLd data={STRUCTURED_DATA} />
 			<section className="relative overflow-hidden">
 				<div className="bd-grid pointer-events-none absolute inset-0" />
-				<div className="relative mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 px-6 py-20 lg:grid-cols-2 lg:py-28">
-					<div className="bd-rise flex flex-col items-start">
-						<span className="border-fd-border bg-fd-card/60 text-fd-muted-foreground inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium backdrop-blur">
-							<Logo className="w-10" />
-							Drizzle ORM, but better
-						</span>
-						<h1 className="mt-6 text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
-							Type-safe repository helpers for{' '}
-							<span className="text-brand">Drizzle</span>.
-						</h1>
-						<p className="text-fd-muted-foreground mt-5 max-w-xl text-lg text-pretty">
-							Keep Drizzle&rsquo;s type-safety. Drop the
-							repetitive query glue. better-drizzle wraps your
-							client and gives every table reads, writes, relation
-							loading, pagination, hooks, and plugins - without
-							giving up the metal.
-						</p>
-						<div className="mt-7 w-full">
-							<InstallCommand />
-						</div>
-						<div className="mt-6 flex flex-wrap items-center gap-3">
-							<Link
-								href="/docs"
-								className="bg-brand text-brand-contrast inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold transition-opacity hover:opacity-90"
-							>
-								Get started
-								<ArrowRight className="size-4" />
-							</Link>
-							<a
-								href="https://github.com/almeidazs/better-drizzle"
-								target="_blank"
-								rel="noreferrer"
-								className="border-fd-border hover:bg-fd-accent hover:text-fd-accent-foreground inline-flex items-center gap-2 rounded-lg border px-5 py-2.5 text-sm font-semibold transition-colors"
-							>
-								<FaGithub className="size-4" />
-								Star on GitHub
-							</a>
-						</div>
-					</div>
-
+				<div className="relative mx-auto flex max-w-6xl flex-col items-center px-6 pt-20 pb-16 text-center lg:pt-28">
+					<h1 className="bd-rise max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-6xl">
+						Drizzle ORM,{' '}
+						<span className="text-brand">without the glue</span>
+					</h1>
+					<p
+						className="bd-rise text-fd-muted-foreground mt-6 max-w-2xl text-lg text-pretty"
+						style={{ animationDelay: '40ms' }}
+					>
+						Relation filters, nested includes, pagination, relation
+						writes, and plugins on every table. Fully typed, on top
+						of the Drizzle client you already have.
+					</p>
 					<div
-						className="bd-rise lg:pl-4"
+						className="bd-rise mt-8 flex flex-wrap items-center justify-center gap-3"
 						style={{ animationDelay: '80ms' }}
 					>
-						<CodeWindow code={HERO_CODE} title="posts.ts" accent />
+						<Link
+							href="/docs/getting-started"
+							className="bg-brand text-brand-contrast inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold transition-opacity hover:opacity-90"
+						>
+							Get started
+							<ArrowRight className="size-4" />
+						</Link>
+						<a
+							href={GITHUB_URL}
+							target="_blank"
+							rel="noreferrer"
+							className="border-fd-border hover:bg-fd-accent inline-flex items-center gap-2 rounded-lg border px-5 py-2.5 text-sm font-semibold transition-colors"
+						>
+							<FaGithub className="size-4" />
+							GitHub
+						</a>
+					</div>
+					<div
+						className="bd-rise mt-6 flex w-full justify-center"
+						style={{ animationDelay: '120ms' }}
+					>
+						<InstallCommand />
+					</div>
+					<div
+						className="bd-rise mt-14 w-full max-w-3xl text-left"
+						style={{ animationDelay: '160ms' }}
+					>
+						<DocsCode code={HERO_CODE} title="authors.ts" />
 					</div>
 				</div>
 			</section>
 
-			<section className="mx-auto max-w-6xl px-6 py-20">
+			<section className="mx-auto max-w-6xl px-6 py-24">
 				<div className="mx-auto max-w-2xl text-center">
 					<h2 className="text-3xl font-semibold tracking-tight">
 						The same query, without the glue
 					</h2>
 					<p className="text-fd-muted-foreground mt-4">
-						Both are fully typed. The difference is the dozens of
-						these you write across a codebase - and which one
-						you&rsquo;d rather read.
+						A paginated feed with a relation filter, author data,
+						and comment counts. Same result, fully typed on both
+						sides.
 					</p>
 				</div>
-				<div className="mt-12 grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
-					<div className="flex flex-col gap-3">
-						<span className="text-fd-muted-foreground text-sm font-medium">
-							Raw Drizzle
-						</span>
-						<CodeWindow code={RAW_CODE} title="raw-drizzle.ts" />
+				<div className="mt-12 grid grid-cols-1 items-start gap-8 lg:grid-cols-2">
+					<div>
+						<div className="mb-3 flex items-baseline justify-between gap-4">
+							<span className="font-semibold">Drizzle</span>
+							<span className="text-fd-muted-foreground text-sm">
+								2 queries, join, subquery, page math
+							</span>
+						</div>
+						<DocsCode code={RAW_CODE} title="feed.ts" />
 					</div>
-					<div className="flex flex-col gap-3">
-						<span className="text-brand text-sm font-medium">
-							better-drizzle
-						</span>
-						<CodeWindow
-							code={BETTER_CODE}
-							title="better-drizzle.ts"
-							accent
-						/>
+					<div className="lg:sticky lg:top-24">
+						<div className="mb-3 flex items-baseline justify-between gap-4">
+							<span className="text-brand font-semibold">
+								better-drizzle
+							</span>
+							<span className="text-fd-muted-foreground text-sm">
+								one call, same result
+							</span>
+						</div>
+						<DocsCode code={BETTER_CODE} title="feed.ts" />
 					</div>
 				</div>
 			</section>
 
 			<section className="bg-fd-card/30">
 				<div className="mx-auto max-w-6xl px-6 py-20">
-					<div className="max-w-2xl">
+					<div className="mx-auto max-w-2xl text-center">
 						<h2 className="text-3xl font-semibold tracking-tight">
 							Everything you rewrite, once
 						</h2>
@@ -290,225 +450,286 @@ export default function HomePage() {
 					</div>
 					<div className="border-fd-border bg-fd-border mt-12 grid grid-cols-1 gap-px overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-3">
 						{FEATURES.map((feature) => (
-							<div
+							<Link
 								key={feature.title}
-								className="bg-fd-background flex flex-col gap-3 p-6"
+								href={feature.href}
+								className="group bg-fd-background hover:bg-fd-accent/40 flex flex-col gap-3 p-6 transition-colors"
 							>
 								<feature.icon className="text-brand size-5" />
-								<h3 className="font-semibold">
+								<h3 className="flex items-center gap-1.5 font-semibold">
 									{feature.title}
+									<ArrowRight className="size-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
 								</h3>
 								<p className="text-fd-muted-foreground text-sm">
 									{feature.body}
 								</p>
-							</div>
+							</Link>
 						))}
 					</div>
 				</div>
 			</section>
 
-			<section className="mx-auto max-w-6xl px-6 py-20">
-				<div className="mx-auto max-w-2xl text-center">
+			<section className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 px-6 py-24 lg:grid-cols-2">
+				<div>
 					<h2 className="text-3xl font-semibold tracking-tight">
-						Close to the metal
+						Faster where it counts. Close everywhere else.
 					</h2>
 					<p className="text-fd-muted-foreground mt-4">
-						Measured against raw Drizzle with fair, API-parity
-						comparisons. Relation loading is <em>faster</em> through
-						the wrapper; the rest stays close - and where it
-						doesn&rsquo;t, the benchmarks say so.
+						Every number comes from API-parity benchmarks: raw
+						Drizzle does the same work and returns the same shape.
+						The batched relation loader beats Drizzle&rsquo;s own
+						relational queries by an order of magnitude, and the
+						wrapper costs a few microseconds on everything else.
+					</p>
+					<dl className="mt-10 grid grid-cols-3 gap-6">
+						{STATS.map((stat) => (
+							<div key={stat.label}>
+								<dt className="text-fd-muted-foreground text-sm">
+									{stat.label}
+								</dt>
+								<dd className="mt-1 text-2xl font-semibold tracking-tight">
+									{stat.value}
+								</dd>
+							</div>
+						))}
+					</dl>
+				</div>
+				<div>
+					<p className="text-fd-muted-foreground text-sm">
+						Loading users with posts and comments
+					</p>
+					<p className="text-brand mt-2 text-6xl font-semibold tracking-tight">
+						9.5× faster
+					</p>
+					<div className="mt-8 flex flex-col gap-5">
+						<div>
+							<div className="flex justify-between text-sm">
+								<span className="font-medium">
+									Drizzle db.query
+								</span>
+								<span className="text-fd-muted-foreground tabular-nums">
+									3.94 ms
+								</span>
+							</div>
+							<div className="bg-fd-muted-foreground/40 mt-2 h-3 w-full rounded-full" />
+						</div>
+						<div>
+							<div className="flex justify-between text-sm">
+								<span className="font-medium">
+									better-drizzle
+								</span>
+								<span className="text-fd-muted-foreground tabular-nums">
+									414 µs
+								</span>
+							</div>
+							<div className="bg-brand mt-2 h-3 w-[10.5%] rounded-full" />
+						</div>
+					</div>
+					<p className="text-fd-muted-foreground mt-8 text-sm">
+						SQLite in-memory, same machine, both sides interleaved.{' '}
+						<Link
+							href="/docs/performance/benchmarks"
+							className="text-brand font-medium hover:underline"
+						>
+							See every benchmark →
+						</Link>
 					</p>
 				</div>
-				<div className="border-fd-border bg-fd-border mt-12 grid grid-cols-1 gap-px overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-4">
-					{STATS.map((stat) => (
-						<div
-							key={stat.label}
-							className="bg-fd-background flex flex-col gap-2 p-6 text-center"
-						>
-							<span className="text-brand text-3xl font-semibold tracking-tight">
-								{stat.value}
-							</span>
-							<span className="text-fd-muted-foreground text-sm">
-								{stat.label}
-							</span>
-						</div>
-					))}
-				</div>
-				<p className="text-fd-muted-foreground mt-6 text-center text-sm">
-					Numbers from the repository&rsquo;s suite (SQLite
-					in-memory).{' '}
-					<Link
-						href="/docs/performance/benchmarks"
-						className="text-brand font-medium hover:underline"
-					>
-						See the full benchmarks →
-					</Link>
-				</p>
 			</section>
 
-			<section className="mx-auto max-w-6xl px-6 py-20">
-				<div className="mx-auto max-w-2xl text-center">
+			<section className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 px-6 py-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+				<div>
 					<h2 className="text-3xl font-semibold tracking-tight">
 						Works with your existing database
 					</h2>
 					<p className="text-fd-muted-foreground mt-4">
-						better-drizzle stays on top of Drizzle, so your driver
-						choice does not change.
+						The dialect is read from your Drizzle instance. Keep
+						your driver, keep your schema - the same client API runs
+						on all three.
+					</p>
+					<Link
+						href="/docs/reference/support-matrix"
+						className="text-brand mt-6 inline-flex items-center gap-2 text-sm font-semibold hover:underline"
+					>
+						Compare dialect support
+						<ArrowRight className="size-4" />
+					</Link>
+				</div>
+				<div className="divide-fd-border border-fd-border divide-y border-y">
+					{DATABASES.map((database) => (
+						<Link
+							key={database.name}
+							href={database.href}
+							className="group flex items-center gap-5 py-5"
+						>
+							<database.icon
+								className={cn(
+									'size-8 shrink-0',
+									database.iconClassName,
+								)}
+							/>
+							<div className="min-w-0 flex-1">
+								<p className="font-semibold">{database.name}</p>
+								<p className="text-fd-muted-foreground mt-1 text-sm">
+									{database.body}
+								</p>
+							</div>
+							<ArrowRight className="text-fd-muted-foreground group-hover:text-fd-foreground size-4 shrink-0 transition-transform group-hover:translate-x-0.5" />
+						</Link>
+					))}
+				</div>
+			</section>
+
+			<section className="mx-auto max-w-6xl px-6 py-24">
+				<div className="mx-auto max-w-2xl text-center">
+					<h2 className="text-3xl font-semibold tracking-tight">
+						Plugins that know your schema
+					</h2>
+					<p className="text-fd-muted-foreground mt-4">
+						Plugins see every query and every relation. The cache
+						knows which reads a write affects, even through an{' '}
+						<code>include</code>, so you never manage keys.
 					</p>
 				</div>
-				<div className="border-fd-border bg-fd-border mt-10 grid grid-cols-1 gap-px overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-4">
-					<div className="bg-fd-background relative flex items-center gap-4 p-6">
-						<div className="absolute top-3 right-4 inline-flex items-center gap-1 rounded-full border border-rose-200/70 bg-rose-50 px-2 py-1 text-[10px] font-semibold tracking-[0.16em] text-rose-700 uppercase dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200">
-							OUR SPONSOR
-							<SponsorHeart className="size-3 fill-current stroke-current" />
-						</div>
+				<div className="mt-12 grid grid-cols-1 items-center gap-12 lg:grid-cols-2">
+					<DocsCodeTabs tabs={CACHE_TABS} />
+					<div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2">
+						{PLUGINS.map((plugin) => (
+							<Link
+								key={plugin.href}
+								href={plugin.href}
+								className="group"
+							>
+								<p className="group-hover:text-brand flex items-center gap-1.5 font-semibold transition-colors">
+									{plugin.name}
+									<ArrowRight className="size-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
+								</p>
+								<p className="text-fd-muted-foreground mt-1 text-sm">
+									{plugin.body}
+								</p>
+							</Link>
+						))}
+					</div>
+				</div>
+				<p className="text-fd-muted-foreground mt-12 text-center text-sm">
+					Need something else?{' '}
+					<Link
+						href="/docs/plugins/writing-plugins"
+						className="text-brand font-medium hover:underline"
+					>
+						Write your own plugin →
+					</Link>
+				</p>
+			</section>
+
+			<section className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 px-6 py-24 lg:grid-cols-2">
+				<div>
+					<h2 className="text-3xl font-semibold tracking-tight">
+						Your AI agent writes the real API
+					</h2>
+					<p className="text-fd-muted-foreground mt-4">
+						better-drizzle ships a first-party skill pack for coding
+						agents. Point yours at it and it stops guessing: the
+						right <code>select</code> shapes, dialect limits, and
+						plugin APIs, straight from the source.
+					</p>
+					<div className="mt-6 flex flex-wrap gap-x-6 gap-y-3">
+						<Link
+							href="/docs/ai"
+							className="text-brand inline-flex items-center gap-2 text-sm font-semibold hover:underline"
+						>
+							Set up the skill
+							<ArrowRight className="size-4" />
+						</Link>
+						<Link
+							href="/docs/plugins/eslint"
+							className="text-fd-muted-foreground hover:text-fd-foreground inline-flex items-center gap-2 text-sm font-semibold"
+						>
+							ESLint plugin
+							<ArrowRight className="size-4" />
+						</Link>
+					</div>
+				</div>
+				<ul className="flex flex-col gap-6">
+					{AGENT_POINTS.map((point) => (
+						<li key={point.title} className="flex gap-4">
+							<point.icon className="text-brand mt-0.5 size-5 shrink-0" />
+							<div>
+								<p className="font-semibold">{point.title}</p>
+								<p className="text-fd-muted-foreground mt-1 text-sm">
+									{point.body}
+								</p>
+							</div>
+						</li>
+					))}
+				</ul>
+			</section>
+
+			<Testimonials />
+
+			<Faq />
+
+			<section className="mx-auto max-w-6xl px-6 py-28 text-center">
+				<p className="text-fd-muted-foreground text-sm">
+					better-drizzle is free and open source, kept going by
+				</p>
+				<div className="mt-8 flex flex-wrap items-center justify-center gap-x-10 gap-y-6">
+					<a
+						href="https://neon.com"
+						target="_blank"
+						rel="noreferrer"
+						className="inline-flex items-center gap-2.5 opacity-90 transition-opacity hover:opacity-100"
+					>
 						<Image
 							src="https://neon.com/brand/neon-logomark-dark-color.svg"
-							alt="Neon"
-							className="size-8 shrink-0"
-							width={32}
-							height={32}
+							alt=""
+							className="size-7"
+							width={28}
+							height={28}
 						/>
-						<div className="pr-12">
-							<p className="font-semibold">Neon</p>
-							<p className="text-fd-muted-foreground text-sm">
-								Serverless Postgres for modern Drizzle
-								workflows.
-							</p>
-						</div>
-					</div>
-					<div className="bg-fd-background flex items-center gap-4 p-6">
-						<SiPostgresql className="size-8 text-[#336791]" />
-						<div>
-							<p className="font-semibold">PostgreSQL</p>
-							<p className="text-fd-muted-foreground text-sm">
-								Typed delegates on top of the Drizzle pg stack.
-							</p>
-						</div>
-					</div>
-					<div className="bg-fd-background flex items-center gap-4 p-6">
-						<svg
-							viewBox="0 0 170 170"
-							className="size-8 shrink-0"
-							aria-hidden="true"
-						>
-							<path
-								d="m103.096 71.5961c-.057.7219-.091 1.191-.091 1.191s-2.189 14.7578-4.7948 19.1617c-.4122.6981.0449 3.5653 1.1953 7.8121.6725-1.1629 3.5115-6.1371 4.0815-7.7398.642-1.8121.777-2.3313.777-2.3313s-1.557 8.0114-4.112 12.6862c.56 1.89 1.229 3.979 1.986 6.212.968-1.698 3.285-5.809 3.795-7.235.103-.293.19-.542.268-.77.025.137.05.274.075.411-.585 2.482-1.734 6.801-3.307 9.992 3.49 18.165 15.393 42.445 27.596 53.278l-79.6048 0c-5.3352 0-9.7004-4.366-9.7004-9.701l0-87.7892c0-5.3347 4.3652-9.7 9.7004-9.7l52.4298 0c-.378 4.5762-.504 9.6391-.294 14.5223"
-								fill="#0f80cc"
-							/>
-							<path
-								d="m99.4055 99.7609c.6725-1.1629 3.5115-6.1371 4.0815-7.7398.642-1.8121.777-2.3313.777-2.3313s-1.557 8.0114-4.112 12.6862c.56 1.89 1.229 3.979 1.986 6.212.885-1.553 2.896-5.12 3.623-6.81.027.319.054.638.082.954-.644 2.475-1.622 5.715-2.874 8.254 3.214 16.725 13.559 38.625 24.704 50.448l-76.7128 0c-3.7883 0-6.8711-3.082-6.8711-6.871l0-81.3841c17.3738 6.668 38.323 12.7633 56.3529 12.502-.6693 2.5812-1.4315 4.9152-2.2318 6.2679-.4122.6981.0449 3.5653 1.1953 7.8121"
-								fill="#97d9f6"
-							/>
-							<path
-								d="m149.133 167.137c-5.452 4.862-12.053 2.909-18.568-2.873-.967-.859-1.932-1.812-2.892-2.83-11.145-11.823-21.49-33.723-24.704-50.448 1.252-2.539 2.23-5.779 2.874-8.254.165-.635.314-1.231.433-1.738.283-1.1999.435-1.978.435-1.978s-.1.3781-.51 1.567c-.078.228-.165.477-.268.77-.044.121-.105.268-.172.425-.727 1.69-2.738 5.257-3.623 6.81-.757-2.233-1.426-4.322-1.986-6.212 2.555-4.6748 4.112-12.6862 4.112-12.6862s-.135.5192-.777 2.3313c-.57 1.6027-3.409 6.5769-4.0815 7.7398-1.1504-4.2468-1.6075-7.114-1.1953-7.8121.8003-1.3527 1.5625-3.6867 2.2318-6.2679 1.512-5.8149 2.563-12.8938 2.563-12.8938s.034-.4691.091-1.191c-.21-4.8832-.084-9.9461.294-14.5223.501-6.0578 1.444-11.2617 2.646-14.0468l.816.4449c-1.765 5.4871-2.482 12.6781-2.168 20.9711.475 12.6761 3.392 27.9629 8.782 43.896 9.106 24.052 21.74 43.35 33.303 52.566-10.539-9.518-24.803-40.327-29.073-51.736-4.781-12.776-8.169-24.7651-10.211-36.2518 3.523 10.7687 14.914 15.3976 14.914 15.3976s5.587 6.8903 12.116 16.7342c-3.911-.892-10.333-2.419-12.484-3.323-3.173-1.331-4.028-1.785-4.028-1.785s10.278 6.259 19.096 9.093c12.127 19.1 25.339 46.234 12.034 58.103"
-								fill="#003b57"
-							/>
-						</svg>
-						<div>
-							<p className="font-semibold">SQLite</p>
-							<p className="text-fd-muted-foreground text-sm">
-								Fast local dev and benchmark-friendly in-memory
-								setups.
-							</p>
-						</div>
-					</div>
-					<div className="bg-fd-background flex items-center gap-4 p-6">
-						<svg
-							viewBox="0 0 256 252"
-							className="size-8 shrink-0 text-[#00546B] dark:text-[#F0F0F0]"
-							fill="currentColor"
-							aria-hidden="true"
-						>
-							<path d="M235.648 194.212c-13.918-.347-24.705 1.045-33.752 4.872-2.61 1.043-6.786 1.044-7.134 4.35 1.392 1.392 1.566 3.654 2.784 5.567 2.09 3.479 5.741 8.177 9.047 10.614 3.653 2.783 7.308 5.566 11.134 8.002 6.786 4.176 14.442 6.611 21.053 10.787 3.829 2.434 7.654 5.568 11.482 8.177 1.914 1.39 3.131 3.654 5.568 4.523v-.521c-1.219-1.567-1.567-3.828-2.784-5.568-1.738-1.74-3.48-3.306-5.22-5.046-5.045-6.784-11.308-12.7-18.093-17.571-5.567-3.828-17.747-9.047-20.008-15.485 0 0-.175-.173-.348-.347 3.827-.348 8.35-1.74 12.005-2.784 5.915-1.567 11.308-1.218 17.398-2.784 2.783-.696 5.567-1.566 8.35-2.436v-1.565c-3.13-3.132-5.392-7.307-8.698-10.265-8.873-7.657-18.617-15.137-28.707-21.4-5.394-3.48-12.354-5.742-18.095-8.699-2.086-1.045-5.567-1.566-6.784-3.306-3.133-3.827-4.873-8.872-7.134-13.396-5.044-9.57-9.917-20.182-14.267-30.272-3.13-6.786-5.044-13.572-8.872-19.834-17.92-29.577-37.406-47.497-67.33-65.07-6.438-3.653-14.093-5.219-22.27-7.132-4.348-.175-8.699-.522-13.048-.697-2.784-1.218-5.568-4.523-8.004-6.089C34.006 4.573 8.429-8.996 1.122 8.924c-4.698 11.308 6.96 22.442 10.96 28.185 2.96 4.001 6.786 8.524 8.874 13.048 1.218 2.956 1.565 6.09 2.783 9.221 2.785 7.653 5.393 16.18 9.048 23.314 1.914 3.653 4.001 7.48 6.437 10.786 1.392 1.913 3.827 2.784 4.35 5.915-2.435 3.48-2.61 8.7-4.003 13.049-6.263 19.66-3.826 44.017 5.046 58.457 2.783 4.348 9.395 13.92 18.268 10.265 7.83-3.131 6.09-13.048 8.35-21.747.524-2.09.176-3.48 1.219-4.872v.349c2.436 4.87 4.871 9.569 7.133 14.44 5.394 8.524 14.788 17.398 22.617 23.314 4.177 3.13 7.482 8.524 12.702 10.438v-.523h-.349c-1.044-1.566-2.61-2.261-4.001-3.48-3.131-3.13-6.612-6.958-9.047-10.438-7.306-9.744-13.745-20.53-19.486-31.665-2.783-5.392-5.22-11.308-7.481-16.701-1.045-2.09-1.045-5.22-2.784-6.263-2.61 3.827-6.437 7.133-8.351 11.83-3.304 7.481-3.653 16.702-4.871 26.27-.696.176-.349 0-.697.35-5.566-1.394-7.48-7.134-9.569-12.006-5.22-12.352-6.09-32.186-1.565-46.452 1.218-3.654 6.438-15.136 4.35-18.616-1.044-3.306-4.525-5.22-6.438-7.829-2.261-3.306-4.698-7.48-6.263-11.135-4.176-9.743-6.264-20.53-10.787-30.273-2.088-4.524-5.74-9.22-8.699-13.396-3.305-4.697-6.959-8.004-9.569-13.571-.869-1.913-2.088-5.045-.696-7.133.348-1.392 1.043-1.913 2.436-2.261 2.262-1.915 8.7.521 10.96 1.565 6.438 2.608 11.831 5.046 17.225 8.699 2.435 1.74 5.045 5.046 8.176 5.916h3.654c5.568 1.217 11.83.348 17.05 1.913 9.222 2.957 17.572 7.307 25.054 12.005 22.792 14.44 41.58 34.97 54.282 59.501 2.088 4 2.957 7.656 4.871 11.83 3.655 8.526 8.178 17.225 11.83 25.576 3.654 8.176 7.133 16.528 12.353 23.314 2.61 3.652 13.048 5.567 17.746 7.481 3.48 1.565 8.874 2.958 12.005 4.871 5.915 3.652 11.83 7.83 17.398 11.83 2.784 2.088 11.482 6.438 12.005 9.917z" />
-							<path d="M58.186 43.022c-2.957 0-5.044.35-7.132.871v.348h.348c1.393 2.784 3.827 4.698 5.566 7.133 1.393 2.783 2.61 5.568 4.003 8.352.173-.175.347-.348.347-.348 2.437-1.741 3.654-4.524 3.654-8.7-1.044-1.217-1.218-2.435-2.088-3.653-1.043-1.741-3.306-2.61-4.698-4.003z" />
-						</svg>
-						<div>
-							<p className="font-semibold">MySQL</p>
-							<p className="text-fd-muted-foreground text-sm">
-								Same API surface on top of mysql-backed Drizzle
-								clients.
-							</p>
-						</div>
-					</div>
+						<span className="text-xl font-semibold tracking-tight">
+							Neon
+						</span>
+					</a>
+					<a
+						href="https://blog.victorbona.dev/"
+						target="_blank"
+						rel="noreferrer"
+						className="inline-flex items-center gap-2.5 opacity-90 transition-opacity hover:opacity-100"
+					>
+						<Image
+							src="/sponsors/vicotrbb.jpg"
+							alt=""
+							className="size-7 rounded-full"
+							width={28}
+							height={28}
+						/>
+						<span className="text-xl font-semibold tracking-tight">
+							Victor Bona
+						</span>
+					</a>
+					<a
+						href="https://github.com/sponsors/almeidazs"
+						target="_blank"
+						rel="noreferrer"
+						className="border-fd-border text-fd-muted-foreground hover:border-brand hover:text-brand inline-flex h-11 items-center gap-2 rounded-full border border-dashed px-5 text-sm font-medium transition-colors"
+					>
+						<Plus className="size-4" />
+						Your logo here
+					</a>
 				</div>
-			</section>
-
-			<section className="bg-fd-card/30">
-				<div className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 px-6 py-20 lg:grid-cols-2">
-					<div>
-						<h2 className="text-3xl font-semibold tracking-tight">
-							Plugins do the cross-cutting work
-						</h2>
-						<p className="text-fd-muted-foreground mt-4">
-							Rules, Zod, timestamps, and soft delete ship as
-							official plugins - all inside the one{' '}
-							<code className="text-brand">better-drizzle</code>{' '}
-							package. They add typed arguments, rewrite
-							operations, and extend delegates, so behavior lives
-							in one place instead of every write.
-						</p>
-						<div className="mt-6 flex flex-wrap gap-3">
-							<Link
-								href="/docs/plugins/overview"
-								className="border-fd-border hover:bg-fd-accent hover:text-fd-accent-foreground inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold transition-colors"
-							>
-								Browse plugins
-								<ArrowRight className="size-4" />
-							</Link>
-							<Link
-								href="/docs/plugins/writing-plugins"
-								className="text-brand inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold hover:underline"
-							>
-								Write your own
-							</Link>
-						</div>
-					</div>
-					<CodeWindow code={PLUGINS_CODE} title="db.ts" />
-				</div>
-			</section>
-
-			<section className="border-fd-border bg-fd-card border-y">
-				<div className="mx-auto max-w-6xl px-6 py-24">
-					<div className="mx-auto max-w-2xl text-center">
-						<h2 className="text-4xl font-semibold tracking-tight">
-							Our Sponsors
-						</h2>
-						<p className="text-fd-muted-foreground mt-4 text-lg">
-							Thanks to companies backing better-drizzle and the
-							work around it.
-						</p>
-					</div>
-					<div className="mt-12 flex justify-center">
-						<a
-							href="https://neon.com"
-							target="_blank"
-							rel="noreferrer"
-							className="group border-fd-border bg-fd-background inline-flex items-center gap-3 rounded-2xl border px-6 py-4 transition-colors duration-200 hover:border-[#3cf2b2]/60"
-						>
-							<Image
-								src="https://neon.com/brand/neon-logomark-dark-color.svg"
-								alt="Neon"
-								className="size-10 shrink-0"
-								width={40}
-								height={40}
-							/>
-							<span className="text-fd-foreground text-2xl font-semibold tracking-tight">
-								Neon
-							</span>
-						</a>
-					</div>
-					<div className="mt-8 flex justify-center">
-						<a
-							href="https://github.com/sponsors/almeidazs"
-							target="_blank"
-							rel="noreferrer"
-							className="border-fd-border bg-fd-background text-fd-foreground hover:bg-fd-accent inline-flex items-center justify-center rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
-						>
-							Become a sponsor
-						</a>
-					</div>
-				</div>
+				<p className="text-fd-muted-foreground mt-8 text-sm">
+					Using it at work?{' '}
+					<a
+						href="https://github.com/sponsors/almeidazs"
+						target="_blank"
+						rel="noreferrer"
+						className="text-brand font-medium hover:underline"
+					>
+						Become a sponsor
+					</a>{' '}
+					and put your logo here.
+				</p>
 			</section>
 
 			<footer>
@@ -538,9 +759,10 @@ export default function HomePage() {
 								<FaDiscord className="size-6" />
 							</a>
 							<a
-								href="https://x.com/drizzleorm"
+								href="https://x.com/almeidazs"
 								target="_blank"
 								rel="noreferrer"
+								aria-label="X (Twitter)"
 								className="hover:text-fd-foreground transition-colors"
 							>
 								<svg
@@ -551,91 +773,67 @@ export default function HomePage() {
 								>
 									<path d="M18.901 1.153h3.68l-8.04 9.19L24 22.847h-7.406l-5.8-7.584-6.639 7.584H.474l8.6-9.83L0 1.153h7.594l5.243 6.932 6.064-6.932Zm-1.291 19.492h2.039L6.486 3.24H4.298l13.312 17.405Z" />
 								</svg>
-								<span className="sr-only">X</span>
 							</a>
 						</nav>
 					</div>
 					<div className="grid grid-cols-1 gap-10 sm:grid-cols-3">
-						<div>
-							<h3 className="text-fd-foreground text-lg font-semibold">
-								Documentation
-							</h3>
-							<div className="text-fd-muted-foreground mt-5 flex flex-col gap-3 text-sm">
-								<Link
-									href="/docs/getting-started"
-									className="hover:text-fd-foreground"
-								>
-									Get Started
-								</Link>
-								<Link
-									href="/docs/writing/crud"
-									className="hover:text-fd-foreground"
-								>
-									Manage Data
-								</Link>
-								<Link
-									href="/docs/plugins/overview"
-									className="hover:text-fd-foreground"
-								>
-									Plugins
-								</Link>
-								<Link
-									href="/docs/performance/benchmarks"
-									className="hover:text-fd-foreground"
-								>
-									Benchmarks
-								</Link>
+						{FOOTER_LINKS.map((group) => (
+							<div key={group.title}>
+								<h3 className="text-fd-foreground text-lg font-semibold">
+									{group.title}
+								</h3>
+								<div className="text-fd-muted-foreground mt-5 flex flex-col gap-3 text-sm">
+									{group.links.map((link) =>
+										link.href.startsWith('/') ? (
+											<Link
+												key={link.href}
+												href={link.href}
+												className="hover:text-fd-foreground transition-colors"
+											>
+												{link.label}
+											</Link>
+										) : (
+											<a
+												key={link.href}
+												href={link.href}
+												target="_blank"
+												rel="noreferrer"
+												className="hover:text-fd-foreground transition-colors"
+											>
+												{link.label}
+											</a>
+										),
+									)}
+								</div>
 							</div>
-						</div>
-						<div>
-							<h3 className="text-fd-foreground text-lg font-semibold">
-								Resources
-							</h3>
-							<div className="text-fd-muted-foreground mt-5 flex flex-col gap-3 text-sm">
-								<a
-									href="https://github.com/almeidazs/better-drizzle"
-									target="_blank"
-									rel="noreferrer"
-									className="hover:text-fd-foreground"
-								>
-									GitHub
-								</a>
-								<a
-									href="https://www.npmjs.com/package/better-drizzle"
-									target="_blank"
-									rel="noreferrer"
-									className="hover:text-fd-foreground"
-								>
-									npm
-								</a>
-							</div>
-						</div>
-						<div>
-							<h3 className="text-fd-foreground text-lg font-semibold">
-								Learn
-							</h3>
-							<div className="text-fd-muted-foreground mt-5 flex flex-col gap-3 text-sm">
-								<Link
-									href="/docs/querying/reads"
-									className="hover:text-fd-foreground"
-								>
-									Querying
-								</Link>
-								<Link
-									href="/docs/advanced/transactions"
-									className="hover:text-fd-foreground"
-								>
-									Transactions
-								</Link>
-								<Link
-									href="/docs/plugins/writing-plugins"
-									className="hover:text-fd-foreground"
-								>
-									Write Plugins
-								</Link>
-							</div>
-						</div>
+						))}
 					</div>
+				</div>
+				<div className="border-fd-border text-fd-muted-foreground mx-auto flex max-w-7xl flex-col gap-2 border-t px-6 py-6 text-xs sm:flex-row sm:justify-between">
+					<p>
+						Released under the{' '}
+						<a
+							href={`${GITHUB_URL}/blob/main/LICENSE`}
+							target="_blank"
+							rel="noreferrer"
+							className="hover:text-fd-foreground underline underline-offset-2"
+						>
+							Apache-2.0 License
+						</a>
+						.
+					</p>
+					<p>
+						Built on{' '}
+						<a
+							href="https://orm.drizzle.team"
+							target="_blank"
+							rel="noreferrer"
+							className="hover:text-fd-foreground underline underline-offset-2"
+						>
+							Drizzle ORM
+						</a>
+						.
+					</p>
 				</div>
 			</footer>
 		</>
