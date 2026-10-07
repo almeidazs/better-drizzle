@@ -162,6 +162,10 @@ by primary key ascending.
 Cursor tokens include every column in `orderBy`. Pass the returned token unchanged
 and repeat the same `orderBy` for each page. Include a unique, non-null key such
 as the primary key to distinguish rows that share a sort value, including `NULL`.
+Cursor tokens hold only the row's own column values, so `cursor()` throws
+`INVALID_ARGS` when `orderBy` contains a
+[relation key](/docs/querying/reads#ordering-by-relations). Use `paginate()` for
+pages sorted by a relation.
 
 ## Pagination with projection
 

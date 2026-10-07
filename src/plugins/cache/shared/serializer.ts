@@ -120,6 +120,7 @@ function canonicalText(
 		| 'query'
 		| 'relations'
 		| 'orderBy'
+		| 'sort'
 		| 'read'
 		| 'where'
 		| 'ordered',
@@ -165,11 +166,21 @@ function canonicalText(
 	let text = '{';
 	let first = true;
 	const keys = Object.keys(record);
-	if (mode !== 'orderBy' && mode !== 'ordered') keys.sort();
+	// orderBy field maps keep priority order; a `{ direction, nulls }` sort
+	// config does not, so its keys are sorted.
+	if (
+		mode === 'sort'
+			? keys.length === 2 &&
+				'direction' in record &&
+				(record.nulls === 'first' || record.nulls === 'last')
+			: mode !== 'orderBy' && mode !== 'ordered'
+	)
+		keys.sort();
 	for (const key of keys) {
 		if (record[key] === undefined) continue;
 		let childMode: typeof mode = 'value';
 		if (mode === 'ordered' || mode === 'where') childMode = 'ordered';
+		else if (mode === 'orderBy' || mode === 'sort') childMode = 'sort';
 		else if (mode === 'relations') childMode = 'query';
 		else if (mode === 'query') {
 			if (key === 'where') childMode = 'where';

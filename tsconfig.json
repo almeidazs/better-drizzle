@@ -28,6 +28,7 @@
 		"benchmark/**/*.ts",
 		"commitlint.config.ts",
 		"tsdown.config.ts",
-		"src/**/*.ts"
+		"src/**/*.ts",
+		"tests/types/**/*.ts"
 	]
 }

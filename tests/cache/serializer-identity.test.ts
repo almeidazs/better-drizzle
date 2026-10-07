@@ -30,6 +30,60 @@ describe('cache serializer identity', () => {
 			);
 	});
 
+	test('ignores key order inside { direction, nulls } sort configs', () => {
+		for (const wrap of [
+			(sort: object) => ({ name: sort }),
+			(sort: object) => [{ id: 'asc' }, { author: { name: sort } }],
+			(sort: object) => ({ author: { profile: { bio: sort } } }),
+		]) {
+			expect(
+				canonicalizeQueryArgs({
+					orderBy: wrap({ direction: 'desc', nulls: 'last' }),
+				}),
+			).toBe(
+				canonicalizeQueryArgs({
+					orderBy: wrap({ nulls: 'last', direction: 'desc' }),
+				}),
+			);
+			expect(
+				canonicalizeQueryArgs({
+					include: {
+						posts: {
+							orderBy: wrap({ direction: 'asc', nulls: 'first' }),
+						},
+					},
+				}),
+			).toBe(
+				canonicalizeQueryArgs({
+					include: {
+						posts: {
+							orderBy: wrap({ nulls: 'first', direction: 'asc' }),
+						},
+					},
+				}),
+			);
+		}
+		// Field maps that merely use these column names keep their priority.
+		expect(
+			canonicalizeQueryArgs({
+				orderBy: { direction: 'asc', nulls: 'desc' },
+			}),
+		).not.toBe(
+			canonicalizeQueryArgs({
+				orderBy: { nulls: 'desc', direction: 'asc' },
+			}),
+		);
+		expect(
+			canonicalizeQueryArgs({
+				orderBy: { author: { direction: 'asc', nulls: 'desc' } },
+			}),
+		).not.toBe(
+			canonicalizeQueryArgs({
+				orderBy: { author: { nulls: 'desc', direction: 'asc' } },
+			}),
+		);
+	});
+
 	test('still canonicalizes unordered query properties and arbitrary vary values', () => {
 		expect(
 			canonicalizeQueryArgs({ where: { name: 'Ada', id: 1 }, limit: 2 }),

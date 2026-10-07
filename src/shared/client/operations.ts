@@ -58,6 +58,7 @@ import {
 	getPgArrayElementColumn,
 	orderDirection,
 	orderNulls,
+	relationCursorError,
 } from '../query';
 import { getPrimaryKeyWhere, getTableRuntime, isSimpleRecord } from './context';
 import {
@@ -3121,6 +3122,8 @@ export const getCursorFields = <Schema extends AnySchema, Meta>(
 		for (const entry of entries)
 			for (const key in entry as Record<string, unknown>)
 				if (runtime.columns[key]) fields.push(key);
+				else if (runtime.relations[key])
+					throw relationCursorError(runtime, key);
 	if (fields.length) return fields;
 
 	const cursorToken = (
@@ -3445,6 +3448,8 @@ export const buildCursorPage = <Schema extends AnySchema, Meta>(
 	return {
 		args,
 		direction: built.direction,
+		// Derived before any SQL runs, so a relation sort fails on first pages too.
+		fields: getCursorFields(context, tableName, args),
 		fastQuery: buildFastCursorQuery(context, tableName, args, queryArgs),
 		queryArgs,
 	};
@@ -3574,5 +3579,8 @@ export const cursorRecords = async <Schema extends AnySchema, Meta>(
 		rows,
 		limit,
 		Boolean(page.fastQuery),
+		undefined,
+		undefined,
+		page.fields,
 	);
 };

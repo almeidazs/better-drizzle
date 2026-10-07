@@ -324,6 +324,58 @@ describe.skipIf(!DATABASE_URL)('Drizzle 1.x migration (PostgreSQL)', () => {
 		});
 	});
 
+	describe('relation sorting', () => {
+		test('sorts by one relation fields and to-many counts', async () => {
+			await client.invoices.createMany({
+				data: [
+					{ accountId: 2, amount: 5, id: 2 },
+					{ accountId: 2, amount: 7, id: 3 },
+				],
+			});
+
+			const invoices = await client.invoices.findMany({
+				orderBy: [
+					{ account: { name: { direction: 'desc', nulls: 'last' } } },
+					{ id: 'asc' },
+				],
+			});
+			expect(invoices.map((row) => row.id)).toEqual([2, 3, 1]);
+
+			const accounts = await client.accounts.findMany({
+				include: {
+					invoices: {
+						orderBy: [{ account: { name: 'asc' } }, { id: 'desc' }],
+						take: 1,
+					},
+				},
+				orderBy: [{ invoices: { _count: 'desc' } }, { id: 'asc' }],
+			});
+			expect(
+				accounts.map((row) => [row.id, row.invoices.map((i) => i.id)]),
+			).toEqual([
+				[2, [3]],
+				[1, [1]],
+			]);
+
+			const prepared = client.invoices
+				.findMany({
+					orderBy: [{ account: { name: 'asc' } }, { id: 'asc' }],
+				})
+				.prepare();
+			expect((await prepared.execute({})).map((row) => row.id)).toEqual([
+				1, 2, 3,
+			]);
+
+			const locked = await client.transaction((tx) =>
+				tx.invoices.findMany({
+					lock: { mode: 'update' },
+					orderBy: [{ account: { name: 'desc' } }, { id: 'asc' }],
+				}),
+			);
+			expect(locked.map((row) => row.id)).toEqual([2, 3, 1]);
+		});
+	});
+
 	describe('driver errors', () => {
 		test('raw Drizzle wraps the pg error, helpers read its SQLSTATE', async () => {
 			const error = await captureError(() =>

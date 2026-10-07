@@ -379,6 +379,67 @@ export const defineCacheSuite = (
 			expect((await counts())?._count.posts).toBe(2);
 		});
 
+		test('relation sort keys are dependencies', async () => {
+			const { client } = createClient(createStore());
+			const byAuthor = () =>
+				client.posts.findMany({
+					cache: true,
+					orderBy: [{ author: { name: 'desc' } }, { id: 'asc' }],
+				});
+
+			expect((await byAuthor()).map((post) => post.id)).toEqual([
+				3, 1, 2,
+			]);
+			await client.users.update({
+				data: { name: 'Zed' },
+				where: { id: 1 },
+			});
+			expect((await byAuthor()).map((post) => post.id)).toEqual([
+				1, 2, 3,
+			]);
+		});
+
+		test('relation sort key order is part of the key', async () => {
+			const { client, count } = createClient(createStore());
+			const byNameFirst = () =>
+				client.posts.findMany({
+					cache: true,
+					orderBy: { author: { name: 'asc', tenantId: 'desc' } },
+				});
+			const byTenantFirst = () =>
+				client.posts.findMany({
+					cache: true,
+					orderBy: { author: { tenantId: 'desc', name: 'asc' } },
+				});
+
+			expect(await count(byNameFirst)).toBe(1);
+			expect(await count(byTenantFirst)).toBe(1);
+			expect(await count(byNameFirst)).toBe(0);
+			expect(await count(byTenantFirst)).toBe(0);
+		});
+
+		test('sort keys in nested relation args are dependencies', async () => {
+			const { client, count } = createClient(createStore());
+			const read = () =>
+				client.users.findUnique({
+					cache: true,
+					include: {
+						posts: {
+							orderBy: { author: { groups: { _count: 'desc' } } },
+						},
+					},
+					where: { id: 1 },
+				});
+
+			await read();
+			expect(await count(read)).toBe(0);
+			await client.$executeRaw(
+				sql`INSERT INTO cache_memberships (user_id, group_id) VALUES (2, 1)`,
+				{ cache: { invalidate: { models: ['memberships'] } } },
+			);
+			expect(await count(read)).toBeGreaterThan(0);
+		});
+
 		test('relation writes invalidate the target model', async () => {
 			const { client } = createClient(createStore());
 			const members = () =>

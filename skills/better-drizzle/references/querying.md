@@ -83,9 +83,15 @@ await client.users.findUnique({
 ```ts
 orderBy: { createdAt: 'desc' }
 orderBy: [{ lastSeenAt: { direction: 'desc', nulls: 'last' } }, { id: 'asc' }]
+orderBy: [{ author: { name: 'asc' } }, { id: 'asc' }] // one relation: related fields, any depth
+orderBy: { posts: { _count: 'desc' } } // many or .through() relation: row count only
 ```
 
-Only scalar columns of the queried table are allowed. There is no ordering by relation columns or SQL expressions.
+- Relation keys compile to correlated subqueries in the same statement. Rows without a related record sort as `NULL`; `nulls` works on relation fields too.
+- `_count` on a `one` relation, or a field map on a to-many relation, is a compile error and `INVALID_ARGS` at runtime.
+- `cursor()` and the `cursor` arg throw `INVALID_ARGS` with a relation key in `orderBy`. Use `paginate()` instead.
+- Sort subqueries ignore soft-delete. Index foreign keys used by `_count` sorts.
+- No SQL expressions and no aggregates other than `_count`.
 
 ## Pagination
 

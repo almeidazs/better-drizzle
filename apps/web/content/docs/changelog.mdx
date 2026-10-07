@@ -1,10 +1,21 @@
 ---
 title: Changelog
-description: Every change in better-drizzle 0.3.0 compared with 0.2.0, with links to the docs and commits.
+description: Unreleased changes, and every change in better-drizzle 0.3.0 compared with 0.2.0, with links to the docs and commits.
 icon: History
 seoTitle: 'Changelog - better-drizzle 0.3.0'
 seoDescription: 'What changed in better-drizzle 0.3.0 since 0.2.0: Drizzle ORM 1.x support, breaking and behavior changes, prepared statements, caching, and fixes.'
 ---
+
+## Unreleased
+
+### New features
+
+- **Order by relations.** `orderBy` accepts relation keys, nested like relation filters. A `one` relation takes the related table's fields at any depth, with `'asc'` / `'desc'` or `{ direction, nulls }` (`orderBy: { author: { name: 'asc' } }`). A `many` or `.through()` relation takes its row count (`orderBy: { posts: { _count: 'desc' } }`). Each key compiles to a correlated subquery in the same statement, so the query count does not change. Relation sorts work in root reads, `paginate()`, nested `include` / `select` args, `.explain()`, and `.prepare()`, on PostgreSQL, MySQL, and SQLite. See [ordering by relations](/docs/querying/reads#ordering-by-relations).
+- **Cache and Zod plugins follow relation sorts.** The cache plugin invalidates a sorted read when the related model (or the junction of a many-to-many relation) is written, and keeps nested `orderBy` key order in cache keys. `$zod.orderBy` and `$zod.query` accept relation sorts and reject `_count` on `one` relations and field maps on to-many relations.
+
+### Behavior changes
+
+- **Relation keys in `orderBy` are no longer skipped.** A relation key was ignored at runtime, so the rows came back unsorted by it. Valid relation sorts now apply. `_count` on a `one` relation, a field map on a to-many relation, a non-object relation value, and a relation key combined with `cursor()` or the `cursor` read argument throw `INVALID_ARGS`. Unknown `orderBy` keys are still skipped at runtime.
 
 ## 0.3.0 - 2026-10-03
 

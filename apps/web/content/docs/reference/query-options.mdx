@@ -27,8 +27,8 @@ Accepted by `findMany`, `findFirst`, `findOne`, and `findUnique`:
 			type: 'IncludeInput',
 		},
 		orderBy: {
-			description: 'Sort scalar columns. Values can set direction and optional NULL placement; one field map or an array for multi-column ordering.',
-			type: '{ [column]: "asc" | "desc" | { direction: "asc" | "desc"; nulls?: "first" | "last" } } | [...]',
+			description: 'Sort by scalar columns, by fields of `one` relations (nested, any depth), or by the row count of `many` / many-to-many relations. Values can set direction and optional NULL placement; one field map or an array for multi-column ordering.',
+			type: '{ [column]: "asc" | "desc" | { direction: "asc" | "desc"; nulls?: "first" | "last" }; [oneRelation]: OrderBy<Related>; [manyRelation]: { _count: "asc" | "desc" } } | [...]',
 		},
 		take: {
 			description: 'Max rows to return. A negative value does not reverse the order; sort with `orderBy` instead.',
@@ -39,7 +39,7 @@ Accepted by `findMany`, `findFirst`, `findOne`, and `findUnique`:
 			type: 'number',
 		},
 		cursor: {
-			description: 'Cursor position (scalar column values) for cursor-style reads.',
+			description: 'Cursor position (scalar column values) for cursor-style reads. Cannot be combined with a relation key in `orderBy`.',
 			type: 'CursorInput',
 		},
 		lock: {
@@ -53,7 +53,20 @@ Accepted by `findMany`, `findFirst`, `findOne`, and `findUnique`:
 	}}
 />
 
-For example, `orderBy: { lastSeenAt: { direction: 'desc', nulls: 'last' } }` puts rows with a `NULL` value after non-`NULL` values. When `nulls` is omitted, the database default applies. PostgreSQL and SQLite use native `NULLS FIRST` / `NULLS LAST` ordering; MySQL gets equivalent behavior through an `IS NULL` ordering term. Better Drizzle rejects an unrecognized provider dialect during client initialization. Ordering remains limited to scalar columns of the current table; SQL expressions and root ordering by relation columns require Drizzle directly. See [limitations](/docs/guides/limitations).
+For example, `orderBy: { lastSeenAt: { direction: 'desc', nulls: 'last' } }` puts rows with a `NULL` value after non-`NULL` values. When `nulls` is omitted, the database default applies. PostgreSQL and SQLite use native `NULLS FIRST` / `NULLS LAST` ordering; MySQL gets equivalent behavior through an `IS NULL` ordering term. Better Drizzle rejects an unrecognized provider dialect during client initialization.
+
+Relation keys nest like relation filters. A `one` relation takes the related table's own `orderBy` field map, at any depth, and a `many` or many-to-many relation takes exactly `{ _count: 'asc' | 'desc' }`:
+
+```ts
+orderBy: [
+	{ author: { profile: { bio: { direction: 'desc', nulls: 'last' } } } },
+	{ id: 'asc' },
+]
+
+orderBy: { posts: { _count: 'desc' } }
+```
+
+Each relation key becomes a correlated subquery in the same statement's `ORDER BY`. Rows without a related record sort as `NULL`. `_count` on a `one` relation, a field map on a to-many relation, or a non-object relation value throws `INVALID_ARGS`, as does a relation key combined with `cursor` or `cursor()`. SQL expressions in `orderBy` still require Drizzle directly. See [ordering by relations](/docs/querying/reads#ordering-by-relations) and [limitations](/docs/guides/limitations).
 
 `count` and `exists` accept only `where`, `cursor`, and `meta`.
 
@@ -166,7 +179,7 @@ It returns `{ data, pagination: { type, page, perPage, total, pageCount, hasNext
 	}}
 />
 
-Pass `after` or `before`, never both. Both take a cursor object, such as a previous `nextCursor` / `previousCursor`. Without `orderBy`, pages are ordered by primary key ascending.
+Pass `after` or `before`, never both. Both take a cursor object, such as a previous `nextCursor` / `previousCursor`. Without `orderBy`, pages are ordered by primary key ascending. `orderBy` must use scalar columns only: a relation key throws `INVALID_ARGS`, including on the first page.
 
 It returns `{ data, pagination: { type, hasNext, hasPrevious, nextCursor, previousCursor } }`. See [pagination](/docs/querying/pagination).
 

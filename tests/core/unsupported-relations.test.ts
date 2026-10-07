@@ -41,5 +41,12 @@ test('filtered relations fail instead of being ignored', async () => {
 			db.users.findMany({ include: { publishedPosts: true } }),
 		),
 	).rejects.toThrow('cannot be loaded');
+	await expect(
+		Promise.resolve(
+			db.users.findMany({
+				orderBy: { publishedPosts: { _count: 'asc' } },
+			}),
+		),
+	).rejects.toThrow('cannot be sorted');
 	sqlite.close();
 });

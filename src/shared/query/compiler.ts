@@ -1279,7 +1279,8 @@ export const compileWhereInput = <Schema extends AnySchema, Meta>(
 
 /**
  * Compiles an `OrderByInput` into an array of Drizzle SQL order-by clauses.
- * Supports single or multi-column ordering with ascending/descending direction.
+ * Supports single or multi-column ordering with ascending/descending direction,
+ * plus relation keys: a field map for one relations, `{ _count }` for to-many.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Meta   - Custom metadata type.
@@ -1301,41 +1302,264 @@ export const compileOrderBy = <Schema extends AnySchema, Meta>(
 			const value = (entry as Record<string, unknown>)[key];
 			const column = context.runtime.columns[key];
 
-			if (!column) continue;
-
-			const direction = orderDirection(value);
-			const nulls = orderNulls(value);
-			if (!nulls) {
-				clauses.push(direction === 'desc' ? desc(column) : asc(column));
-				continue;
-			}
-
-			if (context.dialect === 'mysql') {
-				if (
-					(nulls === 'first' && direction === 'asc') ||
-					(nulls === 'last' && direction === 'desc')
-				) {
-					clauses.push(
-						direction === 'desc' ? desc(column) : asc(column),
-					);
-					continue;
-				}
-
-				clauses.push(
-					nulls === 'first'
-						? desc(isNull(column))
-						: asc(isNull(column)),
+			if (column) pushOrder(clauses, context.dialect, column, value);
+			else
+				compileRelationOrder(
+					context,
+					context.runtime,
+					context.rootAlias,
+					key,
+					value,
+					0,
+					undefined,
+					clauses,
 				);
-				clauses.push(direction === 'desc' ? desc(column) : asc(column));
-				continue;
-			}
-
-			clauses.push(
-				sql`${column} ${sql.raw(direction)} nulls ${sql.raw(nulls)}`,
-			);
 		}
 
 	return clauses.length ? clauses : undefined;
+};
+
+const pushOrder = (
+	clauses: SQL[],
+	dialect: string | undefined,
+	expression: SQLWrapper | AnyColumn,
+	value: unknown,
+) => {
+	const direction = orderDirection(value);
+	const nulls = orderNulls(value);
+	if (!nulls) {
+		clauses.push(direction === 'desc' ? desc(expression) : asc(expression));
+		return;
+	}
+
+	if (dialect === 'mysql') {
+		// MySQL sorts NULL first ascending and last descending; emulate the rest.
+		if ((nulls === 'first') !== (direction === 'asc'))
+			clauses.push(
+				nulls === 'first'
+					? desc(isNull(expression))
+					: asc(isNull(expression)),
+			);
+		clauses.push(direction === 'desc' ? desc(expression) : asc(expression));
+		return;
+	}
+
+	clauses.push(
+		sql`${expression} ${sql.raw(direction)} nulls ${sql.raw(nulls)}`,
+	);
+};
+
+/** Cursor tokens hold scalar row values only, so relation sorts cannot page. */
+export const relationCursorError = (runtime: TableRuntime, relation: string) =>
+	invalidRelationOrder(
+		runtime,
+		relation,
+		`Cursor pagination cannot sort by relation "${relation}" on "${runtime.dbName}"; sort by scalar columns instead.`,
+	);
+
+const invalidRelationOrder = (
+	runtime: TableRuntime,
+	relation: string,
+	message: string,
+) =>
+	new BetterDrizzleError({
+		code: BetterDrizzleErrorCode.InvalidArgs,
+		details: { relation },
+		message,
+		operation: 'orderBy',
+		table: runtime.dbName,
+	});
+
+/**
+ * Sorts by a relation through correlated scalar subqueries, so the outer
+ * FROM clause and row count stay unchanged. A one relation selects the
+ * related value (`limit 1`), wrapping deeper levels; a to-many relation sorts
+ * by its row count. Each depth gets its own alias so self relations correlate.
+ */
+const compileRelationOrder = <Schema extends AnySchema, Meta>(
+	context: WhereCompilerContext<Schema, Meta>,
+	runtime: TableRuntime,
+	sourceAlias: string | undefined,
+	key: string,
+	value: unknown,
+	depth: number,
+	wrap: ((expression: SQLWrapper | AnyColumn) => SQL) | undefined,
+	clauses: SQL[],
+) => {
+	const relation = runtime.relations[key];
+	if (!relation) {
+		if (runtime.unsupportedRelations[key])
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.OperationError,
+				details: { relation: key },
+				message: `Relation "${key}" on "${runtime.dbName}" cannot be sorted: ${runtime.unsupportedRelations[key]}.`,
+				operation: 'orderBy',
+				table: runtime.dbName,
+			});
+		return;
+	}
+	if (value === undefined) return;
+
+	const alias = `__better_order_${depth}`;
+	if (relation.kind !== 'one') {
+		if (
+			!isPlainObject(value) ||
+			(value._count !== 'asc' && value._count !== 'desc') ||
+			Object.keys(value).length !== 1
+		)
+			throw invalidRelationOrder(
+				runtime,
+				key,
+				`Relation "${key}" on "${runtime.dbName}" is a to-many relation; sort it by { _count: 'asc' | 'desc' }.`,
+			);
+		const count = buildRelationCount(
+			context,
+			relation,
+			alias,
+			undefined,
+			sourceAlias,
+		);
+		pushOrder(
+			clauses,
+			context.dialect,
+			wrap ? wrap(count) : count,
+			value._count,
+		);
+		return;
+	}
+
+	if (!isPlainObject(value) || '_count' in value)
+		throw invalidRelationOrder(
+			runtime,
+			key,
+			`Relation "${key}" on "${runtime.dbName}" is a one relation; sort it by a field map of "${relation.tableName}".`,
+		);
+
+	const target = getTableRuntime(context, relation.tableName);
+	const table = aliasedTable(target.table, alias) as Table;
+	const links: SQL[] = [];
+	for (let index = 0; index < relation.references.length; index += 1) {
+		const reference = relation.references[index];
+		const field = relation.fields[index];
+		if (reference && field)
+			links.push(
+				eq(
+					aliasedTableColumn(reference, alias),
+					sourceAlias
+						? aliasedTableColumn(field, sourceAlias)
+						: field,
+				),
+			);
+	}
+	const select = (expression: SQLWrapper | AnyColumn) => {
+		const subquery = sql`(${context.db
+			.select({ value: expression as SQL })
+			.from(table)
+			.where(and(...links))
+			.limit(1)})`;
+		return wrap ? wrap(subquery) : subquery;
+	};
+
+	for (const nestedKey in value) {
+		const column = target.columns[nestedKey];
+		if (!column)
+			compileRelationOrder(
+				context,
+				target,
+				alias,
+				nestedKey,
+				value[nestedKey],
+				depth + 1,
+				select,
+				clauses,
+			);
+		else if (value[nestedKey] !== undefined)
+			pushOrder(
+				clauses,
+				context.dialect,
+				select(aliasedTableColumn(column, alias)),
+				value[nestedKey],
+			);
+	}
+};
+
+/**
+ * Correlated `count(*)` subquery over a to-many relation, through the
+ * junction for many-to-many. Shared by `include._count` and `_count` sorts.
+ */
+export const buildRelationCount = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	relation: TableRuntime['relations'][string],
+	alias: string,
+	where?: unknown,
+	sourceAlias?: string,
+) => {
+	const targetRuntime = getTableRuntime(context, relation.tableName);
+	const targetTable = aliasedTable(targetRuntime.table, alias);
+	const nestedWhere =
+		where === undefined
+			? undefined
+			: compileWhereInput(
+					{
+						...context,
+						runtime: targetRuntime,
+						tableName: relation.tableName,
+						rootAlias: alias,
+					} as WhereCompilerContext<Schema, Meta>,
+					where as CompilableWhere,
+				);
+	const source = (field: AnyColumn) =>
+		sourceAlias ? aliasedTableColumn(field, sourceAlias) : field;
+
+	if (relation.kind !== 'manyToMany') {
+		const links: SQL[] = [];
+		for (let index = 0; index < relation.references.length; index += 1) {
+			const reference = relation.references[index];
+			const field = relation.fields[index];
+			if (reference && field)
+				links.push(
+					eq(aliasedTableColumn(reference, alias), source(field)),
+				);
+		}
+		return sql<number>`(${context.db
+			.select({ value: sql<number>`count(*)` })
+			.from(targetTable)
+			.where(and(...links, nestedWhere))})`;
+	}
+
+	const through = relation.through as NonNullable<typeof relation.through>;
+	const throughRuntime = getTableRuntime(context, through.tableName);
+	const throughAlias = `${alias}_through`;
+	const throughTable = aliasedTable(throughRuntime.table, throughAlias);
+	const joins: SQL[] = [];
+	const links: SQL[] = [];
+	for (let index = 0; index < relation.references.length; index += 1) {
+		const targetField = relation.references[index];
+		const throughTarget = through.targetFields[index];
+		if (targetField && throughTarget)
+			joins.push(
+				eq(
+					aliasedTableColumn(throughTarget, throughAlias),
+					aliasedTableColumn(targetField, alias),
+				),
+			);
+	}
+	for (let index = 0; index < relation.fields.length; index += 1) {
+		const sourceField = relation.fields[index];
+		const throughSource = through.sourceFields[index];
+		if (sourceField && throughSource)
+			links.push(
+				eq(
+					aliasedTableColumn(throughSource, throughAlias),
+					source(sourceField),
+				),
+			);
+	}
+	return sql<number>`(${context.db
+		.select({ value: sql<number>`count(*)` })
+		.from(throughTable)
+		.innerJoin(targetTable, and(...joins))
+		.where(and(...links, nestedWhere))})`;
 };
 
 /**
@@ -1427,7 +1651,11 @@ export const compileCursorWhere = <Schema extends AnySchema, Meta>(
 		for (const entry of entries)
 			for (const key in entry as Record<string, unknown>) {
 				const column = context.runtime.columns[key];
-				if (!column) continue;
+				if (!column) {
+					if (context.runtime.relations[key])
+						throw relationCursorError(context.runtime, key);
+					continue;
+				}
 				if (!(key in values) || values[key] === undefined)
 					throw new BetterDrizzleError({
 						code: BetterDrizzleErrorCode.InvalidArgs,

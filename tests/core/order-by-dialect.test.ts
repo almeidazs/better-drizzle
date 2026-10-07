@@ -1,10 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 
-import { sql, type SQL } from 'drizzle-orm';
-import { MySqlDialect } from 'drizzle-orm/mysql-core';
+import { defineRelations, sql, type SQL } from 'drizzle-orm';
+import { int, MySqlDialect, mysqlTable, varchar } from 'drizzle-orm/mysql-core';
+import { drizzle as drizzleMysql } from 'drizzle-orm/mysql2';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { integer, SQLiteDialect, sqliteTable } from 'drizzle-orm/sqlite-core';
 
+import {
+	createRuntimeContext,
+	getTableRuntime,
+} from '../../src/shared/client/context';
 import {
 	compileCursorWhere,
 	compileOrderBy,
@@ -161,4 +166,41 @@ describe('orderBy NULL placement by dialect', () => {
 		expect(mysqlNullsFirst).toContain('is not null');
 		expect(mysqlNullsLast).toContain('false');
 	});
+});
+
+test('emulates MySQL NULL placement on relation sort expressions', () => {
+	const authors = mysqlTable('order_authors', {
+		id: int('id').primaryKey(),
+		name: varchar('name', { length: 255 }),
+	});
+	const books = mysqlTable('order_books', {
+		id: int('id').primaryKey(),
+		authorId: int('author_id'),
+	});
+	const relations = defineRelations({ authors, books }, (r) => ({
+		books: {
+			author: r.one.authors({ from: r.books.authorId, to: r.authors.id }),
+		},
+	}));
+	const context = createRuntimeContext(drizzleMysql.mock({ relations }), {});
+	const clauses = compileOrderBy(
+		{
+			...context,
+			runtime: getTableRuntime(context, 'books'),
+			tableName: 'books',
+		} as never,
+		{ author: { name: { direction: 'asc', nulls: 'last' } } } as never,
+	);
+	const query = new MySqlDialect()
+		.sqlToQuery(
+			sql`select * from ${books} order by ${sql.join(clauses ?? [], sql`, `)}`,
+		)
+		.sql.toLowerCase();
+
+	const subquery =
+		'select `name` from `order_authors` `__better_order_0` where `__better_order_0`.`id` = `order_books`.`author_id` limit ?';
+	expect(query).toContain(
+		`order by (((${subquery})) is null) asc, ((${subquery})) asc`,
+	);
+	expect(query).not.toContain('nulls last');
 });

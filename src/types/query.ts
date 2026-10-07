@@ -265,15 +265,24 @@ export type IncludeInput<
 	_count?: { select: CountSelectInput<Schema, Name> };
 };
 
-type OrderByField<
+type RelationOrderBy<
 	Schema extends AnySchema,
 	Name extends TableKey<Schema>,
-> = Partial<
-	Record<
-		ScalarKeysFor<Schema, Name>,
-		import('./utils').SortOrder | import('./utils').SortConfig
-	>
->;
+	RelationName extends RelationKeysFor<Schema, Name>,
+> =
+	RelationFor<Schema, Name, RelationName> extends Many<string>
+		? { _count: import('./utils').SortOrder }
+		: RelationFor<Schema, Name, RelationName> extends One<string, boolean>
+			? OrderByField<Schema, RelatedNameFor<Schema, Name, RelationName>>
+			: never;
+
+type OrderByField<Schema extends AnySchema, Name extends TableKey<Schema>> = {
+	[K in ScalarKeysFor<Schema, Name>]?:
+		| import('./utils').SortOrder
+		| import('./utils').SortConfig;
+} & {
+	[K in RelationKeysFor<Schema, Name>]?: RelationOrderBy<Schema, Name, K>;
+};
 
 /**
  * Sort specification for a query result set. Can be a single field map or an

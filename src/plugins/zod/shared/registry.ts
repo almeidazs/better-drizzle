@@ -17,13 +17,14 @@ import {
 	createCursorSchema,
 	createIncludeInputSchema,
 	createOperationMetaShape,
-	createOrderBySchema,
+	createOrderBySchemas,
 	createPaginationSchema,
 	createQueryArgsSchema,
 	createQueryResultSchema,
 	createResultSchema,
 	createSelectInputSchema,
 	createWhereSchema,
+	getTableEntry,
 	type RelationMeta,
 	type TableRegistry,
 	type TableSchemaEntry,
@@ -150,17 +151,22 @@ export const createZodSchemasRegistry = <Schema extends AnySchema>(
 			};
 		}
 
+		const [orderBy, cursorOrderBy] = createOrderBySchemas(
+			Object.keys(selectShape),
+			relationMeta,
+			registry,
+			behavior,
+		);
+
 		registry.set(tableName, {
 			columns,
+			cursorOrderBySchema: cursorOrderBy,
 			dbName: dbName,
 			queryInputSchema: z.object({}),
 			relations: relationMeta,
 			schemas: {
 				create: createSchema,
-				orderBy: createOrderBySchema(
-					Object.keys(selectShape),
-					behavior,
-				),
+				orderBy,
 				pagination: z.object({}),
 				query: z.object({}),
 				select: selectSchema,
@@ -174,14 +180,7 @@ export const createZodSchemasRegistry = <Schema extends AnySchema>(
 		});
 	}
 
-	const getEntry = (tableName: string) => {
-		const entry = registry.get(tableName);
-		if (!entry)
-			throw new Error(
-				`Missing zod schema entry for table "${tableName}".`,
-			);
-		return entry;
-	};
+	const getEntry = (tableName: string) => getTableEntry(registry, tableName);
 
 	const getCursorInputSchema = (entry: TableSchemaEntry) =>
 		createCursorSchema(entry.schemas.select.shape, behavior);
@@ -251,7 +250,7 @@ export const createZodSchemasRegistry = <Schema extends AnySchema>(
 			include: getIncludeSchema(entry).optional(),
 			limit: z.number().int().optional(),
 			lock: zodLockSchema.optional(),
-			orderBy: entry.schemas.orderBy.optional(),
+			orderBy: entry.cursorOrderBySchema.optional(),
 			select: getSelectSchema(entry).optional(),
 			skip: z.number().int().optional(),
 			take: z.number().int().optional(),

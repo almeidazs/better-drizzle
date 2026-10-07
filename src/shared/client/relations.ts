@@ -1,7 +1,5 @@
 import {
 	type AnyColumn,
-	aliasedTable,
-	aliasedTableColumn,
 	and,
 	asc,
 	eq,
@@ -9,7 +7,6 @@ import {
 	inArray,
 	lte,
 	or,
-	type SQL,
 	type SQLWrapper,
 	sql,
 } from 'drizzle-orm';
@@ -24,6 +21,7 @@ import type {
 } from '../../types';
 import { BetterDrizzleError, BetterDrizzleErrorCode } from '../errors';
 import {
+	buildRelationCount,
 	compileCursorWhere,
 	compileOrderBy,
 	compileWhereInput,
@@ -306,81 +304,6 @@ const buildLinkPredicate = (
 	return conditions.length ? or(...conditions) : undefined;
 };
 
-const buildRelationCount = <Schema extends AnySchema, Meta>(
-	context: RuntimeContext<Schema, Meta>,
-	parentRuntime: TableRuntime,
-	relationName: string,
-	value: true | { where?: unknown },
-) => {
-	const relation = parentRuntime.relations[relationName];
-	if (!relation) return;
-	const targetRuntime = getTableRuntime(context, relation.tableName);
-	const targetAlias = `__better_count_${relationName}`;
-	const targetTable = aliasedTable(targetRuntime.table, targetAlias);
-	const nestedWhere = compileWhereInput(
-		{
-			...context,
-			runtime: targetRuntime,
-			tableName: relation.tableName,
-			rootAlias: targetAlias,
-		} as WhereCompilerContext<Schema, Meta>,
-		value === true ? undefined : (value.where as never),
-	);
-
-	if (relation.kind !== 'manyToMany') {
-		const links: SQL[] = [];
-		for (let index = 0; index < relation.references.length; index += 1) {
-			const reference = relation.references[index];
-			const field = relation.fields[index];
-			if (reference && field)
-				links.push(
-					eq(aliasedTableColumn(reference, targetAlias), field),
-				);
-		}
-		const query = context.db
-			.select({ value: sql<number>`count(*)` })
-			.from(targetTable)
-			.where(and(...links, nestedWhere));
-		return sql<number>`(${query})`.mapWith(Number).as(relationName);
-	}
-
-	const through = relation.through;
-	if (!through) return;
-	const throughRuntime = getTableRuntime(context, through.tableName);
-	const throughAlias = `__better_count_${relationName}_through`;
-	const throughTable = aliasedTable(throughRuntime.table, throughAlias);
-	const joins: SQL[] = [];
-	const links: SQL[] = [];
-	for (let index = 0; index < relation.references.length; index += 1) {
-		const targetField = relation.references[index];
-		const throughTarget = through.targetFields[index];
-		if (targetField && throughTarget)
-			joins.push(
-				eq(
-					aliasedTableColumn(throughTarget, throughAlias),
-					aliasedTableColumn(targetField, targetAlias),
-				),
-			);
-	}
-	for (let index = 0; index < relation.fields.length; index += 1) {
-		const sourceField = relation.fields[index];
-		const throughSource = through.sourceFields[index];
-		if (sourceField && throughSource)
-			links.push(
-				eq(
-					aliasedTableColumn(throughSource, throughAlias),
-					sourceField,
-				),
-			);
-	}
-	const query = context.db
-		.select({ value: sql<number>`count(*)` })
-		.from(throughTable)
-		.innerJoin(targetTable, and(...joins))
-		.where(and(...links, nestedWhere));
-	return sql<number>`(${query})`.mapWith(Number).as(relationName);
-};
-
 export const getRelationCountSelection = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	runtime: TableRuntime,
@@ -390,13 +313,17 @@ export const getRelationCountSelection = <Schema extends AnySchema, Meta>(
 	if (!counts) return;
 	const selection = Object.create(null) as Record<string, SQLWrapper>;
 	for (const relationName in counts) {
-		const count = buildRelationCount(
+		const relation = runtime.relations[relationName];
+		if (!relation) continue;
+		const value = counts[relationName] as true | { where?: unknown };
+		selection[relationName] = buildRelationCount(
 			context,
-			runtime,
-			relationName,
-			counts[relationName] as true | { where?: unknown },
-		);
-		if (count) selection[relationName] = count;
+			relation,
+			`__better_count_${relationName}`,
+			value === true ? undefined : value.where,
+		)
+			.mapWith(Number)
+			.as(relationName);
 	}
 	return selection;
 };

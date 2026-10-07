@@ -26,7 +26,7 @@ const stats = await db
 	.groupBy(posts.authorId);
 ```
 
-## `orderBy` is column based
+## `orderBy` takes columns and relations, not expressions
 
 `orderBy` accepts scalar columns of the queried table as one field map or an array for multi-column ordering. A value can be `'asc'` / `'desc'`, or an object with `direction` and optional `nulls`:
 
@@ -38,7 +38,9 @@ orderBy: {
 
 When `nulls` is omitted, the database default applies. Explicit null placement is supported by PostgreSQL and SQLite using their `NULLS FIRST` / `NULLS LAST` syntax; MySQL uses an equivalent `IS NULL` ordering term. Better Drizzle fails during client initialization if it cannot identify the provider's dialect.
 
-`orderBy` does not support SQL expressions or ordering root rows by a relation's columns. Use Drizzle directly for those cases:
+It also accepts [relation keys](/docs/querying/reads#ordering-by-relations): fields of a `one` relation, nested to any depth, and `{ _count }` for a `many` or many-to-many relation. Other aggregates (`_max`, `_min`, `_sum`, `_avg`), `_count` with a `where` filter, and relation sorts combined with cursor pagination are not supported.
+
+`orderBy` does not support SQL expressions. Use Drizzle directly for those cases:
 
 ```ts
 import { sql } from 'drizzle-orm';
@@ -52,7 +54,7 @@ const rows = await db
 ## Pagination inputs
 
 - `paginate()` takes `page` and `perPage`, or `limit` and `skip`. `page` computes `skip`, so the two cannot be combined.
-- `cursor()` takes `limit` and one of `after` or `before`. Without `orderBy` it pages by primary key ascending. When you sort by another column, end the `orderBy` with a unique column so pages cannot overlap or skip rows.
+- `cursor()` takes `limit` and one of `after` or `before`. Without `orderBy` it pages by primary key ascending. When you sort by another column, end the `orderBy` with a unique column so pages cannot overlap or skip rows. Relation keys in `orderBy` throw `INVALID_ARGS`; use `paginate()` for pages sorted by a relation.
 
 ## Transforms apply to the root query only
 
