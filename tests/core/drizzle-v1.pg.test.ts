@@ -10,6 +10,7 @@ import {
 import { DrizzleQueryError, defineRelations, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import {
+	bytea,
 	check,
 	integer,
 	jsonb,
@@ -191,6 +192,66 @@ describe.skipIf(!DATABASE_URL)('Drizzle 1.x migration (PostgreSQL)', () => {
 				expect(await tagClient.tags.count()).toBe(2);
 			} finally {
 				await pg.query('drop table better_drizzle_v1_tags');
+			}
+		});
+
+		test('Buffer values match bytea columns and pin unique keys', async () => {
+			const hash = Buffer.from('a1b2c3', 'hex');
+			const other = Buffer.from('d4e5f6', 'hex');
+			await pg.query(`
+				drop table if exists better_drizzle_v1_files;
+				create table better_drizzle_v1_files (id integer primary key, hash bytea not null unique, name text not null);
+			`);
+			const files = pgTable('better_drizzle_v1_files', {
+				hash: bytea('hash').notNull().unique(),
+				id: integer('id').primaryKey(),
+				name: text('name').notNull(),
+			});
+			const queries: string[] = [];
+			const fileClient = better(
+				drizzle({
+					client: pg,
+					logger: { logQuery: (query) => queries.push(query) },
+					relations: defineRelations({ files }),
+				}),
+			);
+
+			try {
+				await fileClient.files.createMany({
+					data: [
+						{ hash, id: 1, name: 'a' },
+						{ hash: other, id: 2, name: 'b' },
+					],
+				});
+				expect(
+					await fileClient.files.findFirst({ where: { hash } }),
+				).toMatchObject({ id: 1 });
+				expect(
+					await fileClient.files.findUnique({ where: { hash } }),
+				).toMatchObject({ id: 1 });
+				expect(
+					await fileClient.files.count({
+						where: { hash: { not: hash } },
+					}),
+				).toBe(1);
+
+				queries.length = 0;
+				expect(
+					await fileClient.files.update({
+						data: { name: 'renamed' },
+						where: { hash },
+					}),
+				).toMatchObject({ name: 'renamed' });
+				expect(queries).toEqual([
+					expect.not.stringContaining('in (select'),
+				]);
+
+				expect(
+					await fileClient.files.delete({ where: { hash } }),
+				).toMatchObject({ id: 1 });
+				expect(await fileClient.files.count()).toBe(1);
+			} finally {
+				await pg.query('drop table better_drizzle_v1_files');
 			}
 		});
 

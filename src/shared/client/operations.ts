@@ -1497,7 +1497,7 @@ const compileFastWhere = (runtime: TableRuntime, where: unknown) => {
 
 		const column = runtime.columns[key];
 		if (!column || Array.isArray(value)) return;
-		if (isSimpleRecord(value)) {
+		if (isSimpleRecord(value) && !(value instanceof Uint8Array)) {
 			if (!(value instanceof Placeholder)) return;
 			conditions.push(eq(column, sql.param(value, column)));
 			continue;
@@ -1515,6 +1515,7 @@ const isPinnedValue = (value: unknown): boolean => {
 	if (
 		typeof value !== 'object' ||
 		value instanceof Date ||
+		value instanceof Uint8Array ||
 		value instanceof Placeholder
 	)
 		return true;

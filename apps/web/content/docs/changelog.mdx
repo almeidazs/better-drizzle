@@ -8,6 +8,7 @@ seoDescription: 'Upcoming better-drizzle 0.4.0 relation ordering and changes in 
 
 ## 0.4.0 - Unreleased
 
+- **Binary filters.** Bare `Buffer` values now work in `where` clauses, including lookups by unique binary keys. Both `Buffer` and `Uint8Array` values keep the simple read and cursor query paths. ([#68](https://github.com/almeidazs/better-drizzle/pull/68))
 - **Relation ordering.** `orderBy` accepts fields of `one` relations, nested to any depth, and `{ _count: 'asc' | 'desc' }` for `many` and `.through()` relations. Correlated subqueries keep the root row count and query count unchanged, including nested relation reads and `paginate()`. A missing `one` relation sorts as `NULL`; an empty to-many count is `0`. The cache plugin tracks relation and junction dependencies and preserves nested sort priority; Zod and ATA validate relation sorts. See [ordering by relations](/docs/querying/reads#ordering-by-relations). ([#67](https://github.com/almeidazs/better-drizzle/pull/67))
 - **Relation-sort limits.** `cursor()` and the `cursor` read argument reject relation sorts with `INVALID_ARGS`, including on the first page. Only `_count` is supported for to-many sorts, without a filter; sort subqueries do not apply soft-delete filters. Index the relation keys and check [`.explain()`](/docs/querying/explain) for the cost of correlated sorts.
 

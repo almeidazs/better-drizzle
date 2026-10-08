@@ -200,6 +200,7 @@
 - **Batch update/delete results**: `updateMany` and `deleteMany` return `BatchResult<Payload>` with full affected rows by default or optional scalar `select` on PostgreSQL/SQLite via native `RETURNING`; `data` is omitted when empty. MySQL remains count-only, and relation projections are rejected. Raw benchmark counterparts must return the same rows using native `RETURNING`, without a separate count query.
 - **Projection validation**: unknown `select` keys throw before SQL, even when set to `false` or `undefined`; nested and scalar write projections follow the same rule.
 - **Literal search filters**: `contains` and `startsWith` escape SQL `%`, `_`, and the escape character, including insensitive/negated filters, PostgreSQL JSONB/array variants, and prepared params. `endsWith` retains its previous behavior.
+- **Binary filters**: `Buffer` extends `Uint8Array` but exposes an `equals` method and enumerable byte indexes. Treat it as a scalar in both `compiler.ts` (`isPlainObject`) and `operations.ts` (`isPinnedValue` and `compileFastWhere`); otherwise direct binary equality can be mistaken for a filter object, a unique key stops pinning one row, or simple reads and cursor pagination miss their fast paths.
 - **Batch updateEach API**:
     - `updateEach` is native-first and performance-sensitive
     - it accepts `by`, `data`, `update`, optional `where`, optional scalar `select`, and `onEmpty`

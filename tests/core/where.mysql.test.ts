@@ -1,8 +1,15 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { defineRelations, fillPlaceholders, sql } from 'drizzle-orm';
-import { MySqlDialect, mysqlTable, varchar } from 'drizzle-orm/mysql-core';
+import {
+	blob,
+	int,
+	MySqlDialect,
+	mysqlTable,
+	varchar,
+} from 'drizzle-orm/mysql-core';
 import { drizzle } from 'drizzle-orm/mysql2';
+import mysql from 'mysql2/promise';
 
 import { better, param } from '../../src';
 import { createMysqlTestContext, type MysqlTestContext } from './setup.mysql';
@@ -347,6 +354,73 @@ describe.skipIf(!MYSQL_URL)('insensitive string filters (mysql)', () => {
 			'Charlie',
 		]);
 		expect(names(await search.execute({ part: 'bO' }))).toEqual(['Bob']);
+	});
+});
+
+describe.skipIf(!MYSQL_URL)('binary values (mysql)', () => {
+	const files = mysqlTable('test_binary_files', {
+		hash: blob('hash', { mode: 'buffer' }).notNull().unique(),
+		id: int('id').primaryKey(),
+		name: varchar('name', { length: 255 }).notNull(),
+	});
+	const hash = Buffer.from('a1b2c3', 'hex');
+	const other = Buffer.from('d4e5f6', 'hex');
+	let conn: mysql.Connection;
+
+	beforeAll(async () => {
+		conn = await mysql.createConnection(MYSQL_URL as string);
+		await conn.query('DROP TABLE IF EXISTS test_binary_files');
+		await conn.query(
+			'CREATE TABLE test_binary_files (id INT PRIMARY KEY, hash BLOB NOT NULL, name VARCHAR(255) NOT NULL, UNIQUE KEY (hash(32)))',
+		);
+	});
+
+	afterAll(async () => {
+		await conn?.query('DROP TABLE IF EXISTS test_binary_files');
+		await conn?.end();
+	});
+
+	test('Buffer values match blob columns and pin unique keys', async () => {
+		const queries: string[] = [];
+		const db = better(
+			drizzle({
+				client: conn,
+				logger: { logQuery: (query) => queries.push(query) },
+				relations: defineRelations({ files }),
+			}),
+		);
+		await db.files.createMany({
+			data: [
+				{ hash, id: 1, name: 'a' },
+				{ hash: other, id: 2, name: 'b' },
+			],
+		});
+
+		expect(await db.files.findFirst({ where: { hash } })).toMatchObject({
+			id: 1,
+		});
+		expect(await db.files.findUnique({ where: { hash } })).toMatchObject({
+			id: 1,
+		});
+		expect(await db.files.count({ where: { hash: { not: hash } } })).toBe(
+			1,
+		);
+
+		queries.length = 0;
+		expect(
+			await db.files.update({
+				data: { name: 'renamed' },
+				where: { hash },
+			}),
+		).toMatchObject({ name: 'renamed' });
+		expect(queries).not.toContainEqual(
+			expect.stringContaining('for update'),
+		);
+
+		expect(await db.files.delete({ where: { hash } })).toMatchObject({
+			id: 1,
+		});
+		expect(await db.files.count()).toBe(1);
 	});
 });
 

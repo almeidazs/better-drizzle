@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import { defineRelations } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
-import { integer, sqliteTable } from 'drizzle-orm/sqlite-core';
+import { blob, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 import { better } from '../../src';
 import { createTestContext, type TestContext } from './setup';
@@ -13,6 +13,13 @@ const nullOrderRecords = sqliteTable('null_order_records', {
 	lastSeenAt: integer('last_seen_at'),
 });
 const nullOrderRelations = defineRelations({ nullOrderRecords });
+
+const files = sqliteTable('binary_files', {
+	hash: blob('hash', { mode: 'buffer' }).notNull().unique(),
+	id: integer('id').primaryKey(),
+	name: text('name').notNull(),
+});
+const fileRelations = defineRelations({ files });
 
 let ctx: TestContext;
 
@@ -54,6 +61,66 @@ test('contains and startsWith treat LIKE metacharacters literally', async () => 
 			})
 		).length,
 	).toBe(8);
+});
+
+test('Buffer values match blob columns and pin unique keys', async () => {
+	const hash = Buffer.from('a1b2c3', 'hex');
+	const other = Buffer.from('d4e5f6', 'hex');
+	const queries: string[] = [];
+	const sqlite = new Database(':memory:');
+	try {
+		sqlite.exec(
+			'create table binary_files (id integer primary key, hash blob not null unique, name text not null)',
+		);
+		const db = better(
+			drizzle({
+				client: sqlite,
+				logger: { logQuery: (query) => queries.push(query) },
+				relations: fileRelations,
+			}),
+		);
+		await db.files.createMany({
+			data: [
+				{ hash, id: 1, name: 'a' },
+				{ hash: other, id: 2, name: 'b' },
+			],
+		});
+
+		expect(await db.files.findFirst({ where: { hash } })).toMatchObject({
+			id: 1,
+		});
+		expect(await db.files.findUnique({ where: { hash } })).toMatchObject({
+			id: 1,
+		});
+		const cursorPlan = await db.files
+			.cursor({
+				after: { id: 0 },
+				limit: 1,
+				orderBy: { id: 'asc' },
+				where: { hash },
+			})
+			.explain();
+		expect(cursorPlan.statements[0]?.sql).toContain('exists');
+		expect(await db.files.count({ where: { hash: { not: hash } } })).toBe(
+			1,
+		);
+
+		queries.length = 0;
+		expect(
+			await db.files.update({
+				data: { name: 'renamed' },
+				where: { hash },
+			}),
+		).toMatchObject({ name: 'renamed' });
+		expect(queries).toEqual([expect.not.stringContaining('in (select')]);
+
+		expect(await db.files.delete({ where: { hash } })).toMatchObject({
+			id: 1,
+		});
+		expect(await db.files.count()).toBe(1);
+	} finally {
+		sqlite.close();
+	}
 });
 
 describe('scalar where - equality', () => {
