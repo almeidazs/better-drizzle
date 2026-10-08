@@ -12,6 +12,7 @@ export type RelationMeta = {
 
 export type TableSchemaEntry = {
 	columns: Record<string, AnyColumn>;
+	cursorOrderBySchema: OrderBySchema;
 	dbName: string;
 	queryInputSchema: z.ZodObject;
 	relations: Record<string, RelationMeta>;
@@ -22,9 +23,10 @@ export type TableSchemaEntry = {
 };
 
 export type TableRegistry = Map<string, TableSchemaEntry>;
+type OrderBySchema = z.ZodUnion<[z.ZodObject, z.ZodArray<z.ZodObject>]>;
 export type RuntimeZodModelSchemas = {
 	create: z.ZodObject;
-	orderBy: z.ZodTypeAny;
+	orderBy: OrderBySchema;
 	pagination: z.ZodObject;
 	query: z.ZodObject;
 	select: z.ZodObject;
@@ -495,11 +497,26 @@ const createScalarWhereSchema = (columnSchema: z.ZodTypeAny) => {
 	return createDefaultFilterSchema(directValue as z.ZodTypeAny);
 };
 
-export const createOrderBySchema = (
+export const getTableEntry = (registry: TableRegistry, tableName: string) => {
+	const entry = registry.get(tableName);
+	if (!entry)
+		throw new Error(`Missing zod schema entry for table "${tableName}".`);
+	return entry;
+};
+
+/**
+ * Builds the table orderBy schema plus a cursor variant: cursor tokens hold
+ * scalar row values only, so the cursor variant rejects relation keys even
+ * when unknown keys are stripped.
+ */
+export const createOrderBySchemas = (
 	scalarKeys: string[],
+	relations: Record<string, RelationMeta>,
+	registry: TableRegistry,
 	behavior: ZodPluginBehavior | undefined,
-) => {
+): [orderBy: OrderBySchema, cursorOrderBy: OrderBySchema] => {
 	const shape: Record<string, z.ZodTypeAny> = Object.create(null);
+	const cursorShape: Record<string, z.ZodTypeAny> = Object.create(null);
 	const direction = z.enum(['asc', 'desc']);
 	const sortConfig = applyUnknownKeys(
 		z.object({
@@ -510,10 +527,41 @@ export const createOrderBySchema = (
 	);
 
 	for (const key of scalarKeys)
-		shape[key] = z.union([direction, sortConfig]).optional();
+		shape[key] = cursorShape[key] = z
+			.union([direction, sortConfig])
+			.optional();
+
+	// Targets register later in the same loop, so one relations resolve lazily.
+	// `_count` is rejected even when unknown keys are stripped.
+	for (const [relationName, relation] of Object.entries(relations)) {
+		let target: z.ZodObject | undefined;
+		shape[relationName] = (
+			relation.isMany
+				? applyUnknownKeys(z.object({ _count: direction }), behavior)
+				: z.lazy(() => {
+						if (target) return target;
+						const entry = getTableEntry(
+							registry,
+							relation.tableName,
+						);
+						const fields = entry.schemas.orderBy.options[0];
+						return (target =
+							'_count' in entry.columns
+								? fields
+								: fields.extend({
+										_count: z.never().optional(),
+									}));
+					})
+		).optional();
+		cursorShape[relationName] = z.never().optional();
+	}
 
 	const objectSchema = applyUnknownKeys(z.object(shape), behavior);
-	return z.union([objectSchema, z.array(objectSchema)]);
+	const cursorSchema = applyUnknownKeys(z.object(cursorShape), behavior);
+	return [
+		z.union([objectSchema, z.array(objectSchema)]),
+		z.union([cursorSchema, z.array(cursorSchema)]),
+	];
 };
 
 export const createCursorSchema = (

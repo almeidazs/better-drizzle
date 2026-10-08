@@ -167,6 +167,71 @@ const page = await db
 - `take` caps the number of rows. A **negative** `take` reverses the order and takes from the end.
 - `skip` offsets from the start.
 
+### Ordering by relations
+
+Available in **0.4.0 (unreleased)**; published `0.3.0` supports scalar ordering only.
+
+`orderBy` also takes relation keys, nested the same way as [relation filters](/docs/querying/relations#filtering-by-related-rows):
+
+- A `one` relation takes a field map of the related table. It can nest to any depth, and its fields accept `'asc'` / `'desc'` or `{ direction, nulls }`.
+- A `many` or many-to-many (`.through()`) relation takes `{ _count: 'asc' | 'desc' }`.
+
+```ts tab="better-drizzle" tab-group="orm"
+const byAuthor = await client.posts.findMany({
+	orderBy: [{ author: { name: 'asc' } }, { id: 'asc' }],
+});
+
+const mostActive = await client.users.findMany({
+	orderBy: { posts: { _count: 'desc' } },
+	take: 10,
+});
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { asc, desc, eq, sql } from 'drizzle-orm';
+
+const byAuthor = await db
+	.select()
+	.from(posts)
+	.orderBy(
+		asc(sql`(select ${users.name} from ${users} where ${eq(users.id, posts.authorId)} limit 1)`),
+		asc(posts.id),
+	);
+
+const mostActive = await db
+	.select()
+	.from(users)
+	.orderBy(desc(sql`(select count(*) from ${posts} where ${eq(posts.authorId, users.id)})`))
+	.limit(10);
+```
+
+Each relation key compiles to a correlated subquery in the `ORDER BY` of the same statement, so the row count and the number of queries stay the same.
+
+- Deeper paths nest: `orderBy: { author: { profile: { bio: { direction: 'desc', nulls: 'last' } } } }`.
+- A `one` relation without a related record sorts as `NULL`. Use `nulls: 'first' | 'last'` to place these values; MySQL gets this through the same `IS NULL` term as scalar columns. A to-many `_count` is `0` when no related rows match.
+- Mix relation and scalar keys in the array form, and end with a unique key such as `id` so rows that tie on the relation value keep a stable order.
+- Relation sorts work in `findMany`, `findFirst`, `findOne`, `findUnique`, and `paginate`, and inside nested `include` / `select` relation args, including ones with `take` / `skip`.
+- A scalar sort on a to-many relation (`{ posts: { title: 'asc' } }`) or an aggregate `_count` on a `one` relation is a compile error, and throws `INVALID_ARGS` for untyped callers. If the related table has a scalar column named `_count`, a `one` relation can sort by that column normally.
+- The subqueries do not apply soft-delete filters, the same as relation loads.
+- Relations that cannot be loaded (a relation-level `where`, or a `one` relation through a junction) cannot be sorted by either; they throw the same error as in `where` and `include`.
+
+<Callout type="warn" title="No relation sorts with cursors">
+	`cursor()` and the `cursor` read argument throw `INVALID_ARGS` when `orderBy`
+	contains a relation key, because cursor tokens hold only the row's own column
+	values. Use `paginate()` or `skip` / `take` for pages sorted by a relation.
+</Callout>
+
+<Callout type="info" title="Index the foreign keys you sort by">
+	Each subquery looks up related rows by the relation's key for every sorted
+	row. Primary keys are indexed already; add an index on the foreign key column
+	(such as `posts.authorId`) used by a `_count` sort or by a `one` relation
+	whose foreign key sits on the related table. For `.through()` counts, index
+	the junction columns used to link both tables. Sorting still requires the
+	database to evaluate these expressions; one statement does not imply the
+	same cost as scalar ordering. Check the plan with
+	[`.explain()`](/docs/querying/explain).
+</Callout>
+
 For full offset pages with totals, use [`paginate`](/docs/querying/pagination). For feed-style navigation with cursors, use [`cursor`](/docs/querying/pagination).
 
 ## Throwing when a row is required

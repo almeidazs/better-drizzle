@@ -1,3 +1,5 @@
+import { deepStrictEqual } from 'node:assert';
+
 import { bench, do_not_optimize, group, run, summary } from 'mitata';
 
 import {
@@ -14,6 +16,9 @@ import {
 	betterOffsetPaginate,
 	betterPointLookup,
 	betterReadOnlyTransaction,
+	betterRelationCountOrder,
+	betterRelationFieldOrder,
+	betterThroughCountOrder,
 	betterRelationCounts,
 	betterRelationGraph,
 	betterSimpleTransaction,
@@ -35,6 +40,9 @@ import {
 	rawOffsetPaginate,
 	rawPointLookup,
 	rawReadOnlyTransaction,
+	rawRelationCountOrder,
+	rawRelationFieldOrder,
+	rawThroughCountOrder,
 	rawRelationCounts,
 	rawRelationGraph,
 	rawSimpleTransaction,
@@ -55,6 +63,22 @@ if (
 )
 	throw new Error('NULLS LAST benchmark parity validation failed.');
 
+const relationOrderPairs = [
+	[
+		'one relation field order',
+		rawRelationFieldOrder,
+		betterRelationFieldOrder,
+	],
+	['to-many count order', rawRelationCountOrder, betterRelationCountOrder],
+	['through count order', rawThroughCountOrder, betterThroughCountOrder],
+] as const;
+for (const [name, raw, better] of relationOrderPairs)
+	deepStrictEqual(
+		await better(betterContext),
+		await raw(rawContext),
+		`Relation order benchmark parity failed: ${name}`,
+	);
+
 group('api parity: reads', () => {
 	summary(() => {
 		bench('drizzle: point lookup', async () =>
@@ -71,6 +95,13 @@ group('api parity: reads', () => {
 			do_not_optimize(await rawNullsLastOrder(rawContext)));
 		bench('better: NULLS LAST order', async () =>
 			do_not_optimize(await betterNullsLastOrder(betterContext)));
+
+		for (const [name, raw, better] of relationOrderPairs) {
+			bench(`drizzle: ${name}`, async () =>
+				do_not_optimize(await raw(rawContext)));
+			bench(`better: ${name}`, async () =>
+				do_not_optimize(await better(betterContext)));
+		}
 
 		bench('drizzle: relation graph', async () =>
 			do_not_optimize(await rawRelationGraph(rawContext)));

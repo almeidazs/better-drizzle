@@ -62,6 +62,10 @@ export const relations = defineRelations(schema, (r) => ({
 		comments: r.many.comments(),
 	},
 	users: {
+		commentedPosts: r.many.posts({
+			from: r.users.id.through(r.comments.authorId),
+			to: r.posts.id.through(r.comments.postId),
+		}),
 		comments: r.many.comments(),
 		posts: r.many.posts(),
 	},

@@ -349,3 +349,50 @@ describe.skipIf(!MYSQL_URL)('insensitive string filters (mysql)', () => {
 		expect(names(await search.execute({ part: 'bO' }))).toEqual(['Bob']);
 	});
 });
+
+describe.skipIf(!MYSQL_URL)('orderBy relation fields (mysql)', () => {
+	let ctx: MysqlTestContext;
+
+	beforeAll(async () => {
+		ctx = await createMysqlTestContext(MYSQL_URL as string);
+	});
+
+	afterAll(async () => {
+		await ctx?.close();
+	});
+
+	test('sorts by nested one relation fields with emulated NULL placement', async () => {
+		const rows = await ctx.better.comments.findMany({
+			orderBy: [
+				{
+					post: {
+						author: { name: { direction: 'desc', nulls: 'first' } },
+					},
+				},
+				{ id: 'asc' },
+			],
+		});
+		expect(rows.map((row) => row.id)).toEqual([5, 3, 4, 1, 2]);
+	});
+
+	test('sorts by to-many counts, including nested paginated includes', async () => {
+		const users = await ctx.better.users.findMany({
+			orderBy: [{ comments: { _count: 'desc' } }, { id: 'desc' }],
+		});
+		expect(users.map((row) => row.id)).toEqual([3, 1, 2, 5, 4]);
+
+		const withPosts = await ctx.better.users.findMany({
+			include: {
+				posts: {
+					orderBy: [{ comments: { _count: 'desc' } }, { id: 'asc' }],
+					take: 1,
+				},
+			},
+			orderBy: { id: 'asc' },
+			where: { id: { in: [1, 2] } },
+		});
+		expect(
+			withPosts.map((row) => row.posts.map((post) => post.id)),
+		).toEqual([[1], [3]]);
+	});
+});

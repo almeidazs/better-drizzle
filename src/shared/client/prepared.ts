@@ -20,7 +20,6 @@ import {
 	buildFindFirstQuery,
 	buildFindManyQuery,
 	finishCursorPage,
-	getCursorFields,
 	normalizeLockError,
 	projectCursorProbe,
 } from './operations';
@@ -419,7 +418,7 @@ const prepareCursor = <Schema extends AnySchema, Meta>(
 	const probeAll = probeKey
 		? prepareProbe(undefined, 'probe-all')
 		: undefined;
-	const fields = getCursorFields(context, tableName, page.args);
+	const fields = page.fields;
 	const hasPage = async (
 		_context: unknown,
 		_tableName: unknown,

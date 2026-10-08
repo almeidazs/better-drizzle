@@ -26,6 +26,7 @@ import {
 	buildFindFirstQuery,
 	buildFindManyQuery,
 	getCursorExplainProbes,
+	getCursorFields,
 	withDefaultCursorOrder,
 } from './operations';
 import { getDeferredRelationPlans } from './relations';
@@ -441,6 +442,7 @@ const buildQueryList = async <
 					operation: 'cursor',
 				});
 
+			getCursorFields(context, tableName, cursorArgs);
 			const fastQuery = buildFastCursorQuery(
 				context,
 				tableName,

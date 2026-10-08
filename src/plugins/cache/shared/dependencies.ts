@@ -178,6 +178,7 @@ export const readDependencies = (
 	model: PluginModelInfo,
 	input: {
 		include?: unknown;
+		orderBy?: unknown;
 		select?: unknown;
 		where?: unknown;
 	},
@@ -220,6 +221,18 @@ export const readDependencies = (
 			walkWhere(target, value);
 		}
 	};
+	// A relation sort key holds the related model's `orderBy` or `{ _count }`.
+	const walkOrderBy = (source: PluginModelInfo, orderBy: unknown): void => {
+		if (Array.isArray(orderBy)) {
+			for (const member of orderBy) walkOrderBy(source, member);
+			return;
+		}
+		if (!isRecord(orderBy)) return;
+		for (const key in orderBy) {
+			const target = addRelation(source, key);
+			if (target) walkOrderBy(target, orderBy[key]);
+		}
+	};
 	const walkProjection = (
 		source: PluginModelInfo,
 		projection: unknown,
@@ -246,6 +259,7 @@ export const readDependencies = (
 			const target = addRelation(source, key);
 			if (!target || !isRecord(value)) continue;
 			walkWhere(target, value.where);
+			walkOrderBy(target, value.orderBy);
 			walkProjection(target, value.select);
 			walkProjection(target, value.include);
 		}
@@ -259,6 +273,7 @@ export const readDependencies = (
 		add(keys.rows(model.name), true);
 	} else add(keys.rows(model.name));
 	walkWhere(model, input.where);
+	walkOrderBy(model, input.orderBy);
 	walkProjection(model, input.select);
 	walkProjection(model, input.include);
 	for (const tag of tags) add(keys.tag(tag));

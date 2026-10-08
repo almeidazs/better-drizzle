@@ -48,7 +48,9 @@ try {
 
 ## Not supported (use raw Drizzle or `$raw`)
 
-Aggregates beyond `count` and `_count`, `groupBy`, `distinct`, ordering by expressions or relation columns, nested `create`/`connectOrCreate`, relation includes in `upsertMany`/`updateEach`, and locks combined with general relation loading.
+Relation ordering requires 0.4.0 (unreleased); published 0.3.0 supports scalar ordering only.
+
+Aggregates beyond `count` and `_count`, `groupBy`, `distinct`, ordering by expressions or by relation aggregates other than `_count`, cursor pagination over relation sorts, nested `create`/`connectOrCreate`, relation includes in `upsertMany`/`updateEach`, and locks combined with general relation loading.
 
 ## Upgrading from drizzle-orm 0.x (better-drizzle 0.2 to 0.3)
 

@@ -161,7 +161,7 @@ const page = await client.users.paginate({
 
 `page.pagination` carries `total`, `pageCount`, `hasNext`, and `hasPrevious`. Use `cursor()` instead for feed-style navigation and you get `nextCursor` and `previousCursor` computed for you.
 
-`orderBy` accepts a field map or an array. Specify `{ direction, nulls }` when NULL placement matters: `orderBy: { lastSeenAt: { direction: 'desc', nulls: 'last' } }`.
+`orderBy` accepts a field map or an array. Specify `{ direction, nulls }` when NULL placement matters: `orderBy: { lastSeenAt: { direction: 'desc', nulls: 'last' } }`. Starting in **0.4.0 (unreleased)**, it also sorts by relations in the same statement: a `one` relation takes the related table's fields (`orderBy: { author: { name: 'asc' } }`), and a `many` or `.through()` relation takes its row count (`orderBy: { posts: { _count: 'desc' } }`). Relation sorts cannot be combined with cursor pagination.
 
 ## Not-found, handled honestly
 
