@@ -21,7 +21,9 @@ import {
 	createOrderBySchema,
 	createPaginationArgsSchema,
 	createQueryArgsSchema,
+	createRelationOrderByDefinitions,
 	createSelectSchema,
+	orderByDefinitions,
 } from './query';
 import { createRowValidator } from './row';
 import { createWhereSchema } from './where';
@@ -200,6 +202,7 @@ export const createAtaSchemasRegistry = <
 	const entries = new Map<string, TableEntry>();
 	const tableNames: string[] = [];
 	const relational = schema as unknown as TablesRelationalConfig;
+	const relationOrderBy = createRelationOrderByDefinitions(relational);
 
 	for (const key in relational)
 		if (is(relational[key]?.table, Table)) tableNames.push(key);
@@ -210,6 +213,9 @@ export const createAtaSchemasRegistry = <
 
 		const columns = getColumns(table) as Record<string, AnyColumn>;
 		const relations = Object.keys(relational[tableName]?.relations ?? {});
+		const orderBy = relations.length
+			? relationOrderBy(tableName)
+			: orderByDefinitions(columns);
 		const overrides = (
 			options.tables as
 				| Record<
@@ -241,11 +247,13 @@ export const createAtaSchemasRegistry = <
 				deleteMany: compiled(
 					createDeleteArgsSchema(columns, relations, false),
 				),
-				orderBy: compiled(createOrderBySchema(columns)),
+				orderBy: compiled(createOrderBySchema(columns, orderBy)),
 				pagination: compiled(
-					createPaginationArgsSchema(columns, relations),
+					createPaginationArgsSchema(columns, relations, orderBy),
 				),
-				query: compiled(createQueryArgsSchema(columns, relations)),
+				query: compiled(
+					createQueryArgsSchema(columns, relations, 'query', orderBy),
+				),
 				residues: selectRow.residues,
 				row: compiled(
 					selectRow.schema,

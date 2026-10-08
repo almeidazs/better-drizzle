@@ -538,15 +538,20 @@ export const createOrderBySchemas = (
 		shape[relationName] = (
 			relation.isMany
 				? applyUnknownKeys(z.object({ _count: direction }), behavior)
-				: z.lazy(
-						() =>
-							(target ??= getTableEntry(
-								registry,
-								relation.tableName,
-							).schemas.orderBy.options[0].extend({
-								_count: z.never().optional(),
-							})),
-					)
+				: z.lazy(() => {
+						if (target) return target;
+						const entry = getTableEntry(
+							registry,
+							relation.tableName,
+						);
+						const fields = entry.schemas.orderBy.options[0];
+						return (target =
+							'_count' in entry.columns
+								? fields
+								: fields.extend({
+										_count: z.never().optional(),
+									}));
+					})
 		).optional();
 		cursorShape[relationName] = z.never().optional();
 	}

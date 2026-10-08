@@ -1,9 +1,14 @@
-import type { AnyColumn } from 'drizzle-orm';
+import {
+	type AnyColumn,
+	getColumns,
+	type TablesRelationalConfig,
+} from 'drizzle-orm';
 
 import { columnToSchema } from './column';
 import { whereDefinitions } from './where';
 
 type JsonSchema = Record<string, unknown>;
+type OrderByDefinitions = { defs: Record<string, JsonSchema>; ref: string };
 
 /**
  * The operation arguments, as JSON Schema.
@@ -53,8 +58,9 @@ const META_PROPERTIES: Record<string, JsonSchema> = {
  */
 export const createOrderBySchema = (
 	columns: Record<string, AnyColumn>,
+	definitions?: OrderByDefinitions,
 ): JsonSchema => {
-	const { defs, ref } = orderByDefinitions(columns);
+	const { defs, ref } = definitions ?? orderByDefinitions(columns);
 	return { $defs: defs, $ref: ref };
 };
 
@@ -83,6 +89,54 @@ export const orderByDefinitions = (
 			},
 		},
 		ref: `#/$defs/${name}`,
+	};
+};
+
+/** Share hoisted field maps across models, including recursive one relations. */
+export const createRelationOrderByDefinitions = (
+	schema: TablesRelationalConfig,
+): ((tableName: string) => OrderByDefinitions) => {
+	const defs: Record<string, JsonSchema> = {};
+	const fields = new Map<string, string>();
+	const visit = (name: string): string => {
+		const known = fields.get(name);
+		if (known) return known;
+		const field = `relationOrderBy${fields.size}`;
+		fields.set(name, field);
+		const table = schema[name];
+		const properties: Record<string, JsonSchema> = {};
+		for (const key of Object.keys(table ? getColumns(table.table) : {}))
+			properties[key] = ORDER_BY_VALUE;
+		defs[field] = {
+			additionalProperties: false,
+			properties,
+			type: 'object',
+		};
+		for (const key in table?.relations) {
+			const relation = table.relations[key];
+			if (!relation) continue;
+			properties[key] =
+				relation.relationType === 'many'
+					? {
+							additionalProperties: false,
+							properties: { _count: { enum: [...SORT_ORDER] } },
+							required: ['_count'],
+							type: 'object',
+						}
+					: { $ref: `#/$defs/${visit(relation.targetTableName)}` };
+		}
+		return field;
+	};
+	return (tableName) => {
+		const field = visit(tableName);
+		const order = `${field}Order`;
+		defs[order] ??= {
+			anyOf: [
+				{ $ref: `#/$defs/${field}` },
+				{ items: { $ref: `#/$defs/${field}` }, type: 'array' },
+			],
+		};
+		return { defs, ref: `#/$defs/${order}` };
 	};
 };
 
@@ -181,9 +235,10 @@ export const createQueryArgsSchema = (
 	columns: Record<string, AnyColumn>,
 	relations: readonly string[] = [],
 	shape: ArgsShape = 'query',
+	definitions?: OrderByDefinitions,
 ): JsonSchema => {
 	const where = whereDefinitions(columns, '', relations);
-	const orderBy = orderByDefinitions(columns);
+	const orderBy = definitions ?? orderByDefinitions(columns);
 	const cursor = createCursorSchema(columns);
 
 	const properties: Record<string, JsonSchema> = {
@@ -224,7 +279,9 @@ export const createQueryArgsSchema = (
 export const createPaginationArgsSchema = (
 	columns: Record<string, AnyColumn>,
 	relations: readonly string[] = [],
-): JsonSchema => createQueryArgsSchema(columns, relations, 'pagination');
+	definitions?: OrderByDefinitions,
+): JsonSchema =>
+	createQueryArgsSchema(columns, relations, 'pagination', definitions);
 
 /** Cursor pagination: the query arguments plus `limit`, `after` and `before`. */
 export const createCursorArgsSchema = (

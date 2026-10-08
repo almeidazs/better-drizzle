@@ -169,6 +169,8 @@ const page = await db
 
 ### Ordering by relations
 
+Available in **0.4.0 (unreleased)**; published `0.3.0` supports scalar ordering only.
+
 `orderBy` also takes relation keys, nested the same way as [relation filters](/docs/querying/relations#filtering-by-related-rows):
 
 - A `one` relation takes a field map of the related table. It can nest to any depth, and its fields accept `'asc'` / `'desc'` or `{ direction, nulls }`.
@@ -206,10 +208,10 @@ const mostActive = await db
 Each relation key compiles to a correlated subquery in the `ORDER BY` of the same statement, so the row count and the number of queries stay the same.
 
 - Deeper paths nest: `orderBy: { author: { profile: { bio: { direction: 'desc', nulls: 'last' } } } }`.
-- Rows without a related record sort as `NULL`. Use `nulls: 'first' | 'last'` to place them; MySQL gets this through the same `IS NULL` term as scalar columns.
+- A `one` relation without a related record sorts as `NULL`. Use `nulls: 'first' | 'last'` to place these values; MySQL gets this through the same `IS NULL` term as scalar columns. A to-many `_count` is `0` when no related rows match.
 - Mix relation and scalar keys in the array form, and end with a unique key such as `id` so rows that tie on the relation value keep a stable order.
 - Relation sorts work in `findMany`, `findFirst`, `findOne`, `findUnique`, and `paginate`, and inside nested `include` / `select` relation args, including ones with `take` / `skip`.
-- A scalar sort on a to-many relation (`{ posts: { title: 'asc' } }`) or `_count` on a `one` relation (`{ author: { _count: 'asc' } }`) is a compile error, and throws `INVALID_ARGS` for untyped callers.
+- A scalar sort on a to-many relation (`{ posts: { title: 'asc' } }`) or an aggregate `_count` on a `one` relation is a compile error, and throws `INVALID_ARGS` for untyped callers. If the related table has a scalar column named `_count`, a `one` relation can sort by that column normally.
 - The subqueries do not apply soft-delete filters, the same as relation loads.
 - Relations that cannot be loaded (a relation-level `where`, or a `one` relation through a junction) cannot be sorted by either; they throw the same error as in `where` and `include`.
 
@@ -223,7 +225,10 @@ Each relation key compiles to a correlated subquery in the `ORDER BY` of the sam
 	Each subquery looks up related rows by the relation's key for every sorted
 	row. Primary keys are indexed already; add an index on the foreign key column
 	(such as `posts.authorId`) used by a `_count` sort or by a `one` relation
-	whose foreign key sits on the related table. Check the plan with
+	whose foreign key sits on the related table. For `.through()` counts, index
+	the junction columns used to link both tables. Sorting still requires the
+	database to evaluate these expressions; one statement does not imply the
+	same cost as scalar ordering. Check the plan with
 	[`.explain()`](/docs/querying/explain).
 </Callout>
 

@@ -79,6 +79,25 @@ describe('the plugin definition', () => {
 });
 
 describe('runtime integration', () => {
+	test('validates relation sorts for reads and offset pagination', async () => {
+		const base = createTestContext();
+		const client = better(base.raw, { plugins: [ata()] });
+		try {
+			const posts = await client.posts.findMany({
+				orderBy: { author: { name: 'desc' } },
+				validate: true,
+			});
+			expect(posts.map((post) => post.id)).toEqual([6, 5, 3, 4, 1, 2]);
+			const page = await client.users.paginate({
+				orderBy: [{ posts: { _count: 'asc' } }, { id: 'asc' }],
+				validate: true,
+			});
+			expect(page.data.map((user) => user.id)).toEqual([5, 3, 4, 1, 2]);
+		} finally {
+			base.close();
+		}
+	});
+
 	test('allows relation projections and relation writes', async () => {
 		const base = createTestContext();
 		const client = better(base.raw, {
@@ -114,6 +133,90 @@ describe('runtime integration', () => {
 
 describe('the registry', () => {
 	const registry = createAtaSchemasRegistry(schema);
+	test('shares relation sort field schemas across registry models', () => {
+		const posts = pgTable('ata_shared_sort_posts', {
+			id: integer().primaryKey(),
+			authorId: integer().notNull(),
+		});
+		const relations = defineRelations({ posts, users }, (r) => ({
+			posts: {
+				author: r.one.users({ from: r.posts.authorId, to: r.users.id }),
+			},
+			users: {
+				post: r.one.posts({ from: r.users.id, to: r.posts.authorId }),
+			},
+		}));
+		const registry = createAtaSchemasRegistry(relations);
+		const postsDefs = registry.get('posts')!.schemas.orderBy.schema
+			.$defs as Record<string, Record<string, unknown>>;
+		const usersDefs = registry.get('users')!.schemas.orderBy.schema
+			.$defs as Record<string, Record<string, unknown>>;
+		const postsFields = Object.values(postsDefs).filter(
+			(value) => value.properties,
+		);
+		const usersFields = Object.values(usersDefs).filter(
+			(value) => value.properties,
+		);
+		expect(postsFields).toHaveLength(2);
+		expect(usersFields).toHaveLength(2);
+		for (const field of postsFields) expect(usersFields).toContain(field);
+		const postsOrder = registry.get('posts')!.schemas.orderBy;
+		const usersOrder = registry.get('users')!.schemas.orderBy;
+		expect(postsOrder.validate({ author: { name: 'asc' } }).valid).toBe(
+			true,
+		);
+		expect(postsOrder.validate({ post: { id: 'asc' } }).valid).toBe(false);
+		expect(usersOrder.validate({ post: { id: 'asc' } }).valid).toBe(true);
+		expect(usersOrder.validate({ author: { name: 'asc' } }).valid).toBe(
+			false,
+		);
+		expect(
+			registry.getQueryArgs('posts').validate({
+				where: { id: { gt: 1 } },
+				orderBy: { author: { name: 'asc' } },
+			}).valid,
+		).toBe(true);
+	});
+
+	test('relation orderBy schemas recurse and reject invalid shapes and cursor sorts', () => {
+		const posts = pgTable('ata_sort_posts', {
+			id: integer().primaryKey(),
+			authorId: integer().notNull(),
+			title: varchar({ length: 80 }),
+		});
+		const relations = defineRelations({ posts, users }, (r) => ({
+			posts: {
+				author: r.one.users({ from: r.posts.authorId, to: r.users.id }),
+			},
+			users: {
+				posts: r.many.posts(),
+				parent: r.one.users({ from: r.users.id, to: r.users.id }),
+			},
+		}));
+		const registry = createAtaSchemasRegistry(relations, {
+			precompile: true,
+		});
+		const order = registry.get('posts')!.schemas.orderBy;
+		expect(
+			order.validate({ author: { parent: { name: 'asc' } } }).valid,
+		).toBe(true);
+		expect(
+			order.validate({ author: { posts: { _count: 'desc' } } }).valid,
+		).toBe(true);
+		for (const value of [
+			{ author: { _count: 'asc' } },
+			{ author: [{ name: 'asc' }] },
+			{ author: { posts: { title: 'asc' } } },
+			{ author: { posts: { _count: 'asc', title: 'asc' } } },
+			{ author: { parent: { name: 'sideways' } } },
+		])
+			expect(order.validate(value).valid).toBe(false);
+		expect(
+			registry
+				.getCursorArgs('posts')
+				.validate({ orderBy: { author: { name: 'asc' } } }).valid,
+		).toBe(false);
+	});
 
 	test('it finds the tables', () => {
 		expect(registry.tables()).toEqual(['users']);

@@ -1428,14 +1428,14 @@ const compileRelationOrder = <Schema extends AnySchema, Meta>(
 		return;
 	}
 
-	if (!isPlainObject(value) || '_count' in value)
+	const target = getTableRuntime(context, relation.tableName);
+	if (!isPlainObject(value) || ('_count' in value && !target.columns._count))
 		throw invalidRelationOrder(
 			runtime,
 			key,
 			`Relation "${key}" on "${runtime.dbName}" is a one relation; sort it by a field map of "${relation.tableName}".`,
 		);
 
-	const target = getTableRuntime(context, relation.tableName);
 	const table = aliasedTable(target.table, alias) as Table;
 	const links: SQL[] = [];
 	for (let index = 0; index < relation.references.length; index += 1) {

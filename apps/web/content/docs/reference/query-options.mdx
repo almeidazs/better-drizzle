@@ -27,7 +27,7 @@ Accepted by `findMany`, `findFirst`, `findOne`, and `findUnique`:
 			type: 'IncludeInput',
 		},
 		orderBy: {
-			description: 'Sort by scalar columns, by fields of `one` relations (nested, any depth), or by the row count of `many` / many-to-many relations. Values can set direction and optional NULL placement; one field map or an array for multi-column ordering.',
+			description: 'Sort by scalar columns or, starting in 0.4.0 (unreleased), by fields of `one` relations (nested, any depth), or by the row count of `many` / many-to-many relations. Values can set direction and optional NULL placement; one field map or an array for multi-column ordering.',
 			type: '{ [column]: "asc" | "desc" | { direction: "asc" | "desc"; nulls?: "first" | "last" }; [oneRelation]: OrderBy<Related>; [manyRelation]: { _count: "asc" | "desc" } } | [...]',
 		},
 		take: {
@@ -55,7 +55,7 @@ Accepted by `findMany`, `findFirst`, `findOne`, and `findUnique`:
 
 For example, `orderBy: { lastSeenAt: { direction: 'desc', nulls: 'last' } }` puts rows with a `NULL` value after non-`NULL` values. When `nulls` is omitted, the database default applies. PostgreSQL and SQLite use native `NULLS FIRST` / `NULLS LAST` ordering; MySQL gets equivalent behavior through an `IS NULL` ordering term. Better Drizzle rejects an unrecognized provider dialect during client initialization.
 
-Relation keys nest like relation filters. A `one` relation takes the related table's own `orderBy` field map, at any depth, and a `many` or many-to-many relation takes exactly `{ _count: 'asc' | 'desc' }`:
+Relation ordering is available in **0.4.0 (unreleased)**; published `0.3.0` supports scalar ordering only. Relation keys nest like relation filters. A `one` relation takes the related table's own `orderBy` field map, at any depth, and a `many` or many-to-many relation takes exactly `{ _count: 'asc' | 'desc' }`:
 
 ```ts
 orderBy: [
@@ -66,7 +66,7 @@ orderBy: [
 orderBy: { posts: { _count: 'desc' } }
 ```
 
-Each relation key becomes a correlated subquery in the same statement's `ORDER BY`. Rows without a related record sort as `NULL`. `_count` on a `one` relation, a field map on a to-many relation, or a non-object relation value throws `INVALID_ARGS`, as does a relation key combined with `cursor` or `cursor()`. SQL expressions in `orderBy` still require Drizzle directly. See [ordering by relations](/docs/querying/reads#ordering-by-relations) and [limitations](/docs/guides/limitations).
+Each relation key becomes a correlated subquery in the same statement's `ORDER BY`. A missing `one` relation sorts as `NULL`; a to-many `_count` with no related rows is `0`. An aggregate `_count` on a `one` relation, a field map on a to-many relation, or a non-object relation value throws `INVALID_ARGS`, as does a relation key combined with `cursor` or `cursor()`. A real scalar column named `_count` on a `one` relation remains sortable. SQL expressions in `orderBy` still require Drizzle directly. See [ordering by relations](/docs/querying/reads#ordering-by-relations) and [limitations](/docs/guides/limitations).
 
 `count` and `exists` accept only `where`, `cursor`, and `meta`.
 

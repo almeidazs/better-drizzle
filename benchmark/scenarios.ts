@@ -1,4 +1,5 @@
 import {
+	aliasedTable,
 	and,
 	asc,
 	count,
@@ -124,6 +125,68 @@ export const betterNullsLastOrder = async (context: BenchmarkContext) =>
 		],
 		take: 25,
 		where: { id: { lte: 25 } },
+	});
+
+// Keep the raw side at API parity: full root rows, correlated scalar sorts,
+// a deterministic tie-breaker, and the same limit as the delegate.
+export const rawRelationFieldOrder = async (context: BenchmarkContext) => {
+	const author = aliasedTable(users, '__bench_order_author');
+	const name = context.raw
+		.select({ value: author.name })
+		.from(author)
+		.where(eq(author.id, posts.userId))
+		.limit(1);
+	return context.raw
+		.select()
+		.from(posts)
+		.orderBy(asc(sql`(${name})`), asc(posts.id))
+		.limit(25);
+};
+
+export const betterRelationFieldOrder = async (context: BenchmarkContext) =>
+	betterClient(context).posts.findMany({
+		orderBy: [{ author: { name: 'asc' } }, { id: 'asc' }],
+		take: 25,
+	});
+
+export const rawRelationCountOrder = async (context: BenchmarkContext) => {
+	const related = aliasedTable(posts, '__bench_order_posts');
+	const total = context.raw
+		.select({ value: count() })
+		.from(related)
+		.where(eq(related.userId, users.id));
+	return context.raw
+		.select()
+		.from(users)
+		.orderBy(desc(sql`(${total})`), asc(users.id))
+		.limit(25);
+};
+
+export const betterRelationCountOrder = async (context: BenchmarkContext) =>
+	betterClient(context).users.findMany({
+		orderBy: [{ posts: { _count: 'desc' } }, { id: 'asc' }],
+		take: 25,
+	});
+
+export const rawThroughCountOrder = async (context: BenchmarkContext) => {
+	const related = aliasedTable(posts, '__bench_order_posts');
+	const through = aliasedTable(comments, '__bench_order_comments');
+	const total = context.raw
+		.select({ value: count() })
+		.from(through)
+		.innerJoin(related, eq(through.postId, related.id))
+		.where(eq(through.authorId, users.id));
+	return context.raw
+		.select()
+		.from(users)
+		.orderBy(desc(sql`(${total})`), asc(users.id))
+		.limit(25);
+};
+
+export const betterThroughCountOrder = async (context: BenchmarkContext) =>
+	betterClient(context).users.findMany({
+		orderBy: [{ commentedPosts: { _count: 'desc' } }, { id: 'asc' }],
+		take: 25,
 	});
 
 export const rawRelationGraph = async (context: BenchmarkContext) =>

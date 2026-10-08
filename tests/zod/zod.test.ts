@@ -199,6 +199,35 @@ describe('better-drizzle/zod - PostgreSQL bigint schemas', () => {
 });
 
 describe('better-drizzle/zod - strict relation orderBy schemas', () => {
+	test('keeps a real _count scalar column in one-relation sort maps', () => {
+		const authors = pgTable('zod_count_sort_authors', {
+			id: integer().primaryKey(),
+			_count: integer(),
+		});
+		const books = pgTable('zod_count_sort_books', {
+			id: integer().primaryKey(),
+			authorId: integer(),
+		});
+		const relations = defineRelations({ authors, books }, (r) => ({
+			books: {
+				author: r.one.authors({
+					from: r.books.authorId,
+					to: r.authors.id,
+				}),
+			},
+		}));
+		const orderBy = createZodSchemasRegistry(relations, {}).get('books')!
+			.schemas.orderBy;
+		expect(orderBy.safeParse({ author: { _count: 'asc' } }).success).toBe(
+			true,
+		);
+		expect(
+			orderBy.safeParse({
+				author: { _count: { direction: 'desc', nulls: 'last' } },
+			}).success,
+		).toBe(true);
+	});
+
 	test('accepts many-to-many counts and keeps strict unknown keys', () => {
 		const users = pgTable('zod_order_users', {
 			id: integer().primaryKey(),

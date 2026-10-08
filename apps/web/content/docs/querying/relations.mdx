@@ -260,7 +260,7 @@ Two kinds of Drizzle relations are not supported by the better-drizzle loader:
 - relations declared with a relation-level `where` (filtered relations)
 - `one` relations declared through a junction table
 
-They are not part of the better-drizzle relation API: loading one with `include` or `select` throws `Relation "x" on "t" cannot be loaded: ...`, and filtering through one in `where` throws `Relation "x" on "t" cannot be filtered: ...`. Sorting by one in `orderBy` throws the same unsupported-relation error. They still work with Drizzle's own relational queries on the underlying Drizzle instance.
+They are not part of the better-drizzle relation API: loading one with `include` or `select` throws `Relation "x" on "t" cannot be loaded: ...`, and filtering through one in `where` throws `Relation "x" on "t" cannot be filtered: ...`. In **0.4.0 (unreleased)**, sorting by one in `orderBy` throws the same unsupported-relation error. They still work with Drizzle's own relational queries on the underlying Drizzle instance.
 
 ## Filtering by related rows
 
