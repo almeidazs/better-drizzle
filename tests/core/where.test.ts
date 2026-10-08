@@ -92,6 +92,15 @@ test('Buffer values match blob columns and pin unique keys', async () => {
 		expect(await db.files.findUnique({ where: { hash } })).toMatchObject({
 			id: 1,
 		});
+		const cursorPlan = await db.files
+			.cursor({
+				after: { id: 0 },
+				limit: 1,
+				orderBy: { id: 'asc' },
+				where: { hash },
+			})
+			.explain();
+		expect(cursorPlan.statements[0]?.sql).toContain('exists');
 		expect(await db.files.count({ where: { hash: { not: hash } } })).toBe(
 			1,
 		);
