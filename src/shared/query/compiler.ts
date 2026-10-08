@@ -51,7 +51,8 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' &&
 	value !== null &&
 	!Array.isArray(value) &&
-	!(value instanceof Date);
+	!(value instanceof Date) &&
+	!(value instanceof Uint8Array);
 
 const isScalarFilter = (value: unknown): value is Record<string, unknown> => {
 	if (!isPlainObject(value)) return false;

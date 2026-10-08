@@ -1515,6 +1515,7 @@ const isPinnedValue = (value: unknown): boolean => {
 	if (
 		typeof value !== 'object' ||
 		value instanceof Date ||
+		value instanceof Uint8Array ||
 		value instanceof Placeholder
 	)
 		return true;
