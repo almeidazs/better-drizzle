@@ -693,7 +693,9 @@ export const getDeferredRelationPlans = <Schema extends AnySchema, Meta>(
 
 export const hasRelationWrites = (runtime: TableRuntime, data: unknown) => {
 	if (!isSimpleRecord(data)) return false;
-	for (const key in data) if (runtime.relationNames.has(key)) return true;
+	for (const key in data)
+		if (runtime.relationNames.has(key) && data[key] !== undefined)
+			return true;
 	return false;
 };
 
@@ -704,8 +706,8 @@ export const splitRelationData = (
 	const scalar = Object.create(null) as Record<string, unknown>;
 	const relations = Object.create(null) as Record<string, unknown>;
 	for (const key in data)
-		if (runtime.relationNames.has(key)) relations[key] = data[key];
-		else scalar[key] = data[key];
+		if (!runtime.relationNames.has(key)) scalar[key] = data[key];
+		else if (data[key] !== undefined) relations[key] = data[key];
 	return { relations, scalar };
 };
 

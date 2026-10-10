@@ -113,6 +113,55 @@ describe('direct relation writes', () => {
 		expect(updated.userId).toBe(2);
 	});
 
+	test('ignores relation keys set to undefined', async () => {
+		const created = await ctx.better.posts.create({
+			data: {
+				author: undefined,
+				body: 'Body',
+				id: 97,
+				published: true,
+				score: 1,
+				title: 'Undefined relation',
+				userId: 1,
+			},
+		});
+		expect(created.userId).toBe(1);
+
+		const renamed = await ctx.better.posts.update({
+			data: { author: undefined, title: 'Renamed' },
+			where: { id: 97 },
+		});
+		expect(renamed?.title).toBe('Renamed');
+
+		const reconnected = await ctx.better.posts.update({
+			data: { author: { connect: { id: 2 } }, comments: undefined },
+			where: { id: 97 },
+		});
+		expect(reconnected?.userId).toBe(2);
+
+		const upserted = await ctx.better.posts.upsert({
+			create: {
+				author: undefined,
+				body: 'Unused',
+				id: 97,
+				published: true,
+				score: 1,
+				title: 'Unused',
+				userId: 1,
+			},
+			update: { author: undefined, title: 'Upserted' },
+			where: { id: 97 },
+		});
+		expect(upserted.title).toBe('Upserted');
+
+		await expect(
+			ctx.better.posts.update({
+				data: { author: null as never },
+				where: { id: 97 },
+			}),
+		).rejects.toThrow('Relation commands must be objects.');
+	});
+
 	test('preserves plugin state across implicit transactions', async () => {
 		const client = better(ctx.raw, {
 			plugins: [
