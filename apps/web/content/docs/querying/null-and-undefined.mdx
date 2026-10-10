@@ -34,6 +34,7 @@ export const users = sqliteTable('users', {
 | `where: {}` or no `where` | no `WHERE` clause |
 | `data: { bio: undefined }` | `bio` is not written |
 | `data: { bio: null }` | `bio` is set to `NULL` |
+| `data: { author: undefined }` | no relation write |
 
 ## `undefined` in `where`
 
@@ -226,7 +227,7 @@ This makes optional form fields safe to pass straight through: an `undefined` fi
 
 If every field in an update is `undefined`, there is nothing to set and Drizzle throws `No values to set` (for `updateMany`, only when some row matches).
 
-For relations, `null` is a relation command rather than a column value: `author: { set: null }` and `author: { disconnect: true }` null the foreign key. See [Relation writes](/docs/writing/relation-writes).
+A relation key set to `undefined` is skipped like a column, in `create`, `update`, and both `upsert` branches: `author: undefined` leaves the relation unchanged. A relation key set to `null` throws `INVALID_ARGS`. To clear a to-one relation, send a command instead: `author: { set: null }` and `author: { disconnect: true }` null the foreign key. See [Relation writes](/docs/writing/relation-writes).
 
 ## Conditional filters
 
