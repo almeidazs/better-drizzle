@@ -13,7 +13,10 @@ export default function Layout({ children }: { children: ReactNode }) {
 			{...baseOptions()}
 			links={[]}
 			slots={{ header: DocsSiteHeader }}
-			sidebar={{ defaultOpenLevel: 1, banner: <DialectSelect key="dialect" /> }}
+			sidebar={{
+				defaultOpenLevel: 1,
+				banner: <DialectSelect key="dialect" />,
+			}}
 		>
 			{children}
 		</DocsLayout>

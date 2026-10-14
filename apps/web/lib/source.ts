@@ -19,7 +19,10 @@ export const source = loader({
 					if (dialects)
 						node.name = createElement(
 							'span',
-							{ key: 'name', 'data-dialect-page': dialects.join(' ') },
+							{
+								key: 'name',
+								'data-dialect-page': dialects.join(' '),
+							},
 							node.name,
 						);
 					return node;
