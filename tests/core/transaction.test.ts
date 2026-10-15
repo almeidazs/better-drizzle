@@ -143,6 +143,36 @@ describe('transactions', () => {
 		ctx.close();
 	});
 
+	test('rethrows callback errors unwrapped', async () => {
+		class NotFoundException extends Error {}
+		const error = new NotFoundException('missing');
+		const hookErrors: unknown[] = [];
+		const ctx = createContext({
+			hooks: {
+				onTransactionError: ({ error }) => {
+					hookErrors.push(error);
+				},
+			},
+		});
+
+		const thrown = await ctx.client
+			.transaction(async (tx) => {
+				await tx.transaction(async (inner) => {
+					await inner.users.create({
+						data: { id: 1, email: 'a@test.com', name: 'Alice' },
+					});
+					throw error;
+				});
+			})
+			.catch((caught: unknown) => caught);
+
+		expect(thrown).toBe(error);
+		expect(hookErrors).toHaveLength(2);
+		expect(hookErrors[0]).toBeInstanceOf(BetterDrizzleError);
+		expect(await ctx.client.users.count()).toBe(0);
+		ctx.close();
+	});
+
 	test('rollback via tx.rollback()', async () => {
 		const ctx = createContext();
 

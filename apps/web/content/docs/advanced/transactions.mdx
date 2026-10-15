@@ -39,6 +39,8 @@ const user = await db.transaction(async (tx) => {
 
 Whatever the callback returns becomes the result of `transaction(...)`. Throwing (or an explicit rollback) aborts and rolls back.
 
+An error thrown by the callback is rethrown as is, so your own error classes (for example a `NotFoundException`) reach the caller unchanged. The `onTransactionError` hooks still receive it normalized as a `BetterDrizzleError`.
+
 ## Nested transactions (savepoints)
 
 A `tx.transaction(...)` inside another opens a **savepoint** that can be rolled back independently of the outer transaction:

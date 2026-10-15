@@ -168,6 +168,7 @@
     - transaction clients are full Better Drizzle clients with `transaction`, `rollback`, `afterCommit`, and `afterRollback`
     - root clients also expose `afterCommit` and `afterRollback`; calling them outside an active transaction throws the explicit Better Drizzle error instead of failing with a missing method
     - transaction context lives on the runtime context; operation/plugin hooks can read `isInTransaction`, `transaction`, `transactionContext`, and merged `meta`
+    - errors thrown by the callback are rethrown unchanged (identity tracked per attempt in `factory.ts`); `onTransactionError` still gets the normalized `BetterDrizzleError`, and failures outside the callback (begin, commit, hooks, abort) stay normalized
     - nested transactions use savepoints; SQLite is handled with explicit `BEGIN`/`SAVEPOINT` SQL because Bun SQLite's native Drizzle transaction callback is synchronous
 - **Raw SQL**:
     - raw APIs live on the client: `$raw`, `$executeRaw`, and `$rawUnsafe`

@@ -13,6 +13,7 @@ seoDescription: 'Changes in better-drizzle 0.4.0 and 0.3.0: tenant isolation, mo
 ### Behavior changes
 
 - **Soft-deleted rows are hidden in nested reads.** `better-drizzle/soft-delete` used to filter only the root query, so deleted rows appeared in `include`, relation `select`, relation filters (`some`, `every`, `none`, `is`, `isNot`), `include._count`, and relation sorts. They are hidden there now. The `deleted` argument still controls the root rows only. `connect`, `disconnect`, and `set` no longer reach deleted rows. `$withoutPlugins()` still reads deleted rows at every level. See [soft delete](/docs/plugins/soft-delete#what-is-filtered).
+- **Transactions rethrow callback errors unwrapped.** An error thrown inside the `transaction(...)` callback, including a nested one, now reaches the caller as the same object instead of a `BetterDrizzleError` with code `OPERATION_ERROR` and operation `"transaction"`. `onTransactionError` hooks still receive the normalized error. See [transactions](/docs/advanced/transactions).
 - **Soft deletes and restores keep other scopes.** The inner update of a soft `delete()` / `deleteMany()` and of `restore()` / `restoreById()` runs through `$withoutPlugins({ keepScopes: true })` instead of `$withoutPlugins()`, so on a tenant-scoped client it only touches that tenant's rows.
 
 ### Features

@@ -200,6 +200,8 @@ await db.transaction(async (tx) => {
 });
 ```
 
+Errors thrown by the callback are not wrapped: `transaction(...)` rejects with the same error object, so `instanceof` checks on your own error classes keep working. Failures outside the callback (`BEGIN`, `COMMIT`, lifecycle hooks, timeouts) are still `BetterDrizzleError`s.
+
 ## Rules of thumb
 
 - Keep validation close to request parsing.
