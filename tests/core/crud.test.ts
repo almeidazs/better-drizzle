@@ -464,6 +464,24 @@ describe('update', () => {
 		expect(typed.author.id).toBe(1);
 	});
 
+	test('empty data is a no-op that returns the current row', async () => {
+		const before = await ctx.better.users.findUnique({ where: { id: 1 } });
+
+		expect(
+			await ctx.better.users.update({ data: {}, where: { id: 1 } }),
+		).toEqual(before);
+		expect(
+			await ctx.better.users.update({
+				data: { name: undefined },
+				select: { id: true, name: true },
+				where: { id: 1 },
+			}),
+		).toEqual({ id: 1, name: before?.name });
+		expect(
+			await ctx.better.users.update({ data: {}, where: { id: 9999 } }),
+		).toBeNull();
+	});
+
 	test('update changes are persisted', async () => {
 		await ctx.better.users.update({
 			data: { age: 99 },
@@ -699,6 +717,15 @@ describe('updateMany', () => {
 				data: { active: false },
 				select: { id: true },
 				where: {},
+			}),
+		).toEqual({ count: 0 });
+	});
+
+	test('empty data is a no-op', async () => {
+		expect(
+			await ctx.better.users.updateMany({
+				data: { name: undefined },
+				where: { active: true },
 			}),
 		).toEqual({ count: 0 });
 	});
@@ -990,6 +1017,32 @@ describe('upsert', () => {
 
 		expect(result).not.toBeNull();
 		expect(result?.name).toBe('New User');
+	});
+
+	test('an empty update returns the existing row unchanged', async () => {
+		const before = await ctx.better.users.findUnique({ where: { id: 1 } });
+		const create = {
+			id: 1,
+			email: 'other@example.com',
+			name: 'Other',
+			age: 1,
+			active: false,
+		};
+
+		expect(
+			await ctx.better.users.upsert({
+				create,
+				update: {},
+				where: { id: 1 },
+			}),
+		).toEqual(before);
+		expect(
+			await ctx.better.users.upsert({
+				create,
+				update: {},
+				where: { name: before?.name },
+			}),
+		).toEqual(before);
 	});
 
 	test('upsert updates record when it exists', async () => {
