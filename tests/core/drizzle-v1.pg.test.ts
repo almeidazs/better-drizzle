@@ -230,6 +230,34 @@ describe.skipIf(!DATABASE_URL)('Drizzle 1.x migration (PostgreSQL)', () => {
 						where: { id: 1 },
 					}),
 				).toMatchObject({ best: 99 });
+				await scoreClient.scores.updateEach({
+					by: scores.id,
+					data: [
+						{ id: 1, score: 10 },
+						{ id: 2, score: 95 },
+					],
+					update: {
+						best: (row) => ({ max: row.score as number }),
+						low: (row) => ({ min: row.score as number }),
+					},
+				});
+				await scoreClient.scores.upsertMany({
+					data: [
+						{ best: 0, id: 2 },
+						{ best: 7, id: 3 },
+					],
+					target: 'id',
+					update: { best: { min: 50 } },
+				});
+				expect(
+					await scoreClient.scores.findMany({
+						orderBy: { id: 'asc' },
+					}),
+				).toEqual([
+					{ best: 99, id: 1, low: 10 },
+					{ best: 50, id: 2, low: 10 },
+					{ best: 7, id: 3, low: null },
+				]);
 			} finally {
 				await pg.query('drop table better_drizzle_v1_scores');
 			}

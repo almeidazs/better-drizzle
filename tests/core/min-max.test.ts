@@ -165,6 +165,48 @@ describe('max / min atomic updates', () => {
 		]);
 	});
 
+	test('zero and negative operands are applied, not skipped', async () => {
+		expect(
+			await client.players.update({
+				data: { highScore: { max: 0 } },
+				where: { id: 1 },
+			}),
+		).toMatchObject({ highScore: 50 });
+		expect(
+			await client.players.update({
+				data: { highScore: { min: 0 } },
+				where: { id: 1 },
+			}),
+		).toMatchObject({ highScore: 0 });
+		expect(
+			await client.players.update({
+				data: { highScore: { min: -5 } },
+				where: { id: 1 },
+			}),
+		).toMatchObject({ highScore: -5 });
+		expect(
+			await client.players.update({
+				data: { bonus: { max: -3 } },
+				where: { id: 1 },
+			}),
+		).toMatchObject({ bonus: -3 });
+	});
+
+	test('fractional operands work on real columns', async () => {
+		expect(
+			await client.players.update({
+				data: { rating: { max: 4.75 } },
+				where: { id: 2 },
+			}),
+		).toMatchObject({ rating: 4.75 });
+		expect(
+			await client.players.update({
+				data: { rating: { min: 0.25 } },
+				where: { id: 1 },
+			}),
+		).toMatchObject({ rating: 0.25 });
+	});
+
 	test('accepts an undefined sibling next to max', async () => {
 		expect(
 			await client.players.update({
