@@ -435,21 +435,25 @@ const createScalarMutationSchema = (column: AnyColumn) => {
 	if (!column.dataType.startsWith('number')) return;
 
 	const value = z.number().finite();
-	return z
-		.object({
-			decrement: value.optional(),
-			divide: value
-				.refine((entry) => entry !== 0, 'divide cannot be zero.')
-				.optional(),
-			increment: value.optional(),
-			multiply: value.optional(),
-			set: value.optional(),
-		})
-		.strict()
-		.refine(
-			(entry) => Object.keys(entry).length > 0,
-			'Mutation must not be empty.',
-		);
+	return z.union([
+		z
+			.object({
+				decrement: value.optional(),
+				divide: value
+					.refine((entry) => entry !== 0, 'divide cannot be zero.')
+					.optional(),
+				increment: value.optional(),
+				multiply: value.optional(),
+				set: value.optional(),
+			})
+			.strict()
+			.refine(
+				(entry) => Object.keys(entry).length > 0,
+				'Mutation must not be empty.',
+			),
+		z.object({ max: value }).strict(),
+		z.object({ min: value }).strict(),
+	]);
 };
 
 const createArrayFilterSchema = (valueSchema: z.ZodTypeAny) => {

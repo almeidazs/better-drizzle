@@ -281,6 +281,12 @@ describe('the registry', () => {
 			}).valid,
 		).toBe(true);
 		expect(update?.validate({ age: { divide: 0 } }).valid).toBe(false);
+		expect(update?.validate({ age: { max: 3 } }).valid).toBe(true);
+		expect(update?.validate({ age: { min: 3 } }).valid).toBe(true);
+		expect(update?.validate({ age: { max: 3, min: 1 } }).valid).toBe(false);
+		expect(update?.validate({ age: { increment: 1, max: 3 } }).valid).toBe(
+			false,
+		);
 		expect(update?.validate({ active: { toggle: false } }).valid).toBe(
 			false,
 		);

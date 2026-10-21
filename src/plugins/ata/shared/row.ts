@@ -73,16 +73,32 @@ const atomicMutationSchema = (column: AnyColumn) => {
 	if (!column.dataType.startsWith('number')) return;
 
 	return {
-		additionalProperties: false,
-		minProperties: 1,
-		properties: {
-			decrement: { type: 'number' },
-			divide: { not: { const: 0 }, type: 'number' },
-			increment: { type: 'number' },
-			multiply: { type: 'number' },
-			set: { type: 'number' },
-		},
-		type: 'object',
+		oneOf: [
+			{
+				additionalProperties: false,
+				minProperties: 1,
+				properties: {
+					decrement: { type: 'number' },
+					divide: { not: { const: 0 }, type: 'number' },
+					increment: { type: 'number' },
+					multiply: { type: 'number' },
+					set: { type: 'number' },
+				},
+				type: 'object',
+			},
+			{
+				additionalProperties: false,
+				properties: { max: { type: 'number' } },
+				required: ['max'],
+				type: 'object',
+			},
+			{
+				additionalProperties: false,
+				properties: { min: { type: 'number' } },
+				required: ['min'],
+				type: 'object',
+			},
+		],
 	};
 };
 

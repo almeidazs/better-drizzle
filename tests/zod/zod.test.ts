@@ -174,6 +174,14 @@ describe('better-drizzle/zod - scalar atomic update schemas', () => {
 			}).success,
 		).toBe(true);
 		expect(schema?.safeParse({ balance: {} }).success).toBe(false);
+		expect(schema?.safeParse({ balance: { max: 3 } }).success).toBe(true);
+		expect(schema?.safeParse({ balance: { min: 3 } }).success).toBe(true);
+		expect(schema?.safeParse({ balance: { max: 3, min: 1 } }).success).toBe(
+			false,
+		);
+		expect(
+			schema?.safeParse({ balance: { increment: 1, max: 3 } }).success,
+		).toBe(false);
 		expect(schema?.safeParse({ balance: { divide: 0 } }).success).toBe(
 			false,
 		);

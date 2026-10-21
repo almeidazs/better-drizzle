@@ -187,13 +187,33 @@ export type PgArrayMutationInput<T> =
 	  };
 
 /** Atomic mutations supported by numeric columns. */
-export type NumericMutationInput = AtLeastOne<{
-	decrement?: number;
-	divide?: number;
-	increment?: number;
-	multiply?: number;
-	set?: number;
-}>;
+export type NumericMutationInput =
+	| AtLeastOne<{
+			decrement?: number;
+			divide?: number;
+			increment?: number;
+			max?: never;
+			min?: never;
+			multiply?: number;
+			set?: number;
+	  }>
+	| NumericBoundMutationInput;
+
+/**
+ * Keeps the larger (`max`, `GREATEST`) or smaller (`min`, `LEAST`) of the
+ * column and the operand. A NULL column becomes the operand on every dialect.
+ */
+type NumericBoundMutationInput =
+	| ({ max: number; min?: never } & NoNumericOperators)
+	| ({ max?: never; min: number } & NoNumericOperators);
+
+type NoNumericOperators = {
+	decrement?: never;
+	divide?: never;
+	increment?: never;
+	multiply?: never;
+	set?: never;
+};
 
 /** Atomic mutation supported by boolean columns. */
 export type BooleanMutationInput = { toggle: true };

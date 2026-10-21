@@ -195,6 +195,46 @@ describe.skipIf(!DATABASE_URL)('Drizzle 1.x migration (PostgreSQL)', () => {
 			}
 		});
 
+		test('max / min compile to GREATEST / LEAST and treat NULL as the operand', async () => {
+			await pg.query(`
+				drop table if exists better_drizzle_v1_scores;
+				create table better_drizzle_v1_scores (id integer primary key, best integer not null, low integer);
+				insert into better_drizzle_v1_scores values (1, 50, null), (2, 80, 10);
+			`);
+			const scores = pgTable('better_drizzle_v1_scores', {
+				best: integer('best').notNull(),
+				id: integer('id').primaryKey(),
+				low: integer('low'),
+			});
+			const scoreClient = better(
+				drizzle({ client: pg, relations: defineRelations({ scores }) }),
+			);
+
+			try {
+				await scoreClient.scores.updateMany({
+					data: { best: { max: 60 }, low: { min: 20 } },
+					where: { id: { in: [1, 2] } },
+				});
+				expect(
+					await scoreClient.scores.findMany({
+						orderBy: { id: 'asc' },
+					}),
+				).toEqual([
+					{ best: 60, id: 1, low: 20 },
+					{ best: 80, id: 2, low: 10 },
+				]);
+				expect(
+					await scoreClient.scores.upsert({
+						create: { best: 0, id: 1 },
+						update: { best: { max: 99 } },
+						where: { id: 1 },
+					}),
+				).toMatchObject({ best: 99 });
+			} finally {
+				await pg.query('drop table better_drizzle_v1_scores');
+			}
+		});
+
 		test('Buffer values match bytea columns and pin unique keys', async () => {
 			const hash = Buffer.from('a1b2c3', 'hex');
 			const other = Buffer.from('d4e5f6', 'hex');

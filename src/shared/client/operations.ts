@@ -622,10 +622,52 @@ const numericMutationError = (
 		table: runtime.dbName,
 	});
 
+// GREATEST / LEAST follow PostgreSQL on every dialect: a NULL column becomes the
+// operand. MySQL and SQLite return NULL when any argument is NULL, so the
+// column is wrapped in COALESCE there; SQLite spells them MAX / MIN.
+const compileBoundMutation = (
+	runtime: TableRuntime,
+	columnName: string,
+	column: AnyColumn,
+	dialect: string,
+	operation: string,
+	value: Record<string, unknown>,
+	keys: string[],
+) => {
+	const name = value.max !== undefined ? 'max' : 'min';
+	let defined = 0;
+	for (const key of keys) if (value[key] !== undefined) defined++;
+	if (defined !== 1)
+		throw numericMutationError(
+			runtime,
+			columnName,
+			operation,
+			`${name} cannot be combined with other numeric mutations.`,
+		);
+	const input = value[name];
+	if (typeof input !== 'number' || !Number.isFinite(input))
+		throw numericMutationError(
+			runtime,
+			columnName,
+			operation,
+			`${name} must be a finite number.`,
+		);
+
+	const parameter = sql.param(input, column);
+	const fn = (dialect === 'sqlite' ? SQLITE_BOUNDS : SQL_BOUNDS)[name];
+	return dialect === 'pg'
+		? sql`${fn}(${column}, ${parameter})`
+		: sql`${fn}(coalesce(${column}, ${parameter}), ${parameter})`;
+};
+
+const SQL_BOUNDS = { max: sql.raw('greatest'), min: sql.raw('least') };
+const SQLITE_BOUNDS = { max: sql.raw('max'), min: sql.raw('min') };
+
 const compileScalarMutation = (
 	runtime: TableRuntime,
 	columnName: string,
 	column: AnyColumn,
+	dialect: string,
 	operation: string,
 	value: Record<string, unknown>,
 ) => {
@@ -648,6 +690,16 @@ const compileScalarMutation = (
 			columnName,
 			operation,
 			'Numeric mutations must specify at least one operation.',
+		);
+	if (value.max !== undefined || value.min !== undefined)
+		return compileBoundMutation(
+			runtime,
+			columnName,
+			column,
+			dialect,
+			operation,
+			value,
+			keys,
 		);
 	for (const key of keys)
 		if (!NUMERIC_MUTATION_NAMES.includes(key as never))
@@ -740,6 +792,7 @@ export const compileUpdateMutations = (
 							runtime,
 							key,
 							column,
+							dialect,
 							operation,
 							value,
 						)
@@ -1172,6 +1225,7 @@ const buildUpdateEachSet = <Schema extends AnySchema, Meta>(
 							runtime,
 							key,
 							column,
+							context.dialect,
 							'updateEach',
 							nextValue,
 						)
