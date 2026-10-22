@@ -1,7 +1,11 @@
 import type { AnySchema, PluginModelInfo } from 'better-drizzle';
-import { Placeholder, type TablesRelationalConfig } from 'drizzle-orm';
+import {
+	Placeholder,
+	type RelationsBuilderColumnBase,
+	type TablesRelationalConfig,
+} from 'drizzle-orm';
 
-import { canonicalize } from './serializer';
+import { canonicalize, getPlaceholderName } from './serializer';
 
 type Models = Readonly<Record<string, PluginModelInfo | undefined>>;
 type MutableRecord = Record<string, unknown>;
@@ -43,7 +47,7 @@ export const prepareCascadeDependencies = (
 	const add = (
 		parent: string,
 		child: string | undefined,
-		references: readonly unknown[],
+		references: readonly RelationsBuilderColumnBase[],
 	) => {
 		if (!child) return;
 		let targets = edges.get(parent);
@@ -51,9 +55,11 @@ export const prepareCascadeDependencies = (
 		targets.add(child);
 		let fields = columns.get(parent);
 		if (!fields) columns.set(parent, (fields = new Set()));
-		for (const key in models[parent]?.columns)
-			if (references.includes(models[parent]?.columns[key]))
+		for (const key in models[parent]?.columns) {
+			const column = models[parent]?.columns[key];
+			if (references.some((reference) => reference._.column === column))
 				fields.add(key);
+		}
 	};
 	for (const name in models) {
 		const model = models[name];
@@ -100,14 +106,17 @@ const isKeyValue = (value: unknown) =>
 	typeof value === 'bigint';
 
 const primaryKeyValue = (input: unknown, params?: MutableRecord): unknown => {
-	const value = input instanceof Placeholder ? params?.[input.name] : input;
+	const value =
+		input instanceof Placeholder
+			? params?.[getPlaceholderName(input)]
+			: input;
 	if (isKeyValue(value)) return value;
 	if (!isRecord(value)) return;
 	const keys = Object.keys(value).filter((key) => value[key] !== undefined);
 	if (keys.length !== 1 || keys[0] !== 'equals') return;
 	const equals =
 		value.equals instanceof Placeholder
-			? params?.[value.equals.name]
+			? params?.[getPlaceholderName(value.equals)]
 			: value.equals;
 	if (isKeyValue(equals)) return equals;
 };
