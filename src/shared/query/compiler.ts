@@ -115,6 +115,10 @@ const preparedParamError = (message: string, dialect?: string) =>
 		message,
 	});
 
+/** Reads a prepared param's name; Drizzle keeps `Placeholder.name` protected. */
+export const getPlaceholderName = (placeholder: Placeholder) =>
+	(placeholder as unknown as { name: string }).name;
+
 /**
  * Binds a prepared `param()` through the column encoder, the way Drizzle
  * binds literal values. Other values pass through unchanged.
@@ -236,7 +240,7 @@ const compileScalarFilter = (
 	if (!isScalarFilter(value)) return eq(column, bind(column, value));
 
 	const filter = value;
-	const conditions: SQL[] = [];
+	const conditions: (SQL | undefined)[] = [];
 	const insensitive = filter.mode === 'insensitive';
 
 	if ('equals' in filter)
@@ -323,10 +327,10 @@ const compileScalarFilter = (
 			insensitive && isPatternValue(filter.not)
 				? lowerEq(column, encode(column, filter.not))
 				: compileScalarFilter(column, filter.not, dialect);
-		if (nested) conditions.push(not(nested));
+		conditions.push(not(nested));
 	}
 
-	return conditions.length ? and(...conditions) : undefined;
+	return and(...conditions);
 };
 
 const isJsonWhereFilter = (
@@ -496,7 +500,7 @@ const compileArrayElementScalarFilter = (
 	encoder: AnyColumn,
 	value: Record<string, unknown>,
 ): SQL | undefined => {
-	const conditions: SQL[] = [];
+	const conditions: (SQL | undefined)[] = [];
 	const bind = (entry: unknown) => sql.param(entry, encoder);
 	const pattern = (
 		entry: string | Placeholder,
@@ -574,10 +578,10 @@ const compileArrayElementScalarFilter = (
 		const nested = isScalarFilter(value.not)
 			? compileArrayElementScalarFilter(column, encoder, value.not)
 			: sql`${left} = ${right(value.not)}`;
-		if (nested) conditions.push(not(nested));
+		conditions.push(not(nested));
 	}
 
-	return conditions.length ? and(...conditions) : undefined;
+	return and(...conditions);
 };
 
 const compileArrayElementPredicate = (
@@ -658,7 +662,7 @@ const compileArrayFilter = (
 	value: Record<string, unknown>,
 	encoder: AnyColumn = column,
 ): SQL | undefined => {
-	const conditions: SQL[] = [];
+	const conditions: (SQL | undefined)[] = [];
 	const needsCardinality =
 		value.isEmpty !== undefined || value.length !== undefined;
 	const cardinality = needsCardinality
@@ -715,13 +719,13 @@ const compileArrayFilter = (
 	if ('not' in value) {
 		if (isPlainObject(value.not)) {
 			const nested = compileArrayFilter(column, value.not, encoder);
-			if (nested) conditions.push(not(nested));
+			conditions.push(not(nested));
 		} else if (value.not === null) conditions.push(not(isNull(column)));
 		else if (value.not !== undefined)
 			conditions.push(not(eq(column, bind(encoder, value.not))));
 	}
 
-	return conditions.length ? and(...conditions) : undefined;
+	return and(...conditions);
 };
 
 const compileJsonPathFilter = (
@@ -804,7 +808,7 @@ const compileJsonPathFilter = (
 	const isNumber = (entry: unknown) =>
 		typeof entry === 'number' || entry instanceof Placeholder;
 	if (!isScalarFilter(value)) return compare(value);
-	const conditions: SQL[] = [];
+	const conditions: (SQL | undefined)[] = [];
 	if ('equals' in value) {
 		const condition = compare(value.equals);
 		if (condition) conditions.push(condition);
@@ -854,9 +858,9 @@ const compileJsonPathFilter = (
 			insensitive && isPatternValue(value.not)
 				? compare(value.not)
 				: compileJsonPathFilter(column, path, value.not);
-		if (nested) conditions.push(not(nested));
+		conditions.push(not(nested));
 	}
-	return conditions.length ? and(...conditions) : undefined;
+	return and(...conditions);
 };
 
 const makeJoinCondition = (
@@ -1193,14 +1197,14 @@ export const compileWhereInput = <Schema extends AnySchema, Meta>(
 
 		if (key === 'NOT') {
 			const entries = Array.isArray(value) ? value : [value];
-			const nested: SQL[] = [];
+			const nested: (SQL | undefined)[] = [];
 
 			for (const entry of entries) {
 				const clause = compileWhereInput(
 					context,
 					entry as Record<string, unknown>,
 				);
-				if (clause) nested.push(not(clause));
+				nested.push(not(clause));
 			}
 			const clause = and(...nested);
 			if (clause) conditions.push(clause);
@@ -1620,7 +1624,7 @@ export const cursorParam = (
 						throw new BetterDrizzleError({
 							code: BetterDrizzleErrorCode.InvalidArgs,
 							details: { cursorField: key },
-							message: `Prepared cursor "${cursor.name}" must include a non-null "${key}" for table "${runtime.dbName}".`,
+							message: `Prepared cursor "${getPlaceholderName(cursor)}" must include a non-null "${key}" for table "${runtime.dbName}".`,
 							operation: 'cursor',
 							table: runtime.dbName,
 						});
