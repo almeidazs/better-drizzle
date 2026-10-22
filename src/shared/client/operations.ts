@@ -1401,9 +1401,9 @@ const insertsWhere = (
 	return true;
 };
 
-// The key whose conflict hits the row `where` finds: the primary key when
-// `where` sets it to the `create` values, else a unique key that `where`
-// alone pins to the `create` values.
+// The key whose conflict hits the row `where` finds: the primary key or a
+// unique key that `where` alone pins to the `create` values. Any other
+// condition in `where` takes the read-then-write path.
 const getConflictFields = (
 	runtime: TableRuntime,
 	where: unknown,
@@ -1413,6 +1413,7 @@ const getConflictFields = (
 	let size = 0;
 	let first = '';
 	for (const key in where) if (size++ === 0) first = key;
+	if (size === 0) return;
 	const primaryKey = runtime.primaryKeyFields;
 	if (primaryKey.length === size && insertsWhere(primaryKey, where, create))
 		return primaryKey;
@@ -3234,7 +3235,8 @@ export const deleteManyRecords = async <Schema extends AnySchema, Meta>(
 /**
  * Upserts a record: inserts it if it does not exist, or updates it if
  * it does. When the database supports `ON CONFLICT DO UPDATE` and the
- * where-clause targets the primary key, a native conflict-update is used.
+ * where-clause holds only the primary key or a unique key, a native
+ * conflict-update is used.
  * Otherwise falls back to a read-then-write flow.
  *
  * @typeParam Schema - The Drizzle schema type.

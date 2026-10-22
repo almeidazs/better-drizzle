@@ -1312,6 +1312,31 @@ describe('upsert', () => {
 			expect(await db.accounts.count()).toBe(1);
 			sqlite.close();
 		});
+
+		test('an empty where on a table without a primary key does not build a conflict target', async () => {
+			const sqlite = new Database(':memory:');
+			sqlite.exec(
+				'CREATE TABLE logs (n INTEGER NOT NULL); INSERT INTO logs VALUES (1);',
+			);
+			const logs = sqliteTable('logs', { n: integer('n').notNull() });
+			const queries: string[] = [];
+			const db = better(
+				drizzle({
+					client: sqlite,
+					logger: { logQuery: (query) => queries.push(query) },
+					relations: defineRelations({ logs }),
+				}),
+			);
+			await db.logs.upsert({
+				create: { n: 0 },
+				update: { n: 2 },
+				where: {},
+			});
+			expect(queries.some((query) => query.includes('on conflict'))).toBe(
+				false,
+			);
+			sqlite.close();
+		});
 	});
 });
 
