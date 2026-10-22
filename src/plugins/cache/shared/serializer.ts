@@ -8,6 +8,10 @@ const TAG = '$bd';
 
 type Tagged = { [TAG]: string; v: unknown };
 
+/** Reads a prepared param's name; Drizzle keeps `Placeholder.name` protected. */
+export const getPlaceholderName = (placeholder: Placeholder) =>
+	(placeholder as unknown as { name: string }).name;
+
 const NodeBuffer = (
 	globalThis as {
 		Buffer?: {
@@ -142,7 +146,8 @@ function canonicalText(
 	if (value instanceof Date) return `D${value.getTime()}`;
 	if (value instanceof Uint8Array) return `B${toBase64(value)}`;
 	// A prepared statement param; its execution value is hashed separately.
-	if (value instanceof Placeholder) return `P${JSON.stringify(value.name)}`;
+	if (value instanceof Placeholder)
+		return `P${JSON.stringify(getPlaceholderName(value))}`;
 	if (ancestors.includes(value))
 		throw new UncacheableValueError('cyclic value');
 	ancestors.push(value);
