@@ -1313,7 +1313,39 @@ describe('upsert', () => {
 			sqlite.close();
 		});
 
-		test('an empty where on a table without a primary key does not build a conflict target', async () => {
+		test('a where without conditions is rejected instead of matching an arbitrary row', async () => {
+			const { db, queries, sqlite } = setup();
+			const create = {
+				email: 'b@x.com',
+				hits: 0,
+				name: 'B',
+				slug: 'b',
+				tenant: 1,
+			};
+			for (const where of [
+				{},
+				{ name: undefined },
+				{ OR: [{ email: undefined }] },
+			])
+				await expect(
+					Promise.resolve(
+						db.accounts.upsert({
+							create,
+							update: { hits: 9 },
+							where,
+						}),
+					),
+				).rejects.toMatchObject({
+					code: BetterDrizzleErrorCode.InvalidArgs,
+				});
+			expect(queries).toEqual([]);
+			expect(sqlite.query('SELECT id, hits FROM accounts').all()).toEqual(
+				[{ hits: 0, id: 1 }],
+			);
+			sqlite.close();
+		});
+
+		test('a where without conditions is rejected on a table without a primary key', async () => {
 			const sqlite = new Database(':memory:');
 			sqlite.exec(
 				'CREATE TABLE logs (n INTEGER NOT NULL); INSERT INTO logs VALUES (1);',
@@ -1327,14 +1359,18 @@ describe('upsert', () => {
 					relations: defineRelations({ logs }),
 				}),
 			);
-			await db.logs.upsert({
-				create: { n: 0 },
-				update: { n: 2 },
-				where: {},
+			await expect(
+				Promise.resolve(
+					db.logs.upsert({
+						create: { n: 0 },
+						update: { n: 2 },
+						where: {},
+					}),
+				),
+			).rejects.toMatchObject({
+				code: BetterDrizzleErrorCode.InvalidArgs,
 			});
-			expect(queries.some((query) => query.includes('on conflict'))).toBe(
-				false,
-			);
+			expect(queries).toEqual([]);
 			sqlite.close();
 		});
 	});

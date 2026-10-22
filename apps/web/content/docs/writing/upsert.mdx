@@ -39,11 +39,13 @@ const [user] = await db
 
 ## When `upsert` is one atomic statement
 
-When `where` pins the primary key, or holds only the columns of one unique key (a unique column, constraint, or non-partial unique index), and `create` sets the same values, `upsert` runs `INSERT ... ON CONFLICT (those columns) DO UPDATE` on PostgreSQL and SQLite.
+When `where` holds only the primary key, or only the columns of one unique key (a unique column, constraint, or non-partial unique index), and `create` sets the same values, `upsert` runs `INSERT ... ON CONFLICT (those columns) DO UPDATE` on PostgreSQL and SQLite.
 
 MySQL's `ON DUPLICATE KEY UPDATE` fires on any unique key, so there the native path is used only when the target is the table's only unique key; a unique key target also needs `create` to leave the primary key to auto-increment.
 
-Every other shape reads first, then creates or updates. That path is not atomic, so concurrent calls can hit a unique violation. An `update` that resolves to no values (empty, or every field `undefined`) also takes this path and returns the existing row unchanged.
+Every other shape reads first, then creates or updates. That includes a key with extra conditions, such as `{ id: 1, version: 3 }`: the row is updated only when every condition matches. That path is not atomic, so concurrent calls can hit a unique violation. An `update` that resolves to no values (empty, or every field `undefined`) also takes this path and returns the existing row unchanged.
+
+A `where` that compiles to no condition (`{}`, every field `undefined`, or an empty `OR`) throws `INVALID_ARGS` instead of updating an arbitrary row.
 
 `upsert` accepts [relation commands](/docs/writing/relation-writes#upsert-follows-its-branch) in `create` and `update`.
 

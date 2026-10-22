@@ -307,6 +307,8 @@ const { statements } = await client.users
 
 For `update`, `updateMany`, `delete`, and `deleteMany`, a `where` that compiles to no condition is not run. The call returns `null` (`update`, `delete`) or `{ count: 0 }` (`updateMany`, `deleteMany`) and touches no rows.
 
+`upsert` throws `INVALID_ARGS` instead, since it would otherwise update whichever row it read first.
+
 An `update` whose `data` contains [relation writes](/docs/writing/relation-writes) is the exception: it first looks up the target row, so an empty `where` throws when the table has more than one row and updates the only row when it has exactly one.
 
 The risk is a **partly** empty filter. The remaining conditions still apply, so the write reaches more rows than intended:

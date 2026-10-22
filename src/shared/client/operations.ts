@@ -3232,12 +3232,29 @@ export const deleteManyRecords = async <Schema extends AnySchema, Meta>(
 	return { count: affectedCount };
 };
 
+// A where that compiles to no condition would match an arbitrary row.
+const assertUpsertWhere = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	runtime: TableRuntime,
+	tableName: BetterTableKey<Schema>,
+	where: unknown,
+) => {
+	if (!getPredicate(context, runtime, tableName, where))
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.InvalidArgs,
+			message: 'Upsert requires a where with at least one condition.',
+			operation: 'upsert',
+			table: runtime.dbName,
+		});
+};
+
 /**
  * Upserts a record: inserts it if it does not exist, or updates it if
  * it does. When the database supports `ON CONFLICT DO UPDATE` and the
  * where-clause holds only the primary key or a unique key, a native
  * conflict-update is used.
- * Otherwise falls back to a read-then-write flow.
+ * Otherwise falls back to a read-then-write flow. An empty where throws
+ * `INVALID_ARGS`, since it would match an arbitrary row.
  *
  * @typeParam Schema - The Drizzle schema type.
  * @typeParam Meta   - Custom metadata type.
@@ -3268,6 +3285,7 @@ export const upsertRecord = async <Schema extends AnySchema, Meta>(
 		hasRelationWrites(runtime, createData) ||
 		hasRelationWrites(runtime, args.update)
 	) {
+		assertUpsertWhere(context, runtime, tableName, args.where);
 		const matches = await findManyRecords(context, tableName, {
 			take: 2,
 			where: args.where,
@@ -3376,6 +3394,7 @@ export const upsertRecord = async <Schema extends AnySchema, Meta>(
 		);
 	}
 
+	assertUpsertWhere(context, runtime, tableName, args.where);
 	const existing = await findFirstRecord(context, tableName, {
 		where: args.where,
 	});
