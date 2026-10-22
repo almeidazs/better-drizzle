@@ -1244,6 +1244,57 @@ describe('upsert', () => {
 			sqlite.close();
 		});
 
+		test('a primary key plus a mismatched predicate does not update the conflicting row', async () => {
+			const { db, queries, sqlite } = setup();
+			await expect(
+				Promise.resolve(
+					db.accounts.upsert({
+						create: {
+							email: 'a@x.com',
+							hits: 0,
+							id: 1,
+							name: 'Ignored',
+							slug: 'a',
+							tenant: 1,
+						},
+						update: { hits: 5 },
+						where: { id: 1, hits: 3 },
+					}),
+				),
+			).rejects.toThrow(/Failed query: insert into "accounts"/);
+			expect(
+				await db.accounts.findUnique({ where: { id: 1 } }),
+			).toMatchObject({
+				hits: 0,
+				id: 1,
+			});
+			expect(queries.some((query) => query.includes('on conflict'))).toBe(
+				false,
+			);
+			sqlite.close();
+		});
+
+		test('a primary key plus a matching predicate updates the matching row', async () => {
+			const { db, queries, sqlite } = setup();
+			const updated = await db.accounts.upsert({
+				create: {
+					email: 'a@x.com',
+					hits: 0,
+					id: 1,
+					name: 'Ignored',
+					slug: 'a',
+					tenant: 1,
+				},
+				update: { hits: 5 },
+				where: { id: 1, hits: 0 },
+			});
+			expect(updated).toMatchObject({ hits: 5, id: 1 });
+			expect(queries.some((query) => query.includes('on conflict'))).toBe(
+				false,
+			);
+			sqlite.close();
+		});
+
 		test('a where without the primary key is not treated as a primary key conflict', async () => {
 			const { db, sqlite } = setup();
 			const updated = await db.accounts.upsert({

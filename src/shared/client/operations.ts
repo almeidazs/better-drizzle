@@ -1410,13 +1410,12 @@ const getConflictFields = (
 	create: Record<string, unknown>,
 ): readonly string[] | undefined => {
 	if (!isSimpleRecord(where)) return;
-	const primaryKey = runtime.primaryKeyFields;
-	if (primaryKey.length && insertsWhere(primaryKey, where, create))
-		return primaryKey;
-
 	let size = 0;
 	let first = '';
 	for (const key in where) if (size++ === 0) first = key;
+	const primaryKey = runtime.primaryKeyFields;
+	if (primaryKey.length === size && insertsWhere(primaryKey, where, create))
+		return primaryKey;
 	if (size === 1 && runtime.columns[first]?.isUnique) {
 		const value = where[first];
 		if (value != null && value === create[first]) return [first];
