@@ -12,7 +12,11 @@ import type {
 	TableRuntime,
 } from '../../types';
 import { BetterDrizzleError, BetterDrizzleErrorCode } from '../errors';
-import { buildCountQuery, buildCursorPaginationQuery } from '../query';
+import {
+	buildCountQuery,
+	buildCursorPaginationQuery,
+	getPlaceholderName,
+} from '../query';
 import { getTableRuntime } from './context';
 import {
 	buildCursorPage,
@@ -70,7 +74,8 @@ const isPlainValue = (value: object) => {
 const collectParams = (value: unknown, names: string[]) => {
 	if (typeof value !== 'object' || value === null) return;
 	if (value instanceof Placeholder) {
-		if (!names.includes(value.name)) names.push(value.name);
+		const name = getPlaceholderName(value);
+		if (!names.includes(name)) names.push(name);
 		return;
 	}
 	if (is(value, SQL)) {
@@ -85,7 +90,7 @@ const collectParams = (value: unknown, names: string[]) => {
 /** Copies `value` with every param replaced by its execution value. */
 export const fillParams = (value: unknown, values: Values): unknown => {
 	if (typeof value !== 'object' || value === null) return value;
-	if (value instanceof Placeholder) return values[value.name];
+	if (value instanceof Placeholder) return values[getPlaceholderName(value)];
 	if (!isPlainValue(value)) return value;
 	if (Array.isArray(value))
 		return value.map((entry) => fillParams(entry, values));
@@ -265,7 +270,7 @@ const isPage = (page: unknown): page is number =>
 	Number.isInteger(page) && (page as number) >= 1;
 
 const paramName = (value: unknown) =>
-	value instanceof Placeholder ? (value.name as string) : undefined;
+	value instanceof Placeholder ? getPlaceholderName(value) : undefined;
 
 const preparePaginate = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
