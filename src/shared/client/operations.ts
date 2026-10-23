@@ -1812,7 +1812,12 @@ const buildReadState = <Schema extends AnySchema, Meta>(
 		limit:
 			typeof args?.take === 'number' ? Math.abs(args.take) : args?.take,
 		offset: args?.skip,
-		orderBy: compileOrderBy(whereContext, args?.orderBy),
+		orderBy: compileOrderBy(
+			whereContext,
+			args?.orderBy,
+			args?.cursor,
+			args?.take,
+		),
 		runtime,
 		select: getDirectSelection(
 			runtime,
@@ -2167,7 +2172,12 @@ export const buildJoinedOneRelationQuery = <Schema extends AnySchema, Meta>(
 		args?.orderBy,
 		args?.take,
 	);
-	const orderBy = compileOrderBy(whereContext, args?.orderBy);
+	const orderBy = compileOrderBy(
+		whereContext,
+		args?.orderBy,
+		args?.cursor,
+		args?.take,
+	);
 	let query = context.db
 		.select(selection)
 		.from(runtime.table)

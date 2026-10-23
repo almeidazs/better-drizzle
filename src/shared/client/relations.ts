@@ -516,7 +516,12 @@ const loadRelation = async <Schema extends AnySchema, Meta>(
 		args?.orderBy as never,
 		args?.take as number | undefined,
 	);
-	const orderBy = compileOrderBy(whereContext, args?.orderBy as never);
+	const orderBy = compileOrderBy(
+		whereContext,
+		args?.orderBy as never,
+		args?.cursor as never,
+		args?.take,
+	);
 	const page = relationPage(args);
 	const scope = scopePredicate(context, targetRuntime);
 	let rows: Record<string, unknown>[];
