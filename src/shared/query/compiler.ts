@@ -1305,8 +1305,27 @@ export const compileWhereInput = <Schema extends AnySchema, Meta>(
 export const compileOrderBy = <Schema extends AnySchema, Meta>(
 	context: WhereCompilerContext<Schema, Meta>,
 	orderBy?: OrderByInput<Schema, BetterTableKey<Schema>>,
+	cursor?: CursorInput<Schema, BetterTableKey<Schema>> | Placeholder,
+	take?: unknown,
 ) => {
-	if (!orderBy) return;
+	if (!orderBy) {
+		if (!cursor) return;
+
+		const fallback = cursorFallbackOrder(
+			context,
+			cursor instanceof Placeholder
+				? cursorParamValues(context.runtime, cursor, orderBy)
+				: (cursor as Record<string, unknown>),
+			take,
+		);
+		return fallback
+			? [
+					fallback.direction === 'desc'
+						? desc(fallback.column)
+						: asc(fallback.column),
+				]
+			: undefined;
+	}
 
 	const entries = Array.isArray(orderBy) ? orderBy : [orderBy];
 	const clauses: SQL[] = [];
@@ -1649,6 +1668,27 @@ const cursorParamValues = (
 	return values;
 };
 
+/** Without `orderBy`, a cursor orders by its first column; a negative `take` reads backwards. */
+const cursorFallbackOrder = <Schema extends AnySchema, Meta>(
+	context: WhereCompilerContext<Schema, Meta>,
+	values: Record<string, unknown>,
+	take: unknown,
+) => {
+	const [cursorField, value] =
+		Object.entries(values).find(([key]) => context.runtime.columns[key]) ??
+		[];
+	if (!cursorField) return;
+
+	const column = context.runtime.columns[cursorField];
+	if (!column) return;
+
+	return {
+		column,
+		direction: typeof take === 'number' && take < 0 ? 'desc' : 'asc',
+		value,
+	} as const;
+};
+
 /**
  * Compiles a cursor-based where-clause. Uses the cursor column and value
  * to generate a `gt` or `lt` condition based on the current sort direction.
@@ -1722,21 +1762,10 @@ export const compileCursorWhere = <Schema extends AnySchema, Meta>(
 			}
 
 	if (orderedFields.length === 0) {
-		const [cursorField, value] =
-			Object.entries(values).find(
-				([key]) => context.runtime.columns[key],
-			) ?? [];
-		if (!cursorField) return;
+		const fallback = cursorFallbackOrder(context, values, take);
+		if (!fallback) return;
 
-		const column = context.runtime.columns[cursorField];
-		if (!column) return;
-
-		orderedFields.push({
-			column,
-			direction: typeof take === 'number' && take < 0 ? 'desc' : 'asc',
-			nulls: undefined,
-			value,
-		});
+		orderedFields.push({ ...fallback, nulls: undefined });
 	}
 
 	const equalPrefix: SQL[] = [];
