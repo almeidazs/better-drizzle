@@ -546,8 +546,10 @@ const createTransactionState = (
 	sessionScopes: parent?.sessionScopes,
 });
 
+let savepointSequence = 0;
+
 const getSqliteSavepointName = (transaction: TransactionRuntime) =>
-	`better_drizzle_sp_${transaction.depth}_${transaction.attempt}`;
+	`better_drizzle_sp_${transaction.depth}_${transaction.attempt}_${savepointSequence++}`;
 
 const assertRawAllowed = <
 	Schema extends AnySchema,
@@ -889,11 +891,13 @@ const runBetterTransaction = async <
 			const rollbackSql = savepointName
 				? sql.raw(`rollback to savepoint ${savepointName}`)
 				: sql.raw('rollback');
+			let begun = false;
 			let committed = false;
 
-			context.db.run?.(beginSql);
-
 			try {
+				await context.db.run?.(beginSql);
+				begun = true;
+
 				if (attemptState.abortError) throw attemptState.abortError;
 
 				await applySession(attemptContext);
@@ -907,7 +911,7 @@ const runBetterTransaction = async <
 
 				if (attemptState.abortError) throw attemptState.abortError;
 
-				context.db.run?.(commitSql);
+				await context.db.run?.(commitSql);
 				committed = true;
 
 				await finishTransactionCommit(
@@ -923,7 +927,7 @@ const runBetterTransaction = async <
 					cleanupAbort();
 					throw error;
 				}
-				context.db.run?.(rollbackSql);
+				if (begun) await context.db.run?.(rollbackSql);
 				const normalizedError = isRollbackSignal(error)
 					? null
 					: BetterDrizzleError.from(error, {

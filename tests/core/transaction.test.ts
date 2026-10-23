@@ -50,6 +50,7 @@ const createContext = (
 
 	return {
 		client,
+		raw,
 		close() {
 			sqlite.close();
 		},
@@ -277,6 +278,62 @@ describe('transactions', () => {
 			{ requestId: 'outer', tenantId: 'tenant-a' },
 			{ requestId: 'nested', tenantId: 'tenant-a' },
 		]);
+		ctx.close();
+	});
+
+	test('a failing async commit rejects the transaction and skips afterCommit', async () => {
+		const ctx = createContext();
+		const raw = ctx.raw as unknown as {
+			run: (query: {
+				queryChunks: Array<{ value: string[] }>;
+			}) => unknown;
+		};
+		const run = raw.run.bind(raw);
+		const statements: string[] = [];
+		raw.run = (query) => {
+			const text = query.queryChunks[0]?.value[0] ?? '';
+			statements.push(text);
+			if (text === 'commit')
+				return Promise.reject(new Error('SQLITE_BUSY'));
+			run(query);
+			return Promise.resolve();
+		};
+
+		let committed = false;
+		const error = await ctx.client
+			.transaction(async (tx) => {
+				tx.afterCommit(() => {
+					committed = true;
+				});
+			})
+			.catch((error) => error);
+
+		expect(error).toBeInstanceOf(BetterDrizzleError);
+		expect(error.message).toContain('SQLITE_BUSY');
+		expect(committed).toBe(false);
+		expect(statements).toEqual(['begin', 'commit', 'rollback']);
+		ctx.close();
+	});
+
+	test('a failing begin rejects without issuing a rollback', async () => {
+		const ctx = createContext();
+		const raw = ctx.raw as unknown as {
+			run: (query: {
+				queryChunks: Array<{ value: string[] }>;
+			}) => unknown;
+		};
+		const statements: string[] = [];
+		raw.run = (query) => {
+			statements.push(query.queryChunks[0]?.value[0] ?? '');
+			return Promise.reject(new Error('SQLITE_BUSY'));
+		};
+
+		const error = await ctx.client
+			.transaction(async () => {})
+			.catch((error) => error);
+
+		expect(error).toBeInstanceOf(BetterDrizzleError);
+		expect(statements).toEqual(['begin']);
 		ctx.close();
 	});
 
