@@ -288,6 +288,30 @@ describe('better-drizzle/auth', () => {
 		expect(error.code).toBe('INVALID_ARGS');
 	});
 
+	test.each(['eq', 'ne', 'lt', 'lte', 'gt', 'gte'] as const)(
+		'a where clause with an undefined value fails with INVALID_ARGS for %s',
+		async (operator) => {
+			const { db } = createAuth();
+			const instance = adapter(db)({});
+
+			const error = await instance
+				.findOne({
+					model: 'account',
+					where: [
+						{ field: 'providerId', value: 'google' },
+						{
+							field: 'accountId',
+							operator,
+							value: undefined as never,
+						},
+					],
+				})
+				.catch((error) => error);
+			expect(error).toBeInstanceOf(BetterDrizzleError);
+			expect(error.code).toBe('INVALID_ARGS');
+		},
+	);
+
 	test('a failed tenant check is reported again on the next initialization', async () => {
 		const global = ['account', 'session', 'verification'] as const;
 		const { auth, db } = createAuth({
