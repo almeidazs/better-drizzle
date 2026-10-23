@@ -48,6 +48,27 @@ describe('findMany', () => {
 		expect(result.every((u) => u.active)).toBe(true);
 	});
 
+	test('applies every operator of a many-relation filter', async () => {
+		const result = await ctx.better.users.findMany({
+			where: {
+				posts: {
+					some: { published: true },
+					none: { published: false },
+				},
+			},
+			orderBy: { id: 'asc' },
+		});
+		expect(result.map((u) => u.id)).toEqual([2, 4]);
+	});
+
+	test('applies both is and isNot of a one-relation filter', async () => {
+		const result = await ctx.better.posts.findMany({
+			where: { author: { is: { active: true }, isNot: { id: 1 } } },
+			orderBy: { id: 'asc' },
+		});
+		expect(result.map((p) => p.id)).toEqual([3, 4, 6]);
+	});
+
 	test('findMany with orderBy ascending', async () => {
 		const result = await ctx.better.users.findMany({
 			orderBy: [{ age: 'asc' }],
