@@ -38,6 +38,17 @@ const withTimestamp = <T extends MutableRecord>(
 	return data;
 };
 
+/** Copies a payload without a column the plugin owns (`createdAt` on update). */
+const withoutColumn = <T extends MutableRecord>(
+	data: T,
+	column: string,
+	enabled: boolean,
+) => {
+	const copy = { ...data };
+	if (enabled) delete (copy as Record<string, unknown>)[column];
+	return copy;
+};
+
 /**
  * Narrow unknown values to plain records so the plugin can safely clone and
  * augment Drizzle insert/update payloads.
@@ -318,7 +329,11 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 						: operation.data.create;
 					const updateData = isRecord(operation.data.update)
 						? withTimestamp(
-								{ ...operation.data.update },
+								withoutColumn(
+									operation.data.update,
+									createdAt,
+									hasCreatedAt,
+								),
 								updatedAt,
 								updatedValue,
 								hasUpdatedAt,
@@ -332,13 +347,15 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 				},
 				beforeUpdate(operation) {
 					const model = byModel[operation.model.name];
-					if (!model?.hasUpdatedAt) return operation.data;
+					if (!model) return operation.data;
 
-					const { updatedAt } = model;
+					const { createdAt, hasCreatedAt, hasUpdatedAt, updatedAt } =
+						model;
 					const now = clock();
 					const value = model.updatedText ? now.toISOString() : now;
 
 					if (operation.kind === 'updateEach') {
+						if (!hasUpdatedAt) return operation.data;
 						const args = operation.args as {
 							update?: Record<string, unknown>;
 						};
@@ -353,10 +370,10 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 					if (!isRecord(operation.data)) return operation.data;
 
 					return withTimestamp(
-						{ ...operation.data },
+						withoutColumn(operation.data, createdAt, hasCreatedAt),
 						updatedAt,
 						value,
-						true,
+						hasUpdatedAt,
 					);
 				},
 			});
