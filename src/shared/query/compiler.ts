@@ -892,6 +892,9 @@ const makeJoinCondition = (
 	return conditions.length ? and(...conditions) : undefined;
 };
 
+const andWith = (left: SQL | undefined, right: SQL) =>
+	left ? (and(left, right) as SQL) : right;
+
 const compileRelationFilter = <Schema extends AnySchema, Meta>(
 	context: WhereCompilerContext<Schema, Meta>,
 	relationName: string,
@@ -940,7 +943,7 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 				),
 			)
 		: makeJoinCondition(fields, references, relationRuntime.table);
-	const subquery = context.db.select({ one: sql`1` }).from(targetTable);
+	const subquery = () => context.db.select({ one: sql`1` }).from(targetTable);
 	// Scope conditions stay outside any negation: out-of-scope rows are absent.
 	const targetScope = scopePredicate(context, relationRuntime, targetAlias);
 	const buildNestedWhere = (nestedWhere?: Record<string, unknown>) =>
@@ -1014,44 +1017,67 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 				.innerJoin(targetTable, and(...link))
 				.where(and(...correlate, throughScope, targetScope, predicate));
 
+		let condition: SQL | undefined;
 		if ('some' in value)
-			return exists(
-				linked(buildNestedWhere(value.some as Record<string, unknown>)),
-			);
-		if ('none' in value)
-			return notExists(
-				linked(buildNestedWhere(value.none as Record<string, unknown>)),
-			);
-		if ('every' in value) {
-			const nestedWhere = buildNestedWhere(
-				value.every as Record<string, unknown>,
-			);
-			return notExists(
-				linked(nestedWhere ? not(nestedWhere) : undefined),
-			);
-		}
-		return;
-	}
-
-	if (relationState.kind === 'many') {
-		if ('some' in value)
-			return exists(
-				subquery.where(
-					and(
-						joinCondition,
-						targetScope,
+			condition = andWith(
+				condition,
+				exists(
+					linked(
 						buildNestedWhere(value.some as Record<string, unknown>),
 					),
 				),
 			);
+		if ('none' in value)
+			condition = andWith(
+				condition,
+				notExists(
+					linked(
+						buildNestedWhere(value.none as Record<string, unknown>),
+					),
+				),
+			);
+		if ('every' in value) {
+			const nestedWhere = buildNestedWhere(
+				value.every as Record<string, unknown>,
+			);
+			condition = andWith(
+				condition,
+				notExists(linked(nestedWhere ? not(nestedWhere) : undefined)),
+			);
+		}
+		return condition;
+	}
+
+	if (relationState.kind === 'many') {
+		let condition: SQL | undefined;
+		if ('some' in value)
+			condition = andWith(
+				condition,
+				exists(
+					subquery().where(
+						and(
+							joinCondition,
+							targetScope,
+							buildNestedWhere(
+								value.some as Record<string, unknown>,
+							),
+						),
+					),
+				),
+			);
 
 		if ('none' in value)
-			return notExists(
-				subquery.where(
-					and(
-						joinCondition,
-						targetScope,
-						buildNestedWhere(value.none as Record<string, unknown>),
+			condition = andWith(
+				condition,
+				notExists(
+					subquery().where(
+						and(
+							joinCondition,
+							targetScope,
+							buildNestedWhere(
+								value.none as Record<string, unknown>,
+							),
+						),
 					),
 				),
 			);
@@ -1060,65 +1086,84 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 			const nestedWhere = buildNestedWhere(
 				value.every as Record<string, unknown>,
 			);
-			return notExists(
-				subquery.where(
-					and(
-						joinCondition,
-						targetScope,
-						nestedWhere ? not(nestedWhere) : undefined,
-					),
-				),
-			);
-		}
-
-		return;
-	}
-
-	if (relationState.kind === 'one') {
-		if ('is' in value) {
-			if (value.is === null)
-				return notExists(
-					subquery.where(and(joinCondition, targetScope)),
-				);
-
-			const membership = buildMembershipFilter(
-				value.is as Record<string, unknown>,
-			);
-			if (membership) return membership;
-
-			return exists(
-				subquery.where(
-					and(
-						joinCondition,
-						targetScope,
-						buildNestedWhere(value.is as Record<string, unknown>),
-					),
-				),
-			);
-		}
-
-		if ('isNot' in value) {
-			if (value.isNot === null)
-				return exists(subquery.where(and(joinCondition, targetScope)));
-
-			const membership = buildMembershipFilter(
-				value.isNot as Record<string, unknown>,
-				true,
-			);
-			if (membership) return membership;
-
-			return notExists(
-				subquery.where(
-					and(
-						joinCondition,
-						targetScope,
-						buildNestedWhere(
-							value.isNot as Record<string, unknown>,
+			condition = andWith(
+				condition,
+				notExists(
+					subquery().where(
+						and(
+							joinCondition,
+							targetScope,
+							nestedWhere ? not(nestedWhere) : undefined,
 						),
 					),
 				),
 			);
 		}
+
+		return condition;
+	}
+
+	if (relationState.kind === 'one') {
+		let condition: SQL | undefined;
+		if ('is' in value) {
+			const membership =
+				value.is === null
+					? undefined
+					: buildMembershipFilter(
+							value.is as Record<string, unknown>,
+						);
+			condition = andWith(
+				condition,
+				value.is === null
+					? notExists(
+							subquery().where(and(joinCondition, targetScope)),
+						)
+					: (membership ??
+							exists(
+								subquery().where(
+									and(
+										joinCondition,
+										targetScope,
+										buildNestedWhere(
+											value.is as Record<string, unknown>,
+										),
+									),
+								),
+							)),
+			);
+		}
+
+		if ('isNot' in value) {
+			const membership =
+				value.isNot === null
+					? undefined
+					: buildMembershipFilter(
+							value.isNot as Record<string, unknown>,
+							true,
+						);
+			condition = andWith(
+				condition,
+				value.isNot === null
+					? exists(subquery().where(and(joinCondition, targetScope)))
+					: (membership ??
+							notExists(
+								subquery().where(
+									and(
+										joinCondition,
+										targetScope,
+										buildNestedWhere(
+											value.isNot as Record<
+												string,
+												unknown
+											>,
+										),
+									),
+								),
+							)),
+			);
+		}
+
+		return condition;
 	}
 };
 
