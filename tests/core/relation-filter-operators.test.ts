@@ -5,6 +5,7 @@ import { createTestContext } from './setup';
 
 test.each([
 	[{ every: {} }, [1, 2, 3, 4, 5]],
+	[{ some: { published: true }, none: { published: false } }, [2, 4]],
 	[{ some: {}, every: {} }, [1, 2, 3, 4]],
 	[{ none: {}, every: {} }, [5]],
 	[{ some: { published: true }, every: {} }, [1, 2, 4]],
@@ -53,6 +54,16 @@ test.each([
 test('one relation operators ignore undefined and combine null checks', async () => {
 	const ctx = createTestContext();
 	try {
+		expect(
+			(
+				await ctx.better.posts.findMany({
+					where: {
+						author: { is: { active: true }, isNot: { id: 1 } },
+					},
+					orderBy: { id: 'asc' },
+				})
+			).map((row) => row.id),
+		).toEqual([3, 4, 6]);
 		expect(
 			(
 				await ctx.better.posts.findMany({
