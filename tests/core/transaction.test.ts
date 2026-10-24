@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 
 import { defineRelations } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
@@ -335,6 +335,325 @@ describe('transactions', () => {
 		expect(error).toBeInstanceOf(BetterDrizzleError);
 		expect(statements).toEqual(['begin']);
 		ctx.close();
+	});
+
+	test('root transactions serialize across Drizzle clients sharing a SQLite connection', async () => {
+		const ctx = createContext();
+		const other = better(drizzle({ client: ctx.sqlite, relations }));
+		const calls: string[] = [];
+		try {
+			await Promise.all([
+				ctx.client.transaction(async (tx) => {
+					calls.push('first');
+					await tx.users.create({
+						data: { id: 1, email: 'a@test.com', name: 'A' },
+					});
+					await Promise.resolve();
+					calls.push('first done');
+				}),
+				other.transaction(async (tx) => {
+					calls.push('second');
+					await tx.users.create({
+						data: { id: 2, email: 'b@test.com', name: 'B' },
+					});
+				}),
+			]);
+			expect(calls).toEqual(['first', 'first done', 'second']);
+			expect(await ctx.client.users.count()).toBe(2);
+		} finally {
+			ctx.close();
+		}
+	});
+
+	test('overlapping sibling savepoints reject before their callback and leave the parent usable', async () => {
+		const ctx = createContext();
+		try {
+			await ctx.client.transaction(async (tx) => {
+				let release!: () => void;
+				let started!: () => void;
+				const waiting = new Promise<void>((resolve) => {
+					release = resolve;
+				});
+				const ready = new Promise<void>((resolve) => {
+					started = resolve;
+				});
+				const first = tx.transaction(async (nested) => {
+					await nested.users.create({
+						data: { id: 1, email: 'a@test.com', name: 'A' },
+					});
+					started();
+					await waiting;
+				});
+				await ready;
+				let called = false;
+				const error = await tx
+					.transaction(() => {
+						called = true;
+					})
+					.catch((error) => error);
+				expect(error).toMatchObject({ code: 'INVALID_ARGS' });
+				expect(called).toBe(false);
+				release();
+				await first;
+				await tx.transaction(async (nested) => {
+					await nested.users.create({
+						data: { id: 2, email: 'b@test.com', name: 'B' },
+					});
+				});
+			});
+			expect(await ctx.client.users.count()).toBe(2);
+		} finally {
+			ctx.close();
+		}
+	});
+
+	test('an uncaught overlapping savepoint error waits for the active child before rolling back', async () => {
+		const ctx = createContext();
+		try {
+			const error = await ctx.client
+				.transaction(async (tx) => {
+					let release!: () => void;
+					const waiting = new Promise<void>((resolve) => {
+						release = resolve;
+					});
+					const first = tx.transaction(async (nested) => {
+						await nested.users.create({
+							data: { id: 1, email: 'a@test.com', name: 'A' },
+						});
+						await waiting;
+					});
+					const both = Promise.all([first, tx.transaction(() => {})]);
+					both.catch(() => {
+						release();
+					});
+					return both;
+				})
+				.catch((error) => error);
+			expect(error).toMatchObject({ code: 'INVALID_ARGS' });
+			expect(await ctx.client.users.count()).toBe(0);
+			await ctx.client.transaction(() => {});
+		} finally {
+			ctx.close();
+		}
+	});
+
+	test('async rollback failure preserves the callback error, hooks, and abort cleanup', async () => {
+		const calls: string[] = [];
+		const ctx = createContext({
+			hooks: {
+				onTransactionError() {
+					calls.push('error');
+				},
+				afterTransactionRollback() {
+					calls.push('rollback');
+				},
+			},
+		});
+		const raw = ctx.raw as unknown as {
+			run: (query: {
+				queryChunks: Array<{ value: string[] }>;
+			}) => unknown;
+		};
+		const run = raw.run.bind(raw);
+		let fail = true;
+		raw.run = (query) => {
+			const result = run(query);
+			if (fail && query.queryChunks[0]?.value[0] === 'rollback') {
+				fail = false;
+				return Promise.reject(new Error('ROLLBACK_IO_FAILURE'));
+			}
+			return Promise.resolve(result);
+		};
+		const controller = new AbortController();
+		const remove = spyOn(controller.signal, 'removeEventListener');
+		const original = new Error('connection reset');
+		let attempts = 0;
+		try {
+			const error = await ctx.client
+				.transaction(
+					(tx) => {
+						attempts++;
+						tx.afterRollback(() => {
+							calls.push('callback');
+						});
+						throw original;
+					},
+					{
+						signal: controller.signal,
+						retries: { attempts: 3, on: ['connectionError'] },
+					},
+				)
+				.catch((error) => error);
+			expect(error).toBeInstanceOf(BetterDrizzleError);
+			expect(error.message).toBe(original.message);
+			expect(error.cause).toBe(original);
+			expect(error.details.rollbackError.message).toBe(
+				'ROLLBACK_IO_FAILURE',
+			);
+			expect(attempts).toBe(1);
+			expect(calls).toEqual(['error', 'rollback', 'callback']);
+			expect(remove).toHaveBeenCalledTimes(1);
+			await ctx.client.transaction(() => {});
+		} finally {
+			remove.mockRestore();
+			ctx.close();
+		}
+	});
+
+	test('rollback observers all run when an error hook throws', async () => {
+		const calls: string[] = [];
+		const observer = new Error('observer failed');
+		const ctx = createContext({
+			hooks: {
+				onTransactionError() {
+					calls.push('error');
+					throw observer;
+				},
+				afterTransactionRollback() {
+					calls.push('rollback');
+				},
+			},
+			plugins: [
+				definePlugin({
+					id: 'rollback-observer',
+					hooks: {
+						onTransactionError() {
+							calls.push('plugin error');
+						},
+					},
+				}),
+			],
+		});
+		const controller = new AbortController();
+		const remove = spyOn(controller.signal, 'removeEventListener');
+		try {
+			const error = await ctx.client
+				.transaction(
+					(tx) => {
+						tx.afterRollback(() => {
+							calls.push('callback');
+						});
+						throw new Error('stop');
+					},
+					{ signal: controller.signal },
+				)
+				.catch((error) => error);
+			expect(error).toBe(observer);
+			expect(calls).toEqual([
+				'error',
+				'plugin error',
+				'rollback',
+				'callback',
+			]);
+			expect(remove).toHaveBeenCalledTimes(1);
+			await ctx.client.transaction(() => {});
+		} finally {
+			remove.mockRestore();
+			ctx.close();
+		}
+	});
+
+	test('afterCommit can start a new root transaction', async () => {
+		const ctx = createContext();
+		try {
+			await ctx.client.transaction((tx) => {
+				tx.afterCommit(() => ctx.client.transaction(() => {}));
+			});
+		} finally {
+			ctx.close();
+		}
+	});
+
+	test('an aborted queued transaction never begins or runs its callback', async () => {
+		const ctx = createContext();
+		const controller = new AbortController();
+		let release!: () => void;
+		let started!: () => void;
+		const waiting = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const ready = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		try {
+			const first = ctx.client.transaction(async () => {
+				started();
+				await waiting;
+			});
+			await ready;
+			let called = false;
+			const queued = ctx.client
+				.transaction(
+					() => {
+						called = true;
+					},
+					{ signal: controller.signal },
+				)
+				.catch((error) => error);
+			controller.abort();
+			release();
+			await first;
+			expect(await queued).toMatchObject({ code: 'TRANSACTION_ABORTED' });
+			expect(called).toBe(false);
+			await ctx.client.transaction(() => {});
+		} finally {
+			ctx.close();
+		}
+	});
+
+	test.each(['onTransactionError', 'afterTransactionRollback'] as const)(
+		'one throwing %s plugin does not skip later observers',
+		async (hookName) => {
+			const calls: string[] = [];
+			const ctx = createContext({
+				plugins: [
+					definePlugin({
+						id: 'first-observer',
+						hooks: {
+							[hookName]() {
+								calls.push('first');
+								throw new Error('plugin observer failed');
+							},
+						},
+					}),
+					definePlugin({
+						id: 'second-observer',
+						hooks: {
+							[hookName]() {
+								calls.push('second');
+							},
+						},
+					}),
+				],
+			});
+			try {
+				const error = await ctx.client
+					.transaction((tx) => {
+						tx.afterRollback(() => {
+							calls.push('callback');
+						});
+						throw new Error('stop');
+					})
+					.catch((error) => error);
+				expect(error.message).toContain('plugin observer failed');
+				expect(calls).toEqual(['first', 'second', 'callback']);
+				await ctx.client.transaction(() => {});
+			} finally {
+				ctx.close();
+			}
+		},
+	);
+
+	test('SQLite clients without run reject unsupported transactions', async () => {
+		const ctx = createContext();
+		try {
+			(ctx.raw as unknown as { run: unknown }).run = undefined;
+			await expect(
+				ctx.client.transaction(() => {}),
+			).rejects.toMatchObject({ code: 'TRANSACTIONS_UNSUPPORTED' });
+		} finally {
+			ctx.close();
+		}
 	});
 
 	test('nested transaction savepoint', async () => {

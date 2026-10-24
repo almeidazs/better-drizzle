@@ -39,7 +39,26 @@ const user = await db.transaction(async (tx) => {
 
 Whatever the callback returns becomes the result of `transaction(...)`. Throwing (or an explicit rollback) aborts and rolls back.
 
-An error thrown by the callback is rethrown as is, so your own error classes (for example a `NotFoundException`) reach the caller unchanged. The `onTransactionError` hooks still receive it normalized as a `BetterDrizzleError`.
+When rollback succeeds, an error thrown by the callback is rethrown as is, so your own error classes (for example a `NotFoundException`) reach the caller unchanged. The `onTransactionError` hooks still receive it normalized as a `BetterDrizzleError`.
+
+### SQLite connections
+
+Root transactions sharing the same SQLite connection queue while their database
+transaction is open, including transactions started through separate Drizzle
+clients for that connection. Commit and rollback notifications run after
+releasing the connection.
+Use the callback's `tx` client for every operation in the transaction. Ordinary
+root-client queries and direct Drizzle calls are not queued: running them while
+the callback awaits can execute them inside the open transaction.
+
+The SQLite driver must execute `BEGIN`, `COMMIT`, `ROLLBACK`, and savepoints on
+the same connection through `run()`. These statements are awaited, including
+when the driver returns promises. The integration tests use Bun SQLite.
+
+If rollback itself fails, the transaction rejects with a `BetterDrizzleError`.
+The original callback error is retained as its cause, and the driver rollback
+error is available in `details.rollbackError`. Rollback notifications still run,
+abort listeners are removed, and the failed attempt is not retried.
 
 ## Nested transactions (savepoints)
 
@@ -90,6 +109,12 @@ await db.transaction(async (tx) => {
 		.values({ id: 3, email: 'c@test.com', name: 'Charlie', active: true });
 });
 ```
+
+On SQLite, await each nested transaction before starting another on the same
+parent. Overlapping sibling savepoints reject with `INVALID_ARGS`, because
+releasing an earlier SQLite savepoint also removes later savepoints. Deeper
+nesting remains supported. Await every nested transaction before returning
+from the parent callback.
 
 ## Explicit rollback
 
