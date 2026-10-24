@@ -231,19 +231,18 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 						const update = args.update;
 
 						if (update === 'all') {
-							const columns = Object.keys(
+							const targetValue = (
+								operation.args as { target?: unknown }
+							).target;
+							const target = Array.isArray(targetValue)
+								? targetValue
+								: [targetValue];
+							args.update = Object.keys(
 								operation.model.columns,
-							);
-
-							if (hasCreatedAt) {
-								const index = columns.indexOf(createdAt);
-								if (index >= 0) columns.splice(index, 1);
-							}
-
-							args.update = appendColumn(
-								columns,
-								updatedAt,
-								hasUpdatedAt,
+							).filter(
+								(key) =>
+									(!hasCreatedAt || key !== createdAt) &&
+									!target.includes(key),
 							);
 							return result;
 						}
@@ -355,15 +354,17 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 					const value = model.updatedText ? now.toISOString() : now;
 
 					if (operation.kind === 'updateEach') {
-						if (!hasUpdatedAt) return operation.data;
 						const args = operation.args as {
 							update?: Record<string, unknown>;
 						};
 
-						args.update = {
-							...(args.update ?? {}),
-							[updatedAt]: () => value,
-						};
+						const update = withoutColumn(
+							args.update ?? {},
+							createdAt,
+							hasCreatedAt,
+						);
+						if (hasUpdatedAt) update[updatedAt] = () => value;
+						args.update = update;
 						return operation.data;
 					}
 

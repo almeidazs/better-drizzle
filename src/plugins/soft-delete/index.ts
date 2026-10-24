@@ -91,6 +91,50 @@ export const softDelete = (options: SoftDeleteOptions = {}) => {
 		options.defaults?.visibility ?? DEFAULT_VISIBILITY;
 	const live = { [column]: null };
 	const deletedOnly = { [column]: { not: null } };
+	const withoutOwnedColumns = <T>(data: T, hasDeletedBy: boolean): T => {
+		if (
+			!isRecord(data) ||
+			(!(column in data) && !(hasDeletedBy && deletedByColumn in data))
+		)
+			return data;
+		const copy = { ...data };
+		delete (copy as Record<string, unknown>)[column];
+		if (hasDeletedBy)
+			delete (copy as Record<string, unknown>)[deletedByColumn];
+		return copy;
+	};
+	const protectUpdate = (
+		args: { target?: unknown; update?: unknown },
+		columns: Record<string, unknown>,
+		hasDeletedBy: boolean,
+	) => {
+		const update = args.update;
+		if (update === 'all') {
+			const target = Array.isArray(args.target)
+				? args.target
+				: [args.target];
+			args.update = Object.keys(columns).filter(
+				(key) =>
+					key !== column &&
+					!target.includes(key) &&
+					(!hasDeletedBy || key !== deletedByColumn),
+			);
+		} else if (Array.isArray(update)) {
+			if (
+				update.includes(column) ||
+				(hasDeletedBy && update.includes(deletedByColumn))
+			)
+				args.update = update.filter(
+					(key) =>
+						key !== column &&
+						(!hasDeletedBy || key !== deletedByColumn),
+				);
+		} else if (typeof update === 'function')
+			args.update = (context: unknown) =>
+				withoutOwnedColumns(update(context), hasDeletedBy);
+		else if (isRecord(update))
+			args.update = withoutOwnedColumns(update, hasDeletedBy);
+	};
 
 	return definePlugin<
 		SoftDeleteOptions,
@@ -133,6 +177,57 @@ export const softDelete = (options: SoftDeleteOptions = {}) => {
 			updateMany: visibilityArgs,
 		},
 		hooks: {
+			beforeCreate(context) {
+				if (!context.model.hasColumn(column)) return context.data;
+				const hasDeletedBy = context.model.hasColumn(deletedByColumn);
+				if (context.kind === 'upsertMany')
+					protectUpdate(
+						context.args as { update?: unknown },
+						context.model.columns,
+						hasDeletedBy,
+					);
+				if (Array.isArray(context.data)) {
+					let rows = context.data;
+					for (let index = 0; index < context.data.length; index++) {
+						const row = context.data[index];
+						const clean = withoutOwnedColumns(row, hasDeletedBy);
+						if (clean !== row) {
+							if (rows === context.data)
+								rows = context.data.slice();
+							rows[index] = clean;
+						}
+					}
+					return rows;
+				}
+				if (context.kind === 'upsert' && isRecord(context.data)) {
+					const create = withoutOwnedColumns(
+						context.data.create,
+						hasDeletedBy,
+					);
+					const update = withoutOwnedColumns(
+						context.data.update,
+						hasDeletedBy,
+					);
+					return create === context.data.create &&
+						update === context.data.update
+						? context.data
+						: { ...context.data, create, update };
+				}
+				return withoutOwnedColumns(context.data, hasDeletedBy);
+			},
+			beforeUpdate(context) {
+				if (!context.model.hasColumn(column)) return context.data;
+				const hasDeletedBy = context.model.hasColumn(deletedByColumn);
+				if (context.kind === 'updateEach') {
+					protectUpdate(
+						context.args as { update?: unknown },
+						context.model.columns,
+						hasDeletedBy,
+					);
+					return context.data;
+				}
+				return withoutOwnedColumns(context.data, hasDeletedBy);
+			},
 			beforeDelete(context) {
 				if (
 					!context.model.hasColumn(column) ||
