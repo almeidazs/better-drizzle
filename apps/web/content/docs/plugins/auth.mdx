@@ -13,7 +13,7 @@ seoDescription: 'Use better-drizzle as the Better Auth database adapter on Drizz
 - **Plugins** see auth writes: [timestamps](/docs/plugins/timestamps) stamps sessions, [uuid](/docs/plugins/uuid) generates ids, [soft delete](/docs/plugins/soft-delete) hides deleted users from sign-in, [cache](/docs/plugins/cache) invalidates after session writes, and [zod](/docs/plugins/zod), [ata](/docs/plugins/ata), and [rules](/docs/plugins/rules) validate them.
 - **Hooks and metadata** run for auth operations: `beforeQuery`, `afterQuery`, `onError`, transaction hooks, and `$withContext()` metadata.
 - **Errors** arrive as [`BetterDrizzleError`](/docs/reference/errors) with the code, constraint, and table, not as raw driver errors.
-- **Joins** load through the batched relation loader, one query per relation.
+- **Joins** load through the batched relation loader, normally one query per relation.
 
 The adapter reads the dialect from the client and the tables and relations from `drizzle({ relations })`, so it needs no `provider` or `schema` option.
 
@@ -424,7 +424,7 @@ Every adapter failure is a `BetterDrizzleError`, including driver errors that a 
 | Setup | `adapter(db)` | `drizzleAdapter(db, { provider, schema })` |
 | Plugins, hooks, metadata | run for auth calls | bypassed |
 | Errors | `BetterDrizzleError` | raw driver errors |
-| Joins | batched loader, one query per relation | `db.query` |
+| Joins | batched loader, normally one query per relation | `db.query` |
 | Missing join relation | `INVALID_ARGS` | logs and falls back |
 | Unknown where field | `INVALID_ARGS` | `BetterAuthError` |
 | Transactions | on by default | off by default |
