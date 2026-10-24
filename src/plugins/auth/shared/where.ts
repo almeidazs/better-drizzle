@@ -46,6 +46,12 @@ const toFilter = (
 	dialect: PluginDialect,
 ): Row | SQL => {
 	const { field, operator, value } = where;
+	// Core skips `undefined` filter values, which would drop the condition.
+	if (value === undefined)
+		throw invalid(
+			`The value for "${field}" must not be undefined when using the "${operator}" operator.`,
+			model,
+		);
 	const column = getColumn(runtime, model, field);
 	const insensitive = isInsensitive(where);
 	const filter = (filter: Row) => ({

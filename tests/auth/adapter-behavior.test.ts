@@ -288,6 +288,91 @@ describe('better-drizzle/auth', () => {
 		expect(error.code).toBe('INVALID_ARGS');
 	});
 
+	test.each([
+		'eq',
+		'ne',
+		'lt',
+		'lte',
+		'gt',
+		'gte',
+		'not_in',
+		'contains',
+		'starts_with',
+		'ends_with',
+	] as const)(
+		'undefined %s values reject reads and writes before SQL',
+		async (operator) => {
+			const { db, queries, sqlite } = createAuth();
+			const instance = adapter(db)({});
+			sqlite.exec(`
+				INSERT INTO user (id, name, email, createdAt, updatedAt)
+				VALUES ('u', 'User', 'u@example.com', 0, 0);
+				INSERT INTO account (id, accountId, providerId, userId, createdAt, updatedAt)
+				VALUES ('a', 'known-account', 'google', 'u', 0, 0);
+			`);
+			try {
+				for (const connector of ['AND', 'OR'] as const) {
+					const request = {
+						model: 'account',
+						update: { providerId: 'changed' },
+						where: [
+							{ field: 'providerId', value: 'google' },
+							{
+								field: 'accountId',
+								operator,
+								value: undefined as never,
+								connector,
+							},
+						],
+					};
+					for (const method of [
+						'findOne',
+						'findMany',
+						'count',
+						'update',
+						'updateMany',
+						'delete',
+						'deleteMany',
+					] as const) {
+						const error = await instance[method](request).catch(
+							(error) => error,
+						);
+						expect(error).toBeInstanceOf(BetterDrizzleError);
+						expect(error.code).toBe('INVALID_ARGS');
+					}
+				}
+				expect(queries).toHaveLength(0);
+				expect(
+					await db.account.count({ where: { providerId: 'google' } }),
+				).toBe(1);
+			} finally {
+				sqlite.close();
+			}
+		},
+	);
+
+	test('undefined in values are rejected upstream before SQL', async () => {
+		const { db, queries, sqlite } = createAuth();
+		try {
+			const instance = adapter(db)({});
+			await expect(
+				instance.findOne({
+					model: 'account',
+					where: [
+						{
+							field: 'accountId',
+							operator: 'in',
+							value: undefined as never,
+						},
+					],
+				}),
+			).rejects.toThrow();
+			expect(queries).toHaveLength(0);
+		} finally {
+			sqlite.close();
+		}
+	});
+
 	test('a failed tenant check is reported again on the next initialization', async () => {
 		const global = ['account', 'session', 'verification'] as const;
 		const { auth, db } = createAuth({
