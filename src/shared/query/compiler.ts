@@ -1018,7 +1018,7 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 				.where(and(...correlate, throughScope, targetScope, predicate));
 
 		let condition: SQL | undefined;
-		if ('some' in value)
+		if (value.some !== undefined)
 			condition = andWith(
 				condition,
 				exists(
@@ -1027,7 +1027,7 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 					),
 				),
 			);
-		if ('none' in value)
+		if (value.none !== undefined)
 			condition = andWith(
 				condition,
 				notExists(
@@ -1036,21 +1036,22 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 					),
 				),
 			);
-		if ('every' in value) {
+		if (value.every !== undefined) {
 			const nestedWhere = buildNestedWhere(
 				value.every as Record<string, unknown>,
 			);
-			condition = andWith(
-				condition,
-				notExists(linked(nestedWhere ? not(nestedWhere) : undefined)),
-			);
+			if (nestedWhere)
+				condition = andWith(
+					condition,
+					notExists(linked(not(nestedWhere))),
+				);
 		}
 		return condition;
 	}
 
 	if (relationState.kind === 'many') {
 		let condition: SQL | undefined;
-		if ('some' in value)
+		if (value.some !== undefined)
 			condition = andWith(
 				condition,
 				exists(
@@ -1066,7 +1067,7 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 				),
 			);
 
-		if ('none' in value)
+		if (value.none !== undefined)
 			condition = andWith(
 				condition,
 				notExists(
@@ -1082,22 +1083,19 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 				),
 			);
 
-		if ('every' in value) {
+		if (value.every !== undefined) {
 			const nestedWhere = buildNestedWhere(
 				value.every as Record<string, unknown>,
 			);
-			condition = andWith(
-				condition,
-				notExists(
-					subquery().where(
-						and(
-							joinCondition,
-							targetScope,
-							nestedWhere ? not(nestedWhere) : undefined,
+			if (nestedWhere)
+				condition = andWith(
+					condition,
+					notExists(
+						subquery().where(
+							and(joinCondition, targetScope, not(nestedWhere)),
 						),
 					),
-				),
-			);
+				);
 		}
 
 		return condition;
@@ -1105,7 +1103,7 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 
 	if (relationState.kind === 'one') {
 		let condition: SQL | undefined;
-		if ('is' in value) {
+		if (value.is !== undefined) {
 			const membership =
 				value.is === null
 					? undefined
@@ -1133,7 +1131,7 @@ const compileRelationFilter = <Schema extends AnySchema, Meta>(
 			);
 		}
 
-		if ('isNot' in value) {
+		if (value.isNot !== undefined) {
 			const membership =
 				value.isNot === null
 					? undefined
