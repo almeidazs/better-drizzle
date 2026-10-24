@@ -1812,7 +1812,12 @@ const buildReadState = <Schema extends AnySchema, Meta>(
 		limit:
 			typeof args?.take === 'number' ? Math.abs(args.take) : args?.take,
 		offset: args?.skip,
-		orderBy: compileOrderBy(whereContext, args?.orderBy),
+		orderBy: compileOrderBy(
+			whereContext,
+			args?.orderBy,
+			args?.cursor,
+			args?.take,
+		),
 		runtime,
 		select: getDirectSelection(
 			runtime,
@@ -2167,7 +2172,12 @@ export const buildJoinedOneRelationQuery = <Schema extends AnySchema, Meta>(
 		args?.orderBy,
 		args?.take,
 	);
-	const orderBy = compileOrderBy(whereContext, args?.orderBy);
+	const orderBy = compileOrderBy(
+		whereContext,
+		args?.orderBy,
+		args?.cursor,
+		args?.take,
+	);
 	let query = context.db
 		.select(selection)
 		.from(runtime.table)
@@ -2219,6 +2229,8 @@ export const findManyRecords = async <Schema extends AnySchema, Meta>(
 			tableName,
 			relational.args as QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
 		);
+		if (args?.cursor && typeof args.take === 'number' && args.take < 0)
+			rows.reverse();
 		return hydrateRelations(
 			context,
 			getTableRuntime(context, tableName as string),
@@ -2228,6 +2240,17 @@ export const findManyRecords = async <Schema extends AnySchema, Meta>(
 		);
 	}
 	const query = buildFindManyQuery(context, tableName, args, operation);
+	if (args?.cursor && typeof args.take === 'number' && args.take < 0) {
+		const rows = await (args.lock
+			? executeReadQuery(
+					query as SelectQueryLike,
+					getTableRuntime(context, tableName as string),
+					operation,
+					args.lock,
+				)
+			: query);
+		return rows.reverse();
+	}
 
 	return (
 		args?.lock

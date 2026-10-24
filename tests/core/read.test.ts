@@ -48,6 +48,20 @@ describe('findMany', () => {
 		expect(result.every((u) => u.active)).toBe(true);
 	});
 
+	test('findMany orders by the cursor field when orderBy is missing', async () => {
+		const forward = await ctx.better.users.findMany({
+			cursor: { id: 1 },
+			take: 2,
+		});
+		expect(forward.map((u) => u.id)).toEqual([2, 3]);
+
+		const backward = await ctx.better.users.findMany({
+			cursor: { id: 5 },
+			take: -2,
+		});
+		expect(backward.map((u) => u.id)).toEqual([3, 4]);
+	});
+
 	test('findMany with orderBy ascending', async () => {
 		const result = await ctx.better.users.findMany({
 			orderBy: [{ age: 'asc' }],

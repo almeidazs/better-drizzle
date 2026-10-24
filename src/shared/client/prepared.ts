@@ -205,7 +205,12 @@ const prepareRows = <Schema extends AnySchema, Meta>(
 		name,
 	);
 	const lock = args?.lock;
-	if (!lock && !relational) return exec;
+	const reverse =
+		!single &&
+		args?.cursor &&
+		typeof args.take === 'number' &&
+		args.take < 0;
+	if (!lock && !relational && !reverse) return exec;
 
 	return async (values: Values): Promise<Rows> => {
 		let rows: Rows;
@@ -216,6 +221,7 @@ const prepareRows = <Schema extends AnySchema, Meta>(
 				throw normalizeLockError(error, runtime, operation, lock);
 			}
 		else rows = await exec(values);
+		if (reverse) rows.reverse();
 		if (!relational) return rows;
 		return hydrateRelations(
 			context,
@@ -497,7 +503,24 @@ export const prepareRead = <Schema extends AnySchema, Meta>(
 	const runtime = getTableRuntime(context, tableName as string);
 	const names: string[] = [];
 	collectParams(args, names);
-	const check = (values: Values) => checkParams(names, values, runtime, kind);
+	const cursorTakeParam =
+		kind === 'findMany' && args.cursor && args.take instanceof Placeholder
+			? args.take.name
+			: undefined;
+	const check = (values: Values) => {
+		checkParams(names, values, runtime, kind);
+		if (
+			cursorTakeParam &&
+			typeof values[cursorTakeParam] === 'number' &&
+			values[cursorTakeParam] < 0
+		)
+			throw preparedError(
+				BetterDrizzleErrorCode.InvalidArgs,
+				'Prepared cursor reads require a non-negative take parameter. Use a constant negative take or cursor({ before }) to read backwards.',
+				runtime,
+				kind,
+			);
+	};
 
 	if (kind === 'paginate')
 		return {

@@ -516,7 +516,12 @@ const loadRelation = async <Schema extends AnySchema, Meta>(
 		args?.orderBy as never,
 		args?.take as number | undefined,
 	);
-	const orderBy = compileOrderBy(whereContext, args?.orderBy as never);
+	const orderBy = compileOrderBy(
+		whereContext,
+		args?.orderBy as never,
+		args?.cursor as never,
+		args?.take,
+	);
 	const page = relationPage(args);
 	const scope = scopePredicate(context, targetRuntime);
 	let rows: Record<string, unknown>[];
@@ -672,6 +677,13 @@ const loadRelation = async <Schema extends AnySchema, Meta>(
 		const key = rowKey(parentRuntime, parent, relation.fields);
 		const group = key ? (grouped.get(key) ?? []) : [];
 		const related = page.enabled ? group : relationSlice(group, args);
+		if (
+			relation.kind !== 'one' &&
+			args?.cursor &&
+			typeof args.take === 'number' &&
+			args.take < 0
+		)
+			related.reverse();
 		if (relation.kind === 'one') parent[relationName] = related[0] ?? null;
 		else parent[relationName] = related;
 	}
