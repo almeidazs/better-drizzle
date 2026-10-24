@@ -368,19 +368,10 @@ const prepareCursor = <Schema extends AnySchema, Meta>(
 	const limit = limitName ? 0 : Math.abs((limitInput as number) ?? 10) || 10;
 	const cursor = cursorArgs.after ?? cursorArgs.before;
 	const cursorName = paramName(cursor);
-	const primaryKey = runtime.primaryKeyFields[0];
-	// A prepared cursor carries no keys to infer the order from.
-	const args =
-		cursorName && !cursorArgs.orderBy && primaryKey
-			? ({
-					...cursorArgs,
-					orderBy: { [primaryKey]: 'asc' },
-				} as typeof cursorArgs)
-			: cursorArgs;
 	const page = buildCursorPage(
 		context,
 		tableName,
-		args,
+		cursorArgs,
 		limitName ? sql.placeholder(TAKE_PARAM) : limit + 1,
 	);
 	const data = page.fastQuery
@@ -399,7 +390,11 @@ const prepareCursor = <Schema extends AnySchema, Meta>(
 			);
 
 	// Probes resolve hasPrevious / hasNext from a row of the current page.
-	const probeKey = args.after ? 'before' : args.before ? 'after' : undefined;
+	const probeKey = cursorArgs.after
+		? 'before'
+		: cursorArgs.before
+			? 'after'
+			: undefined;
 	const prepareProbe = (value: unknown, suffix: string) =>
 		prepareRows(
 			context,
@@ -480,6 +475,7 @@ const prepareCursor = <Schema extends AnySchema, Meta>(
 			hasPage as never,
 			values,
 			fields,
+			page.hiddenFields,
 		);
 	};
 };

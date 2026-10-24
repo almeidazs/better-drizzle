@@ -53,6 +53,7 @@ import {
 	compileOrderBy,
 	compileWhereInput,
 	countRows,
+	CURSOR_TIEBREAKER,
 	cursorParam,
 	getPgArrayDimensions,
 	getPgArrayElementColumn,
@@ -3783,21 +3784,51 @@ export const getCursorExplainProbes = <Schema extends AnySchema, Meta>(
 };
 
 /**
- * Without an `orderBy`, cursor pages are ordered by the primary key ascending
- * so the first page and every `after`/`before` page walk the same order.
+ * Complete the effective cursor order with primary-key tiebreakers. Keep
+ * inferred token order for callers that omit `orderBy` on subsequent pages.
  */
 export const withDefaultCursorOrder = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	tableName: BetterTableKey<Schema>,
 	args: CursorArgs<Schema, BetterTableKey<Schema>, Meta>,
 ) => {
-	if (args.orderBy || args.after || args.before) return args;
-	const field = getTableRuntime(context, tableName as string)
-		.primaryKeyFields[0];
-	if (!field) return args;
+	const runtime = getTableRuntime(context, tableName as string);
+	const fields: string[] = [];
+	let entries: Record<string, unknown>[] = args.orderBy
+		? Array.isArray(args.orderBy)
+			? (args.orderBy as Record<string, unknown>[])
+			: [args.orderBy as Record<string, unknown>]
+		: [];
+	for (const entry of entries)
+		for (const key in entry as Record<string, unknown>)
+			if (runtime.columns[key] || runtime.relations[key])
+				fields.push(key);
+	const explicitOrder = fields.length > 0;
+	if (!fields.length) {
+		const token = args.after ?? args.before;
+		entries = [];
+		if (
+			token &&
+			typeof token === 'object' &&
+			!(token instanceof Placeholder)
+		)
+			for (const key in token)
+				if (runtime.columns[key]) {
+					fields.push(key);
+					entries.push({ [key]: 'asc' });
+				}
+	}
+	let orderBy = entries;
+	for (const field of runtime.primaryKeyFields) {
+		if (fields.includes(field)) continue;
+		if (orderBy === entries) orderBy = entries.slice();
+		orderBy.push({ [field]: 'asc', [CURSOR_TIEBREAKER]: true });
+	}
+	if (orderBy === entries && explicitOrder) return args;
+	if (!orderBy.length) return args;
 	return {
 		...args,
-		orderBy: { [field]: 'asc' },
+		orderBy,
 	} as CursorArgs<Schema, BetterTableKey<Schema>, Meta>;
 };
 
@@ -3829,13 +3860,26 @@ export const buildCursorPage = <Schema extends AnySchema, Meta>(
 		BetterTableKey<Schema>,
 		Meta
 	>;
+	const fields = getCursorFields(context, tableName, args);
+	const selection = queryArgs.select as Record<string, unknown> | undefined;
+	const hiddenFields: string[] = [];
+	if (selection) {
+		for (const field of fields)
+			if (selection[field] !== true) hiddenFields.push(field);
+		if (hiddenFields.length) {
+			const select = { ...selection };
+			for (const field of hiddenFields) select[field] = true;
+			queryArgs.select = select as typeof queryArgs.select;
+		}
+	}
 
 	return {
 		args,
 		direction: built.direction,
 		// Derived before any SQL runs, so a relation sort fails on first pages too.
-		fields: getCursorFields(context, tableName, args),
+		fields,
 		fastQuery: buildFastCursorQuery(context, tableName, args, queryArgs),
+		hiddenFields,
 		queryArgs,
 	};
 };
@@ -3859,6 +3903,7 @@ export const finishCursorPage = async <Schema extends AnySchema, Meta>(
 	hasPage: CursorPageProbe = hasCursorPage,
 	values?: Record<string, unknown>,
 	cursorFields = getCursorFields(context, tableName, args),
+	hiddenFields: readonly string[] = [],
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
 	const hasOpposite =
@@ -3927,6 +3972,9 @@ export const finishCursorPage = async <Schema extends AnySchema, Meta>(
 					)))
 				: false
 			: hasOverflow;
+	if (hiddenFields.length)
+		for (const row of data)
+			for (const field of hiddenFields) delete row[field];
 
 	return {
 		data,
@@ -3967,5 +4015,6 @@ export const cursorRecords = async <Schema extends AnySchema, Meta>(
 		undefined,
 		undefined,
 		page.fields,
+		page.hiddenFields,
 	);
 };

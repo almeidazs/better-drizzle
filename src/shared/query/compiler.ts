@@ -1675,6 +1675,10 @@ export const buildRelationCount = <Schema extends AnySchema, Meta>(
 		)})`;
 };
 
+// Auto-added primary-key sorts may be absent from tokens issued before
+// cursor pagination included primary-key tiebreakers.
+export const CURSOR_TIEBREAKER = Symbol('cursorTiebreaker');
+
 /**
  * Binds every field of a prepared cursor to the one cursor param. Each
  * field encoder reads its own key from the cursor object at execution time.
@@ -1683,6 +1687,7 @@ export const cursorParam = (
 	runtime: TableRuntime,
 	cursor: Placeholder,
 	key: string,
+	optional = false,
 ) => {
 	const column = runtime.columns[key] as AnyColumn;
 	return sql.param(
@@ -1691,6 +1696,9 @@ export const cursorParam = (
 			mapToDriverValue: {
 				value: (value: Record<string, unknown>) => {
 					const field = value[key];
+					// SQL comparisons with NULL disable this tiebreaker and its
+					// following equal-prefix branches for a legacy token.
+					if (optional && field === undefined) return null;
 					if (field === null || field === undefined)
 						throw new BetterDrizzleError({
 							code: BetterDrizzleErrorCode.InvalidArgs,
@@ -1720,7 +1728,16 @@ const cursorParamValues = (
 	for (const entry of entries)
 		for (const key in entry as Record<string, unknown>)
 			if (runtime.columns[key])
-				values[key] = cursorParam(runtime, cursor, key);
+				values[key] = cursorParam(
+					runtime,
+					cursor,
+					key,
+					Boolean(
+						(entry as Record<PropertyKey, unknown>)[
+							CURSOR_TIEBREAKER
+						],
+					),
+				);
 	return values;
 };
 
@@ -1770,7 +1787,13 @@ export const compileCursorWhere = <Schema extends AnySchema, Meta>(
 						throw relationCursorError(context.runtime, key);
 					continue;
 				}
-				if (!(key in values) || values[key] === undefined)
+				if (!(key in values) || values[key] === undefined) {
+					if (
+						(entry as Record<PropertyKey, unknown>)[
+							CURSOR_TIEBREAKER
+						]
+					)
+						break;
 					throw new BetterDrizzleError({
 						code: BetterDrizzleErrorCode.InvalidArgs,
 						details: { cursorField: key },
@@ -1778,6 +1801,7 @@ export const compileCursorWhere = <Schema extends AnySchema, Meta>(
 						operation: 'cursor',
 						table: context.runtime.dbName,
 					});
+				}
 
 				const value = (entry as Record<string, unknown>)[key];
 				let direction = orderDirection(value);
@@ -1989,6 +2013,9 @@ const reverseOrderBy = <Schema extends AnySchema>(
 
 	for (const entry of entries) {
 		const reversedEntry = Object.create(null) as Record<string, unknown>;
+		if ((entry as Record<PropertyKey, unknown>)[CURSOR_TIEBREAKER])
+			(reversedEntry as Record<PropertyKey, unknown>)[CURSOR_TIEBREAKER] =
+				true;
 
 		for (const key in entry as Record<string, unknown>) {
 			const value = (entry as Record<string, unknown>)[key];
