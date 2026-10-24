@@ -18,3 +18,16 @@ updates:
               applies-to: 'security-updates'
               patterns:
                   - '*'
+
+    - package-ecosystem: 'github-actions'
+      directory: '/'
+      schedule:
+          interval: 'weekly'
+          day: 'monday'
+          time: '09:00'
+          timezone: 'America/Sao_Paulo'
+      open-pull-requests-limit: 3
+      groups:
+          github-actions:
+              patterns:
+                  - '*'
