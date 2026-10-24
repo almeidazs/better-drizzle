@@ -108,7 +108,7 @@ Both versions are fully typed. In the raw version, though, the filters are writt
 - Many-to-many relations declared with Drizzle's `.through()` load and filter like any other relation, without naming the junction table in queries.
 - `count` adds relation totals as a subquery in the same statement, with no extra round-trip.
 - Relation filters (`some`, `every`, `none`, `is`, `isNot`) replace hand-built `exists` subqueries.
-- The batched loader issues one query per relation node. On the relation graph benchmark it is [~9× faster](/docs/performance/benchmarks) than the equivalent hand-written code.
+- The batched loader normally issues one query per relation node, splitting large parent-key sets into bounded batches. On the relation graph benchmark it is [~9× faster](/docs/performance/benchmarks) than the equivalent hand-written code.
 
 See [Relations](/docs/querying/relations).
 

@@ -8,7 +8,7 @@ seoDescription: 'Load Drizzle ORM relations with nested include and select, and 
 
 Use `include` and relation `select` to load related rows with one call and a typed nested result. Relations come from Drizzle's `defineRelations`. To filter rows by their relations, see [relation filters](/docs/querying/relation-filters).
 
-Relation reads use a batch loader owned by better-drizzle: one root query plus one query per requested relation node. They do not issue one query per parent row.
+Relation reads use a batch loader owned by better-drizzle: one root query plus normally one query per requested relation node. Large parent-key sets are split into sequential queries with at most 10,000 link parameters; composite keys also use at most 200 OR branches per query. The batch size also reserves parameters used by filters, scopes, counts, and pagination. If those arguments leave no room for a parent key, the loader throws `INVALID_ARGS`. Duplicate keys are fetched once across all batches, and overlapping query results keep each group once. Ordering, pagination, and grouping still apply per parent.
 
 The examples below extend the [getting started](/docs/getting-started) `users → posts` schema with `comments`, `profiles`, a `posts.editorId` column, and a `memberships` junction between `users` and `groups`.
 
