@@ -1,11 +1,15 @@
 import {
-	BetterDrizzleError,
-	BetterDrizzleErrorCode,
 	definePlugin,
+	type PluginGeneratedColumns,
 	type PluginModelInfo,
 } from 'better-drizzle';
+import type { AnyColumn } from 'drizzle-orm';
 
-import type { TimestampsOptions } from './types';
+import type {
+	TimestampMode,
+	TimestampModelOptions,
+	TimestampsOptions,
+} from './types';
 import { version } from './version';
 
 type MutableRecord = Record<string, unknown>;
@@ -21,6 +25,27 @@ type ModelColumns = {
 
 const DEFAULT_CREATED_AT = 'createdAt';
 const DEFAULT_UPDATED_AT = 'updatedAt';
+
+const accepts = (column: AnyColumn) =>
+	column.dataType.startsWith('object date') ||
+	column.dataType.startsWith('string');
+
+type GeneratedModels<
+	CreatedAt extends string,
+	UpdatedAt extends string,
+	Models extends Readonly<Record<string, TimestampModelOptions>>,
+> = {
+	[Name in keyof Models]: Models[Name] extends false
+		? false
+		: readonly [
+				Models[Name] extends { createdAt: infer Column extends string }
+					? Column
+					: CreatedAt,
+				Models[Name] extends { updatedAt: infer Column extends string }
+					? Column
+					: UpdatedAt,
+			];
+};
 
 /**
  * Sets a timestamp field on a mutable payload when the corresponding column
@@ -82,13 +107,43 @@ const appendColumn = (columns: string[], column: string, enabled: boolean) => {
  * @param options - Optional column names, clock, per-model overrides, and mode.
  * @returns A Better Drizzle plugin definition.
  */
-export const timestamps = (options: TimestampsOptions = {}) => {
+export const timestamps = <
+	const CreatedAt extends string = 'createdAt',
+	const UpdatedAt extends string = 'updatedAt',
+	const Models extends Readonly<Record<string, TimestampModelOptions>> =
+		Record<never, never>,
+	const Mode extends TimestampMode = 'app',
+>(
+	options: TimestampsOptions<CreatedAt, UpdatedAt, Models, Mode> = {},
+) => {
 	const createdAt = options.createdAt ?? DEFAULT_CREATED_AT;
 	const updatedAt = options.updatedAt ?? DEFAULT_UPDATED_AT;
 	const clock = options.now ?? (() => new Date());
 
-	return definePlugin({
+	const plugin = definePlugin({
 		description: 'Automatically manages createdAt and updatedAt fields.',
+		generated:
+			options.mode === 'database'
+				? undefined
+				: {
+						accepts,
+						column: [createdAt, updatedAt],
+						models:
+							options.models &&
+							Object.fromEntries(
+								Object.entries(options.models).map(
+									([name, override]) => [
+										name,
+										override === false
+											? false
+											: [
+													override.createdAt,
+													override.updatedAt,
+												],
+									],
+								),
+							),
+					},
 		id: 'better-drizzle/timestamps',
 		name: 'Timestamps',
 		options,
@@ -103,16 +158,6 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 
 				const created = override?.createdAt ?? createdAt;
 				const updated = override?.updatedAt ?? updatedAt;
-				for (const column of [override?.createdAt, override?.updatedAt])
-					if (column !== undefined && !model.hasColumn(column))
-						throw new BetterDrizzleError({
-							code: BetterDrizzleErrorCode.PluginRequiredColumnMissing,
-							column,
-							details: { pluginId: 'better-drizzle/timestamps' },
-							message: `Plugin "better-drizzle/timestamps" requires column "${column}" on model "${name}".`,
-							table: name,
-						});
-
 				const hasCreatedAt = model.hasColumn(created);
 				const hasUpdatedAt = model.hasColumn(updated);
 				if (!hasCreatedAt && !hasUpdatedAt) continue;
@@ -381,6 +426,18 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 		},
 		version,
 	});
+
+	return plugin as NoInfer<
+		Omit<typeof plugin, 'generated'> & {
+			generated?: 'database' extends Mode
+				? never
+				: PluginGeneratedColumns<
+						readonly [CreatedAt, UpdatedAt],
+						GeneratedModels<CreatedAt, UpdatedAt, Models>,
+						Date | string
+					>;
+		}
+	>;
 };
 
 export default timestamps;

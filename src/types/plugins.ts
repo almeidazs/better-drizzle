@@ -107,8 +107,10 @@ export type PluginConfig = {
 export type PluginGeneratedColumns<
 	Column extends string | readonly string[] = string | readonly string[],
 	Models extends Readonly<
-		Record<string, string | readonly string[] | false>
-	> = Readonly<Record<string, string | readonly string[] | false>>,
+		Record<string, string | readonly (string | undefined)[] | false>
+	> = Readonly<
+		Record<string, string | readonly (string | undefined)[] | false>
+	>,
 	Value = unknown,
 > = {
 	/**
@@ -118,7 +120,7 @@ export type PluginGeneratedColumns<
 	accepts?(column: AnyColumn): boolean;
 	/** Column keys filled on every model that has them. */
 	column: Column;
-	/** Overrides keyed by table key: column keys, or `false` to skip the model. Overridden columns must exist. */
+	/** Overrides keyed by table key: column keys, or `false` to skip the model. In an array, `undefined` keeps the default at that position. Explicit columns must exist. */
 	models?: Models;
 	/** Type-only: carries `Value`; never read at runtime. */
 	readonly value?: Value;

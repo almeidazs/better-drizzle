@@ -22,23 +22,30 @@ export type TimestampModelOptions =
 /**
  * Configuration accepted by {@link timestamps}.
  */
-export type TimestampsOptions = {
+export type TimestampsOptions<
+	CreatedAt extends string = string,
+	UpdatedAt extends string = string,
+	Models extends Readonly<Record<string, TimestampModelOptions>> = Readonly<
+		Record<string, TimestampModelOptions>
+	>,
+	Mode extends TimestampMode = TimestampMode,
+> = {
 	/**
 	 * Column name used for the creation timestamp.
 	 *
 	 * @default 'createdAt'
 	 */
-	createdAt?: string;
+	createdAt?: CreatedAt;
 	/**
 	 * Timestamp management strategy.
 	 *
 	 * @default 'app'
 	 */
-	mode?: TimestampMode;
+	mode?: Mode;
 	/**
 	 * Overrides keyed by table key. Unknown keys are ignored.
 	 */
-	models?: Readonly<Record<string, TimestampModelOptions>>;
+	models?: Models;
 	/**
 	 * Clock used for every timestamp the plugin writes. Called once per
 	 * operation, so `createdAt` and `updatedAt` match.
@@ -51,5 +58,5 @@ export type TimestampsOptions = {
 	 *
 	 * @default 'updatedAt'
 	 */
-	updatedAt?: string;
+	updatedAt?: UpdatedAt;
 };
