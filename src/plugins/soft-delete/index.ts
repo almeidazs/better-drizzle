@@ -3,9 +3,12 @@ import type {
 	BetterDrizzleModelDelegate,
 	BetterTableKey,
 	UpdateArgs,
-	WhereArg,
 } from 'better-drizzle';
-import { definePlugin } from 'better-drizzle';
+import {
+	BetterDrizzleError,
+	BetterDrizzleErrorCode,
+	definePlugin,
+} from 'better-drizzle';
 
 import { deferPluginOperation } from '../../shared/client/plugin-override';
 import {
@@ -20,6 +23,8 @@ import {
 	type SoftDeleteVisibility,
 } from './types';
 import { version } from './version';
+
+const restoreOperation = Symbol('soft-delete/restore');
 
 const isRecord = (value: unknown): value is MutableRecord =>
 	typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -41,29 +46,33 @@ const createRestoreExtension = <
 >(
 	client: BetterDrizzleModelDelegate<Schema, Name, Meta>,
 	column: string,
+	primaryKey: readonly string[],
 	deletedByColumn?: string,
 ): RestoreModelExtension => {
-	const data = {
-		[column]: null,
-	} as MutableRecord;
-
-	if (deletedByColumn) data[deletedByColumn] = null;
+	const restore: RestoreModelExtension['restore'] = (args) => {
+		const data: MutableRecord = { [column]: null };
+		if (deletedByColumn) data[deletedByColumn] = null;
+		return client.update({
+			...args,
+			data,
+			deleted: 'with',
+			[restoreOperation]: true,
+		} as UpdateArgs<Schema, Name, Meta> as never);
+	};
 
 	return {
-		restore(args) {
-			return client.$withoutPlugins({ keepScopes: true }).update({
-				...args,
-				data,
-				deleted: 'with',
-			} as UpdateArgs<Schema, Name, Meta> as never);
-		},
+		restore,
 		restoreById(id, args) {
-			return client.$withoutPlugins({ keepScopes: true }).update({
+			if (primaryKey.length !== 1)
+				throw new BetterDrizzleError({
+					code: BetterDrizzleErrorCode.InvalidArgs,
+					message:
+						'restoreById requires a single-column primary key. Use restore({ where }) instead.',
+				});
+			return restore({
 				...args,
-				data,
-				deleted: 'with',
-				where: { id } as unknown as WhereArg<Schema, Name>,
-			} as UpdateArgs<Schema, Name, Meta> as never);
+				where: { [primaryKey[0]!]: id },
+			});
 		},
 	};
 };
@@ -218,6 +227,8 @@ export const softDelete = (options: SoftDeleteOptions = {}) => {
 			},
 			beforeUpdate(context) {
 				if (!context.model.hasColumn(column)) return context.data;
+				// Only restore helpers may clear the plugin-owned columns.
+				if (restoreOperation in context.args) return context.data;
 				const hasDeletedBy = context.model.hasColumn(deletedByColumn);
 				if (context.kind === 'updateEach') {
 					protectUpdate(
@@ -297,6 +308,7 @@ export const softDelete = (options: SoftDeleteOptions = {}) => {
 			return createRestoreExtension(
 				client,
 				column,
+				model.primaryKey,
 				model.hasColumn(deletedByColumn) ? deletedByColumn : undefined,
 			);
 		},
