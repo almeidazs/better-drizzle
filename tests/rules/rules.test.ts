@@ -1,9 +1,52 @@
+import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 
 import { better } from 'better-drizzle';
+import { defineRelations } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 import { merge, rules, safe } from '../../src/plugins/rules';
+import { tenant } from '../../src/plugins/tenant';
 import { createTestContext } from '../core/setup';
+
+const accounts = sqliteTable('rule_accounts', {
+	id: integer('id').primaryKey(),
+	tenantId: text('tenant_id').notNull(),
+	password: text('password').notNull(),
+	name: text('name').notNull(),
+});
+const notes = sqliteTable('rule_notes', {
+	id: integer('id').primaryKey(),
+	accountId: integer('account_id').notNull(),
+	tenantId: text('tenant_id').notNull(),
+	secret: text('secret').notNull(),
+});
+const ruleRelations = defineRelations({ accounts, notes }, (r) => ({
+	accounts: { notes: r.many.notes() },
+	notes: {
+		account: r.one.accounts({ from: r.notes.accountId, to: r.accounts.id }),
+	},
+}));
+
+const createScopedRulesContext = (
+	pluginOptions: Parameters<typeof rules>[0],
+) => {
+	const sqlite = new Database(':memory:');
+	sqlite.exec(
+		'CREATE TABLE rule_accounts (id INTEGER PRIMARY KEY, tenant_id TEXT NOT NULL, password TEXT NOT NULL, name TEXT NOT NULL); CREATE TABLE rule_notes (id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL, tenant_id TEXT NOT NULL, secret TEXT NOT NULL);',
+	);
+	sqlite.exec(
+		"INSERT INTO rule_accounts VALUES (1, 'tenant-a', 'hash', 'Ada'); INSERT INTO rule_notes VALUES (1, 1, 'tenant-a', 'private');",
+	);
+	const client = better(
+		drizzle({ client: sqlite, relations: ruleRelations }),
+		{
+			plugins: [tenant({ columns: 'tenantId' }), rules(pluginOptions)],
+		},
+	);
+	return { client, close: () => sqlite.close() };
+};
 
 const createRulesContext = (pluginOptions: Parameters<typeof rules>[0]) => {
 	const base = createTestContext();
@@ -300,6 +343,133 @@ describe('better-drizzle/rules', () => {
 			ctx.client.$executeRaw`update test_users set active = 1`,
 		).rejects.toThrow('Raw mutation queries are not allowed.');
 
+		ctx.close();
+	});
+
+	test('detects mutations after comments, in CTEs, and after allowed statements', async () => {
+		const ctx = createRulesContext({
+			noRawMutation: { allow: ['create extension'] },
+		});
+		for (const query of [
+			'-- comment\nUPDATE test_users SET active = 0',
+			'WITH changed AS (DELETE FROM test_users RETURNING id) SELECT id FROM changed',
+			'SELECT id FROM test_users; DELETE FROM test_users',
+			'CREATE extensionsomething test_users',
+		]) {
+			await expect(ctx.client.$rawUnsafe(query)).rejects.toThrow(
+				'Raw mutation queries are not allowed.',
+			);
+		}
+		await expect(
+			ctx.client.$rawUnsafe(
+				"SELECT 'DELETE FROM test_users' AS statement",
+			),
+		).resolves.toEqual([{ statement: 'DELETE FROM test_users' }]);
+		await expect(
+			ctx.client.$rawUnsafe('/* DELETE */ SELECT id FROM test_users'),
+		).resolves.toHaveLength(5);
+		ctx.close();
+	});
+
+	test('uses tenant scope and rejects empty write filters and batch overrides', async () => {
+		const ctx = createScopedRulesContext({
+			requireTenantContext: true,
+			requireTenantOnUpdate: true,
+			requireTenantOnDelete: true,
+			noTenantColumnOverride: true,
+			noSensitiveSelect: false,
+		});
+		const scoped = ctx.client.$tenant({ tenantId: 'tenant-a' });
+		await expect(
+			Promise.resolve(scoped.accounts.findMany({ select: { id: true } })),
+		).resolves.toEqual([{ id: 1 }]);
+		const spoofed = scoped.$withContext({ tenantId: 'tenant-b' });
+		await expect(
+			spoofed.accounts.createMany({
+				data: [
+					{
+						id: 2,
+						name: 'B',
+						password: 'hash',
+						tenantId: 'tenant-b',
+					},
+				],
+			}),
+		).rejects.toThrow('Overriding tenantId is not allowed.');
+		await expect(
+			scoped.accounts.updateMany({
+				data: { name: 'Changed' },
+				where: {},
+			}),
+		).rejects.toThrow('Update operations require tenant scoping.');
+		await expect(scoped.accounts.deleteMany({ where: {} })).rejects.toThrow(
+			'Delete operations require tenant scoping.',
+		);
+		await expect(
+			scoped.accounts.createMany({
+				data: [
+					{
+						id: 2,
+						name: 'B',
+						password: 'hash',
+						tenantId: 'tenant-b',
+					},
+				],
+			}),
+		).rejects.toThrow('Overriding tenantId is not allowed.');
+		ctx.close();
+	});
+
+	test('checks default, nested, filter, sort and cursor access to sensitive fields', async () => {
+		const ctx = createScopedRulesContext({ noSensitiveSelect: true });
+		const scoped = ctx.client.$tenant({ tenantId: 'tenant-a' });
+		for (const query of [
+			{},
+			{ select: { password: true } },
+			{ select: { id: true }, where: { password: 'hash' } },
+			{ select: { id: true }, orderBy: { password: 'asc' } },
+			{ select: { id: true }, cursor: { password: 'hash' } },
+			{ select: { id: true }, include: { notes: true } },
+			{
+				select: { id: true },
+				where: { notes: { some: { secret: 'private' } } },
+			},
+			{
+				select: { id: true },
+				include: { notes: { select: { secret: true } } },
+			},
+		]) {
+			await expect(
+				Promise.resolve(scoped.accounts.findMany(query as never)),
+			).rejects.toThrow('sensitive field');
+		}
+		await expect(
+			Promise.resolve(
+				scoped.accounts.findMany({ select: { id: true, name: true } }),
+			),
+		).resolves.toEqual([{ id: 1, name: 'Ada' }]);
+		await expect(
+			Promise.resolve(
+				scoped.accounts.findMany({
+					select: { id: true },
+					where: { notes: { some: { id: 1 } } },
+				}),
+			),
+		).resolves.toEqual([{ id: 1 }]);
+		ctx.close();
+	});
+
+	test('requires a reason for implicit sensitive access with opt-in', async () => {
+		const ctx = createScopedRulesContext({
+			noSensitiveSelect: { allowWithSensitive: true },
+			requireExplicitSensitiveAccessReason: true,
+		});
+		const scoped = ctx.client.$tenant({ tenantId: 'tenant-a' });
+		await expect(
+			Promise.resolve(
+				scoped.accounts.findMany({ withSensitive: true } as never),
+			),
+		).rejects.toThrow('Sensitive access requires an explicit reason.');
 		ctx.close();
 	});
 
