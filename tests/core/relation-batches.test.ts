@@ -205,3 +205,131 @@ test('equal Date keys are fetched once even when parents exceed a batch', async 
 		sqlite.close();
 	}
 });
+
+test.each(['children', 'linked'] as const)(
+	'%s reserves bind parameters for nested filters and pagination',
+	async (relation) => {
+		const ctx = createContext(10_001);
+		try {
+			const rows = await ctx.db.parents.findMany({
+				include: {
+					[relation]: {
+						where: { name: { in: Array(23_000).fill('first') } },
+						take: 1,
+					},
+				},
+			});
+			expect(rows).toHaveLength(10_001);
+			expect(
+				rows.every(
+					(row) =>
+						row[relation].length === 1 &&
+						row[relation][0]?.name === 'first',
+				),
+			).toBe(true);
+			expect(ctx.queries.every((query) => query.params <= 32_766)).toBe(
+				true,
+			);
+		} finally {
+			ctx.sqlite.close();
+		}
+	},
+);
+
+test.each(['children', 'composite'] as const)(
+	'%s rejects filters that leave no room for a parent key',
+	async (relation) => {
+		const ctx = createContext(1);
+		try {
+			await expect(
+				Promise.resolve(
+					ctx.db.parents.findMany({
+						include: {
+							[relation]: {
+								where: {
+									name: {
+										in: Array(
+											relation === 'children'
+												? 32_766
+												: 32_765,
+										).fill('first'),
+									},
+								},
+							},
+						},
+					}),
+				),
+			).rejects.toMatchObject({ code: 'INVALID_ARGS' });
+			expect(ctx.queries).toHaveLength(1);
+		} finally {
+			ctx.sqlite.close();
+		}
+	},
+);
+
+test.each([
+	['children', undefined],
+	['children', 1],
+	['linked', undefined],
+	['linked', 1],
+] as const)(
+	'overlapping SQL comparisons keep %s groups intact (take: %s)',
+	async (relation, take) => {
+		const parents = sqliteTable('collated_parents', {
+			id: integer().primaryKey(),
+			org: integer().notNull(),
+			key: text().notNull(),
+		});
+		const children = sqliteTable('collated_children', {
+			id: integer().primaryKey(),
+			org: integer().notNull(),
+			parentKey: text().notNull(),
+		});
+		const links = sqliteTable('collated_links', {
+			org: integer().notNull(),
+			parentKey: text().notNull(),
+			childId: integer().notNull(),
+		});
+		const relations = defineRelations(
+			{ parents, children, links },
+			(r) => ({
+				parents: {
+					children: r.many.children({
+						from: [r.parents.org, r.parents.key],
+						to: [r.children.org, r.children.parentKey],
+					}),
+					linked: r.many.children({
+						from: [
+							r.parents.org.through(r.links.org),
+							r.parents.key.through(r.links.parentKey),
+						],
+						to: r.children.id.through(r.links.childId),
+					}),
+				},
+			}),
+		);
+		const sqlite = new Database(':memory:');
+		try {
+			sqlite.exec(`
+			CREATE TABLE collated_parents(id INTEGER PRIMARY KEY, org INTEGER NOT NULL, key TEXT NOT NULL);
+			CREATE TABLE collated_children(id INTEGER PRIMARY KEY, org INTEGER NOT NULL, parentKey TEXT COLLATE NOCASE NOT NULL);
+			CREATE TABLE collated_links(org INTEGER NOT NULL, parentKey TEXT COLLATE NOCASE NOT NULL, childId INTEGER NOT NULL);
+			WITH RECURSIVE ids(id) AS (SELECT 1 UNION ALL SELECT id+1 FROM ids WHERE id < 201) INSERT INTO collated_parents SELECT id, 1, CASE id WHEN 1 THEN 'a' WHEN 201 THEN 'A' ELSE 'key' || id END FROM ids;
+			INSERT INTO collated_children VALUES (1, 1, 'a');
+			INSERT INTO collated_links VALUES (1, 'a', 1), (1, 'a', 1);
+		`);
+			const db = better(drizzle({ client: sqlite, relations }));
+			const rows = await db.parents.findMany({
+				include: { [relation]: { take } },
+				orderBy: { id: 'asc' },
+			});
+			expect(rows[0]?.[relation]).toEqual(
+				Array(relation === 'linked' && take === undefined ? 2 : 1).fill(
+					{ id: 1, org: 1, parentKey: 'a' },
+				),
+			);
+		} finally {
+			sqlite.close();
+		}
+	},
+);

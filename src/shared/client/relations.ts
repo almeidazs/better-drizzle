@@ -315,6 +315,7 @@ function* buildLinkPredicates(
 	parents: readonly Record<string, unknown>[],
 	parentFields: readonly AnyColumn[],
 	targetFields: readonly AnyColumn[],
+	maxParams: number,
 ): Generator<SQL> {
 	if (parentFields.length === 1 && targetFields.length === 1) {
 		const parentField = parentFields[0];
@@ -333,7 +334,7 @@ function* buildLinkPredicates(
 			if (seen.has(key)) continue;
 			seen.add(key);
 			values.push(value);
-			if (values.length === RELATION_BATCH_PARAMS) {
+			if (values.length === maxParams) {
 				yield inArray(targetField, values);
 				values = [];
 			}
@@ -344,7 +345,7 @@ function* buildLinkPredicates(
 
 	const batchSize = Math.min(
 		RELATION_BATCH_TERMS,
-		Math.max(1, Math.floor(RELATION_BATCH_PARAMS / parentFields.length)),
+		Math.max(1, Math.floor(maxParams / parentFields.length)),
 	);
 	let conditions = [];
 	const seen = new Set<string>();
@@ -545,19 +546,94 @@ const loadRelation = async <Schema extends AnySchema, Meta>(
 	);
 	const page = relationPage(args);
 	const scope = scopePredicate(context, targetRuntime);
+	const throughRuntime = relation.through
+		? getTableRuntime(context, relation.through.tableName)
+		: undefined;
+	const throughScope = throughRuntime
+		? scopePredicate(context, throughRuntime)
+		: undefined;
+	let batchParams = RELATION_BATCH_PARAMS;
+	if (
+		nestedWhere ||
+		cursorWhere ||
+		scope ||
+		throughScope ||
+		orderBy?.length ||
+		target.visible.has('count') ||
+		target.visible.has('_count')
+	) {
+		// Reserve bindings from the rest of the statement before adding links.
+		let query = context.db
+			.select(target.selection)
+			.from(targetRuntime.table)
+			.where(and(nestedWhere, cursorWhere, scope, throughScope));
+		if (orderBy?.length) query = query.orderBy(...orderBy);
+		const { params } = (
+			query as unknown as {
+				toSQL(): { params: unknown[] };
+			}
+		).toSQL();
+		const available =
+			(context.dialect === 'sqlite' ? 32_766 : 65_535) -
+			params.length -
+			(page.skip ? 1 : 0) -
+			(page.take === undefined ? 0 : 1);
+		if (available < relation.fields.length)
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.InvalidArgs,
+				message:
+					'Relation filters leave no bind parameters for parent keys.',
+				operation: 'relation',
+				table: targetRuntime.dbName,
+			});
+		batchParams = Math.min(batchParams, available);
+	}
 	let rows: Record<string, unknown>[] = [];
 	let parentKeyForRow: (row: Record<string, unknown>) => string | undefined;
+	const grouped = new Map<string, Record<string, unknown>[]>();
+	const appendRows = (batchRows: Record<string, unknown>[]) => {
+		const groups = grouped.size
+			? new Map<string, Record<string, unknown>[]>()
+			: grouped;
+		for (const row of batchRows) {
+			const key = parentKeyForRow(row);
+			if (!key) continue;
+			const group = groups.get(key);
+			if (group) group.push(row);
+			else groups.set(key, [row]);
+		}
+		if (groups === grouped) {
+			rows = batchRows;
+			return;
+		}
+		// SQL collations can make distinct input keys match the same group.
+		// Keep the first complete group, including legitimate duplicate rows.
+		for (const [key, group] of groups) {
+			if (grouped.has(key)) continue;
+			grouped.set(key, group);
+			for (const row of group) rows.push(row);
+		}
+	};
 
 	if (relation.kind === 'manyToMany') {
 		const through = relation.through;
-		if (!through) return;
-		const throughRuntime = getTableRuntime(context, through.tableName);
-		const throughScope = scopePredicate(context, throughRuntime);
+		if (!through || !throughRuntime) return;
+		parentKeyForRow = (row) => {
+			const values = [];
+			for (let index = 0; index < relation.fields.length; index += 1) {
+				const value = row[`__better_parent_${index}`];
+				if (value === null || value === undefined) return;
+				values.push(encodeValue(value));
+				delete row[`__better_parent_${index}`];
+			}
+			return values.join('|');
+		};
 		for (const link of buildLinkPredicates(
 			parentRuntime,
 			parents,
 			relation.fields,
 			through.sourceFields,
+			batchParams,
 		)) {
 			let batchRows: Record<string, unknown>[];
 			const selection = {
@@ -619,25 +695,17 @@ const loadRelation = async <Schema extends AnySchema, Meta>(
 				if (orderBy?.length) query = query.orderBy(...orderBy);
 				batchRows = await query;
 			}
-			if (!rows.length) rows = batchRows;
-			else for (const row of batchRows) rows.push(row);
+			appendRows(batchRows);
 		}
-		parentKeyForRow = (row) => {
-			const values = [];
-			for (let index = 0; index < relation.fields.length; index += 1) {
-				const value = row[`__better_parent_${index}`];
-				if (value === null || value === undefined) return;
-				values.push(encodeValue(value));
-				delete row[`__better_parent_${index}`];
-			}
-			return values.join('|');
-		};
 	} else {
+		parentKeyForRow = (row) =>
+			rowKey(targetRuntime, row, relation.references);
 		for (const link of buildLinkPredicates(
 			parentRuntime,
 			parents,
 			relation.fields,
 			relation.references,
+			batchParams,
 		)) {
 			let batchRows: Record<string, unknown>[];
 			if (page.enabled) {
@@ -666,20 +734,8 @@ const loadRelation = async <Schema extends AnySchema, Meta>(
 				if (orderBy?.length) query = query.orderBy(...orderBy);
 				batchRows = await query;
 			}
-			if (!rows.length) rows = batchRows;
-			else for (const row of batchRows) rows.push(row);
+			appendRows(batchRows);
 		}
-		parentKeyForRow = (row) =>
-			rowKey(targetRuntime, row, relation.references);
-	}
-
-	const grouped = new Map<string, Record<string, unknown>[]>();
-	for (const row of rows) {
-		const key = parentKeyForRow(row);
-		if (!key) continue;
-		const group = grouped.get(key);
-		if (group) group.push(row);
-		else grouped.set(key, [row]);
 	}
 
 	const nestedSource = getRelationSource(targetRuntime, args);
