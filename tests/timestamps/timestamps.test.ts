@@ -177,6 +177,31 @@ describe('better-drizzle/timestamps', () => {
 		ctx.close();
 	});
 
+	test('strips caller createdAt from update and upsert-update data', async () => {
+		const ctx = createContext();
+		const client = better(ctx.db, {
+			plugins: [timestamps()],
+		});
+		const forged = new Date('1999-01-01T00:00:00.000Z');
+		await client.records.create({ data: { id: 3, name: 'Cy' } });
+		const before = await client.records.findFirst({ where: { id: 3 } });
+
+		const updated = await client.records.update({
+			data: { createdAt: forged, name: 'Cy 2' },
+			where: { id: 3 },
+		});
+		const upserted = await client.records.upsert({
+			create: { id: 3, name: 'Cy' },
+			update: { createdAt: forged, name: 'Cy 3' },
+			where: { id: 3 },
+		});
+
+		expect(updated?.createdAt).toEqual(before?.createdAt);
+		expect(upserted?.createdAt).toEqual(before?.createdAt);
+		expect(upserted?.name).toBe('Cy 3');
+		ctx.close();
+	});
+
 	test('stamps insert rows and conflict updates on upsertMany in app mode', async () => {
 		const ctx = createContext();
 		const client = better(ctx.db, {

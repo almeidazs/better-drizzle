@@ -38,6 +38,17 @@ const withTimestamp = <T extends MutableRecord>(
 	return data;
 };
 
+/** Copies a payload without a column the plugin owns (`createdAt` on update). */
+const withoutColumn = <T extends MutableRecord>(
+	data: T,
+	column: string,
+	enabled: boolean,
+) => {
+	const copy = { ...data };
+	if (enabled) delete (copy as Record<string, unknown>)[column];
+	return copy;
+};
+
 /**
  * Narrow unknown values to plain records so the plugin can safely clone and
  * augment Drizzle insert/update payloads.
@@ -220,19 +231,18 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 						const update = args.update;
 
 						if (update === 'all') {
-							const columns = Object.keys(
+							const targetValue = (
+								operation.args as { target?: unknown }
+							).target;
+							const target = Array.isArray(targetValue)
+								? targetValue
+								: [targetValue];
+							args.update = Object.keys(
 								operation.model.columns,
-							);
-
-							if (hasCreatedAt) {
-								const index = columns.indexOf(createdAt);
-								if (index >= 0) columns.splice(index, 1);
-							}
-
-							args.update = appendColumn(
-								columns,
-								updatedAt,
-								hasUpdatedAt,
+							).filter(
+								(key) =>
+									(!hasCreatedAt || key !== createdAt) &&
+									!target.includes(key),
 							);
 							return result;
 						}
@@ -318,7 +328,11 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 						: operation.data.create;
 					const updateData = isRecord(operation.data.update)
 						? withTimestamp(
-								{ ...operation.data.update },
+								withoutColumn(
+									operation.data.update,
+									createdAt,
+									hasCreatedAt,
+								),
 								updatedAt,
 								updatedValue,
 								hasUpdatedAt,
@@ -332,9 +346,10 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 				},
 				beforeUpdate(operation) {
 					const model = byModel[operation.model.name];
-					if (!model?.hasUpdatedAt) return operation.data;
+					if (!model) return operation.data;
 
-					const { updatedAt } = model;
+					const { createdAt, hasCreatedAt, hasUpdatedAt, updatedAt } =
+						model;
 					const now = clock();
 					const value = model.updatedText ? now.toISOString() : now;
 
@@ -343,20 +358,23 @@ export const timestamps = (options: TimestampsOptions = {}) => {
 							update?: Record<string, unknown>;
 						};
 
-						args.update = {
-							...(args.update ?? {}),
-							[updatedAt]: () => value,
-						};
+						const update = withoutColumn(
+							args.update ?? {},
+							createdAt,
+							hasCreatedAt,
+						);
+						if (hasUpdatedAt) update[updatedAt] = () => value;
+						args.update = update;
 						return operation.data;
 					}
 
 					if (!isRecord(operation.data)) return operation.data;
 
 					return withTimestamp(
-						{ ...operation.data },
+						withoutColumn(operation.data, createdAt, hasCreatedAt),
 						updatedAt,
 						value,
-						true,
+						hasUpdatedAt,
 					);
 				},
 			});

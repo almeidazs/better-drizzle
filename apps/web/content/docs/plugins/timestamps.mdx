@@ -85,15 +85,15 @@ The plugin fills timestamp columns before the database call. Values are `Date` o
 | --- | --- |
 | `create` | sets `createdAt` and `updatedAt` |
 | `createMany` | sets both on every row |
-| `update` / `updateMany` | sets `updatedAt` |
-| `updateEach` | adds an `updatedAt` resolver to `update`, so every matched row gets the same `now` |
-| `upsert` | sets both on `create`, sets `updatedAt` on `update` |
+| `update` / `updateMany` | removes `createdAt` and sets `updatedAt` |
+| `updateEach` | removes the `createdAt` resolver and adds an `updatedAt` resolver, so every matched row gets the same `now` |
+| `upsert` | sets both on `create`; removes `createdAt` and sets `updatedAt` on `update` |
 | `upsertMany` | sets both on every row; on conflict, `createdAt` is never updated and `updatedAt` is |
 | reads, `delete`, `deleteMany` | untouched |
 
-For `upsertMany`, the conflict `update` is rewritten by shape: `'all'` becomes every column except `createdAt`, a column list drops `createdAt` and adds `updatedAt`, an object drops `createdAt` and sets `updatedAt`, and a function result gets the same treatment.
+For `upsertMany`, the conflict `update` is rewritten by shape: `'all'` becomes every column except `createdAt` and the conflict target, a column list drops `createdAt` and adds `updatedAt`, an object drops `createdAt` and sets `updatedAt`, and a function result gets the same treatment.
 
-The plugin always writes its own values. A `createdAt` or `updatedAt` passed by the caller is overwritten:
+On insert, caller-provided timestamps are overwritten. On update, `createdAt` is ignored and `updatedAt` is overwritten. This also applies to custom column names and models that have `createdAt` without `updatedAt`:
 
 ```ts
 const { createdAt, updatedAt } = await client.posts.create({

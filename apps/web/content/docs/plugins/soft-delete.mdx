@@ -111,6 +111,12 @@ await client.users.count({ deleted: 'with' });
 	`$withoutPlugins()`.
 </Callout>
 
+## Protected columns
+
+Ordinary writes ignore caller-provided `deletedAt` and `deletedById` values, or the configured `column` and `deletedByColumn`. This applies to `create`, `createMany`, `update`, `updateMany`, `updateEach`, `upsert`, and `upsertMany`. The plugin removes those fields from `updateEach` resolvers and from every `upsertMany` update shape: `'all'`, a column list, an object, or a callback result. Expanding `'all'` also preserves the conflict target.
+
+Upserts can update other fields on a deleted row, but keep its deletion timestamp and author. Use `delete()` to mark a row as deleted and `restore()` to clear those fields. For trusted imports that need to set them directly, use `$withoutPlugins()`.
+
 ## Deleting and restoring
 
 ```ts
