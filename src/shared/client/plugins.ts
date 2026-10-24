@@ -629,11 +629,21 @@ export const initializePlugins = <
 			const override = generated.models?.[model.name];
 			if (override === false) continue;
 
-			const keys = override ?? generated.column;
-			for (const key of typeof keys === 'string' ? [keys] : keys) {
+			const defaults =
+				typeof generated.column === 'string'
+					? [generated.column]
+					: generated.column;
+			const keys = override ?? defaults;
+			for (const [index, configured] of (typeof keys === 'string'
+				? [keys]
+				: keys
+			).entries()) {
+				const key = configured ?? defaults[index];
+				if (!key) continue;
 				const column = model.columns[key];
 				if (!column) {
-					if (override === undefined) continue;
+					if (override === undefined || configured === undefined)
+						continue;
 					throw new BetterDrizzleError({
 						code: BetterDrizzleErrorCode.PluginRequiredColumnMissing,
 						column: key,
