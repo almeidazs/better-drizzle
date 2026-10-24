@@ -2229,6 +2229,8 @@ export const findManyRecords = async <Schema extends AnySchema, Meta>(
 			tableName,
 			relational.args as QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
 		);
+		if (args?.cursor && typeof args.take === 'number' && args.take < 0)
+			rows.reverse();
 		return hydrateRelations(
 			context,
 			getTableRuntime(context, tableName as string),
@@ -2238,6 +2240,17 @@ export const findManyRecords = async <Schema extends AnySchema, Meta>(
 		);
 	}
 	const query = buildFindManyQuery(context, tableName, args, operation);
+	if (args?.cursor && typeof args.take === 'number' && args.take < 0) {
+		const rows = await (args.lock
+			? executeReadQuery(
+					query as SelectQueryLike,
+					getTableRuntime(context, tableName as string),
+					operation,
+					args.lock,
+				)
+			: query);
+		return rows.reverse();
+	}
 
 	return (
 		args?.lock

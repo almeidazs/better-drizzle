@@ -677,6 +677,13 @@ const loadRelation = async <Schema extends AnySchema, Meta>(
 		const key = rowKey(parentRuntime, parent, relation.fields);
 		const group = key ? (grouped.get(key) ?? []) : [];
 		const related = page.enabled ? group : relationSlice(group, args);
+		if (
+			relation.kind !== 'one' &&
+			args?.cursor &&
+			typeof args.take === 'number' &&
+			args.take < 0
+		)
+			related.reverse();
 		if (relation.kind === 'one') parent[relationName] = related[0] ?? null;
 		else parent[relationName] = related;
 	}

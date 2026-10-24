@@ -31,7 +31,7 @@ Accepted by `findMany`, `findFirst`, `findOne`, and `findUnique`:
 			type: '{ [column]: "asc" | "desc" | { direction: "asc" | "desc"; nulls?: "first" | "last" }; [oneRelation]: OrderBy<Related>; [manyRelation]: { count: "asc" | "desc" } } | [...]',
 		},
 		take: {
-			description: 'Max rows to return. A negative value does not reverse the order; sort with `orderBy` instead.',
+			description: 'Max rows to return. With cursor, a negative value reads preceding rows and preserves the requested order; otherwise its absolute value is used.',
 			type: 'number',
 		},
 		skip: {

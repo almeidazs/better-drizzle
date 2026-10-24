@@ -59,7 +59,7 @@ describe('findMany', () => {
 			cursor: { id: 5 },
 			take: -2,
 		});
-		expect(backward.map((u) => u.id)).toEqual([4, 3]);
+		expect(backward.map((u) => u.id)).toEqual([3, 4]);
 	});
 
 	test('findMany with orderBy ascending', async () => {

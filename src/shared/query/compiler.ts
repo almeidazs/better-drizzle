@@ -1308,48 +1308,56 @@ export const compileOrderBy = <Schema extends AnySchema, Meta>(
 	cursor?: CursorInput<Schema, BetterTableKey<Schema>> | Placeholder,
 	take?: unknown,
 ) => {
-	if (!orderBy) {
-		if (!cursor) return;
-
-		const fallback = cursorFallbackOrder(
-			context,
-			cursor instanceof Placeholder
-				? cursorParamValues(context.runtime, cursor, orderBy)
-				: (cursor as Record<string, unknown>),
-			take,
-		);
-		return fallback
-			? [
-					fallback.direction === 'desc'
-						? desc(fallback.column)
-						: asc(fallback.column),
-				]
-			: undefined;
-	}
-
-	const entries = Array.isArray(orderBy) ? orderBy : [orderBy];
+	if (!orderBy && !cursor) return;
+	const backwards = Boolean(cursor) && typeof take === 'number' && take < 0;
+	const entries = orderBy
+		? Array.isArray(orderBy)
+			? orderBy
+			: [orderBy]
+		: undefined;
 	const clauses: SQL[] = [];
 
-	for (const entry of entries)
-		for (const key in entry as Record<string, unknown>) {
-			const value = (entry as Record<string, unknown>)[key];
-			const column = context.runtime.columns[key];
+	if (entries)
+		for (const entry of entries)
+			for (const key in entry as Record<string, unknown>) {
+				const value = (entry as Record<string, unknown>)[key];
+				const column = context.runtime.columns[key];
 
-			if (column) pushOrder(clauses, context.dialect, column, value);
-			else
-				compileRelationOrder(
-					context,
-					context.runtime,
-					context.rootAlias,
-					key,
-					value,
-					0,
-					undefined,
-					clauses,
-				);
+				if (column)
+					pushOrder(
+						clauses,
+						context.dialect,
+						column,
+						value,
+						backwards,
+					);
+				else
+					compileRelationOrder(
+						context,
+						context.runtime,
+						context.rootAlias,
+						key,
+						value,
+						0,
+						undefined,
+						clauses,
+					);
+			}
+
+	if (clauses.length) return clauses;
+	if (!cursor) return;
+	const values =
+		cursor instanceof Placeholder
+			? cursorParamValues(context.runtime, cursor, orderBy)
+			: (cursor as Record<string, unknown>);
+	for (const key in values) {
+		if (!Object.hasOwn(values, key)) continue;
+		const column = context.runtime.columns[key];
+		if (column) {
+			clauses.push(backwards ? desc(column) : asc(column));
+			return clauses;
 		}
-
-	return clauses.length ? clauses : undefined;
+	}
 };
 
 const pushOrder = (
@@ -1357,9 +1365,14 @@ const pushOrder = (
 	dialect: string | undefined,
 	expression: SQLWrapper | AnyColumn,
 	value: unknown,
+	reverse = false,
 ) => {
-	const direction = orderDirection(value);
-	const nulls = orderNulls(value);
+	let direction = orderDirection(value);
+	let nulls = orderNulls(value);
+	if (reverse) {
+		direction = direction === 'asc' ? 'desc' : 'asc';
+		if (nulls) nulls = nulls === 'first' ? 'last' : 'first';
+	}
 	if (!nulls) {
 		clauses.push(direction === 'desc' ? desc(expression) : asc(expression));
 		return;
@@ -1668,27 +1681,6 @@ const cursorParamValues = (
 	return values;
 };
 
-/** Without `orderBy`, a cursor orders by its first column; a negative `take` reads backwards. */
-const cursorFallbackOrder = <Schema extends AnySchema, Meta>(
-	context: WhereCompilerContext<Schema, Meta>,
-	values: Record<string, unknown>,
-	take: unknown,
-) => {
-	const [cursorField, value] =
-		Object.entries(values).find(([key]) => context.runtime.columns[key]) ??
-		[];
-	if (!cursorField) return;
-
-	const column = context.runtime.columns[cursorField];
-	if (!column) return;
-
-	return {
-		column,
-		direction: typeof take === 'number' && take < 0 ? 'desc' : 'asc',
-		value,
-	} as const;
-};
-
 /**
  * Compiles a cursor-based where-clause. Uses the cursor column and value
  * to generate a `gt` or `lt` condition based on the current sort direction.
@@ -1708,6 +1700,7 @@ export const compileCursorWhere = <Schema extends AnySchema, Meta>(
 	take?: unknown,
 ) => {
 	if (!cursor) return;
+	const backwards = typeof take === 'number' && take < 0;
 
 	const values =
 		cursor instanceof Placeholder
@@ -1744,28 +1737,49 @@ export const compileCursorWhere = <Schema extends AnySchema, Meta>(
 					});
 
 				const value = (entry as Record<string, unknown>)[key];
-				const direction = orderDirection(value);
+				let direction = orderDirection(value);
+				let nulls =
+					orderNulls(value) ??
+					(context.dialect === 'pg'
+						? direction === 'asc'
+							? 'last'
+							: 'first'
+						: direction === 'asc'
+							? 'first'
+							: 'last');
+				if (backwards) {
+					direction = direction === 'asc' ? 'desc' : 'asc';
+					nulls = nulls === 'first' ? 'last' : 'first';
+				}
 				orderedFields.push({
 					column,
 					direction,
-					nulls:
-						orderNulls(value) ??
-						(context.dialect === 'pg'
-							? direction === 'asc'
-								? 'last'
-								: 'first'
-							: direction === 'asc'
-								? 'first'
-								: 'last'),
+					nulls,
 					value: values[key],
 				});
 			}
 
 	if (orderedFields.length === 0) {
-		const fallback = cursorFallbackOrder(context, values, take);
-		if (!fallback) return;
-
-		orderedFields.push({ ...fallback, nulls: undefined });
+		for (const key in values) {
+			if (!Object.hasOwn(values, key)) continue;
+			const column = context.runtime.columns[key];
+			if (!column) continue;
+			orderedFields.push({
+				column,
+				direction: backwards ? 'desc' : 'asc',
+				nulls:
+					context.dialect === 'pg'
+						? backwards
+							? 'first'
+							: 'last'
+						: backwards
+							? 'last'
+							: 'first',
+				value: values[key],
+			});
+			break;
+		}
+		if (!orderedFields.length) return;
 	}
 
 	const equalPrefix: SQL[] = [];
@@ -1781,7 +1795,7 @@ export const compileCursorWhere = <Schema extends AnySchema, Meta>(
 				field.nulls === 'first' ? isNotNull(field.column) : undefined;
 		else
 			afterValue =
-				field.nulls === 'last'
+				field.nulls === 'last' && !field.column.notNull
 					? or(comparison, isNull(field.column))
 					: comparison;
 

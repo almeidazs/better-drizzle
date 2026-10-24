@@ -20,7 +20,7 @@ Choose Prisma when you want its full toolchain from one vendor: its schema langu
 | --- | --- | --- |
 | `prisma.user.findUnique({ where })` | `client.users.findUnique({ where })` | `where` must pin a primary or unique key |
 | `findUniqueOrThrow`, `findFirstOrThrow` | `findUnique(...).throw()`, `findFirst(...).throw()` | `.throw(factory)` lets you throw your own error |
-| `findMany({ where, orderBy, skip, take })` | `findMany({ where, orderBy, skip, take })` | negative `take` reverses the order |
+| `findMany({ where, orderBy, skip, take })` | `findMany({ where, orderBy, skip, take })` | with a cursor, negative `take` reads preceding rows and preserves the requested order |
 | `include` / `select` | `include` / `select` | mutually exclusive at each level, nested at any depth |
 | `include: { _count: { select: { posts: true } } }` | `include: { count: { select: { posts: true } } }` | `_count` is renamed to `count`; one correlated subquery, no extra round trip |
 | `orderBy: { posts: { _count: 'desc' } }` | `orderBy: { posts: { count: 'desc' } }` | relation sorts are [supported](/docs/querying/reads#ordering-by-relations) |

@@ -109,10 +109,12 @@ escaped. `in` / `notIn` params bind one array (`column = any($1)`); the other
 dialects cannot bind an array, so `.prepare()` fails with
 `PREPARED_UNSUPPORTED` there.
 
-Keep a `take` / `skip` param at zero or above. It is not validated: a regular
-read reverses the order for a negative `take`, but a prepared statement fixes
-its order when it is prepared. SQLite treats a negative `LIMIT` as no limit,
-and PostgreSQL rejects it.
+Keep a `take` / `skip` param at zero or above. A prepared `findMany` with a
+cursor rejects a negative `take` param with `INVALID_ARGS`, because its SQL
+order is fixed at preparation. A constant negative `take` works with a cursor
+and returns the preceding rows in the requested order. Other `take` / `skip`
+params are not validated: SQLite treats a negative `LIMIT` as no limit, and
+PostgreSQL rejects it.
 
 ## Pagination
 
