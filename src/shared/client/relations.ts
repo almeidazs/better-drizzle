@@ -86,6 +86,7 @@ const rowKey = (
 	row: Record<string, unknown>,
 	columns: readonly AnyColumn[],
 ) => {
+	if (columns.length === 0) return;
 	const values = new Array(columns.length);
 	for (let index = 0; index < columns.length; index += 1) {
 		const column = columns[index];
@@ -95,18 +96,6 @@ const rowKey = (
 		values[index] = encodeValue(value);
 	}
 	return values.join('|');
-};
-
-const primaryKeyColumns = (runtime: TableRuntime) => {
-	const columns: AnyColumn[] = [];
-	for (const field of runtime.primaryKeyFields)
-		for (const key in runtime.columns) {
-			const column = runtime.columns[key];
-			if (column?.name !== field) continue;
-			columns.push(column);
-			break;
-		}
-	return columns;
 };
 
 /**
@@ -954,7 +943,7 @@ const resolveSelectors = async <Schema extends AnySchema, Meta>(
 			relationName,
 			strict,
 		);
-		const key = rowKey(runtime, row, primaryKeyColumns(runtime));
+		const key = rowKey(runtime, row, runtime.primaryKey);
 		if (key && seen.has(key)) continue;
 		if (key) seen.add(key);
 		rows.push(row);
@@ -1243,15 +1232,11 @@ const applyDirectRelation = async <Schema extends AnySchema, Meta>(
 		);
 		const selected = new Set(
 			connectTargets.map((row) =>
-				rowKey(targetRuntime, row, primaryKeyColumns(targetRuntime)),
+				rowKey(targetRuntime, row, targetRuntime.primaryKey),
 			),
 		);
 		for (const row of current) {
-			const key = rowKey(
-				targetRuntime,
-				row,
-				primaryKeyColumns(targetRuntime),
-			);
+			const key = rowKey(targetRuntime, row, targetRuntime.primaryKey);
 			if (selected.has(key)) continue;
 			await updateResolvedTarget(
 				context,

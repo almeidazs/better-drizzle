@@ -303,3 +303,48 @@ describe('many-to-many through relations', () => {
 		sqlite.close();
 	});
 });
+
+test('set disconnects rows when the child primary key has a mapped column name', async () => {
+	const parents = sqliteTable('mapped_parents', {
+		id: integer('id').primaryKey(),
+	});
+	const children = sqliteTable('mapped_children', {
+		childId: integer('child_id').primaryKey(),
+		parentId: integer('parent_id').references(() => parents.id),
+	});
+	const relations = defineRelations({ children, parents }, (r) => ({
+		children: {
+			parent: r.one.parents({
+				from: r.children.parentId,
+				to: r.parents.id,
+			}),
+		},
+		parents: { children: r.many.children() },
+	}));
+	const sqlite = new Database(':memory:');
+	try {
+		sqlite.exec(`
+			CREATE TABLE mapped_parents (id INTEGER PRIMARY KEY);
+			CREATE TABLE mapped_children (child_id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES mapped_parents(id));
+			INSERT INTO mapped_parents VALUES (1);
+			INSERT INTO mapped_children VALUES (10, 1), (11, 1);
+		`);
+		const client = better(drizzle({ client: sqlite, relations }));
+		await client.parents.update({
+			data: { children: { set: [{ childId: 11 }] } },
+			where: { id: 1 },
+		});
+		expect(
+			sqlite
+				.query(
+					'SELECT child_id, parent_id FROM mapped_children ORDER BY child_id',
+				)
+				.all(),
+		).toEqual([
+			{ child_id: 10, parent_id: null },
+			{ child_id: 11, parent_id: 1 },
+		]);
+	} finally {
+		sqlite.close();
+	}
+});
