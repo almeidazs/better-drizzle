@@ -1212,7 +1212,7 @@ export const runPluginTransactionHooks = async <
 		try {
 			await hook(payload);
 		} catch (error) {
-			if (hookName !== 'afterTransactionCommit') throw error;
+			if (hookName === 'beforeTransaction') throw error;
 			if (!failed) firstError = error;
 			failed = true;
 		}

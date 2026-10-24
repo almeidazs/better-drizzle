@@ -369,7 +369,7 @@ const runTransactionHooks = async <
 		| 'onTransactionError',
 	payload: Record<string, unknown>,
 ) => {
-	if (hookName !== 'afterTransactionCommit') {
+	if (hookName === 'beforeTransaction') {
 		await runClientTransactionHook(context, hookName, payload);
 		await runPluginTransactionHooks(context, hookName, payload);
 		return;
@@ -548,6 +548,36 @@ const createTransactionState = (
 
 const getSqliteSavepointName = (transaction: TransactionRuntime) =>
 	`better_drizzle_sp_${transaction.depth}_${transaction.attempt}`;
+
+// Root transactions share a connection. A parent can own one active savepoint.
+const sqliteTransactions = new WeakMap<object, Promise<void>>();
+
+const reserveSqliteTransaction = (key: object, nested: boolean) => {
+	const previous = sqliteTransactions.get(key);
+	if (nested && previous)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.InvalidArgs,
+			message:
+				'SQLite sibling transactions cannot run concurrently. Await each nested transaction before starting the next.',
+			operation: 'transaction',
+		});
+	let resolve!: () => void;
+	const done = new Promise<void>((release) => {
+		resolve = release;
+	});
+	sqliteTransactions.set(key, done);
+	let released = false;
+	return {
+		previous,
+		release() {
+			if (released) return;
+			released = true;
+			if (sqliteTransactions.get(key) === done)
+				sqliteTransactions.delete(key);
+			resolve();
+		},
+	};
+};
 
 const assertRawAllowed = <
 	Schema extends AnySchema,
@@ -822,7 +852,11 @@ const runBetterTransaction = async <
 	options: TransactionOptions & { meta?: Meta } = {},
 ): Promise<T> => {
 	const transactionRunner = context.db.transaction;
-	if (context.dialect !== 'sqlite' && typeof transactionRunner !== 'function')
+	if (
+		context.dialect === 'sqlite'
+			? typeof context.db.run !== 'function'
+			: typeof transactionRunner !== 'function'
+	)
 		throw new BetterDrizzleError({
 			code: BetterDrizzleErrorCode.TransactionsUnsupported,
 			message:
@@ -871,6 +905,12 @@ const runBetterTransaction = async <
 				attemptContext,
 			) as BetterDrizzleTransactionClient<Schema, Meta, Plugins>;
 
+			const reservation = reserveSqliteTransaction(
+				context.transaction ??
+					(context.db as { $client?: object }).$client ??
+					context.db,
+				Boolean(context.transaction),
+			);
 			const cleanupAbort = bindAbortSignals(attemptState);
 			const payload = createLifecyclePayload(
 				attemptContext,
@@ -889,11 +929,15 @@ const runBetterTransaction = async <
 			const rollbackSql = savepointName
 				? sql.raw(`rollback to savepoint ${savepointName}`)
 				: sql.raw('rollback');
+			let begun = false;
 			let committed = false;
 
-			context.db.run?.(beginSql);
-
 			try {
+				if (reservation.previous) await reservation.previous;
+				if (attemptState.abortError) throw attemptState.abortError;
+				await context.db.run?.(beginSql);
+				begun = true;
+
 				if (attemptState.abortError) throw attemptState.abortError;
 
 				await applySession(attemptContext);
@@ -904,11 +948,14 @@ const runBetterTransaction = async <
 				);
 
 				const result = await runCallback(attemptClient);
+				const child = sqliteTransactions.get(attemptState);
+				if (child) await child;
 
 				if (attemptState.abortError) throw attemptState.abortError;
 
-				context.db.run?.(commitSql);
+				await context.db.run?.(commitSql);
 				committed = true;
+				if (!attemptState.parent) reservation.release();
 
 				await finishTransactionCommit(
 					attemptContext,
@@ -916,22 +963,45 @@ const runBetterTransaction = async <
 					payload,
 				);
 
-				cleanupAbort();
 				return result;
 			} catch (error) {
-				if (committed) {
-					cleanupAbort();
-					throw error;
-				}
-				context.db.run?.(rollbackSql);
-				const normalizedError = isRollbackSignal(error)
-					? null
-					: BetterDrizzleError.from(error, {
-							code: BetterDrizzleError.is(error)
-								? error.code
-								: BetterDrizzleErrorCode.OperationError,
-							operation: 'transaction',
-						});
+				if (committed) throw error;
+				const child = sqliteTransactions.get(attemptState);
+				if (child) await child;
+				let rollbackFailed = false;
+				let rollbackError: unknown;
+				if (begun)
+					try {
+						await context.db.run?.(rollbackSql);
+						if (savepointName) await context.db.run?.(commitSql);
+					} catch (failure) {
+						rollbackFailed = true;
+						rollbackError = failure;
+					}
+				if (!attemptState.parent) reservation.release();
+				const normalizedError =
+					isRollbackSignal(error) && !rollbackFailed
+						? null
+						: BetterDrizzleError.from(
+								isRollbackSignal(error) ? rollbackError : error,
+								{
+									code:
+										BetterDrizzleError.is(error) &&
+										!isRollbackSignal(error)
+											? error.code
+											: BetterDrizzleErrorCode.OperationError,
+									details: rollbackFailed
+										? {
+												...(BetterDrizzleError.is(error)
+													? error.details
+													: undefined),
+												rollbackError,
+											}
+										: undefined,
+									cause: rollbackFailed ? error : undefined,
+									operation: 'transaction',
+								},
+							);
 
 				const rollbackReason = isRollbackSignal(error)
 					? normalizeRollbackReason(error.reason)
@@ -941,24 +1011,39 @@ const runBetterTransaction = async <
 					reason: rollbackReason,
 				};
 
+				const rollbackContext = attemptContext;
+				const rollbackCallbacks = attemptState.afterRollback;
+				const notifications = [
+					() =>
+						runTransactionHooks(
+							rollbackContext,
+							'afterTransactionRollback',
+							rollbackPayload,
+						),
+					() => runCallbacks(rollbackCallbacks),
+				];
 				if (normalizedError)
-					await runTransactionHooks(
-						attemptContext,
-						'onTransactionError',
-						{
-							...rollbackPayload,
-							error: normalizedError,
-						},
+					notifications.unshift(() =>
+						runTransactionHooks(
+							rollbackContext,
+							'onTransactionError',
+							{
+								...rollbackPayload,
+								error: normalizedError,
+							},
+						),
 					);
+				try {
+					await runCallbacks(notifications);
+				} catch (notificationError) {
+					if (rollbackFailed && normalizedError)
+						throw normalizedError.withDetails({
+							notificationError,
+						});
+					throw notificationError;
+				}
 
-				await runTransactionHooks(
-					attemptContext,
-					'afterTransactionRollback',
-					rollbackPayload,
-				);
-				await runCallbacks(attemptState.afterRollback);
-				cleanupAbort();
-
+				if (rollbackFailed) throw normalizedError;
 				if (isRollbackSignal(error)) throw rollbackReason;
 				if (!shouldRetryTransaction(error, options, attempt))
 					throw callbackFailed && error === callbackError
@@ -967,6 +1052,9 @@ const runBetterTransaction = async <
 
 				await delayRetry(options, attempt);
 				continue;
+			} finally {
+				cleanupAbort();
+				reservation.release();
 			}
 		}
 
