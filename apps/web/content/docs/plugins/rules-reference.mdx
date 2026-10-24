@@ -60,7 +60,7 @@ The resolved limit is `take` or `limit`. With `noUnboundedFindMany`, `allowWithL
 | `requireQueryComment` | a model operation has no `comment` (the client default counts), or it is shorter than `minLength` | `minLength` (default `1`) |
 | `requireRawComment` | the raw call has no `comment`, or it is shorter than `minLength` | `minLength` (default `1`) |
 | `requireRawTimeout` | the raw call has no `timeoutMs`, or it is above `defaultTimeoutMs` or `maxTimeoutMs` | `defaultTimeoutMs`, `maxTimeoutMs` |
-| `noRawMutation` | the SQL starts with `insert`, `update`, `delete`, `replace`, `create`, `alter`, `drop`, or `truncate` | `allow`: statement prefixes to allow |
+| `noRawMutation` | a raw SQL statement starts with `insert`, `update`, `delete`, `replace`, `create`, `alter`, `drop`, or `truncate`, including after comments or a `WITH` clause | `allow`: statement prefixes to allow |
 | `noRawWithoutTransaction` | the raw call runs outside a transaction | `onlyMutations` (default `false`) |
 | `requireTimeoutForLongRunningOperation` | a `$raw`, `$rawUnsafe`, or `$executeRaw` call has no `timeoutMs`, or it is above `maxTimeoutMs` | `operations` (default `['raw', 'executeRaw', 'explain']`), `defaultTimeoutMs`, `maxTimeoutMs` |
 
@@ -72,6 +72,8 @@ await client.$raw(sql`select * from reports where id = ${id}`, {
 ```
 
 The raw rules check `$raw`, `$rawUnsafe`, and `$executeRaw`, except `noRawUnsafe`, which only fires on `$rawUnsafe`. Because `$executeRaw` exists for writes, `noRawMutation` flags every mutation sent through it; use `allow` for the statements you expect.
+
+`noRawMutation` checks each statement in a SQL string, ignores comments and quoted strings, and matches `allow` on complete SQL words. It is a best-effort SQL check, not a SQL parser or a database permission boundary.
 
 `requireRawTimeout` reports a timeout above `defaultTimeoutMs` at the rule's own level. When the rule is `'error'`, `defaultTimeoutMs` works as the real ceiling.
 
@@ -91,21 +93,21 @@ const systemClient = client.$withContext({ system: true, reason: 'nightly billin
 | --- | --- | --- |
 | `requireTenantContext` | the tenant key is missing, on any operation | `contextKey` (default `'tenantId'`), `allowSystem`: skip when `meta.system` is truthy, scope |
 | `noTenantBypassWithoutSystem` | the call passes `bypassTenant: true` without a system flag in `meta` | `systemContextKey` (default `'system'`) |
-| `noTenantColumnOverride` | `data` sets the tenant column to a value different from the current tenant | `tenantColumn` (default `'tenantId'`), `contextKey` (defaults to `tenantColumn`), scope |
+| `noTenantColumnOverride` | a row in `data` sets the tenant column to a value different from the current tenant | `tenantColumn` (default `'tenantId'`), `contextKey` (defaults to `tenantColumn`), scope |
 | `requireTenantOnCreate` | a tenant is set but a `create`, `createMany`, `upsert`, or `upsertMany` row has no `tenantId` | scope |
-| `requireTenantOnUpdate` | a tenant is set but an `update`, `updateMany`, `updateEach`, or `upsert` has no `where` | scope |
-| `requireTenantOnDelete` | a tenant is set but a `delete` or `deleteMany` has no `where` | scope |
+| `requireTenantOnUpdate` | a tenant is set but an `update`, `updateMany`, `updateEach`, or `upsert` has no effective `where` | scope |
+| `requireTenantOnDelete` | a tenant is set but a `delete` or `deleteMany` has no effective `where` | scope |
 
-The three `requireTenantOn*` rules always look for the `tenantId` key and column; they don't read `contextKey`. They don't add the tenant filter for you either. They only check that the payload has the column, or that the write has a `where`.
+Tenant rules read the active `$tenant()` scope when present, falling back to `meta` or transaction context otherwise. The three `requireTenantOn*` rules always look for `tenantId`; they don't read `contextKey`. `requireTenantOnCreate` accepts the tenant plugin's automatic stamp. Update and delete rules reject missing or empty `where` objects, but do not add a tenant filter. They are shallow guards, not a substitute for the tenant plugin's enforced scope.
 
 ## Sensitive fields
 
 | Rule | Fires when | Options |
 | --- | --- | --- |
-| `noSensitiveSelect` | `select` picks a sensitive field | `allowWithSensitive`, `withSensitiveArg` (default `'withSensitive'`), scope |
-| `requireExplicitSensitiveAccessReason` | a sensitive field is selected with `withSensitive: true` but no reason | `withSensitiveArg` (default `'withSensitive'`), `reasonArg` (default `'reason'`), scope |
+| `noSensitiveSelect` | a read selects, filters, sorts, or cursors on a sensitive field, including nested relations and default full-row reads | `allowWithSensitive`, `withSensitiveArg` (default `'withSensitive'`), scope |
+| `requireExplicitSensitiveAccessReason` | sensitive access uses `withSensitive: true` but has no reason | `withSensitiveArg` (default `'withSensitive'`), `reasonArg` (default `'reason'`), scope |
 
-The sensitive field names are fixed: `password`, `passwordHash`, `secret`, `secrets`, `token`, `tokens`, `apiKey`, `apiKeys`, and `ssn`. Only top-level `select` keys set to `true` are checked.
+The sensitive field names are fixed: `password`, `passwordHash`, `secret`, `secrets`, `token`, `tokens`, `apiKey`, `apiKeys`, and `ssn`. `noSensitiveSelect` also checks implicit full-row projections and nested relation arguments. It examines the structured query arguments; it cannot inspect raw SQL or arbitrary SQL expressions.
 
 ## Soft delete and system mode
 

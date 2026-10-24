@@ -2,6 +2,7 @@ import {
 	BetterDrizzleError,
 	BetterDrizzleErrorCode,
 	definePlugin,
+	type PluginModelInfo,
 } from 'better-drizzle';
 
 import type {
@@ -35,6 +36,15 @@ const LONG_RUNNING_OPERATIONS = new Set<RulesOperation>([
 	'executeRaw',
 	'explain',
 	'raw',
+]);
+const ROW_READ_OPERATIONS = new Set<RulesOperation>([
+	'findMany',
+	'findFirst',
+	'findOne',
+	'findUnique',
+	'findFirstOrThrow',
+	'paginate',
+	'cursor',
 ]);
 const SENSITIVE_FIELD_NAMES = [
 	'apiKey',
@@ -82,15 +92,15 @@ const isEmptyWhere = (
 
 	const record = asRecord(where);
 	if (!record) return false;
-	if (Object.keys(record).length === 0) return true;
+	const keys = Object.keys(record);
+	if (keys.length === 0) return true;
 	if (!treatEmptyAndOrAsEmpty) return false;
-
-	const andValue = record.AND;
-	if (Array.isArray(andValue) && andValue.length === 0) return true;
-	const orValue = record.OR;
-	if (Array.isArray(orValue) && orValue.length === 0) return true;
-
-	return false;
+	return keys.every(
+		(key) =>
+			(key === 'AND' || key === 'OR') &&
+			Array.isArray(record[key]) &&
+			(record[key] as unknown[]).length === 0,
+	);
 };
 
 const toNumber = (value: unknown) =>
@@ -167,21 +177,81 @@ const getLockRecord = (lock: unknown) => asRecord(lock);
 const isRaw = (context: OperationContext) =>
 	context.operation === 'raw' || context.operation === 'executeRaw';
 
-const getQueryVerb = (query: string) =>
-	query
-		.trim()
-		.replace(/^\/\*[\s\S]*?\*\//, '')
-		.trim()
-		.split(/\s+/, 1)[0]
-		?.toLowerCase();
-
 const isMutationQuery = (query: string, allow?: readonly string[]) => {
-	const trimmed = query.trim().toLowerCase();
-	if (allow?.some((item) => trimmed.startsWith(item.toLowerCase())))
-		return false;
-
-	const verb = getQueryVerb(query);
-	return verb ? MUTATION_VERBS.includes(verb) : false;
+	const statements: string[][] = [[]];
+	let tokens = statements[0]!;
+	for (let i = 0; i < query.length;) {
+		const char = query[i]!;
+		if (/\s/.test(char)) {
+			i++;
+			continue;
+		}
+		if (char === '-' && query[i + 1] === '-') {
+			i = query.indexOf('\n', i + 2);
+			if (i < 0) break;
+			continue;
+		}
+		if (char === '/' && query[i + 1] === '*') {
+			const end = query.indexOf('*/', i + 2);
+			if (end < 0) break;
+			i = end + 2;
+			continue;
+		}
+		if (char === "'" || char === '"' || char === '`') {
+			const quote = char;
+			i++;
+			while (i < query.length) {
+				if (query[i] === quote) {
+					i++;
+					if (query[i] !== quote) break;
+				} else if (query[i] === '\\') i++;
+				i++;
+			}
+			tokens.push('?');
+			continue;
+		}
+		if (char === ';') {
+			tokens = [];
+			statements.push(tokens);
+			i++;
+			continue;
+		}
+		if (char === '(' || char === ')') {
+			tokens.push(char);
+			i++;
+			continue;
+		}
+		if (/[a-z_]/i.test(char)) {
+			const start = i++;
+			while (i < query.length && /[\w]/.test(query[i]!)) i++;
+			tokens.push(query.slice(start, i).toLowerCase());
+			continue;
+		}
+		i++;
+	}
+	for (const statement of statements) {
+		if (!statement.length) continue;
+		const allowed = allow?.some((item) => {
+			const prefix = item.trim().toLowerCase().split(/\s+/);
+			return prefix.every((word, index) => statement[index] === word);
+		});
+		if (allowed) continue;
+		if (MUTATION_VERBS.includes(statement[0]!)) return true;
+		if (statement[0] !== 'with') continue;
+		let depth = 0;
+		for (let i = 1; i < statement.length; i++) {
+			const token = statement[i]!;
+			if (token === '(') depth++;
+			else if (token === ')') depth--;
+			else if (
+				MUTATION_VERBS.includes(token) &&
+				(statement[i - 1] === '(' ||
+					(depth === 0 && statement[i - 1] === ')'))
+			)
+				return true;
+		}
+	}
+	return false;
 };
 
 const resolveMetaValue = (
@@ -191,6 +261,110 @@ const resolveMetaValue = (
 	if (!key) return undefined;
 	if (context.meta && key in context.meta) return context.meta[key];
 	return context.transactionContext?.[key];
+};
+
+const resolveTenantValue = (context: OperationContext, key: string) => {
+	const scope = context.scopes?.tenant;
+	return scope !== undefined
+		? asRecord(scope)?.[key]
+		: resolveMetaValue(context, key);
+};
+
+const sensitiveField = (model: PluginModelInfo | undefined) =>
+	SENSITIVE_FIELD_NAMES.find((field) => model?.hasColumn(field));
+
+const sensitivePath = (
+	value: unknown,
+	model: PluginModelInfo | undefined,
+	models: OperationContext['models'],
+	path: string[],
+	projection = false,
+	relationProjection = false,
+): string[] | undefined => {
+	if (Array.isArray(value)) {
+		for (let i = 0; i < value.length; i++) {
+			path.push(String(i));
+			const found = sensitivePath(
+				value[i],
+				model,
+				models,
+				path,
+				projection,
+				relationProjection,
+			);
+			path.pop();
+			if (found) return found;
+		}
+		return undefined;
+	}
+	const record = asRecord(value);
+	if (!record) return undefined;
+	for (const key in record) {
+		const child = record[key];
+		path.push(key);
+		if (
+			SENSITIVE_FIELD_NAMES.includes(key) &&
+			(!projection || child === true)
+		)
+			return [...path];
+		const related = model?.relations[key];
+		const target = related ? models?.[related.model] : model;
+		if (relationProjection && related && child && child !== false) {
+			const options = asRecord(child);
+			if (!options || options.select === undefined) {
+				const field = sensitiveField(target);
+				if (field) return [...path, field];
+			}
+		}
+		const found = sensitivePath(
+			child,
+			target,
+			models,
+			path,
+			key === 'select',
+			key === 'select' || key === 'include' || key === 'with',
+		);
+		path.pop();
+		if (found) return found;
+	}
+	return undefined;
+};
+
+const getSensitiveAccessPath = (context: OperationContext) => {
+	if (
+		ROW_READ_OPERATIONS.has(context.operation) &&
+		context.select === undefined
+	) {
+		const field = sensitiveField(context.modelInfo);
+		if (field) return ['select', field];
+	}
+	return (
+		sensitivePath(
+			context.select,
+			context.modelInfo,
+			context.models,
+			['select'],
+			true,
+			true,
+		) ??
+		sensitivePath(
+			context.include,
+			context.modelInfo,
+			context.models,
+			['include'],
+			false,
+			true,
+		) ??
+		sensitivePath(context.where, context.modelInfo, context.models, [
+			'where',
+		]) ??
+		sensitivePath(context.orderBy, context.modelInfo, context.models, [
+			'orderBy',
+		]) ??
+		sensitivePath(context.cursor, context.modelInfo, context.models, [
+			'cursor',
+		])
+	);
 };
 
 const getReasonValue = (context: OperationContext, key = 'reason') => {
@@ -723,7 +897,7 @@ const evaluators: Partial<Record<RuleKey, RuleEvaluator>> = {
 		if (rule.options.allowSystem && resolveMetaValue(context, 'system'))
 			return;
 		emitIf(
-			resolveMetaValue(context, contextKey) === undefined,
+			resolveTenantValue(context, contextKey) === undefined,
 			context,
 			emit,
 			rule.level,
@@ -751,22 +925,39 @@ const evaluators: Partial<Record<RuleKey, RuleEvaluator>> = {
 		const rule = normalizeRule(options.noTenantColumnOverride);
 		if (!matchesModelScope(context, rule.options)) return;
 		const tenantColumn = rule.options.tenantColumn ?? 'tenantId';
-		const tenantValue = resolveMetaValue(
+		const tenantValue = resolveTenantValue(
 			context,
 			rule.options.contextKey ?? tenantColumn,
 		);
 		if (tenantValue === undefined) return;
-		const data = asRecord(context.data);
-		if (!data || !(tenantColumn in data)) return;
-		emitIf(
-			data[tenantColumn] !== tenantValue,
-			context,
-			emit,
-			rule.level,
-			'noTenantColumnOverride',
-			`Overriding ${tenantColumn} is not allowed.`,
-			['data', tenantColumn],
-		);
+		const rows = Array.isArray(context.data)
+			? context.data
+			: [context.data];
+		for (let i = 0; i < rows.length; i++) {
+			const data = asRecord(rows[i]);
+			if (!data) continue;
+			const payloads =
+				context.operation === 'upsert'
+					? [data.create, data.update]
+					: [data];
+			for (const payload of payloads) {
+				const record = asRecord(payload);
+				if (record && tenantColumn in record)
+					emitIf(
+						record[tenantColumn] !== tenantValue,
+						context,
+						emit,
+						rule.level,
+						'noTenantColumnOverride',
+						`Overriding ${tenantColumn} is not allowed.`,
+						[
+							'data',
+							...(Array.isArray(context.data) ? [String(i)] : []),
+							tenantColumn,
+						],
+					);
+			}
+		}
 	},
 	requireTenantOnCreate(context, options, emit) {
 		const rule = normalizeRule(options.requireTenantOnCreate);
@@ -778,8 +969,9 @@ const evaluators: Partial<Record<RuleKey, RuleEvaluator>> = {
 			!matchesModelScope(context, rule.options)
 		)
 			return;
-		const tenant = resolveMetaValue(context, 'tenantId');
+		const tenant = resolveTenantValue(context, 'tenantId');
 		if (tenant === undefined) return;
+		if (context.scopes?.tenant !== undefined) return;
 		const rows =
 			context.operation === 'createMany' ||
 			context.operation === 'upsertMany'
@@ -813,8 +1005,9 @@ const evaluators: Partial<Record<RuleKey, RuleEvaluator>> = {
 			!matchesModelScope(context, rule.options)
 		)
 			return;
-		const tenant = resolveMetaValue(context, 'tenantId');
-		if (tenant === undefined || context.where !== undefined) return;
+		const tenant = resolveTenantValue(context, 'tenantId');
+		if (tenant === undefined || !isEmptyWhere(context.where, true, true))
+			return;
 		emitIf(
 			true,
 			context,
@@ -833,8 +1026,9 @@ const evaluators: Partial<Record<RuleKey, RuleEvaluator>> = {
 			!matchesModelScope(context, rule.options)
 		)
 			return;
-		const tenant = resolveMetaValue(context, 'tenantId');
-		if (tenant === undefined || context.where !== undefined) return;
+		const tenant = resolveTenantValue(context, 'tenantId');
+		if (tenant === undefined || !isEmptyWhere(context.where, true, true))
+			return;
 		emitIf(
 			true,
 			context,
@@ -847,10 +1041,7 @@ const evaluators: Partial<Record<RuleKey, RuleEvaluator>> = {
 	},
 	noSensitiveSelect(context, options, emit) {
 		const rule = normalizeRule(options.noSensitiveSelect);
-		if (
-			!matchesModelScope(context, rule.options) ||
-			context.select === undefined
-		)
+		if (!matchesModelScope(context, rule.options) || rule.level === 'off')
 			return;
 		const args = asRecord(context.query);
 		if (
@@ -858,37 +1049,25 @@ const evaluators: Partial<Record<RuleKey, RuleEvaluator>> = {
 			args?.[rule.options.withSensitiveArg ?? 'withSensitive'] === true
 		)
 			return;
-		const select = asRecord(context.select);
-		if (!select) return;
-		for (const field of SENSITIVE_FIELD_NAMES) {
-			if (select[field] === true)
-				emit(
-					createViolation(
-						context,
-						'noSensitiveSelect',
-						`Selecting sensitive field "${field}" is not allowed.`,
-						['select', field],
-					),
-					rule.level,
-				);
-		}
+		const path = getSensitiveAccessPath(context);
+		if (path)
+			emit(
+				createViolation(
+					context,
+					'noSensitiveSelect',
+					`Accessing sensitive field "${path.at(-1)}" is not allowed.`,
+					path,
+				),
+				rule.level,
+			);
 	},
 	requireExplicitSensitiveAccessReason(context, options, emit) {
 		const rule = normalizeRule(
 			options.requireExplicitSensitiveAccessReason,
 		);
-		if (
-			!matchesModelScope(context, rule.options) ||
-			context.select === undefined
-		)
+		if (!matchesModelScope(context, rule.options) || rule.level === 'off')
 			return;
-		const select = asRecord(context.select);
-		if (!select) return;
-		let requested = false;
-		for (const field of SENSITIVE_FIELD_NAMES) {
-			if (select[field] === true) requested = true;
-		}
-		if (!requested) return;
+		if (!getSensitiveAccessPath(context)) return;
 		const args = asRecord(context.query);
 		if (args?.[rule.options.withSensitiveArg ?? 'withSensitive'] !== true)
 			return;
@@ -1028,7 +1207,7 @@ const evaluators: Partial<Record<RuleKey, RuleEvaluator>> = {
 const buildOperationContext = (
 	operation: RulesOperation,
 	context: HookOperationContext | HookRawContext | HookTransactionContext,
-	extra?: Partial<OperationContext>,
+	models?: Readonly<Record<string, PluginModelInfo>>,
 ): OperationContext => {
 	if ('action' in context) {
 		return {
@@ -1037,12 +1216,12 @@ const buildOperationContext = (
 			},
 			isInTransaction: context.isInTransaction,
 			meta: asRecord(context.meta) ?? undefined,
+			scopes: context.scopes,
 			operation,
 			queryText: context.query,
 			rawComment: context.comment,
 			rawTimeoutMs: context.timeoutMs,
 			transactionContext: context.transactionContext,
-			...extra,
 		};
 	}
 
@@ -1053,14 +1232,15 @@ const buildOperationContext = (
 			},
 			isInTransaction: true,
 			meta: asRecord(context.meta) ?? undefined,
+			scopes: context.scopes,
 			operation,
 			transactionContext: context.transactionContext,
-			...extra,
 		};
 	}
 
 	return {
 		context: undefined,
+		cursor: context.cursor,
 		data: context.data,
 		include: context.include,
 		isInTransaction: context.isInTransaction,
@@ -1070,6 +1250,8 @@ const buildOperationContext = (
 		lock: (context.args as Record<string, unknown>)?.lock,
 		meta: asRecord(context.meta) ?? undefined,
 		model: String(context.table),
+		modelInfo: context.model,
+		models,
 		operation,
 		orderBy: context.orderBy,
 		queryComment:
@@ -1077,11 +1259,11 @@ const buildOperationContext = (
 			(context as unknown as { options?: { comment?: string } }).options
 				?.comment,
 		select: context.select,
+		scopes: context.scopes,
 		take: context.take,
 		transactionContext: context.transactionContext,
 		where: context.where,
 		query: context.args as Record<string, unknown>,
-		...extra,
 	} as OperationContext;
 };
 
@@ -1174,8 +1356,12 @@ const runRules = async (
  * }));
  * ```
  */
-export const rules = (options: RulesPluginOptions<string, string> = {}) =>
-	definePlugin({
+export const rules = (options: RulesPluginOptions<string, string> = {}) => {
+	const registries = new WeakMap<
+		PluginModelInfo,
+		Readonly<Record<string, PluginModelInfo>>
+	>();
+	return definePlugin({
 		description: 'Runtime rules plugin for better-drizzle operations.',
 		hooks: {
 			async beforeCreate(context) {
@@ -1184,6 +1370,7 @@ export const rules = (options: RulesPluginOptions<string, string> = {}) =>
 					buildOperationContext(
 						context.kind,
 						context as unknown as HookOperationContext,
+						registries.get(context.model),
 					),
 				);
 				return undefined;
@@ -1194,6 +1381,7 @@ export const rules = (options: RulesPluginOptions<string, string> = {}) =>
 					buildOperationContext(
 						context.kind,
 						context as unknown as HookOperationContext,
+						registries.get(context.model),
 					),
 				);
 			},
@@ -1203,6 +1391,7 @@ export const rules = (options: RulesPluginOptions<string, string> = {}) =>
 					buildOperationContext(
 						context.kind,
 						context as unknown as HookOperationContext,
+						registries.get(context.model),
 					),
 				);
 			},
@@ -1230,15 +1419,24 @@ export const rules = (options: RulesPluginOptions<string, string> = {}) =>
 					buildOperationContext(
 						context.kind,
 						context as unknown as HookOperationContext,
+						registries.get(context.model),
 					),
 				);
 				return undefined;
 			},
+		},
+		setup(context) {
+			const models = context.models as Readonly<
+				Record<string, PluginModelInfo>
+			>;
+			for (const model of Object.values(models))
+				registries.set(model, models);
 		},
 		id: 'better-drizzle/rules',
 		name: 'Rules',
 		options,
 		version,
 	});
+};
 
 export default rules;

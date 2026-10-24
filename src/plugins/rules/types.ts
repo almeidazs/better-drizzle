@@ -528,14 +528,14 @@ export type RulesPluginOptions<
 	requireTenantOnCreate?: RuleSetting<ModelRuleScope<TModel>>;
 
 	/**
-	 * Requires a `where` clause on update operations when tenant context is
-	 * present (prevents tenant-wide updates).
+	 * Requires a non-empty `where` clause on update operations when tenant
+	 * context is present (prevents tenant-wide updates).
 	 */
 	requireTenantOnUpdate?: RuleSetting<ModelRuleScope<TModel>>;
 
 	/**
-	 * Requires a `where` clause on delete operations when tenant context is
-	 * present (prevents tenant-wide deletes).
+	 * Requires a non-empty `where` clause on delete operations when tenant
+	 * context is present (prevents tenant-wide deletes).
 	 */
 	requireTenantOnDelete?: RuleSetting<ModelRuleScope<TModel>>;
 
@@ -544,8 +544,8 @@ export type RulesPluginOptions<
 	// ---------------------------------------------------------------------------
 
 	/**
-	 * Rejects `select` that includes known sensitive field names (e.g.
-	 * `password`, `token`, `secret`).
+	 * Rejects selection, filtering, sorting, or cursoring on known sensitive
+	 * field names (e.g. `password`, `token`, `secret`).
 	 *
 	 * Extra options:
 	 * - `allowWithSensitive` -- allow when an explicit opt-in arg is present.
@@ -876,6 +876,7 @@ export type NormalizedRule<TOptions extends object = Record<never, never>> = {
 
 export type OperationContext = {
 	context?: Record<string, unknown>;
+	cursor?: unknown;
 	data?: unknown;
 	include?: unknown;
 	isInTransaction: boolean;
@@ -883,6 +884,8 @@ export type OperationContext = {
 	limit?: unknown;
 	meta?: Record<string, unknown>;
 	model?: string;
+	modelInfo?: import('better-drizzle').PluginModelInfo;
+	models?: Readonly<Record<string, import('better-drizzle').PluginModelInfo>>;
 	operation: RulesOperation;
 	orderBy?: unknown;
 	path?: readonly string[];
@@ -892,6 +895,7 @@ export type OperationContext = {
 	rawComment?: string;
 	rawTimeoutMs?: number;
 	select?: unknown;
+	scopes?: Readonly<Record<string, unknown>>;
 	take?: unknown;
 	transactionContext?: Record<string, unknown>;
 	where?: unknown;
@@ -915,12 +919,15 @@ export type RuleEvaluator = (
 
 export type HookOperationContext = {
 	args: Record<string, unknown>;
+	cursor?: unknown;
 	data?: unknown;
 	include?: unknown;
 	isInTransaction: boolean;
 	meta?: unknown;
+	model: import('better-drizzle').PluginModelInfo;
 	orderBy?: unknown;
 	select?: unknown;
+	scopes?: Readonly<Record<string, unknown>>;
 	table: string;
 	take?: unknown;
 	transactionContext?: Record<string, unknown>;
@@ -933,6 +940,7 @@ export type HookRawContext = {
 	isInTransaction: boolean;
 	meta?: unknown;
 	query: string;
+	scopes?: Readonly<Record<string, unknown>>;
 	timeoutMs?: number;
 	transactionContext?: Record<string, unknown>;
 };
@@ -941,6 +949,7 @@ export type HookTransactionContext = {
 	depth: number;
 	isInTransaction: true;
 	meta?: unknown;
+	scopes?: Readonly<Record<string, unknown>>;
 	transactionContext?: Record<string, unknown>;
 	transactionOptions: Record<string, unknown>;
 };

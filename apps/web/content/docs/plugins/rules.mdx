@@ -138,7 +138,7 @@ The package exports three presets. Each builds on the previous one:
 - `strict()` is `recommended()` with higher levels, lower limits, and the tenant, reason, and ordering rules.
 
 <Callout type="warn" title="recommended() and strict() require a tenant context">
-	Both presets enable `requireTenantContext` at `'error'`. Every operation, including raw SQL and transactions, then throws unless `meta.tenantId` is set (for example through `db.$withContext({ tenantId })`) or `meta.system` is truthy. If your app is not multi-tenant, turn it off: `recommended({ requireTenantContext: false })`.
+	Both presets enable `requireTenantContext` at `'error'`. Every operation, including raw SQL and transactions, then throws unless `tenantId` is set through `$tenant()` or `meta` (for example through `db.$withContext({ tenantId })`), or `meta.system` is truthy. If your app is not multi-tenant, turn it off: `recommended({ requireTenantContext: false })`.
 </Callout>
 
 This table shows the level each preset sets. `off` means the preset does not enable the rule.
