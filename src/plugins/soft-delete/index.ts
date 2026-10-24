@@ -7,6 +7,7 @@ import type {
 } from 'better-drizzle';
 import { definePlugin } from 'better-drizzle';
 
+import { deferPluginOperation } from '../../shared/client/plugin-override';
 import {
 	DEFAULT_COLUMN,
 	DEFAULT_DELETED_BY_COLUMN,
@@ -229,63 +230,65 @@ export const softDelete = (options: SoftDeleteOptions = {}) => {
 				return withoutOwnedColumns(context.data, hasDeletedBy);
 			},
 			beforeDelete(context) {
-				if (
-					!context.model.hasColumn(column) ||
-					!hasCondition(context.where)
-				)
-					return;
+				if (!context.model.hasColumn(column)) return;
 
-				// `root()` only sees the args, so a default hard mode is made explicit.
-				if ((context.args.mode ?? defaultMode) === 'hard') {
+				// `root()` must see the effective mode, including a hard default.
+				if (context.args.mode === undefined && defaultMode === 'hard')
 					context.args.mode = 'hard';
-					return;
-				}
+				return deferPluginOperation((next) => {
+					// Transforms and later before hooks can change the final args.
+					const args = context.args as Record<string, unknown> &
+						DeleteArgs;
+					if (
+						(args.mode ?? defaultMode) === 'hard' ||
+						!hasCondition(args.where)
+					)
+						return next();
 
-				const timestamp = context.model.columns[
-					column
-				]?.dataType.startsWith('string')
-					? new Date().toISOString()
-					: new Date();
-				const data = {
-					[column]: timestamp,
-				} as UpdateArgs<
-					typeof context.schema,
-					typeof context.table,
-					typeof context.meta
-				>['data'];
+					const timestamp = context.model.columns[
+						column
+					]?.dataType.startsWith('string')
+						? new Date().toISOString()
+						: new Date();
+					const data = {
+						[column]: timestamp,
+					} as UpdateArgs<
+						typeof context.schema,
+						typeof context.table,
+						typeof context.meta
+					>['data'];
 
-				if (
-					isRecord(data) &&
-					context.args.deletedBy !== undefined &&
-					context.model.hasColumn(deletedByColumn)
-				)
-					data[deletedByColumn] = context.args.deletedBy;
+					if (
+						isRecord(data) &&
+						args.deletedBy !== undefined &&
+						context.model.hasColumn(deletedByColumn)
+					)
+						data[deletedByColumn] = args.deletedBy;
 
-				// The visibility filter comes from the scope `root()` through
-				// `deleted`: a soft delete never re-stamps an already deleted row.
-				// `keepScopes` keeps other scopes (a tenant) on the update.
-				const target = context.client.$withoutPlugins({
-					keepScopes: true,
-				});
-				const deleted = context.args.deleted ?? 'without';
+					// Keep tenant and visibility scopes on the underlying update.
+					const target = context.client.$withoutPlugins({
+						keepScopes: true,
+					});
+					const deleted = args.deleted ?? 'without';
 
-				if (context.kind === 'deleteMany')
-					return target.updateMany({
+					if (context.kind === 'deleteMany')
+						return target.updateMany({
+							data,
+							deleted,
+							meta: context.meta,
+							select: args.select,
+							where: args.where,
+						} as never);
+
+					return target.update({
 						data,
 						deleted,
+						include: args.include,
 						meta: context.meta,
-						select: context.select,
-						where: context.where,
+						select: args.select,
+						where: args.where,
 					} as never);
-
-				return target.update({
-					data,
-					deleted,
-					include: context.include,
-					meta: context.meta,
-					select: context.select,
-					where: context.where,
-				} as never);
+				});
 			},
 		},
 		extendModel({ client, model }) {

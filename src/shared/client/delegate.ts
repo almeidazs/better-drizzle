@@ -60,6 +60,7 @@ import {
 	getCompiledUpdateSet,
 	needsLockedSingleRowWrite,
 } from './operations';
+import { resolvePluginOverride } from './plugin-override';
 import {
 	type InterceptState,
 	createPluginState,
@@ -431,7 +432,12 @@ export const createModelDelegate = <
 				spec,
 				operationArgs,
 				pipeline.hasOverride
-					? () => Promise.resolve(pipeline.overrideResult as Result)
+					? () =>
+							resolvePluginOverride(
+								pipeline.overrideResult,
+								spec.operation,
+								operationArgs,
+							)
 					: () => spec.operation(operationArgs),
 				true,
 			);
