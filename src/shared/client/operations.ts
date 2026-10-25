@@ -3017,13 +3017,14 @@ export const updateRecord = async <Schema extends AnySchema, Meta>(
 				operation: 'update',
 				table: runtime.dbName,
 			});
+		let current = matches[0] as Record<string, unknown>;
 		const prepared = await prepareRelationWrite(
 			context,
 			runtime,
 			args.data as Record<string, unknown>,
 			false,
+			current,
 		);
-		let current = matches[0] as Record<string, unknown>;
 		if (hasUpdateValues(prepared.scalar)) {
 			const primaryWhere = getPrimaryKeyWhere(runtime, current);
 			const predicate = getWritePredicate(
