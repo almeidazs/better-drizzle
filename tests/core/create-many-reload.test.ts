@@ -5,6 +5,7 @@ import { defineRelations } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import {
 	blob,
+	customType,
 	integer,
 	primaryKey,
 	sqliteTable,
@@ -12,6 +13,94 @@ import {
 } from 'drizzle-orm/sqlite-core';
 
 import { better, definePlugin } from '../../src';
+
+test('createMany preserves full-row reload fallback when a custom key decodes to undefined', async () => {
+	const key = customType<{ data: string | undefined; driverData: string }>({
+		dataType: () => 'text',
+		fromDriver: () => undefined,
+	});
+	const items = sqliteTable('custom_key_items', {
+		id: key('id').primaryKey(),
+		label: text().notNull(),
+	});
+	const sqlite = new Database(':memory:');
+	try {
+		sqlite.exec(
+			'CREATE TABLE custom_key_items(id TEXT PRIMARY KEY, label TEXT NOT NULL)',
+		);
+		const db = better(
+			drizzle({ client: sqlite, relations: defineRelations({ items }) }),
+		);
+		expect(
+			await db.items.createMany({
+				data: [
+					{ id: 'a', label: 'one' },
+					{ id: 'b', label: 'two' },
+				],
+				select: { label: true },
+			}),
+		).toEqual({ count: 2, data: [{ label: 'one' }, { label: 'two' }] });
+	} finally {
+		sqlite.close();
+	}
+});
+
+test.each(['select', 'include', 'none'] as const)(
+	'createMany %s avoids decoding unused insert payloads and preserves trigger results',
+	async (projection) => {
+		let decoded = 0;
+		const payload = customType<{ data: string; driverData: string }>({
+			dataType: () => 'text',
+			fromDriver(value) {
+				decoded += 1;
+				return value;
+			},
+		});
+		const items = sqliteTable('returning_items', {
+			id: integer().primaryKey(),
+			label: text().notNull(),
+			payload: payload('payload').notNull(),
+		});
+		const sqlite = new Database(':memory:');
+		try {
+			sqlite.exec(`CREATE TABLE returning_items(id INTEGER PRIMARY KEY, label TEXT NOT NULL, payload TEXT NOT NULL);
+			CREATE TRIGGER refresh_label AFTER INSERT ON returning_items BEGIN
+				UPDATE returning_items SET label = label || '-after' WHERE id = new.id;
+			END;`);
+			const db = better(
+				drizzle({
+					client: sqlite,
+					relations: defineRelations({ items }),
+				}),
+			);
+			const data = [
+				{ id: 3, label: 'three', payload: 'x'.repeat(16_384) },
+				{ id: 1, label: 'one', payload: 'y'.repeat(16_384) },
+			];
+			const result = await db.items.createMany({
+				data,
+				...(projection === 'select'
+					? { select: { label: true } }
+					: projection === 'include'
+						? { include: {} }
+						: {}),
+			});
+			expect(result).toEqual({
+				count: 2,
+				data: data.map((row) =>
+					projection === 'none'
+						? row
+						: projection === 'select'
+							? { label: `${row.label}-after` }
+							: { ...row, label: `${row.label}-after` },
+				),
+			});
+			expect(decoded).toBe(projection === 'select' ? 0 : 2);
+		} finally {
+			sqlite.close();
+		}
+	},
+);
 
 test.each(['count', '_count'] as const)(
 	'createMany preserves a primary key named %s when relation counts replace it',

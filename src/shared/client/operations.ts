@@ -2804,7 +2804,21 @@ export const createManyRecords = async <Schema extends AnySchema, Meta>(
 		return { count };
 	}
 
-	const rows = await builder.returning();
+	let selection =
+		hasProjection(args) && runtime.primaryKey.length
+			? (Object.create(null) as Record<string, AnyColumn>)
+			: undefined;
+	if (selection)
+		for (const field of runtime.primaryKeyFields) {
+			const column = runtime.columns[field]!;
+			// Custom decoders can erase the key needed by the reload fallback.
+			if (column.dataType.startsWith('custom')) {
+				selection = undefined;
+				break;
+			}
+			selection[field] = column;
+		}
+	const rows = await builder.returning(selection);
 	if (!rows.length) return { count: 0 };
 	if (!hasProjection(args)) return { count: rows.length, data: rows };
 
