@@ -2471,15 +2471,20 @@ const withInsertId = (
 	const header = Array.isArray(result) ? result[0] : result;
 	const id = (header as { insertId?: unknown } | null)?.insertId;
 	for (const field of runtime.primaryKeyFields) {
+		const autoIncrement = (
+			runtime.columns[field] as { autoIncrement?: boolean }
+		).autoIncrement;
 		if (
-			(runtime.columns[field] as { autoIncrement?: boolean })
-				.autoIncrement &&
+			autoIncrement &&
 			(((typeof id === 'number' || typeof id === 'bigint') && id > 0) ||
 				(typeof id === 'string' && Number(id) > 0)) &&
 			data[field] !== id
 		)
 			data = { ...data, [field]: id };
-		if (data[field] == null)
+		if (
+			data[field] == null ||
+			(autoIncrement && id == null && Number(data[field]) === 0)
+		)
 			throw new BetterDrizzleError({
 				code: BetterDrizzleErrorCode.OperationError,
 				message: 'MySQL insert did not return a primary key.',
@@ -2655,6 +2660,7 @@ export const createRecord = async <Schema extends AnySchema, Meta>(
 			writeArgs.data as Record<string, unknown>,
 			result,
 		),
+		prepared ? undefined : args,
 	);
 	if (!created) return null;
 	if (prepared)
@@ -2665,9 +2671,7 @@ export const createRecord = async <Schema extends AnySchema, Meta>(
 			prepared.relations,
 			true,
 		);
-	return hasProjection(args) || prepared
-		? reloadRecord(context, tableName, created, args)
-		: created;
+	return prepared ? reloadRecord(context, tableName, created, args) : created;
 };
 
 /**

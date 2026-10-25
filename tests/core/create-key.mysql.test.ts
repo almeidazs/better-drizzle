@@ -15,6 +15,7 @@ import {
 	primaryKey,
 	varchar,
 } from 'drizzle-orm/mysql-core';
+import { drizzle as drizzleProxy } from 'drizzle-orm/mysql-proxy';
 import { drizzle } from 'drizzle-orm/mysql2';
 import mysql from 'mysql2/promise';
 
@@ -217,6 +218,9 @@ describe.skipIf(!MYSQL_URL)('create reload identity (MySQL)', () => {
 		});
 		expect(created).toEqual({ label: 'projected' });
 		expect(generatedKeys).toBe(1);
+		expect(
+			queries.filter((query) => query.includes('select ')),
+		).toHaveLength(1);
 		expect(
 			queries.every((query) => query.startsWith('/* generated.create')),
 		).toBe(true);
@@ -451,4 +455,24 @@ describe.skipIf(!MYSQL_URL)('create reload identity (MySQL)', () => {
 			);
 		});
 	}
+});
+
+test('MySQL create rejects missing insertId for an auto-increment zero before reloading', async () => {
+	const queries: string[] = [];
+	const client = better(
+		drizzleProxy(
+			async (query) => {
+				queries.push(query);
+				return { rows: [{ affectedRows: 1 }] };
+			},
+			{ relations: defineRelations({ automatic }) },
+		),
+	);
+	await expect(
+		client.automatic.create({
+			data: { recordKey: 0, payload: { same: true } },
+		}),
+	).rejects.toMatchObject({ code: 'OPERATION_ERROR' });
+	expect(queries).toHaveLength(1);
+	expect(queries[0]).toStartWith('insert ');
 });
