@@ -2460,24 +2460,39 @@ export const buildExistsQuery = <Schema extends AnySchema, Meta>(
 };
 
 /**
- * MySQL has no RETURNING: an auto-increment key the insert left out comes
- * from the driver's `insertId`, so the reload reads that row by key instead of
- * matching every inserted value (JSON values never compare equal, and
- * identical rows would be ambiguous).
+ * MySQL reports generated auto-increment values through `insertId`, including
+ * inserts supplying zero unless NO_AUTO_VALUE_ON_ZERO is enabled.
  */
 const withInsertId = (
 	runtime: TableRuntime,
 	data: Record<string, unknown>,
 	result: unknown,
 ) => {
-	const [field] = runtime.primaryKeyFields;
-	if (runtime.primaryKeyFields.length !== 1 || data[field as string] != null)
-		return data;
 	const header = Array.isArray(result) ? result[0] : result;
 	const id = (header as { insertId?: unknown } | null)?.insertId;
-	return (typeof id === 'number' || typeof id === 'bigint') && id > 0
-		? { ...data, [field as string]: id }
-		: data;
+	for (const field of runtime.primaryKeyFields) {
+		const autoIncrement = (
+			runtime.columns[field] as { autoIncrement?: boolean }
+		).autoIncrement;
+		if (
+			autoIncrement &&
+			(((typeof id === 'number' || typeof id === 'bigint') && id > 0) ||
+				(typeof id === 'string' && Number(id) > 0)) &&
+			data[field] !== id
+		)
+			data = { ...data, [field]: id };
+		if (
+			data[field] == null ||
+			(autoIncrement && id == null && Number(data[field]) === 0)
+		)
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.OperationError,
+				message: 'MySQL insert did not return a primary key.',
+				operation: 'create',
+				table: runtime.dbName,
+			});
+	}
+	return data;
 };
 
 /**
@@ -2563,7 +2578,7 @@ export const createRecord = async <Schema extends AnySchema, Meta>(
 ) => {
 	const runtime = getTableRuntime(context, tableName as string);
 	if (hasProjection(args)) validateProjection(context, runtime, args);
-	const data =
+	let data =
 		context.scopes === undefined
 			? (args.data as Record<string, unknown>)
 			: stampInsert(
@@ -2575,11 +2590,42 @@ export const createRecord = async <Schema extends AnySchema, Meta>(
 	const prepared = relational
 		? await prepareRelationWrite(context, runtime, data, true)
 		: undefined;
-	const writeArgs = prepared
-		? ({ ...args, data: prepared.scalar } as typeof args)
-		: data === args.data
-			? args
-			: ({ ...args, data } as typeof args);
+	if (prepared) data = prepared.scalar;
+	if (context.dialect === 'mysql') {
+		let completeKey = runtime.primaryKeyFields.length > 0;
+		for (const field of runtime.primaryKeyFields) {
+			const column = runtime.columns[field]!;
+			let value = data[field];
+			if (value === undefined) {
+				value = column.defaultFn ? column.defaultFn() : column.default;
+				if (value !== undefined && !isSQLWrapper(value)) {
+					if (data === args.data) data = { ...data };
+					data[field] = value;
+				}
+			}
+			if (
+				value == null &&
+				(column as { autoIncrement?: boolean }).autoIncrement
+			)
+				continue;
+			if (
+				value == null ||
+				isSQLWrapper(value) ||
+				value instanceof Placeholder
+			)
+				completeKey = false;
+		}
+		if (!completeKey)
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.InvalidArgs,
+				message:
+					'MySQL create requires a complete primary key or an auto-increment key.',
+				operation: 'create',
+				table: runtime.dbName,
+			});
+	}
+	const writeArgs =
+		data === args.data ? args : ({ ...args, data } as typeof args);
 	const { builder, skipDuplicates } = applyInsertOnConflict(
 		context,
 		runtime,
@@ -2614,6 +2660,7 @@ export const createRecord = async <Schema extends AnySchema, Meta>(
 			writeArgs.data as Record<string, unknown>,
 			result,
 		),
+		prepared ? undefined : args,
 	);
 	if (!created) return null;
 	if (prepared)
@@ -2624,9 +2671,7 @@ export const createRecord = async <Schema extends AnySchema, Meta>(
 			prepared.relations,
 			true,
 		);
-	return hasProjection(args) || prepared
-		? reloadRecord(context, tableName, created, args)
-		: created;
+	return prepared ? reloadRecord(context, tableName, created, args) : created;
 };
 
 /**
