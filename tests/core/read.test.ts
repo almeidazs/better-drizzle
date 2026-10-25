@@ -82,6 +82,39 @@ describe('findMany', () => {
 			expect(result[i]?.age).toBeLessThanOrEqual(result[i - 1]?.age ?? 0);
 	});
 
+	test('findMany skips orderBy keys set to undefined', async () => {
+		const result = await ctx.better.users.findMany({
+			orderBy: [{ name: undefined }, { age: 'desc' }],
+		});
+		expect(result.map((u) => u.id)).toEqual([3, 2, 4, 1, 5]);
+	});
+
+	test('findMany keeps the default order when every orderBy key is undefined', async () => {
+		const result = await ctx.better.users.findMany({
+			orderBy: { age: undefined },
+		});
+		expect(result.map((u) => u.id)).toEqual(
+			(await ctx.better.users.findMany()).map((u) => u.id),
+		);
+	});
+
+	test('findMany cursors skip orderBy keys set to undefined', async () => {
+		const orderBy = [{ name: undefined }, { age: 'desc' as const }];
+		const forward = await ctx.better.users.findMany({
+			cursor: { age: 30 },
+			take: 2,
+			orderBy,
+		});
+		expect(forward.map((u) => u.id)).toEqual([4, 1]);
+
+		const backward = await ctx.better.users.findMany({
+			cursor: { age: 25 },
+			take: -2,
+			orderBy,
+		});
+		expect(backward.map((u) => u.id)).toEqual([2, 4]);
+	});
+
 	test('findMany with take limit', async () => {
 		const result = await ctx.better.users.findMany({ take: 2 });
 		expect(result.length).toBe(2);

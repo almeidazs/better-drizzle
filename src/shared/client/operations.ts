@@ -3641,10 +3641,13 @@ export const getCursorFields = <Schema extends AnySchema, Meta>(
 
 	if (entries)
 		for (const entry of entries)
-			for (const key in entry as Record<string, unknown>)
+			for (const key in entry as Record<string, unknown>) {
+				if ((entry as Record<string, unknown>)[key] === undefined)
+					continue;
 				if (runtime.columns[key]) fields.push(key);
 				else if (runtime.relations[key])
 					throw relationCursorError(runtime, key);
+			}
 	if (fields.length) return fields;
 
 	const cursorToken = (
@@ -3942,7 +3945,10 @@ export const withDefaultCursorOrder = <Schema extends AnySchema, Meta>(
 		: [];
 	for (const entry of entries)
 		for (const key in entry as Record<string, unknown>)
-			if (runtime.columns[key] || runtime.relations[key])
+			if (
+				entry[key] !== undefined &&
+				(runtime.columns[key] || runtime.relations[key])
+			)
 				fields.push(key);
 	const explicitOrder = fields.length > 0;
 	if (!fields.length) {

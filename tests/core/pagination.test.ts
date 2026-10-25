@@ -332,6 +332,19 @@ describe('cursor - cursor pagination', () => {
 		expect(page.pagination.previousCursor).toEqual({ id: 2 });
 	});
 
+	test('cursor skips orderBy keys set to undefined', async () => {
+		const orderBy = [{ name: undefined }, { id: 'desc' as const }];
+		const first = await ctx.better.users.cursor({ limit: 2, orderBy });
+		expect(first.data.map((row) => row.id)).toEqual([5, 4]);
+
+		const second = await ctx.better.users.cursor({
+			after: first.pagination.nextCursor ?? undefined,
+			limit: 2,
+			orderBy,
+		});
+		expect(second.data.map((row) => row.id)).toEqual([3, 2]);
+	});
+
 	test('cursor pagination with where filter', async () => {
 		const first = await ctx.better.users.cursor({
 			limit: 2,
