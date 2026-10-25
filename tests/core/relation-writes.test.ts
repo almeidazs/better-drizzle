@@ -348,3 +348,192 @@ test('set disconnects rows when the child primary key has a mapped column name',
 		sqlite.close();
 	}
 });
+
+const createMappedCompositeContext = () => {
+	const parents = sqliteTable('composite_parents', {
+		id: integer('id').primaryKey(),
+	});
+	const children = sqliteTable(
+		'composite_children',
+		{
+			keyA: text('key_a').notNull(),
+			keyB: text('key_b').notNull(),
+			parentId: integer('parent_id'),
+		},
+		(table) => [primaryKey({ columns: [table.keyA, table.keyB] })],
+	);
+	const relations = defineRelations({ children, parents }, (r) => ({
+		children: {
+			parent: r.one.parents({
+				from: r.children.parentId,
+				to: r.parents.id,
+			}),
+		},
+		parents: { children: r.many.children() },
+	}));
+	const sqlite = new Database(':memory:');
+	sqlite.exec(`
+		CREATE TABLE composite_parents (id INTEGER PRIMARY KEY);
+		CREATE TABLE composite_children (
+			key_a TEXT NOT NULL, key_b TEXT NOT NULL, parent_id INTEGER,
+			PRIMARY KEY (key_a, key_b)
+		);
+		INSERT INTO composite_parents VALUES (1);
+		INSERT INTO composite_children VALUES
+			('a|string:b', 'c', NULL), ('a', 'b|string:c', NULL);
+	`);
+	return { client: better(drizzle({ client: sqlite, relations })), sqlite };
+};
+
+const compositeSelectors = [
+	{ keyA: 'a|string:b', keyB: 'c' },
+	{ keyA: 'a', keyB: 'b|string:c' },
+];
+
+test('connect preserves distinct mapped composite primary keys containing delimiters', async () => {
+	const { client, sqlite } = createMappedCompositeContext();
+	try {
+		await client.parents.update({
+			data: { children: { connect: compositeSelectors } },
+			where: { id: 1 },
+		});
+		expect(
+			sqlite
+				.query(
+					'SELECT COUNT(*) AS count FROM composite_children WHERE parent_id = 1',
+				)
+				.get(),
+		).toEqual({ count: 2 });
+	} finally {
+		sqlite.close();
+	}
+});
+
+test('set distinguishes mapped composite primary keys containing delimiters', async () => {
+	const { client, sqlite } = createMappedCompositeContext();
+	try {
+		sqlite.exec('UPDATE composite_children SET parent_id = 1');
+		await client.parents.update({
+			data: { children: { set: [compositeSelectors[1]!] } },
+			where: { id: 1 },
+		});
+		expect(
+			sqlite
+				.query(
+					'SELECT key_a, key_b, parent_id FROM composite_children ORDER BY key_a',
+				)
+				.all(),
+		).toEqual([
+			{ key_a: 'a', key_b: 'b|string:c', parent_id: 1 },
+			{ key_a: 'a|string:b', key_b: 'c', parent_id: null },
+		]);
+	} finally {
+		sqlite.close();
+	}
+});
+
+test('to-one connect replaces a mapped primary-key target and deduplicates selectors', async () => {
+	const parents = sqliteTable('profile_parents', {
+		id: integer('id').primaryKey(),
+	});
+	const profiles = sqliteTable('mapped_profiles', {
+		profileId: integer('profile_id').primaryKey(),
+		parentId: integer('parent_id').unique(),
+		slug: text('slug').notNull().unique(),
+	});
+	const relations = defineRelations({ parents, profiles }, (r) => ({
+		parents: {
+			profile: r.one.profiles({
+				from: r.parents.id,
+				to: r.profiles.parentId,
+			}),
+		},
+		profiles: {
+			parent: r.one.parents({
+				from: r.profiles.parentId,
+				to: r.parents.id,
+			}),
+		},
+	}));
+	const sqlite = new Database(':memory:');
+	try {
+		sqlite.exec(`
+			CREATE TABLE profile_parents (id INTEGER PRIMARY KEY);
+			CREATE TABLE mapped_profiles (
+				profile_id INTEGER PRIMARY KEY, parent_id INTEGER UNIQUE,
+				slug TEXT NOT NULL UNIQUE
+			);
+			INSERT INTO profile_parents VALUES (1);
+			INSERT INTO mapped_profiles VALUES (10, 1, 'old'), (11, NULL, 'new');
+		`);
+		const client = better(drizzle({ client: sqlite, relations }));
+		await client.parents.update({
+			data: {
+				profile: { connect: [{ profileId: 11 }, { slug: 'new' }] },
+			},
+			where: { id: 1 },
+		});
+		expect(
+			sqlite
+				.query(
+					'SELECT profile_id, parent_id FROM mapped_profiles ORDER BY profile_id',
+				)
+				.all(),
+		).toEqual([
+			{ profile_id: 10, parent_id: null },
+			{ profile_id: 11, parent_id: 1 },
+		]);
+	} finally {
+		sqlite.close();
+	}
+});
+
+test('includes children for distinct composite parent keys containing delimiters', async () => {
+	const parents = sqliteTable(
+		'composite_read_parents',
+		{ keyA: text('key_a').notNull(), keyB: text('key_b').notNull() },
+		(table) => [primaryKey({ columns: [table.keyA, table.keyB] })],
+	);
+	const children = sqliteTable('composite_read_children', {
+		id: integer('id').primaryKey(),
+		parentA: text('parent_a').notNull(),
+		parentB: text('parent_b').notNull(),
+	});
+	const relations = defineRelations({ children, parents }, (r) => ({
+		parents: {
+			children: r.many.children({
+				from: [r.parents.keyA, r.parents.keyB],
+				to: [r.children.parentA, r.children.parentB],
+			}),
+		},
+	}));
+	const sqlite = new Database(':memory:');
+	try {
+		sqlite.exec(`
+			CREATE TABLE composite_read_parents (
+				key_a TEXT NOT NULL, key_b TEXT NOT NULL, PRIMARY KEY (key_a, key_b)
+			);
+			CREATE TABLE composite_read_children (
+				id INTEGER PRIMARY KEY, parent_a TEXT NOT NULL, parent_b TEXT NOT NULL
+			);
+			INSERT INTO composite_read_parents VALUES ('a|string:b', 'c'), ('a', 'b|string:c');
+			INSERT INTO composite_read_children VALUES (1, 'a|string:b', 'c'), (2, 'a', 'b|string:c');
+		`);
+		const client = better(drizzle({ client: sqlite, relations }));
+		const rows = await client.parents.findMany({
+			include: { children: true },
+			orderBy: { keyA: 'asc' },
+		});
+		expect(
+			rows.map((row) => ({
+				keyA: row.keyA,
+				children: row.children.map((child) => child.id),
+			})),
+		).toEqual([
+			{ keyA: 'a', children: [2] },
+			{ keyA: 'a|string:b', children: [1] },
+		]);
+	} finally {
+		sqlite.close();
+	}
+});
