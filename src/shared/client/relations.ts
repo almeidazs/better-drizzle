@@ -7,6 +7,7 @@ import {
 	gt,
 	inArray,
 	lte,
+	not,
 	or,
 	type SQL,
 	type SQLWrapper,
@@ -1019,11 +1020,64 @@ const setColumnsFromTarget = (
 	}
 };
 
+const holdsUniqueTarget = (runtime: TableRuntime, relation: RelationState) => {
+	if (relation.fields.some((field) => field.notNull)) return false;
+	const fields = relation.fields.map((field) => columnKey(runtime, field));
+	if (fields.length === 1 && runtime.columns[fields[0] as string]?.isUnique)
+		return true;
+	return runtime.uniqueKeys.some(
+		(key) =>
+			key.length === fields.length &&
+			fields.every((field) => key.includes(field)),
+	);
+};
+
+// A nullable foreign key under a unique key links its target to one row at
+// most: like Prisma, connecting the target detaches the row holding it.
+const detachUniqueTargetHolder = async <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	runtime: TableRuntime,
+	targetRuntime: TableRuntime,
+	relation: RelationState,
+	target: Record<string, unknown>,
+	current: Record<string, unknown> | undefined,
+) => {
+	if (!holdsUniqueTarget(runtime, relation)) return;
+	const conditions: SQL[] = [];
+	const detached = Object.create(null) as Record<string, unknown>;
+	for (let index = 0; index < relation.fields.length; index += 1) {
+		const source = relation.fields[index];
+		const reference = relation.references[index];
+		if (!source || !reference) continue;
+		conditions.push(
+			eq(source, target[columnKey(targetRuntime, reference)]),
+		);
+		detached[columnKey(runtime, source)] = null;
+	}
+	if (current) {
+		const self = compileWhereInput(
+			{
+				...context,
+				runtime,
+				tableName: runtime.tableConfig.name,
+			} as WhereCompilerContext<Schema, Meta>,
+			getPrimaryKeyWhere(runtime, current),
+		);
+		if (self) conditions.push(not(self));
+	}
+	assertImmutable(context, runtime, detached);
+	await context.db
+		.update(runtime.table)
+		.set(detached)
+		.where(scoped(context, runtime, and(...conditions), true));
+};
+
 export const prepareRelationWrite = async <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	runtime: TableRuntime,
 	data: Record<string, unknown>,
 	create: boolean,
+	current?: Record<string, unknown>,
 ) => {
 	const split = splitRelationData(runtime, data);
 	const remaining = { ...split.relations };
@@ -1055,6 +1109,15 @@ export const prepareRelationWrite = async <Schema extends AnySchema, Meta>(
 				relationName,
 			);
 		else target = null;
+		if (target)
+			await detachUniqueTargetHolder(
+				context,
+				runtime,
+				targetRuntime,
+				relation,
+				target,
+				current,
+			);
 		setColumnsFromTarget(
 			runtime,
 			targetRuntime,
