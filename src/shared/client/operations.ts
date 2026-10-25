@@ -64,12 +64,14 @@ import {
 import { getPrimaryKeyWhere, getTableRuntime, isSimpleRecord } from './context';
 import {
 	applyRelationWrites,
+	buildLinkPredicates,
 	getCountKey,
 	getRelationCountSelection,
 	hasRelationWrites,
 	hydrateRelations,
 	prepareRelationalRead,
 	prepareRelationWrite,
+	rowKey,
 	splitRelationData,
 	validateProjection,
 } from './relations';
@@ -2534,7 +2536,7 @@ export const reloadRecord = async <Schema extends AnySchema, Meta>(
 };
 
 /**
- * Reloads multiple records in parallel using their primary key values.
+ * Reloads records in bounded primary-key batches, preserving input order.
  * Filters out any records that could not be found after reload.
  *
  * @typeParam Schema - The Drizzle schema type.
@@ -2551,11 +2553,88 @@ export const reloadRecords = async <Schema extends AnySchema, Meta>(
 	records: Record<string, unknown>[],
 	args?: QueryArgs<Schema, BetterTableKey<Schema>, Meta>,
 ) => {
-	const rows = await Promise.all(
-		records.map((record) => reloadRecord(context, tableName, record, args)),
-	);
+	if (!records.length) return [];
+	const runtime = getTableRuntime(context, tableName as string);
+	const fields = runtime.primaryKeyFields;
+	let batchable = fields.length > 0;
+	for (const record of records)
+		for (const field of fields) {
+			const value = record[field];
+			if (
+				value == null ||
+				(typeof value === 'object' &&
+					!(value instanceof Date) &&
+					!(value instanceof Uint8Array))
+			)
+				batchable = false;
+		}
+	if (!batchable) {
+		const rows = await Promise.all(
+			records.map((record) =>
+				reloadRecord(context, tableName, record, args),
+			),
+		);
+		return rows.filter(
+			(row): row is Record<string, unknown> => row !== null,
+		);
+	}
 
-	return rows.filter((row): row is Record<string, unknown> => row !== null);
+	const select = args?.select as Record<string, unknown> | undefined;
+	let selected = false;
+	for (const field in select)
+		if (select[field] === true || runtime.relationNames.has(field))
+			selected = true;
+	const hidden = selected
+		? fields.filter((field) => select?.[field] !== true)
+		: [];
+	const readArgs = hidden.length
+		? ({ ...args, select: { ...select } } as typeof args)
+		: args;
+	for (const field of hidden)
+		(readArgs!.select as Record<string, unknown>)[field] = true;
+	let maxParams = 10_000;
+	if (context.scopes !== undefined || args?.include) {
+		const { params } = (
+			buildDirectReadQuery(context, tableName, readArgs) as unknown as {
+				toSQL(): { params: unknown[] };
+			}
+		).toSQL();
+		maxParams = Math.min(
+			maxParams,
+			(context.dialect === 'sqlite' ? 32_766 : 65_535) - params.length,
+		);
+		if (maxParams < fields.length)
+			throw new BetterDrizzleError({
+				code: BetterDrizzleErrorCode.InvalidArgs,
+				message:
+					'Reload filters leave no bind parameters for primary keys.',
+				operation: 'createMany',
+				table: runtime.dbName,
+			});
+	}
+	const byKey = new Map<string, Record<string, unknown>>();
+	for (const where of buildLinkPredicates(
+		runtime,
+		records,
+		runtime.primaryKey,
+		runtime.primaryKey,
+		maxParams,
+	)) {
+		const rows = await findManyRecords(context, tableName, {
+			...readArgs,
+			where,
+		});
+		for (const row of rows)
+			byKey.set(rowKey(runtime, row, runtime.primaryKey)!, row);
+	}
+	const ordered = [];
+	for (const record of records) {
+		const row = byKey.get(rowKey(runtime, record, runtime.primaryKey)!);
+		if (!row) continue;
+		for (const field of hidden) delete row[field];
+		ordered.push(row);
+	}
+	return ordered;
 };
 
 /**
