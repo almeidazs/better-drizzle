@@ -2774,6 +2774,7 @@ export const createManyRecords = async <Schema extends AnySchema, Meta>(
 	tableName: BetterTableKey<Schema>,
 	args: CreateManyArgs<Schema, BetterTableKey<Schema>, Meta>,
 ): Promise<BatchResult<Record<string, unknown>>> => {
+	if (!args.data.length) return { count: 0 };
 	const runtime = getTableRuntime(context, tableName as string);
 	if (context.scopes !== undefined) {
 		const data = stampRows(
