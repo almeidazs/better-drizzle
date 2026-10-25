@@ -81,7 +81,7 @@ const encodeValue = (value: unknown) => {
 	return `${typeof value}:${String(value)}`;
 };
 
-const rowKey = (
+export const rowKey = (
 	runtime: TableRuntime,
 	row: Record<string, unknown>,
 	columns: readonly AnyColumn[],
@@ -302,7 +302,7 @@ export const prepareRelationalRead = <Schema extends AnySchema, Meta>(
 const RELATION_BATCH_PARAMS = 10_000;
 const RELATION_BATCH_TERMS = 200;
 
-function* buildLinkPredicates(
+export function* buildLinkPredicates(
 	parentRuntime: TableRuntime,
 	parents: readonly Record<string, unknown>[],
 	parentFields: readonly AnyColumn[],
