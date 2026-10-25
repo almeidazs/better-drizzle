@@ -86,27 +86,19 @@ const rowKey = (
 	row: Record<string, unknown>,
 	columns: readonly AnyColumn[],
 ) => {
-	const values = new Array(columns.length);
+	if (columns.length === 0) return;
+	let key = '';
 	for (let index = 0; index < columns.length; index += 1) {
 		const column = columns[index];
 		if (!column) return;
 		const value = row[columnKey(runtime, column)];
 		if (value === null || value === undefined) return;
-		values[index] = encodeValue(value);
+		const encoded = encodeValue(value);
+		if (columns.length === 1) return encoded;
+		// Length prefixes keep delimiters inside composite values unambiguous.
+		key += `${encoded.length}:${encoded}`;
 	}
-	return values.join('|');
-};
-
-const primaryKeyColumns = (runtime: TableRuntime) => {
-	const columns: AnyColumn[] = [];
-	for (const field of runtime.primaryKeyFields)
-		for (const key in runtime.columns) {
-			const column = runtime.columns[key];
-			if (column?.name !== field) continue;
-			columns.push(column);
-			break;
-		}
-	return columns;
+	return key;
 };
 
 /**
@@ -351,7 +343,7 @@ function* buildLinkPredicates(
 	const seen = new Set<string>();
 	for (const parent of parents) {
 		const parts = [];
-		const encoded = [];
+		let key = '';
 		for (let index = 0; index < parentFields.length; index += 1) {
 			const parentField = parentFields[index];
 			const targetField = targetFields[index];
@@ -361,10 +353,10 @@ function* buildLinkPredicates(
 				parts.length = 0;
 				break;
 			}
-			encoded.push(encodeValue(value));
+			const encoded = encodeValue(value);
+			key += `${encoded.length}:${encoded}`;
 			parts.push(eq(targetField, value));
 		}
-		const key = encoded.join('|');
 		if (!parts.length || seen.has(key)) continue;
 		seen.add(key);
 		conditions.push(and(...parts));
@@ -619,14 +611,18 @@ const loadRelation = async <Schema extends AnySchema, Meta>(
 		const through = relation.through;
 		if (!through || !throughRuntime) return;
 		parentKeyForRow = (row) => {
-			const values = [];
+			let key = '';
 			for (let index = 0; index < relation.fields.length; index += 1) {
 				const value = row[`__better_parent_${index}`];
 				if (value === null || value === undefined) return;
-				values.push(encodeValue(value));
+				const encoded = encodeValue(value);
+				key +=
+					relation.fields.length === 1
+						? encoded
+						: `${encoded.length}:${encoded}`;
 				delete row[`__better_parent_${index}`];
 			}
-			return values.join('|');
+			return key;
 		};
 		for (const link of buildLinkPredicates(
 			parentRuntime,
@@ -954,7 +950,7 @@ const resolveSelectors = async <Schema extends AnySchema, Meta>(
 			relationName,
 			strict,
 		);
-		const key = rowKey(runtime, row, primaryKeyColumns(runtime));
+		const key = rowKey(runtime, row, runtime.primaryKey);
 		if (key && seen.has(key)) continue;
 		if (key) seen.add(key);
 		rows.push(row);
@@ -1243,15 +1239,11 @@ const applyDirectRelation = async <Schema extends AnySchema, Meta>(
 		);
 		const selected = new Set(
 			connectTargets.map((row) =>
-				rowKey(targetRuntime, row, primaryKeyColumns(targetRuntime)),
+				rowKey(targetRuntime, row, targetRuntime.primaryKey),
 			),
 		);
 		for (const row of current) {
-			const key = rowKey(
-				targetRuntime,
-				row,
-				primaryKeyColumns(targetRuntime),
-			);
+			const key = rowKey(targetRuntime, row, targetRuntime.primaryKey);
 			if (selected.has(key)) continue;
 			await updateResolvedTarget(
 				context,
