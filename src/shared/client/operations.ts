@@ -2556,7 +2556,10 @@ export const reloadRecords = async <Schema extends AnySchema, Meta>(
 	if (!records.length) return [];
 	const runtime = getTableRuntime(context, tableName as string);
 	const fields = runtime.primaryKeyFields;
-	let batchable = fields.length > 0;
+	const countKey = getCountKey(runtime, args?.include);
+	// A relation count can replace the scalar key in the projected result.
+	let batchable =
+		fields.length > 0 && (!countKey || !fields.includes(countKey));
 	for (const record of records)
 		for (const field of fields) {
 			const value = record[field];

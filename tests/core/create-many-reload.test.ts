@@ -13,6 +13,53 @@ import {
 
 import { better, definePlugin } from '../../src';
 
+test.each(['count', '_count'] as const)(
+	'createMany preserves a primary key named %s when relation counts replace it',
+	async (countKey) => {
+		const parents = sqliteTable('count_key_parents', {
+			[countKey]: integer('parent_key').primaryKey(),
+			label: text().notNull(),
+		});
+		const children = sqliteTable('count_key_children', {
+			id: integer().primaryKey(),
+			parentKey: integer('parent_key'),
+		});
+		const relations = defineRelations({ parents, children }, (r) => ({
+			parents: {
+				children: r.many.children({
+					from: r.parents[countKey],
+					to: r.children.parentKey,
+				}),
+			},
+		}));
+		const sqlite = new Database(':memory:');
+		try {
+			sqlite.exec(`CREATE TABLE count_key_parents(parent_key INTEGER PRIMARY KEY, label TEXT NOT NULL);
+			CREATE TABLE count_key_children(id INTEGER PRIMARY KEY, parent_key INTEGER);
+			INSERT INTO count_key_children VALUES(1, 3);`);
+			const db = better(drizzle({ client: sqlite, relations }));
+			const result = await db.parents.createMany({
+				data: [
+					{ [countKey]: 3, label: 'three' },
+					{ [countKey]: 1, label: 'one' },
+				] as never,
+				include: {
+					[countKey]: { select: { children: true } },
+				} as never,
+			});
+			expect(result).toEqual({
+				count: 2,
+				data: [
+					{ [countKey]: { children: 1 }, label: 'three' },
+					{ [countKey]: { children: 0 }, label: 'one' },
+				],
+			});
+		} finally {
+			sqlite.close();
+		}
+	},
+);
+
 const groups = sqliteTable('reload_groups', {
 	id: integer().primaryKey(),
 	name: text().notNull(),
