@@ -187,7 +187,7 @@ D1 is detected automatically from `drizzle-orm/d1`. It reports as SQLite, with t
 | Capability | D1 |
 | --- | --- |
 | transactions, `SAVEPOINT` | Not available: `client.transaction()` and relation writes run as separate statements with no rollback |
-| `createMany`, `upsertMany` over 100 bind parameters | Split into chunks that fit, not atomic |
+| `createMany`, `upsertMany`, `updateEach` over 100 bind parameters | Split into chunks that fit, not atomic |
 | relation loading over 100 bind parameters | Batched |
 | `.explain()` | Throws `OPERATION_ERROR` |
 

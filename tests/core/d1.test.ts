@@ -253,6 +253,72 @@ describe('cloudflare d1', () => {
 		expect(await eu.regions.count()).toBe(40);
 	});
 
+	test('updateEach splits updates over the parameter limit', async () => {
+		const { client, schema } = createD1Context();
+		await client.items.createMany({ data: rows(60) });
+
+		const result = await client.items.updateEach({
+			by: schema.items.id,
+			data: rows(60).map((row) => ({ ...row, a: `row ${row.id}` })),
+			update: { a: (row) => row.a as string },
+		});
+
+		expect(result.count).toBe(60);
+		expect(
+			(await client.items.findMany({ orderBy: { id: 'asc' } })).map(
+				(item) => item.a,
+			),
+		).toEqual(rows(60).map((row) => `row ${row.id}`));
+		expect(
+			warn.mock.calls.filter((call) =>
+				String(call[0]).includes('updateEach'),
+			),
+		).toHaveLength(1);
+	});
+
+	test('updateEach returns projected rows from every chunk', async () => {
+		const { client, schema } = createD1Context();
+		await client.items.createMany({ data: rows(40) });
+
+		const result = await client.items.updateEach({
+			by: schema.items.id,
+			data: rows(40),
+			select: { id: true },
+			update: { b: (row) => `${row.id}` },
+		});
+
+		expect(result.count).toBe(40);
+		expect(result.data).toHaveLength(40);
+	});
+
+	test('updateEach with a where clause keeps it in every chunk', async () => {
+		const { client, schema } = createD1Context();
+		await client.items.createMany({ data: rows(40) });
+
+		const result = await client.items.updateEach({
+			by: schema.items.id,
+			data: rows(40),
+			update: { a: () => 'changed' },
+			where: { id: { lte: 25 } },
+		});
+
+		expect(result.count).toBe(25);
+		expect(await client.items.count({ where: { a: 'changed' } })).toBe(25);
+	});
+
+	test('updateEach keeps a single statement that fits', async () => {
+		const { client, schema } = createD1Context();
+		await client.items.createMany({ data: rows(5) });
+
+		await client.items.updateEach({
+			by: schema.items.id,
+			data: rows(5),
+			update: { a: () => 'x' },
+		});
+
+		expect(warn).not.toHaveBeenCalled();
+	});
+
 	test('includes load relations in batches under the limit', async () => {
 		const { client } = createD1Context();
 		await client.authors.createMany({

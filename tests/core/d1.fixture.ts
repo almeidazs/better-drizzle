@@ -147,5 +147,9 @@ export const createD1Context = (options: Parameters<typeof better>[1] = {}) => {
 	sqlite.exec(createTablesSql);
 	const raw = drizzle(new FakeD1Database(sqlite) as never, { relations });
 
-	return { client: better(raw, options), sqlite };
+	return {
+		client: better(raw, options),
+		schema: { authors, items, posts },
+		sqlite,
+	};
 };

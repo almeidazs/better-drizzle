@@ -86,7 +86,10 @@ const client = better(drizzle(env.DB, { relations }), {
 D1 accepts at most 100 bind parameters per statement. better-drizzle keeps its own queries under that limit:
 
 - Relation loading (`include`, `select` with relations) and `createMany` reloads query related rows in batches that fit.
-- `createMany` and `upsertMany` split into the largest chunks that fit (rows × columns, plus the `SET` clause for upserts), run one after another. A split write is **not atomic**, and the first one in a process prints a warning. A smaller `batchSize` is still honored.
+- `createMany` and `upsertMany` split into the largest chunks that fit (rows × columns, plus the `SET`, `WHERE`, and scope parameters for upserts), run one after another. A smaller `batchSize` is still honored.
+- `updateEach` splits its single `CASE` statement the same way.
+
+A split write is **not atomic**, and the first one of each kind in a process prints a warning.
 - A single row that needs more than 100 parameters throws `INVALID_ARGS`.
 
 Lists you pass yourself, such as `where: { id: { in: ids } }`, are sent as written. Split large lists in your code.

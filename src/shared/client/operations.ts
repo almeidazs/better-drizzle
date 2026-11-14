@@ -3435,6 +3435,53 @@ export const updateEachRecords = async <Schema extends AnySchema, Meta>(
 	if (!predicate) return { count: 0 };
 
 	const set = buildUpdateEachSet(context, runtime, rows.byKey, args);
+	if (context.driver.d1) {
+		// One CASE statement binds a few parameters per row, so a large
+		// update is split into chunks that fit D1's limit.
+		const limit = context.driver.maxParams;
+		const params = (
+			context.db
+				.update(runtime.table)
+				.set(set)
+				.where(predicate) as unknown as {
+				toSQL(): { params: unknown[] };
+			}
+		).toSQL().params.length;
+		if (params > limit) {
+			if (args.data.length === 1)
+				throw new BetterDrizzleError({
+					code: BetterDrizzleErrorCode.InvalidArgs,
+					details: { limit, parametersPerRow: params },
+					message: `One row needs ${params} bind parameters, but Cloudflare D1 accepts ${limit} per statement.`,
+					operation: 'updateEach',
+					table: runtime.dbName,
+				});
+			warnOnce(
+				'd1-split:updateEach',
+				`updateEach on Cloudflare D1 is split into statements of at most ${limit} bind parameters, so it is not atomic.`,
+			);
+			// The average cost per row sizes the chunks; a chunk that still
+			// does not fit is split again.
+			const size = Math.max(
+				1,
+				Math.floor((args.data.length * limit) / params),
+			);
+			let count = 0;
+			let data: Record<string, unknown>[] | undefined;
+			for (let start = 0; start < args.data.length; start += size) {
+				const chunk = await updateEachRecords(baseContext, tableName, {
+					...args,
+					data: args.data.slice(start, start + size),
+				} as typeof args);
+				count += chunk.count;
+				if (chunk.data?.length) {
+					if (!data) data = [];
+					data.push(...chunk.data);
+				}
+			}
+			return { count, data };
+		}
+	}
 	const affectedCount = await countRows(
 		context,
 		tableName,
