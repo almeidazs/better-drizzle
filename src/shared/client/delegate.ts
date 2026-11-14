@@ -34,6 +34,7 @@ import { BetterDrizzleError, BetterDrizzleErrorCode } from '../errors';
 import { compileWhereInput, countRows } from '../query';
 import { hasComment, runWithComment } from './comment';
 import { getTableRuntime } from './context';
+import { warnWithoutTransaction } from './driver';
 import { explainOperation } from './explain';
 import {
 	attachExplain,
@@ -141,6 +142,11 @@ export const createModelDelegate = <
 				))
 		)
 			return run();
+		// D1 has no BEGIN: the writes run one after another with no rollback.
+		if (!context.driver.transactions) {
+			warnWithoutTransaction(context.driver);
+			return run();
+		}
 		const client = context.client as Record<string, unknown>;
 		const transaction = client.transaction as (
 			callback: (tx: Record<string, unknown>) => Promise<Result>,

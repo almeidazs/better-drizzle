@@ -62,6 +62,7 @@ import {
 	relationCursorError,
 } from '../query';
 import { getPrimaryKeyWhere, getTableRuntime, isSimpleRecord } from './context';
+import { warnOnce } from './driver';
 import {
 	applyRelationWrites,
 	buildLinkPredicates,
@@ -893,6 +894,52 @@ const runBatches = async <Args extends { data: readonly unknown[] }>(
 	return { count, data };
 };
 
+// Cloudflare D1 accepts 100 bind parameters per statement, so a multi-row
+// write is split into the largest chunks that fit. `reserved` counts the
+// parameters of the rest of the statement (the upsert `SET` clause).
+const fitD1Batch = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	runtime: TableRuntime,
+	rows: readonly Record<string, unknown>[],
+	batchSize: number | undefined,
+	reserved: number,
+	operation: 'createMany' | 'upsertMany',
+) => {
+	let perRow = 1;
+	for (const row of rows) {
+		let params = 0;
+		for (const field in runtime.columns) {
+			const column = runtime.columns[field] as AnyColumn;
+			if (
+				row[field] !== undefined ||
+				column.defaultFn ||
+				column.default !== undefined
+			)
+				params += 1;
+		}
+		if (params > perRow) perRow = params;
+	}
+	const limit = context.driver.maxParams;
+	const fit = Math.floor((limit - reserved) / perRow);
+	if (fit < 1)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.InvalidArgs,
+			details: { limit, parametersPerRow: perRow + reserved },
+			message: `One row needs ${perRow + reserved} bind parameters, but Cloudflare D1 accepts ${limit} per statement.`,
+			operation,
+			table: runtime.dbName,
+		});
+	if (rows.length <= fit || (batchSize !== undefined && batchSize <= fit))
+		return batchSize;
+
+	warnOnce(
+		'd1-split',
+		`${operation} on Cloudflare D1 is split into statements of at most ${limit} bind parameters, so it is not atomic. Pass a smaller batchSize to choose the chunk size.`,
+	);
+
+	return fit;
+};
+
 const getTargetColumns = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	runtime: TableRuntime,
@@ -1293,6 +1340,10 @@ const getAffectedCount = (result: unknown) => {
 		const count = (value as Record<string, unknown>)[key];
 		if (typeof count === 'number' && Number.isFinite(count)) return count;
 	}
+
+	// Cloudflare D1 reports the count as `meta.changes`.
+	const changes = (value as { meta?: { changes?: unknown } }).meta?.changes;
+	if (typeof changes === 'number' && Number.isFinite(changes)) return changes;
 
 	const rowsAffected = (value as Record<string, unknown>).rowsAffected;
 	if (typeof rowsAffected === 'number' && Number.isFinite(rowsAffected))
@@ -2595,8 +2646,12 @@ export const reloadRecords = async <Schema extends AnySchema, Meta>(
 		: args;
 	for (const field of hidden)
 		(readArgs!.select as Record<string, unknown>)[field] = true;
-	let maxParams = 10_000;
-	if (context.scopes !== undefined || args?.include) {
+	let maxParams = Math.min(10_000, context.driver.maxParams);
+	if (
+		context.scopes !== undefined ||
+		args?.include ||
+		context.driver.maxParams < 10_000
+	) {
 		const { params } = (
 			buildDirectReadQuery(context, tableName, readArgs) as unknown as {
 				toSQL(): { params: unknown[] };
@@ -2604,7 +2659,7 @@ export const reloadRecords = async <Schema extends AnySchema, Meta>(
 		).toSQL();
 		maxParams = Math.min(
 			maxParams,
-			(context.dialect === 'sqlite' ? 32_766 : 65_535) - params.length,
+			context.driver.maxParams - params.length,
 		);
 		if (maxParams < fields.length)
 			throw new BetterDrizzleError({
@@ -2784,7 +2839,16 @@ export const createManyRecords = async <Schema extends AnySchema, Meta>(
 		);
 		if (data !== args.data) args = { ...args, data } as typeof args;
 	}
-	const batchSize = getBatchSize(args.batchSize, 'createMany');
+	let batchSize = getBatchSize(args.batchSize, 'createMany');
+	if (context.driver.d1)
+		batchSize = fitD1Batch(
+			context,
+			runtime,
+			args.data as readonly Record<string, unknown>[],
+			batchSize,
+			0,
+			'createMany',
+		);
 	if (batchSize && args.data.length > batchSize)
 		return runBatches(args, batchSize, (chunk) =>
 			createManyRecords(context, tableName, chunk),
@@ -2959,7 +3023,18 @@ export const upsertManyRecords = async <Schema extends AnySchema, Meta>(
 		);
 		if (data !== args.data) writeArgs = { ...args, data } as typeof args;
 	}
-	const batchSize = getBatchSize(args.batchSize, 'upsertMany');
+	let batchSize = getBatchSize(args.batchSize, 'upsertMany');
+	if (context.driver.d1) {
+		const runtime = getTableRuntime(context, tableName as string);
+		batchSize = fitD1Batch(
+			context,
+			runtime,
+			args.data as readonly Record<string, unknown>[],
+			batchSize,
+			Object.keys(runtime.columns).length,
+			'upsertMany',
+		);
+	}
 	if (!batchSize || args.data.length <= batchSize)
 		return upsertManyChunk(context, tableName, writeArgs, args);
 

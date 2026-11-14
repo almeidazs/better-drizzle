@@ -204,6 +204,13 @@ const executeExplainQuery = async <
 	query: SQL,
 	options: ExplainOptions,
 ) => {
+	if (context.driver.d1)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.OperationError,
+			message: 'explain() is not supported on Cloudflare D1.',
+			operation: 'explain',
+		});
+
 	if (context.dialect === 'sqlite') {
 		const built = getStatementQuery(context.dialect, query);
 		const session = (

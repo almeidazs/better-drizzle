@@ -34,6 +34,7 @@ import {
 	mergeMeta,
 } from './context';
 import { createModelDelegate } from './delegate';
+import { warnWithoutTransaction } from './driver';
 import {
 	applyClientExtensions,
 	applyModelExtensions,
@@ -579,6 +580,11 @@ const reserveSqliteTransaction = (key: object, nested: boolean) => {
 	};
 };
 
+const noReservation = {
+	previous: undefined,
+	release() {},
+};
+
 const assertRawAllowed = <
 	Schema extends AnySchema,
 	Meta,
@@ -889,6 +895,12 @@ const runBetterTransaction = async <
 		};
 
 		if (context.dialect === 'sqlite') {
+			const transactional = context.driver.transactions;
+			const exec = (statement: SQL) =>
+				transactional ? context.db.run?.(statement) : undefined;
+
+			if (!transactional) warnWithoutTransaction(context.driver);
+
 			getDrizzleTransactionConfig(context, options);
 			attemptState = createTransactionState(
 				context.transaction,
@@ -905,12 +917,15 @@ const runBetterTransaction = async <
 				attemptContext,
 			) as BetterDrizzleTransactionClient<Schema, Meta, Plugins>;
 
-			const reservation = reserveSqliteTransaction(
-				context.transaction ??
-					(context.db as { $client?: object }).$client ??
-					context.db,
-				Boolean(context.transaction),
-			);
+			// Without BEGIN there is no connection state to serialize.
+			const reservation = transactional
+				? reserveSqliteTransaction(
+						context.transaction ??
+							(context.db as { $client?: object }).$client ??
+							context.db,
+						Boolean(context.transaction),
+					)
+				: noReservation;
 			const cleanupAbort = bindAbortSignals(attemptState);
 			const payload = createLifecyclePayload(
 				attemptContext,
@@ -935,7 +950,7 @@ const runBetterTransaction = async <
 			try {
 				if (reservation.previous) await reservation.previous;
 				if (attemptState.abortError) throw attemptState.abortError;
-				await context.db.run?.(beginSql);
+				await exec(beginSql);
 				begun = true;
 
 				if (attemptState.abortError) throw attemptState.abortError;
@@ -953,7 +968,7 @@ const runBetterTransaction = async <
 
 				if (attemptState.abortError) throw attemptState.abortError;
 
-				await context.db.run?.(commitSql);
+				await exec(commitSql);
 				committed = true;
 				if (!attemptState.parent) reservation.release();
 
@@ -972,8 +987,8 @@ const runBetterTransaction = async <
 				let rollbackError: unknown;
 				if (begun)
 					try {
-						await context.db.run?.(rollbackSql);
-						if (savepointName) await context.db.run?.(commitSql);
+						await exec(rollbackSql);
+						if (savepointName) await exec(commitSql);
 					} catch (failure) {
 						rollbackFailed = true;
 						rollbackError = failure;
@@ -1045,7 +1060,11 @@ const runBetterTransaction = async <
 
 				if (rollbackFailed) throw normalizedError;
 				if (isRollbackSignal(error)) throw rollbackReason;
-				if (!shouldRetryTransaction(error, options, attempt))
+				// Retrying would repeat writes that nothing rolled back.
+				if (
+					!transactional ||
+					!shouldRetryTransaction(error, options, attempt)
+				)
 					throw callbackFailed && error === callbackError
 						? error
 						: normalizedError;
@@ -1361,7 +1380,7 @@ export const createBoundClient = <
 			async (query) => {
 				const result =
 					context.dialect === 'sqlite'
-						? context.db.run?.(query)
+						? await Promise.resolve(context.db.run?.(query))
 						: await Promise.resolve(
 								context.db.execute?.(query) ??
 									context.db.run?.(query),
@@ -1380,6 +1399,14 @@ export const createBoundClient = <
 				)
 					return {
 						rowsAffected: (result as { changes: number }).changes,
+					} satisfies RawExecutionResult;
+				// Cloudflare D1 reports the count as `meta.changes`.
+				const changes = (
+					result as { meta?: { changes?: unknown } } | null
+				)?.meta?.changes;
+				if (typeof changes === 'number')
+					return {
+						rowsAffected: changes,
 					} satisfies RawExecutionResult;
 				if (
 					typeof result === 'object' &&

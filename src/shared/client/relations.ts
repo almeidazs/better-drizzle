@@ -544,8 +544,9 @@ const loadRelation = async <Schema extends AnySchema, Meta>(
 	const throughScope = throughRuntime
 		? scopePredicate(context, throughRuntime)
 		: undefined;
-	let batchParams = RELATION_BATCH_PARAMS;
+	let batchParams = Math.min(RELATION_BATCH_PARAMS, context.driver.maxParams);
 	if (
+		context.driver.maxParams < RELATION_BATCH_PARAMS ||
 		nestedWhere ||
 		cursorWhere ||
 		scope ||
@@ -566,7 +567,7 @@ const loadRelation = async <Schema extends AnySchema, Meta>(
 			}
 		).toSQL();
 		const available =
-			(context.dialect === 'sqlite' ? 32_766 : 65_535) -
+			context.driver.maxParams -
 			params.length -
 			(page.skip ? 1 : 0) -
 			(page.take === undefined ? 0 : 1);

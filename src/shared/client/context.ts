@@ -26,6 +26,7 @@ import type {
 	TransactionRuntime,
 } from '../../types';
 import { BetterDrizzleError, BetterDrizzleErrorCode } from '../errors';
+import { createRuntimeDriver } from './driver';
 
 const getDialect = (db: { dialect?: { constructor?: { name?: string } } }) => {
 	const name = db.dialect?.constructor?.name?.toLowerCase() ?? '';
@@ -366,12 +367,16 @@ export const createRuntimeContext = <
 
 	const hooks = options.hooks;
 	const plugins = options.plugins ?? [];
+	const dialect = getDialect(
+		db as RuntimeContext<Schema, Meta, Plugins>['db'],
+	);
 
 	return {
 		client: null,
 		clientExtensions: [],
 		db: db as RuntimeContext<Schema, Meta, Plugins>['db'],
-		dialect: getDialect(db as RuntimeContext<Schema, Meta, Plugins>['db']),
+		dialect,
+		driver: createRuntimeDriver(db, dialect, options.transactions),
 		hasHooks: Boolean(
 			hooks?.beforeCreate ||
 			hooks?.afterCreate ||
@@ -418,6 +423,7 @@ export const createDerivedRuntimeContext = <
 	clientExtensions: context.clientExtensions,
 	db: db as RuntimeContext<Schema, Meta, Plugins>['db'],
 	dialect: context.dialect,
+	driver: context.driver,
 	hasHooks: context.hasHooks,
 	hasOnError: context.hasOnError,
 	hasPlugins: context.hasPlugins,
