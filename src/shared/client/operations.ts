@@ -943,6 +943,22 @@ const fitD1Batch = <Schema extends AnySchema, Meta>(
 	return fit;
 };
 
+const countSqlParams = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	value: unknown,
+) =>
+	isSQLWrapper(value)
+		? (
+				context.db as unknown as {
+					dialect: {
+						sqlToQuery(query: SQL): { params: unknown[] };
+					};
+				}
+			).dialect.sqlToQuery(value.getSQL()).params.length
+		: value === undefined
+			? 0
+			: 1;
+
 const getTargetColumns = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	runtime: TableRuntime,
@@ -3029,12 +3045,36 @@ export const upsertManyRecords = async <Schema extends AnySchema, Meta>(
 	let batchSize = getBatchSize(args.batchSize, 'upsertMany');
 	if (context.driver.d1) {
 		const runtime = getTableRuntime(context, tableName as string);
+		// The `SET`, `WHERE` and scope parameters repeat in every chunk.
+		let reserved = 0;
+		const set = compileUpdateMutations(
+			runtime,
+			context.dialect,
+			'upsertMany',
+			buildUpsertManySet(
+				context,
+				runtime,
+				args,
+				getTargetColumns(context, runtime, args.target),
+			),
+			context as RuntimeContext<AnySchema, unknown>,
+		);
+		for (const key in set) reserved += countSqlParams(context, set[key]);
+		if (args.where !== undefined)
+			reserved += countSqlParams(
+				context,
+				getPredicate(context, runtime, tableName, args.where),
+			);
+		reserved += countSqlParams(
+			context,
+			scopeConflictWhere(context, runtime),
+		);
 		batchSize = fitD1Batch(
 			context,
 			runtime,
-			args.data as readonly Record<string, unknown>[],
+			writeArgs.data as readonly Record<string, unknown>[],
 			batchSize,
-			Object.keys(runtime.columns).length,
+			reserved,
 			'upsertMany',
 		);
 	}

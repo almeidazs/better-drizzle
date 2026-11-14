@@ -6,6 +6,7 @@ import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { BetterDrizzleErrorCode, better } from '../../src';
 import { resetWarnings } from '../../src/shared/client/driver';
 import { createD1Context, relations } from './d1.fixture';
+import { regionPlugin } from './scopes.fixture';
 
 const driverOf = (client: unknown) =>
 	(
@@ -213,6 +214,43 @@ describe('cloudflare d1', () => {
 
 		expect(result.count).toBe(40);
 		expect(await client.items.count()).toBe(40);
+	});
+
+	test('upsertMany counts the where clause parameters', async () => {
+		const { client } = createD1Context();
+		await client.items.createMany({ data: rows(10) });
+
+		const result = await client.items.upsertMany({
+			data: rows(40).map((row) => ({ ...row, a: 'updated' })),
+			target: 'id',
+			update: 'all',
+			where: {
+				a: {
+					in: Array.from({ length: 20 }, (_, index) => `v${index}`),
+				},
+			},
+		});
+
+		expect(result.count).toBeGreaterThan(0);
+		expect(await client.items.count()).toBe(40);
+	});
+
+	test('upsertMany counts the scope columns it stamps', async () => {
+		const { client } = createD1Context({ plugins: [regionPlugin()] });
+		const eu = client.$inRegion('eu');
+
+		const result = await eu.regions.upsertMany({
+			data: Array.from({ length: 40 }, (_, index) => ({
+				a: 'a',
+				b: 'b',
+				id: index + 1,
+			})),
+			target: 'id',
+			update: ['a'],
+		});
+
+		expect(result.count).toBe(40);
+		expect(await eu.regions.count()).toBe(40);
 	});
 
 	test('includes load relations in batches under the limit', async () => {

@@ -26,14 +26,24 @@ export const items = sqliteTable('d1_items', {
 	touched: text('touched').$onUpdate(() => 'touched'),
 });
 
-export const relations = defineRelations({ authors, items, posts }, (r) => ({
-	authors: {
-		posts: r.many.posts(),
-	},
-	posts: {
-		author: r.one.authors({ from: r.posts.authorId, to: r.authors.id }),
-	},
-}));
+export const regions = sqliteTable('d1_regions', {
+	a: text('a').notNull(),
+	b: text('b').notNull(),
+	id: integer('id').primaryKey(),
+	region: text('region').notNull(),
+});
+
+export const relations = defineRelations(
+	{ authors, items, posts, regions },
+	(r) => ({
+		authors: {
+			posts: r.many.posts(),
+		},
+		posts: {
+			author: r.one.authors({ from: r.posts.authorId, to: r.authors.id }),
+		},
+	}),
+);
 
 const MAX_PARAMS = 100;
 
@@ -115,6 +125,12 @@ CREATE TABLE d1_posts (
 	id INTEGER PRIMARY KEY NOT NULL,
 	author_id INTEGER REFERENCES d1_authors(id),
 	title TEXT NOT NULL
+);
+CREATE TABLE d1_regions (
+	id INTEGER PRIMARY KEY NOT NULL,
+	a TEXT NOT NULL,
+	b TEXT NOT NULL,
+	region TEXT NOT NULL
 );
 CREATE TABLE d1_items (
 	id INTEGER PRIMARY KEY NOT NULL,
