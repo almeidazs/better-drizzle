@@ -910,10 +910,13 @@ const fitD1Batch = <Schema extends AnySchema, Meta>(
 		let params = 0;
 		for (const field in runtime.columns) {
 			const column = runtime.columns[field] as AnyColumn;
+			// Drizzle fills an omitted value from the default, `$default` or
+			// `$onUpdate`, and each of those binds a parameter.
 			if (
 				row[field] !== undefined ||
+				column.default !== undefined ||
 				column.defaultFn ||
-				column.default !== undefined
+				column.onUpdateFn
 			)
 				params += 1;
 		}

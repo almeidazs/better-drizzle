@@ -23,6 +23,7 @@ export const items = sqliteTable('d1_items', {
 	c: text('c').notNull(),
 	d: text('d').notNull(),
 	id: integer('id').primaryKey(),
+	touched: text('touched').$onUpdate(() => 'touched'),
 });
 
 export const relations = defineRelations({ authors, items, posts }, (r) => ({
@@ -120,7 +121,8 @@ CREATE TABLE d1_items (
 	a TEXT NOT NULL,
 	b TEXT NOT NULL,
 	c TEXT NOT NULL,
-	d TEXT NOT NULL
+	d TEXT NOT NULL,
+	touched TEXT
 );
 `;
 

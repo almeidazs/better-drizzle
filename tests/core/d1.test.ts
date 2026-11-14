@@ -206,6 +206,15 @@ describe('cloudflare d1', () => {
 		expect(await client.items.count({ where: { a: 'updated' } })).toBe(40);
 	});
 
+	test('createMany counts columns filled by $onUpdate', async () => {
+		const { client } = createD1Context();
+
+		const result = await client.items.createMany({ data: rows(40) });
+
+		expect(result.count).toBe(40);
+		expect(await client.items.count()).toBe(40);
+	});
+
 	test('includes load relations in batches under the limit', async () => {
 		const { client } = createD1Context();
 		await client.authors.createMany({
