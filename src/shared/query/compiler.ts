@@ -1364,6 +1364,7 @@ export const compileOrderBy = <Schema extends AnySchema, Meta>(
 		for (const entry of entries)
 			for (const key in entry as Record<string, unknown>) {
 				const value = (entry as Record<string, unknown>)[key];
+				if (value === undefined) continue;
 				const column = context.runtime.columns[key];
 
 				if (column)
@@ -1727,7 +1728,10 @@ const cursorParamValues = (
 		: runtime.primaryKeyFields.map((key) => ({ [key]: 'asc' }));
 	for (const entry of entries)
 		for (const key in entry as Record<string, unknown>)
-			if (runtime.columns[key])
+			if (
+				runtime.columns[key] &&
+				(entry as Record<string, unknown>)[key] !== undefined
+			)
 				values[key] = cursorParam(
 					runtime,
 					cursor,
@@ -1781,6 +1785,8 @@ export const compileCursorWhere = <Schema extends AnySchema, Meta>(
 	if (entries)
 		for (const entry of entries)
 			for (const key in entry as Record<string, unknown>) {
+				const value = (entry as Record<string, unknown>)[key];
+				if (value === undefined) continue;
 				const column = context.runtime.columns[key];
 				if (!column) {
 					if (context.runtime.relations[key])
@@ -1803,7 +1809,6 @@ export const compileCursorWhere = <Schema extends AnySchema, Meta>(
 					});
 				}
 
-				const value = (entry as Record<string, unknown>)[key];
 				let direction = orderDirection(value);
 				let nulls =
 					orderNulls(value) ??
@@ -2019,6 +2024,7 @@ const reverseOrderBy = <Schema extends AnySchema>(
 
 		for (const key in entry as Record<string, unknown>) {
 			const value = (entry as Record<string, unknown>)[key];
+			if (value === undefined) continue;
 			const direction = orderDirection(value);
 			const nulls = orderNulls(value);
 			const reversedDirection = direction === 'asc' ? 'desc' : 'asc';
