@@ -1,5 +1,6 @@
 import {
 	type AnyColumn,
+	EmptyFilter,
 	entityKind,
 	getColumns,
 	getTableName,
@@ -172,7 +173,7 @@ const findRuntime = (tables: Record<string, TableRuntime>, name: string) => {
 };
 
 const getUnsupportedRelationReason = (relation: Relation) => {
-	if (relation.where)
+	if (relation.where !== EmptyFilter)
 		return 'filtered relations (relation-level where) are not supported';
 	if (relation.through && relation.relationType === 'one')
 		return 'one relations through a junction table are not supported';
@@ -200,8 +201,12 @@ const buildRelations = (
 			}
 			if (!target) continue;
 
-			const fields = relation.sourceColumns as AnyColumn[];
-			const references = relation.targetColumns as AnyColumn[];
+			const fields = relation.sourceColumns.map(
+				(column) => column._.column as AnyColumn,
+			);
+			const references = relation.targetColumns.map(
+				(column) => column._.column as AnyColumn,
+			);
 			const through = relation.through;
 			const throughTable = relation.throughTable;
 
