@@ -963,6 +963,13 @@ export interface BetterClientOptions<
 > {
 	/** Optional plugins to extend the client. */
 	plugins?: Plugins;
+	/**
+	 * Whether the driver runs transactions. `'auto'` (default) uses them except
+	 * on Cloudflare D1, which is detected automatically. `'none'` forces any
+	 * SQLite driver without `BEGIN`/`SAVEPOINT` support to run transactions and
+	 * relation writes as separate statements with no rollback.
+	 */
+	transactions?: 'auto' | 'none';
 	/** Optional transaction configuration. */
 	transaction?: {
 		/** How to handle dialect-unsupported transaction options. */

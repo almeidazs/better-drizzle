@@ -62,6 +62,7 @@ import {
 	relationCursorError,
 } from '../query';
 import { getPrimaryKeyWhere, getTableRuntime, isSimpleRecord } from './context';
+import { warnOnce } from './driver';
 import {
 	applyRelationWrites,
 	buildLinkPredicates,
@@ -893,6 +894,71 @@ const runBatches = async <Args extends { data: readonly unknown[] }>(
 	return { count, data };
 };
 
+// Cloudflare D1 accepts 100 bind parameters per statement, so a multi-row
+// write is split into the largest chunks that fit. `reserved` counts the
+// parameters of the rest of the statement (the upsert `SET` clause).
+const fitD1Batch = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	runtime: TableRuntime,
+	rows: readonly Record<string, unknown>[],
+	batchSize: number | undefined,
+	reserved: number,
+	operation: 'createMany' | 'upsertMany',
+) => {
+	let perRow = 1;
+	for (const row of rows) {
+		let params = 0;
+		for (const field in runtime.columns) {
+			const column = runtime.columns[field] as AnyColumn;
+			// Drizzle fills an omitted value from the default, `$default` or
+			// `$onUpdate`, and each of those binds a parameter.
+			if (
+				row[field] !== undefined ||
+				column.default !== undefined ||
+				column.defaultFn ||
+				column.onUpdateFn
+			)
+				params += 1;
+		}
+		if (params > perRow) perRow = params;
+	}
+	const limit = context.driver.maxParams;
+	const fit = Math.floor((limit - reserved) / perRow);
+	if (fit < 1)
+		throw new BetterDrizzleError({
+			code: BetterDrizzleErrorCode.InvalidArgs,
+			details: { limit, parametersPerRow: perRow + reserved },
+			message: `One row needs ${perRow + reserved} bind parameters, but Cloudflare D1 accepts ${limit} per statement.`,
+			operation,
+			table: runtime.dbName,
+		});
+	if (rows.length <= fit || (batchSize !== undefined && batchSize <= fit))
+		return batchSize;
+
+	warnOnce(
+		'd1-split',
+		`${operation} on Cloudflare D1 is split into statements of at most ${limit} bind parameters, so it is not atomic. Pass a smaller batchSize to choose the chunk size.`,
+	);
+
+	return fit;
+};
+
+const countSqlParams = <Schema extends AnySchema, Meta>(
+	context: RuntimeContext<Schema, Meta>,
+	value: unknown,
+) =>
+	isSQLWrapper(value)
+		? (
+				context.db as unknown as {
+					dialect: {
+						sqlToQuery(query: SQL): { params: unknown[] };
+					};
+				}
+			).dialect.sqlToQuery(value.getSQL()).params.length
+		: value === undefined
+			? 0
+			: 1;
+
 const getTargetColumns = <Schema extends AnySchema, Meta>(
 	context: RuntimeContext<Schema, Meta>,
 	runtime: TableRuntime,
@@ -1293,6 +1359,10 @@ const getAffectedCount = (result: unknown) => {
 		const count = (value as Record<string, unknown>)[key];
 		if (typeof count === 'number' && Number.isFinite(count)) return count;
 	}
+
+	// Cloudflare D1 reports the count as `meta.changes`.
+	const changes = (value as { meta?: { changes?: unknown } }).meta?.changes;
+	if (typeof changes === 'number' && Number.isFinite(changes)) return changes;
 
 	const rowsAffected = (value as Record<string, unknown>).rowsAffected;
 	if (typeof rowsAffected === 'number' && Number.isFinite(rowsAffected))
@@ -2595,8 +2665,12 @@ export const reloadRecords = async <Schema extends AnySchema, Meta>(
 		: args;
 	for (const field of hidden)
 		(readArgs!.select as Record<string, unknown>)[field] = true;
-	let maxParams = 10_000;
-	if (context.scopes !== undefined || args?.include) {
+	let maxParams = Math.min(10_000, context.driver.maxParams);
+	if (
+		context.scopes !== undefined ||
+		args?.include ||
+		context.driver.maxParams < 10_000
+	) {
 		const { params } = (
 			buildDirectReadQuery(context, tableName, readArgs) as unknown as {
 				toSQL(): { params: unknown[] };
@@ -2604,7 +2678,7 @@ export const reloadRecords = async <Schema extends AnySchema, Meta>(
 		).toSQL();
 		maxParams = Math.min(
 			maxParams,
-			(context.dialect === 'sqlite' ? 32_766 : 65_535) - params.length,
+			context.driver.maxParams - params.length,
 		);
 		if (maxParams < fields.length)
 			throw new BetterDrizzleError({
@@ -2784,7 +2858,16 @@ export const createManyRecords = async <Schema extends AnySchema, Meta>(
 		);
 		if (data !== args.data) args = { ...args, data } as typeof args;
 	}
-	const batchSize = getBatchSize(args.batchSize, 'createMany');
+	let batchSize = getBatchSize(args.batchSize, 'createMany');
+	if (context.driver.d1)
+		batchSize = fitD1Batch(
+			context,
+			runtime,
+			args.data as readonly Record<string, unknown>[],
+			batchSize,
+			0,
+			'createMany',
+		);
 	if (batchSize && args.data.length > batchSize)
 		return runBatches(args, batchSize, (chunk) =>
 			createManyRecords(context, tableName, chunk),
@@ -2959,7 +3042,42 @@ export const upsertManyRecords = async <Schema extends AnySchema, Meta>(
 		);
 		if (data !== args.data) writeArgs = { ...args, data } as typeof args;
 	}
-	const batchSize = getBatchSize(args.batchSize, 'upsertMany');
+	let batchSize = getBatchSize(args.batchSize, 'upsertMany');
+	if (context.driver.d1) {
+		const runtime = getTableRuntime(context, tableName as string);
+		// The `SET`, `WHERE` and scope parameters repeat in every chunk.
+		let reserved = 0;
+		const set = compileUpdateMutations(
+			runtime,
+			context.dialect,
+			'upsertMany',
+			buildUpsertManySet(
+				context,
+				runtime,
+				args,
+				getTargetColumns(context, runtime, args.target),
+			),
+			context as RuntimeContext<AnySchema, unknown>,
+		);
+		for (const key in set) reserved += countSqlParams(context, set[key]);
+		if (args.where !== undefined)
+			reserved += countSqlParams(
+				context,
+				getPredicate(context, runtime, tableName, args.where),
+			);
+		reserved += countSqlParams(
+			context,
+			scopeConflictWhere(context, runtime),
+		);
+		batchSize = fitD1Batch(
+			context,
+			runtime,
+			writeArgs.data as readonly Record<string, unknown>[],
+			batchSize,
+			reserved,
+			'upsertMany',
+		);
+	}
 	if (!batchSize || args.data.length <= batchSize)
 		return upsertManyChunk(context, tableName, writeArgs, args);
 
@@ -3317,6 +3435,53 @@ export const updateEachRecords = async <Schema extends AnySchema, Meta>(
 	if (!predicate) return { count: 0 };
 
 	const set = buildUpdateEachSet(context, runtime, rows.byKey, args);
+	if (context.driver.d1) {
+		// One CASE statement binds a few parameters per row, so a large
+		// update is split into chunks that fit D1's limit.
+		const limit = context.driver.maxParams;
+		const params = (
+			context.db
+				.update(runtime.table)
+				.set(set)
+				.where(predicate) as unknown as {
+				toSQL(): { params: unknown[] };
+			}
+		).toSQL().params.length;
+		if (params > limit) {
+			if (args.data.length === 1)
+				throw new BetterDrizzleError({
+					code: BetterDrizzleErrorCode.InvalidArgs,
+					details: { limit, parametersPerRow: params },
+					message: `One row needs ${params} bind parameters, but Cloudflare D1 accepts ${limit} per statement.`,
+					operation: 'updateEach',
+					table: runtime.dbName,
+				});
+			warnOnce(
+				'd1-split:updateEach',
+				`updateEach on Cloudflare D1 is split into statements of at most ${limit} bind parameters, so it is not atomic.`,
+			);
+			// The average cost per row sizes the chunks; a chunk that still
+			// does not fit is split again.
+			const size = Math.max(
+				1,
+				Math.floor((args.data.length * limit) / params),
+			);
+			let count = 0;
+			let data: Record<string, unknown>[] | undefined;
+			for (let start = 0; start < args.data.length; start += size) {
+				const chunk = await updateEachRecords(baseContext, tableName, {
+					...args,
+					data: args.data.slice(start, start + size),
+				} as typeof args);
+				count += chunk.count;
+				if (chunk.data?.length) {
+					if (!data) data = [];
+					data.push(...chunk.data);
+				}
+			}
+			return { count, data };
+		}
+	}
 	const affectedCount = await countRows(
 		context,
 		tableName,

@@ -55,6 +55,11 @@ The SQLite driver must execute `BEGIN`, `COMMIT`, `ROLLBACK`, and savepoints on
 the same connection through `run()`. These statements are awaited, including
 when the driver returns promises. The integration tests use Bun SQLite.
 
+<Callout type="warn" title="Cloudflare D1 has no transactions">
+	D1 rejects `BEGIN` and `SAVEPOINT`, so on D1 the callback runs as separate
+	statements with no rollback. See [Cloudflare D1](/docs/guides/cloudflare-d1).
+</Callout>
+
 If rollback itself fails, the transaction rejects with a `BetterDrizzleError`.
 The original callback error is retained as its cause, and the driver rollback
 error is available in `details.rollbackError`. Rollback notifications still run,

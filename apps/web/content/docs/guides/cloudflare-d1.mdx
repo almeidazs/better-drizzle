@@ -1,0 +1,100 @@
+---
+title: Cloudflare D1
+description: Run better-drizzle on Cloudflare D1, which is detected automatically. Covers transactions without BEGIN, the 100 bind-parameter limit, and what is not supported.
+icon: Cloud
+seoTitle: 'Drizzle ORM on Cloudflare D1 - Relation Writes & Transactions'
+seoDescription: 'Use better-drizzle with Cloudflare D1: automatic detection, relation writes and transactions without BEGIN, createMany splitting for the 100 bind-parameter limit, and unsupported features.'
+---
+
+Pass a `drizzle-orm/d1` instance to `better()` as usual. D1 is detected from the Drizzle session, so there is nothing to configure.
+
+```ts tab="better-drizzle" tab-group="orm"
+import { better } from 'better-drizzle';
+import { drizzle } from 'drizzle-orm/d1';
+
+import { relations } from './relations';
+
+export default {
+	async fetch(request: Request, env: Env) {
+		const client = better(drizzle(env.DB, { relations }));
+
+		const post = await client.posts.create({
+			data: {
+				title: 'Relations without the glue',
+				author: { connect: { email: 'alice@example.com' } },
+			},
+			include: { author: true },
+		});
+
+		return Response.json(post);
+	},
+};
+```
+
+```ts tab="Drizzle" tab-group="orm"
+import { drizzle } from 'drizzle-orm/d1';
+import { eq } from 'drizzle-orm';
+
+import { authors, posts, relations } from './schema';
+
+export default {
+	async fetch(request: Request, env: Env) {
+		const db = drizzle(env.DB, { relations });
+
+		const [author] = await db
+			.select()
+			.from(authors)
+			.where(eq(authors.email, 'alice@example.com'));
+		const [post] = await db
+			.insert(posts)
+			.values({ title: 'Relations without the glue', authorId: author.id })
+			.returning();
+
+		return Response.json({ ...post, author });
+	},
+};
+```
+
+## Transactions
+
+D1 does not accept `BEGIN`, `COMMIT`, `ROLLBACK`, or `SAVEPOINT`; it only runs statements one at a time. On D1, better-drizzle therefore runs these as separate statements, in order, **with no rollback**:
+
+- Relation writes (`connect`, `set`, `disconnect`, and nested relation commands) in `create`, `update`, and `upsert`.
+- The callback of `client.transaction(...)`, including `better-drizzle/auth`, which wraps multi-step operations in a transaction.
+
+If a later statement fails, the earlier ones stay. Order writes so a partial failure is safe to retry, or make them idempotent.
+
+The first time this happens in a process, better-drizzle prints one warning. Because a retry would repeat writes that nothing rolled back, `retries` on `transaction()` is ignored. `tx.rollback()` still ends the callback with the rollback error, but does not undo anything, and `afterCommit` callbacks run when the callback returns.
+
+### The `transactions` option
+
+```ts
+const client = better(drizzle(env.DB, { relations }), {
+	transactions: 'none',
+});
+```
+
+| Value | Behavior |
+| --- | --- |
+| `'auto'` (default) | Uses transactions, except on D1, which is detected automatically. |
+| `'none'` | Runs transactions and relation writes as separate statements on any SQLite driver, and silences the warning. Use it for D1, and for other drivers that cannot run `BEGIN`, such as HTTP or RPC SQLite. |
+
+`'none'` only applies to SQLite and throws `INVALID_ARGS` for other dialects.
+
+## Bind parameter limit
+
+D1 accepts at most 100 bind parameters per statement. better-drizzle keeps its own queries under that limit:
+
+- Relation loading (`include`, `select` with relations) and `createMany` reloads query related rows in batches that fit.
+- `createMany` and `upsertMany` split into the largest chunks that fit (rows × columns, plus the `SET`, `WHERE`, and scope parameters for upserts), run one after another. A smaller `batchSize` is still honored.
+- `updateEach` splits its single `CASE` statement the same way.
+
+A split write is **not atomic**, and the first one of each kind in a process prints a warning.
+- A single row that needs more than 100 parameters throws `INVALID_ARGS`.
+
+Lists you pass yourself, such as `where: { id: { in: ids } }`, are sent as written. Split large lists in your code.
+
+## Not supported
+
+- `.explain()` throws `OPERATION_ERROR` on D1. D1 does not return the query plan through the Drizzle session.
+- Row locks (`lock`) are not available on any SQLite driver.

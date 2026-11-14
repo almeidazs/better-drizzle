@@ -50,6 +50,11 @@ The client's type parameter is the relations config: `BetterDrizzleClient<typeof
 			description: 'Transaction configuration, e.g. how to handle dialect-unsupported options.',
 			type: '{ unsupportedOptions?: "warn" | "throw" | "ignore" }',
 		},
+		transactions: {
+			description: 'Whether the driver runs transactions. "none" runs transactions and relation writes as separate statements with no rollback on any SQLite driver; Cloudflare D1 is detected automatically (see Cloudflare D1).',
+			type: '"auto" | "none"',
+			default: '"auto"',
+		},
 		locks: {
 			description: 'Row lock configuration, e.g. requiring locked reads to run inside transactions.',
 			type: '{ transactionsOnly?: boolean }',

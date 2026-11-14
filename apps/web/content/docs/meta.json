@@ -57,6 +57,7 @@
 		"guides/observability-plugin",
 		"guides/multi-tenancy",
 		"guides/frameworks",
+		"guides/cloudflare-d1",
 		"guides/recipes",
 		"guides/limitations",
 		"guides/troubleshooting",

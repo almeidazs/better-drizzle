@@ -356,6 +356,21 @@ export type TransactionRuntime = {
 };
 
 /**
+ * What the underlying driver can do, resolved once from the Drizzle instance
+ * and the `transactions` client option.
+ */
+export type RuntimeDriver = {
+	/** `true` for Cloudflare D1 (`drizzle-orm/d1`). */
+	d1: boolean;
+	/** Most bind parameters one statement accepts. */
+	maxParams: number;
+	/** `false` when `BEGIN`, `COMMIT` and `SAVEPOINT` are not available. */
+	transactions: boolean;
+	/** `true` when the caller chose `transactions: 'none'` and needs no warning. */
+	acknowledged: boolean;
+};
+
+/**
  * Internal runtime context built once during client initialization.
  * Carries the database handle, schema, precomputed table metadata,
  * plugin buckets, and configuration. Passed through all operations.
@@ -381,6 +396,8 @@ export type RuntimeContext<
 	db: DrizzleLikeDatabase;
 	/** The detected SQL dialect (`'pg'`, `'sqlite'`, or `'mysql'`). */
 	dialect: PluginDialect;
+	/** Capabilities of the underlying driver, resolved once in `better()`. */
+	driver: RuntimeDriver;
 	/** `true` when at least one client-level hook is registered. */
 	hasHooks: boolean;
 	/** `true` when the `onError` client hook is registered. */
