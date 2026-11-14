@@ -229,6 +229,12 @@ describe('createMany', () => {
 		expect(result.data?.length).toBe(2);
 	});
 
+	test('createMany with no rows returns count 0', async () => {
+		const result = await ctx.better.users.createMany({ data: [] });
+
+		expect(result).toEqual({ count: 0 });
+	});
+
 	test('createMany returns data array with correct records', async () => {
 		const result = await ctx.better.users.createMany({
 			data: [
