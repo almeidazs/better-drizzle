@@ -353,6 +353,63 @@ const JSON_LIST_PARAM = {
 const isPgJsonbColumn = (column: AnyColumn) =>
 	(column as { columnType?: string }).columnType === 'PgJsonb';
 
+const isJsonColumn = (column: AnyColumn) =>
+	(column as { dataType?: string }).dataType === 'object json';
+
+const PRISMA_JSON_FILTER_KEYS = new Set([
+	'array_contains',
+	'array_starts_with',
+	'array_ends_with',
+	'string_contains',
+	'string_starts_with',
+	'string_ends_with',
+]);
+
+const PRISMA_JSON_FILTER_COMPANION_KEYS = new Set([
+	...PRISMA_JSON_FILTER_KEYS,
+	'equals',
+	'lt',
+	'lte',
+	'gt',
+	'gte',
+	'mode',
+	'not',
+	'path',
+]);
+
+const getPrismaJsonFilterKey = (value: unknown): string | undefined => {
+	let current = value;
+	for (let depth = 0; depth < 16 && isPlainObject(current); depth += 1) {
+		let match: string | undefined;
+		for (const key in current) {
+			if (!Object.hasOwn(current, key)) continue;
+			if (PRISMA_JSON_FILTER_KEYS.has(key)) {
+				match ??= key;
+				continue;
+			}
+			if (!PRISMA_JSON_FILTER_COMPANION_KEYS.has(key)) return;
+		}
+		if (match) return match;
+		if (!('not' in current)) return;
+		current = current.not;
+	}
+};
+
+const prismaJsonFilterError = (
+	column: string,
+	operator: string,
+	dialect: string | undefined,
+	table: string,
+) =>
+	new BetterDrizzleError({
+		code: BetterDrizzleErrorCode.JsonbQueryUnsupported,
+		column,
+		details: { operator },
+		dialect,
+		message: `JSON filter operator "${operator}" is not supported; pass a Drizzle sql fragment in where, or use { equals: ... } for whole-document equality.`,
+		table,
+	});
+
 /** Number of `.array()` dimensions declared on a PostgreSQL column. */
 export const getPgArrayDimensions = (column: AnyColumn) =>
 	(column as { dimensions?: number }).dimensions ?? 0;
@@ -1302,6 +1359,14 @@ export const compileWhereInput = <Schema extends AnySchema, Meta>(
 					table: context.tableName,
 				});
 			for (const path in jsonPaths) {
+				const prismaFilter = getPrismaJsonFilterKey(jsonPaths[path]);
+				if (prismaFilter)
+					throw prismaJsonFilterError(
+						key,
+						prismaFilter,
+						context.dialect,
+						context.tableName,
+					);
 				const clause = compileJsonPathFilter(
 					field,
 					path,
@@ -1310,6 +1375,17 @@ export const compileWhereInput = <Schema extends AnySchema, Meta>(
 				if (clause) conditions.push(clause);
 			}
 			continue;
+		}
+
+		if (isJsonColumn(column) && !isPgArrayColumn(column)) {
+			const prismaFilter = getPrismaJsonFilterKey(value);
+			if (prismaFilter)
+				throw prismaJsonFilterError(
+					key,
+					prismaFilter,
+					context.dialect,
+					context.tableName,
+				);
 		}
 
 		if (isPgArrayColumn(column) && isArrayFilter(value)) {

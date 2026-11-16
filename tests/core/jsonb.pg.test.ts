@@ -3,12 +3,27 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { defineRelations, fillPlaceholders, sql } from 'drizzle-orm';
 import { drizzle as drizzleSqlite } from 'drizzle-orm/bun-sqlite';
+import {
+	json as mysqlJson,
+	int as mysqlInt,
+	mysqlTable,
+} from 'drizzle-orm/mysql-core';
 import { drizzle as drizzleMysql } from 'drizzle-orm/mysql2';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { integer, json, jsonb, PgDialect, pgTable } from 'drizzle-orm/pg-core';
+import {
+	integer as sqliteInteger,
+	sqliteTable,
+	text as sqliteText,
+} from 'drizzle-orm/sqlite-core';
 import { Client } from 'pg';
 
-import { BetterDrizzleErrorCode, better, param } from '../../src';
+import {
+	BetterDrizzleError,
+	BetterDrizzleErrorCode,
+	better,
+	param,
+} from '../../src';
 
 type Metadata = {
 	profile: {
@@ -580,5 +595,207 @@ describe('JSON path filters on json columns', () => {
 			message:
 				'JSON path filters require a jsonb column; json columns only support whole-document filters.',
 		});
+	});
+});
+
+describe('Prisma JSON filter operators', () => {
+	const items = pgTable('better_drizzle_prisma_json_items', {
+		id: integer('id').primaryKey(),
+		tags: jsonb('tags'),
+		payload: json('payload'),
+		metadata: jsonb('metadata').$type<Metadata>(),
+	});
+
+	const prismaOperators = [
+		['array_contains', ['beta']],
+		['array_starts_with', 'alpha'],
+		['array_ends_with', 'omega'],
+		['string_contains', 'beta'],
+		['string_starts_with', 'be'],
+		['string_ends_with', 'ta'],
+	] as const;
+
+	test('rejects Prisma JSON filter keys on PostgreSQL jsonb and json columns with JSONB_QUERY_UNSUPPORTED', async () => {
+		const client = better(
+			drizzle.mock({ relations: defineRelations({ items }) }),
+		);
+
+		for (const [operator, value] of prismaOperators) {
+			await expect(
+				Promise.resolve(
+					client.items.findMany({
+						where: { tags: { [operator]: value } },
+					}),
+				),
+			).rejects.toMatchObject({
+				code: BetterDrizzleErrorCode.JsonbQueryUnsupported,
+				column: 'tags',
+				details: { operator },
+				dialect: 'pg',
+				table: 'items',
+			});
+
+			await expect(
+				Promise.resolve(
+					client.items.findMany({
+						where: { payload: { [operator]: value } },
+					}),
+				),
+			).rejects.toMatchObject({
+				code: BetterDrizzleErrorCode.JsonbQueryUnsupported,
+				column: 'payload',
+				details: { operator },
+				dialect: 'pg',
+				table: 'items',
+			});
+		}
+
+		try {
+			await client.items.findMany({
+				where: { tags: { array_contains: ['beta'] } },
+			});
+			expect.unreachable();
+		} catch (error) {
+			expect(error).toBeInstanceOf(BetterDrizzleError);
+			expect((error as BetterDrizzleError).message).toContain('sql');
+		}
+	});
+
+	test('rejects Prisma JSON filter combinations with path, mode, not, and JSON path filters', async () => {
+		const client = better(
+			drizzle.mock({ relations: defineRelations({ items }) }),
+		);
+
+		const invalidFilters = [
+			{ tags: { path: ['profile', 'name'], string_contains: 'Ada' } },
+			{ tags: { string_contains: 'Ada', mode: 'insensitive' } },
+			{ tags: { not: { array_contains: ['beta'] } } },
+			{
+				metadata: {
+					json: {
+						'profile.name': { string_contains: 'Ada' } as never,
+					},
+				},
+			},
+			{
+				metadata: {
+					'profile.name': { string_contains: 'Ada' } as never,
+				},
+			},
+		];
+
+		for (const where of invalidFilters) {
+			await expect(
+				Promise.resolve(client.items.findMany({ where })),
+			).rejects.toMatchObject({
+				code: BetterDrizzleErrorCode.JsonbQueryUnsupported,
+			});
+		}
+	});
+
+	test('rejects Prisma JSON filter keys on SQLite and MySQL JSON columns', async () => {
+		const sqlite = new Database(':memory:');
+		sqlite.exec(
+			'create table sq_items (id integer primary key, tags text)',
+		);
+		const sqItems = sqliteTable('sq_items', {
+			id: sqliteInteger('id').primaryKey(),
+			tags: sqliteText('tags', { mode: 'json' }),
+		});
+		const sqliteClient = better(
+			drizzleSqlite({
+				client: sqlite,
+				relations: defineRelations({ sqItems }),
+			}),
+		);
+
+		try {
+			await expect(
+				Promise.resolve(
+					sqliteClient.sqItems.findMany({
+						where: { tags: { array_contains: ['beta'] } },
+					}),
+				),
+			).rejects.toMatchObject({
+				code: BetterDrizzleErrorCode.JsonbQueryUnsupported,
+				column: 'tags',
+				dialect: 'sqlite',
+			});
+		} finally {
+			sqlite.close();
+		}
+
+		const myItems = mysqlTable('my_items', {
+			id: mysqlInt('id').primaryKey(),
+			tags: mysqlJson('tags'),
+		});
+		const mysqlClient = better(
+			drizzleMysql.mock({ relations: defineRelations({ myItems }) }),
+		);
+
+		await expect(
+			Promise.resolve(
+				mysqlClient.myItems.findMany({
+					where: { tags: { string_contains: 'beta' } },
+				}),
+			),
+		).rejects.toMatchObject({
+			code: BetterDrizzleErrorCode.JsonbQueryUnsupported,
+			column: 'tags',
+			dialect: 'mysql',
+		});
+	});
+
+	test('preserves whole-document equality for path, explicit equals, and non-filter documents', async () => {
+		const sqlite = new Database(':memory:');
+		sqlite.exec(
+			`create table sq_docs (id integer primary key, doc text not null);
+			insert into sq_docs values
+				(1, '{"path":"/home"}'),
+				(2, '{"array_contains":["beta"]}'),
+				(3, '{"array_contains":["beta"],"title":"doc"}');`,
+		);
+		const sqDocs = sqliteTable('sq_docs', {
+			id: sqliteInteger('id').primaryKey(),
+			doc: sqliteText('doc', { mode: 'json' }).notNull(),
+		});
+		const client = better(
+			drizzleSqlite({
+				client: sqlite,
+				relations: defineRelations({ sqDocs }),
+			}),
+		);
+
+		try {
+			expect(
+				(
+					await client.sqDocs.findMany({
+						where: { doc: { path: '/home' } },
+					})
+				).map((row) => row.id),
+			).toEqual([1]);
+
+			expect(
+				(
+					await client.sqDocs.findMany({
+						where: {
+							doc: { equals: { array_contains: ['beta'] } },
+						},
+					})
+				).map((row) => row.id),
+			).toEqual([2]);
+
+			expect(
+				(
+					await client.sqDocs.findMany({
+						where: {
+							doc: { array_contains: ['beta'], title: 'doc' },
+						},
+					})
+				).map((row) => row.id),
+			).toEqual([3]);
+		} finally {
+			sqlite.close();
+		}
 	});
 });
