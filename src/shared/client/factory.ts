@@ -1228,6 +1228,11 @@ export const createBoundClient = <
 
 	// A delegate is built on its first read, then stored as a plain property:
 	// clients created per request or transaction skip unused tables.
+	// `extendModel` receives the delegate itself, so a client with model
+	// extensions builds every delegate here: a conflict fails `better()`.
+	const extendsModels = (context.options.plugins ?? []).some(
+		(plugin: AnyPlugin) => plugin.extendModel !== undefined,
+	);
 	for (const tableName in context.tables) {
 		const dbName = context.tables[tableName]?.dbName ?? tableName;
 		const slots = [
@@ -1254,6 +1259,10 @@ export const createBoundClient = <
 			return delegate;
 		};
 
+		if (extendsModels) {
+			getDelegate();
+			continue;
+		}
 		for (const [target, key] of slots)
 			Object.defineProperty(target, key, {
 				configurable: true,
