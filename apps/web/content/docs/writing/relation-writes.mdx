@@ -304,6 +304,14 @@ failures produce.
 Disconnecting a to-one relation nulls its foreign key, so it only works when the column is nullable. On a `notNull()` foreign key the operation fails and the whole write rolls back - use `set` to point it somewhere else instead.
 
 </Accordion>
+<Accordion title="Connecting a target another row already holds" id="connecting-a-target-another-row-already-holds">
+
+On a one-to-one relation owned by a nullable unique foreign key, `connect` (and `set` on update) moves the target: the row that currently holds it gets its foreign key set to `null` before the new link is written, as Prisma does.
+
+- A required (`notNull()`) foreign key is never detached, so the write fails on the unique index and rolls back.
+- A holder outside the active model scope is never touched, so the write fails on the unique index as well.
+
+</Accordion>
 <Accordion title="Everything runs in one transaction" id="everything-runs-in-one-transaction">
 
 The root mutation and every relation change run in a single implicit
