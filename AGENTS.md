@@ -22,7 +22,7 @@ Bun/TypeScript workspace. The root `package.json` publishes one package (`src/`,
 
 - Reads are lazy thenables, not promises: they run on the first `then`. Wrap them in `Promise.resolve()` for `expect(...).resolves/.rejects` in Bun.
 - MySQL has no `RETURNING`: single-row writes that do not pin one row run read + write in a transaction with `FOR UPDATE`, and `create` reads the row back by key.
-- `drizzle-orm` is pinned to `>=1.0.0-rc.4 <1.0.0-rc.5` (RQB v2); tables and relations come from `db._.relations`, and column `dataType` is `"<type> <constraint>"` (compare prefixes).
+- `drizzle-orm` is pinned to `>=1.0.0-rc.5 <1.0.0-rc.6` (RQB v2); tables and relations come from `db._.relations`, and column `dataType` is `"<type> <constraint>"` (compare prefixes).
 - Do not walk the schema recursively in prepared-statement param types; it breaks `Awaited<ReturnType<...>>` with TS2321.
 - Core `endsWith` intentionally keeps SQL wildcards; `contains` and `startsWith` escape them.
 - `better-drizzle/auth` reads the client's runtime context through `client[Symbol.for('better-drizzle/context')]`; its tests run Better Auth's official adapter suite under `bun test` (`tests/auth/suite.ts`).
