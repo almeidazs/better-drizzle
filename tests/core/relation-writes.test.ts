@@ -11,6 +11,7 @@ import {
 } from 'drizzle-orm/sqlite-core';
 
 import { better, definePlugin } from '../../src';
+import { regionPlugin } from './scopes.fixture';
 import { createTestContext, type TestContext } from './setup';
 
 describe('direct relation writes', () => {
@@ -532,6 +533,172 @@ test('includes children for distinct composite parent keys containing delimiters
 		).toEqual([
 			{ keyA: 'a', children: [2] },
 			{ keyA: 'a|string:b', children: [1] },
+		]);
+	} finally {
+		sqlite.close();
+	}
+});
+
+const avatars = sqliteTable('one_to_one_avatars', {
+	id: integer('id').primaryKey(),
+});
+
+const avatarOwners = sqliteTable('one_to_one_users', {
+	id: integer('id').primaryKey(),
+	avatarId: integer('avatar_id')
+		.unique()
+		.references(() => avatars.id),
+});
+
+const oneToOneRelations = defineRelations({ avatarOwners, avatars }, (r) => ({
+	avatarOwners: {
+		avatar: r.one.avatars({
+			from: r.avatarOwners.avatarId,
+			to: r.avatars.id,
+		}),
+	},
+	avatars: {
+		owner: r.one.avatarOwners({
+			from: r.avatars.id,
+			to: r.avatarOwners.avatarId,
+		}),
+	},
+}));
+
+describe('one-to-one relations owned by a unique foreign key', () => {
+	let sqlite: Database;
+	let client: ReturnType<typeof createClient>;
+
+	const createClient = (database: Database) =>
+		better(drizzle({ client: database, relations: oneToOneRelations }));
+
+	const avatarIds = () =>
+		client.avatarOwners
+			.findMany({ orderBy: { id: 'asc' } })
+			.then((rows) => rows.map((row) => [row.id, row.avatarId]));
+
+	beforeEach(() => {
+		sqlite = new Database(':memory:');
+		sqlite.exec(`
+			PRAGMA foreign_keys = ON;
+			CREATE TABLE one_to_one_avatars (id INTEGER PRIMARY KEY);
+			CREATE TABLE one_to_one_users (
+				id INTEGER PRIMARY KEY,
+				avatar_id INTEGER UNIQUE REFERENCES one_to_one_avatars(id)
+			);
+			INSERT INTO one_to_one_avatars VALUES (1), (2);
+			INSERT INTO one_to_one_users VALUES (1, 1), (2, NULL);
+		`);
+		client = createClient(sqlite);
+	});
+
+	afterEach(() => {
+		sqlite.close();
+	});
+
+	test('update connect moves a target another row holds', async () => {
+		await client.avatarOwners.update({
+			data: { avatar: { connect: { id: 1 } } },
+			where: { id: 2 },
+		});
+
+		expect(await avatarIds()).toEqual([
+			[1, null],
+			[2, 1],
+		]);
+	});
+
+	test('create connect moves a target another row holds', async () => {
+		await client.avatarOwners.create({
+			data: { avatar: { connect: { id: 1 } }, id: 3 },
+		});
+
+		expect(await avatarIds()).toEqual([
+			[1, null],
+			[2, null],
+			[3, 1],
+		]);
+	});
+
+	test('update connect keeps the target the row already holds', async () => {
+		await client.avatarOwners.update({
+			data: { avatar: { connect: { id: 1 } } },
+			where: { id: 1 },
+		});
+
+		expect(await avatarIds()).toEqual([
+			[1, 1],
+			[2, null],
+		]);
+	});
+
+	test('update set leaves the other rows when the target is free', async () => {
+		await client.avatarOwners.update({
+			data: { avatar: { set: { id: 2 } } },
+			where: { id: 2 },
+		});
+
+		expect(await avatarIds()).toEqual([
+			[1, 1],
+			[2, 2],
+		]);
+	});
+});
+
+const regionalOwners = sqliteTable('one_to_one_regional_users', {
+	id: integer('id').primaryKey(),
+	avatarId: integer('avatar_id')
+		.unique()
+		.references(() => avatars.id),
+	region: text('region').notNull(),
+});
+
+test('connect never detaches a holder outside the model scope', async () => {
+	const sqlite = new Database(':memory:');
+	try {
+		sqlite.exec(`
+			CREATE TABLE one_to_one_avatars (id INTEGER PRIMARY KEY);
+			CREATE TABLE one_to_one_regional_users (
+				id INTEGER PRIMARY KEY,
+				avatar_id INTEGER UNIQUE REFERENCES one_to_one_avatars(id),
+				region TEXT NOT NULL
+			);
+			INSERT INTO one_to_one_avatars VALUES (1);
+			INSERT INTO one_to_one_regional_users VALUES (1, 1, 'us'), (2, NULL, 'eu');
+		`);
+		const db = better(
+			drizzle({
+				client: sqlite,
+				relations: defineRelations(
+					{ avatars, regionalOwners },
+					(r) => ({
+						regionalOwners: {
+							avatar: r.one.avatars({
+								from: r.regionalOwners.avatarId,
+								to: r.avatars.id,
+							}),
+						},
+					}),
+				),
+			}),
+			{ plugins: [regionPlugin()] },
+		);
+
+		await expect(
+			db.$inRegion('eu').regionalOwners.update({
+				data: { avatar: { connect: { id: 1 } } },
+				where: { id: 2 },
+			}),
+		).rejects.toThrow();
+		expect(
+			(
+				await db
+					.$anyRegion()
+					.regionalOwners.findMany({ orderBy: { id: 'asc' } })
+			).map((row) => [row.id, row.avatarId]),
+		).toEqual([
+			[1, 1],
+			[2, null],
 		]);
 	} finally {
 		sqlite.close();
