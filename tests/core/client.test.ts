@@ -105,6 +105,58 @@ describe('client', () => {
 		ctx.close();
 	});
 
+	test('a client builds the delegate of a table on first use and keeps it', async () => {
+		const ctx = createContext();
+
+		expect(
+			Object.getOwnPropertyDescriptor(ctx.client, 'users')?.get,
+		).toBeFunction();
+		const users = ctx.client.users;
+
+		expect(
+			Object.getOwnPropertyDescriptor(ctx.client, 'users')?.value,
+		).toBe(users);
+		expect(ctx.client.users).toBe(users);
+		expect(ctx.client.repository('client_users')).toBe(users);
+		expect(await users.count()).toBe(2);
+		ctx.close();
+	});
+
+	test('a client with model extensions runs them when it is built', () => {
+		const extendedModels: string[] = [];
+		const ctx = createContext({
+			plugins: [
+				definePlugin({
+					extendModel({ model }) {
+						extendedModels.push(model.name);
+						return undefined;
+					},
+					id: 'record-extended-models',
+				}),
+			],
+		});
+
+		expect(extendedModels).toEqual(['users']);
+		ctx.close();
+	});
+
+	test('a conflicting extendModel fails when the client is built', () => {
+		expect(() =>
+			createContext({
+				plugins: [
+					definePlugin({
+						extendModel() {
+							return { findMany: () => undefined };
+						},
+						id: 'override-find-many',
+					}),
+				],
+			}),
+		).toThrow(
+			'Plugin "override-find-many" cannot override "findMany" on model "users".',
+		);
+	});
+
 	test('extends fails on conflicts with built-ins, plugins, and prior extensions', () => {
 		const ctx = createContext({
 			plugins: [

@@ -1245,17 +1245,49 @@ export const createBoundClient = <
 		value: context,
 	});
 
+	// A delegate is built on its first read, then stored as a plain property:
+	// clients created per request or transaction skip unused tables.
+	// `extendModel` receives the delegate itself, so a client with model
+	// extensions builds every delegate here: a conflict fails `better()`.
+	const extendsModels = (context.options.plugins ?? []).some(
+		(plugin: AnyPlugin) => plugin.extendModel !== undefined,
+	);
 	for (const tableName in context.tables) {
-		const delegate = applyModelExtensions(
-			context,
-			tableName as BetterTableKey<Schema>,
-			createModelDelegate(context, tableName as BetterTableKey<Schema>),
-		);
 		const dbName = context.tables[tableName]?.dbName ?? tableName;
+		const slots = [
+			[client, tableName],
+			[context.repositories, tableName],
+			[context.repositories, dbName],
+		] as const;
+		const getDelegate = () => {
+			const delegate = applyModelExtensions(
+				context,
+				tableName as BetterTableKey<Schema>,
+				createModelDelegate(
+					context,
+					tableName as BetterTableKey<Schema>,
+				),
+			);
+			for (const [target, key] of slots)
+				Object.defineProperty(target, key, {
+					configurable: true,
+					enumerable: true,
+					value: delegate,
+					writable: true,
+				});
+			return delegate;
+		};
 
-		client[tableName] = delegate;
-		context.repositories[tableName] = delegate;
-		context.repositories[dbName] = delegate;
+		if (extendsModels) {
+			getDelegate();
+			continue;
+		}
+		for (const [target, key] of slots)
+			Object.defineProperty(target, key, {
+				configurable: true,
+				enumerable: true,
+				get: getDelegate,
+			});
 	}
 
 	client.repository = (name: string) => {
