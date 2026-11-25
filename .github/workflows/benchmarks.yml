@@ -26,7 +26,7 @@ jobs:
 
         steps:
             - name: Checkout
-              uses: actions/checkout@v5
+              uses: actions/checkout@v7
 
             - name: Setup Bun
               uses: oven-sh/setup-bun@v2
@@ -43,7 +43,7 @@ jobs:
               run: bun run bench:memory | tee benchmark-memory.txt
 
             - name: Upload benchmark artifacts
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v7
               with:
                   name: benchmark-results
                   path: |
