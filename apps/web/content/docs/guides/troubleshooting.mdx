@@ -240,6 +240,8 @@ await client.$raw`select * from users where id = ${id}`;
 
 On PostgreSQL, path filters also require a `jsonb` column. On a `json` column they throw `JSON path filters require a jsonb column; json columns only support whole-document filters.`
 
+Prisma JSON filter operators (`array_contains`, `array_starts_with`, `array_ends_with`, `string_contains`, `string_starts_with`, `string_ends_with`) also throw `JSONB_QUERY_UNSUPPORTED` instead of comparing the filter object as a JSON document. Pass a Drizzle `sql` fragment in `where`, or `{ equals: ... }` for whole-document equality.
+
 ### `ARRAY_QUERY_UNSUPPORTED`
 
 **Message:** `Native PostgreSQL array filters are only supported by PostgreSQL.`
